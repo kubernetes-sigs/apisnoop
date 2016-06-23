@@ -7,6 +7,7 @@ RUN apk add --no-cache \
         git \
         g++ \
         py-pip \
+        py-psutil \
         libffi \
         libffi-dev \
         libjpeg-turbo \
