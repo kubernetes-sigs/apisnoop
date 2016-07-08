@@ -15,7 +15,6 @@ RUN apk add --no-cache \
         libxml2-dev \
         libxslt \
         libxslt-dev \
-        linux-headers \
         openssl \
         openssl-dev \
         python \
@@ -30,7 +29,6 @@ RUN apk add --no-cache \
         libjpeg-turbo-dev \
         libxml2-dev \
         libxslt-dev \
-        linux-headers \
         openssl-dev \
         python-dev \
         zlib-dev \
