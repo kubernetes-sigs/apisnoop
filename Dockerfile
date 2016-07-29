@@ -1,4 +1,4 @@
-FROM alpine:3.3
+FROM alpine:3.4
 
 ENV LANG=en_US.UTF-8
 
@@ -6,7 +6,6 @@ COPY requirements.txt /tmp/requirements.txt
 RUN apk add --no-cache \
         git \
         g++ \
-        py-pip \
         libffi \
         libffi-dev \
         libjpeg-turbo \
@@ -17,11 +16,12 @@ RUN apk add --no-cache \
         libxslt-dev \
         openssl \
         openssl-dev \
-        python \
-        python-dev \
+        python3 \
+        python3-dev \
         zlib \
         zlib-dev \
-    && LDFLAGS=-L/lib pip install -r /tmp/requirements.txt \
+    && python3 -m ensurepip \
+    && LDFLAGS=-L/lib pip3 install -r /tmp/requirements.txt \
     && apk del --purge \
         git \
         g++ \
@@ -30,7 +30,7 @@ RUN apk add --no-cache \
         libxml2-dev \
         libxslt-dev \
         openssl-dev \
-        python-dev \
+        python3-dev \
         zlib-dev \
     && rm /tmp/requirements.txt \
     && rm -rf ~/.cache/pip \
