@@ -24,7 +24,6 @@ RUN apk add --no-cache \
     && LDFLAGS=-L/lib pip3 install -r /tmp/requirements.txt \
     && apk del --purge \
         git \
-        g++ \
         libffi-dev \
         libjpeg-turbo-dev \
         libxml2-dev \
