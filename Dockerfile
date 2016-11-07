@@ -3,7 +3,12 @@ FROM alpine:3.4
 ENV LANG=en_US.UTF-8
 
 COPY requirements.txt /tmp/requirements.txt
-RUN apk add --no-cache \
+
+# add our user first to make sure the ID get assigned consistently,
+# regardless of whatever dependencies get added
+RUN addgroup -S mitmproxy && adduser -S -G mitmproxy mitmproxy \
+    && apk add --no-cache \
+        su-exec \
         git \
         g++ \
         libffi \
@@ -34,12 +39,12 @@ RUN apk add --no-cache \
         python3-dev \
         zlib-dev \
     && rm /tmp/requirements.txt \
-    && rm -rf ~/.cache/pip \
-    && adduser -u 7799 -D mitmproxy
+    && rm -rf ~/.cache/pip
 
-USER mitmproxy
-RUN mkdir /home/mitmproxy/.mitmproxy
 VOLUME /home/mitmproxy/.mitmproxy
+
+COPY docker-entrypoint.sh /usr/local/bin/
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 EXPOSE 8080 8081
 CMD ["mitmproxy"]
