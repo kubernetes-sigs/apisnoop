@@ -11,6 +11,8 @@ If we intercept addon API usage we could prioritize test writing and additionall
 
 We propose a man-in-the-middle (MITM) proxy that intercepts the API requests of the Kubernetes e2e test and addons, comparing them against the API server’s OpenAPI documentation. The results would be made available to via HTTP per deployment or pod.
 
+Initial proof of concept here: https://github.com/ii/kube-apisnoop
+
 ## Definitions
 Coverage is defined as the percentage of the overall API surface area utilized by the e2e test or addon, including alpha/beta/stable for a specified Kubernetes release.
 
