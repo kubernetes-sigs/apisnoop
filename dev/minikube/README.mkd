@@ -1,0 +1,55 @@
+## Developing an audit-webhook
+
+Advanced Auditing needs a policy file passed to [--audit-policy-file](https://kubernetes.io/docs/reference/generated/kube-apiserver/) to apiserver.
+    
+Enabling a webhook also requires configuration file via [--audit-webhook-config-file](https://kubernetes.io/docs/reference/generated/kube-apiserver/)
+
+### TLDR
+
+[Start minikube, map this folder to /tmp/files, patch apiserver to use /tmp/files.](start-minikube-audit.sh)
+
+```
+./start-minikube-audit.sh
+```
+
+### Configuring minikube apiserver cmd line parameters
+
+[--extra-config=apiserver.*](https://github.com/kubernetes/minikube/blob/master/docs/configuring_kubernetes.md#kubeadm-bootstrapper) allows us to add cmd line args.
+
+Getting our config files inside the apiserver container is a bit trickier.
+
+[--mount-string](https://github.com/kubernetes/minikube/blob/v0.26.0/cmd/minikube/cmd/start.go#L69) allows us to mount host directors into our minikube VM.
+
+However we still need to patch the manifests, to map /tmp/files into our container.
+
+#### Start minikube
+
+```shell
+minikube start --v=4  --mount --mount-string=$PWD:/tmp/files \
+         --feature-gates=AdvancedAuditing=true \
+         --extra-config=apiserver.audit-log-path=/tmp/files/audit.log
+```
+
+#### Apply Patch to /etc/kubernetes/kube-apiserver.yaml
+
+```patch
+--- kube-apiserver.yaml
++++ kube-apiserver.yaml
+@@ -56,6 +57,8 @@
+       requests:
+         cpu: 250m
+     volumeMounts:
++    - mountPath: /tmp/files/
++      name: data
+     - mountPath: /var/lib/localkube/certs/
+       name: k8s-certs
+       readOnly: true
+@@ -64,6 +67,9 @@
+       readOnly: true
+   hostNetwork: true
+   volumes:
++  - hostPath:
++      path: /tmp/files
++    name: data
+   - hostPath:
+```
