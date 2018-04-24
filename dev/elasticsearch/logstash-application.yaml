@@ -1,0 +1,108 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-application
+  namespace: elasticsearch
+# codec => "json"
+data:
+  logstash.conf: |-
+    input {
+      tcp {
+        port => 9000
+      }
+    }
+    filter{
+      split{
+        field=>[items]
+        remove_field=>[headers, metadata, apiVersion, "@timestamp", kind, "@version", host]
+      }
+      mutate{
+        rename => {items=>event}
+      }
+    }
+    output {
+      file{
+        # Audit events from different users will be saved into different files.
+        path=>"/var/log/kube-audit-%{[event][user][username]}/audit"
+      }
+      # elasticsearch {
+      #   hosts => "elasticsearch-logging.elasticsearch:9200"
+      #   index => "logstash-%{+YYYY.MM.dd}"
+      #   sniffing => false
+      # }
+    }
+  logstash.yml: |-
+    http.host: "0.0.0.0"
+    path.config: /usr/share/logstash/pipeline
+    xpack.monitoring.enabled: false
+
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: logstash-application
+  namespace: elasticsearch
+spec:
+  template:
+    metadata:
+      labels:
+        app: logstash-application
+    spec:
+      containers:
+      # If we want really new:
+      # - image: docker.elastic.co/logstash/logstash:6.2.4
+      - image: docker.elastic.co/logstash/logstash:5.6.9
+        name: logstash-application
+        ports:
+        - name: logstash
+          containerPort: 9000
+          protocol: TCP
+        volumeMounts:
+        - name: config
+          mountPath: /usr/share/logstash/config/logstash.yml
+          subPath: logstash.yml
+          readOnly: true
+        - name: pipeline
+          mountPath: /usr/share/logstash/pipeline
+          readOnly: true
+        args:
+        - -f
+        - /usr/share/logstash/pipeline/logstash.conf
+        resources:
+          limits:
+            memory: 2Gi
+            cpu: "200m"
+          requests:
+            memory: 2Gi
+            cpu: "200m"
+      volumes:
+      - name: pipeline
+        configMap:
+          name: logstash-application
+          items:
+          - key: logstash.conf
+            path: logstash.conf
+      - name: config
+        configMap:
+          name: logstash-application
+          items:
+          - key: logstash.yml
+            path: logstash.yml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash-application
+  namespace: elasticsearch
+  labels:
+    app: logstash-application
+spec:
+  type: LoadBalancer
+  selector:
+    app: logstash-application
+  ports:
+  - name: logstash
+    port: 9000
+    targetPort: 9000
+    protocol: TCP
