@@ -4,33 +4,37 @@ kind: ConfigMap
 metadata:
   name: logstash-application
   namespace: elasticsearch
-# codec => "json"
 data:
   logstash.conf: |-
-    input {
-      tcp {
-        port => 9000
+    input{
+      http{
+        #TODO, figure out a way to use kubeconfig file to authenticate to logstash
+        #https://www.elastic.co/guide/en/logstash/current/plugins-inputs-http.html#plugins-inputs-http-ssl
+        port=>9900
       }
     }
     filter{
       split{
+        # Webhook audit backend sends several events together with EventList
+        # split each event here.
         field=>[items]
-        remove_field=>[headers, metadata, apiVersion, "@timestamp", kind, "@version", host]
+        # We only need event subelement, remove others.
+        # remove_field=>[headers, metadata, apiVersion, "@timestamp", kind, "@version", host]
       }
       mutate{
         rename => {items=>event}
       }
     }
-    output {
-      file{
-        # Audit events from different users will be saved into different files.
-        path=>"/var/log/kube-audit-%{[event][user][username]}/audit"
-      }
-      # elasticsearch {
-      #   hosts => "elasticsearch-logging.elasticsearch:9200"
-      #   index => "logstash-%{+YYYY.MM.dd}"
-      #   sniffing => false
+    output{
+      # file{
+      #   # Audit events from different users will be saved into different files.
+      #   path=>"/var/log/kube-audit-%{[event][user][username]}/audit"
       # }
+      elasticsearch {
+        hosts => "elasticsearch-logging.elasticsearch:9200"
+        index => "kube-audit-%{+YYYY.MM.dd}"
+        sniffing => false
+      }
     }
   logstash.yml: |-
     http.host: "0.0.0.0"
@@ -50,13 +54,11 @@ spec:
         app: logstash-application
     spec:
       containers:
-      # If we want really new:
-      # - image: docker.elastic.co/logstash/logstash:6.2.4
-      - image: docker.elastic.co/logstash/logstash:5.6.9
+      - image: docker.elastic.co/logstash/logstash:5.5.0
         name: logstash-application
         ports:
         - name: logstash
-          containerPort: 9000
+          containerPort: 9900
           protocol: TCP
         volumeMounts:
         - name: config
@@ -103,6 +105,6 @@ spec:
     app: logstash-application
   ports:
   - name: logstash
-    port: 9000
-    targetPort: 9000
+    port: 9900
+    targetPort: 9900
     protocol: TCP
