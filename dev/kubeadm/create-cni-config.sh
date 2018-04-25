@@ -1,4 +1,5 @@
 #!/bin/sh
+mkdir -p /etc/cni/net.d/
 cat >/etc/cni/net.d/10-mynet.conf <<EOF
 {
 	"cniVersion": "0.2.0",
