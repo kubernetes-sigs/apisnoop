@@ -1,12 +1,17 @@
 #!/bin/sh
-PATCH_SCRIPT=$(readlink -f "$0")
-PATCH_DIR=$(dirname "$PATCH_SCRIPT")
-set -x ; set -e
 
-# patching in place seems to cause issues with minikube
-cp /etc/kubernetes/manifests/kube-apiserver.yaml /tmp
-cd /tmp
-patch < $PATCH_DIR/apiserver-config.patch
-
-# copying a new files into place restart kube-apiserver
-cp /tmp/kube-apiserver.yaml /etc/kubernetes/manifests/
+while read LINE; do
+    echo "$LINE" >> $OUTFILE
+    case "$LINE" in
+        *"- kube-apiserver"*)
+            echo "    - --audit-log-path=/tmp/files/audit.log" >> $OUTFILE
+            echo "    - --audit-policy-file=/tmp/files/audit-policy.yaml" >> $OUTFILE
+        *"volumeMounts:"*)
+            echo "    - mountPath: /tmp/files/" >> $OUTFILE
+            echo "      name: data" >> $OUTFILE
+        *"volumes:"*)
+            echo "  - hostPath:"
+            echo "      path: /tmp/files"
+            echo "    name: data"
+    esac
+done < kube-apiserver.yaml
