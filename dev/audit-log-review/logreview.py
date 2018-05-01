@@ -5,10 +5,13 @@ import os
 import glob
 import re
 import json
+import sqlite3
+import csv
 
 from urlparse import urlparse
 from collections import defaultdict
 from pprint import pprint
+from IPython import embed
 # https://github.com/kubernetes/kubernetes/pull/50627/files
 
 
@@ -67,6 +70,9 @@ def load_openapi_spec(url):
                     level = "stable"
                 openapi_spec['paths'][path_regex]['level'] = level
                 openapi_spec['paths'][path_regex]['version'] = extract["api_version"]
+            else:
+                level = "stable"
+                openapi_spec['paths'][path_regex]['level'] = level
             # methods
             openapi_spec['paths'][path_regex]['methods'] = {}
             methods = swagger['paths'][path].keys()
@@ -74,6 +80,7 @@ def load_openapi_spec(url):
                 if method == "parameters":
                     continue
                 openapi_spec['paths'][path_regex]['methods'][method] = {}
+                openapi_spec['paths'][path_regex]['methods'][method]['tags'] = sorted(swagger['paths'][path][method].get('tags', list()))
                 # todo - request + response
 
             # crazy caching using prefixes
@@ -83,12 +90,50 @@ def load_openapi_spec(url):
             else:
                 prefix_cache[None][path_regex] = openapi_spec['paths'][path_regex]
             # print path, path_regex, re.match(path_regex, path.rstrip('/')) is not None
-        print prefix_cache.keys()
         return openapi_spec
 
     except Exception as e:
         print("Failed to load openapi spec \"%s\"" % url)
         raise e
+
+def create_conformance_db():
+    con = sqlite3.connect("conformance.db")
+    cur = con.cursor()
+    cur.execute("""CREATE TABLE IF NOT EXISTS conformance (
+    id INTEGER PRIMARY KEY,
+    method TEXT,
+    url TEXT,
+    file TEXT DEFAULT '',
+    tags TEXT DEFAULT '',
+    conformance TEXT DEFAULT '',
+    draft TEXT DEFAULT '',
+    ksonnet TEXT DEFAULT '',
+    skaffold TEXT DEFAULT '',
+    questions TEXT DEFAULT '',
+    UNIQUE(method, url));""")
+    return cur
+
+def load_coverage_csv(path):
+    cur = create_conformance_db()
+    with open(path,'rb') as csvfile:
+        for row in csv.DictReader(csvfile):
+            method = row['METHOD'].lower()
+            url = row['URL']
+            conforms = row['Conformance?']
+            questions = row['Open questions']
+            testfile = row['Test file']
+            query = cur.execute("SELECT id FROM conformance WHERE method=? AND url=? LIMIT 1",
+                                (method, url))
+            id = query.fetchone()
+            if id is None:
+                # INSERT
+                cur.execute("INSERT INTO conformance(method, url, file, conformance, questions) VALUES (?, ?, ?, ?, ?)", (method, url, testfile, conforms, questions))
+            else:
+                id = id[0]
+                # UPDATE
+                cur.execute("UPDATE conformance SET conformance=?, file=?, questions=? WHERE id=?", (conforms, testfile, questions, id))
+        cur.connection.commit()
+        cur.connection.close()
 
 def load_audit_log(path):
     audit_log = []
@@ -128,7 +173,8 @@ def generate_count_tree(openapi_spec):
         for method in endpoint['methods']:
             count_tree[path]['methods'][method] = {
                 "counter": 0,
-                "fields": {}
+                "fields": {},
+                "tags": endpoint['methods'][method]['tags']
             }
 
     return count_tree
@@ -148,7 +194,7 @@ def find_openapi_entry(openapi_spec, event):
             break
     else:
         paths = prefix_cache[None]
-    
+
     for regex in paths:
         if re.match(regex, url.path):
             search_cache[url.path] = openapi_spec['paths'][regex]
@@ -172,15 +218,17 @@ def count_event(count_tree, event, spec_entry):
 def get_count_results(count_tree):
     by_url = []
     by_url_and_method = []
+    for_sqlite = []
 
     for url, url_data in count_tree.items():
         by_url += [(url_data['level'] or '-', url, url_data['counter'])]
         for method, method_data in url_data['methods'].items():
             by_url_and_method += [(url_data['level'] or '-', url, method, method_data['counter'])]
-
+            for_sqlite += [(url_data['level'] or '-', url, method, method_data['counter'], ','.join(method_data['tags']))]
     results = {
         "by_url": sorted(by_url, key=lambda x: (-x[-1], x[0], x[1])),
-        "by_url_and_method": sorted(by_url_and_method, key=lambda x: (-x[-1], x[0], x[1], x[2]))
+        "by_url_and_method": sorted(by_url_and_method, key=lambda x: (-x[-1], x[0], x[1], x[2])),
+        "for_sqlite": for_sqlite
     }
     return results
 
@@ -246,6 +294,7 @@ def generate_coverage_report(openapi_spec, audit_log):
     count_results['summary_method_by_level'] = sorted(stats_methods.values(), key=lambda x: x[0])
     count_results['unknown_urls'] = set(unknown_urls)
     count_results['unknown_methods'] = set([" | ".join(x) for x in unknown_url_methods])
+
     return count_results
 
 
@@ -271,6 +320,35 @@ def print_table(table, headers, title):
         print(" ".join(line))
     print("")
 
+def write_to_csv(table, headers, title):
+    filename = sys.argv[2] + "_" + "-".join(title.replace("/", "").lower().split()) + ".csv" 
+    with open("csv/" + filename, "wb") as f:
+        f.write("\t".join(headers) + "\n")
+        for row in table:
+            f.write("\t".join([str(r) for r in row]) + "\n")
+
+def write_to_sqlite(data, field):
+    cur = create_conformance_db()
+    # Using many to many database structure (incomplete)
+    # cur.execute("CREATE TABLE IF NOT EXISTS conformance (id INTEGER PRIMARY KEY, method TEXT, url TEXT, file TEXT DEFAULT '', questions TEXT DEFAULT '');")
+    # cur.execute("CREATE TABLE IF NOT EXISTS target (id INTEGER PRIMARY KEY, target_name TEXT)")
+    # cur.execute("CREATE TABLE IF NOT EXISTS match (id INTEGER PRIMARY KEY, conformance_id INTEGER, target_id INTEGER, FOREIGN KEY (conformance_id) REFERENCES conformance(id), FOREIGN KEY (target_id) REFERENCES target(id), UNIQUE(conformance_id, target_id))")
+    # if row exists for URL and METHOD - update 
+    for row in data:
+        query = cur.execute("SELECT id FROM conformance WHERE method=? AND url=? LIMIT 1", (row[2], row[1]))
+        id = query.fetchone()
+        if id is None:
+            # INSERT
+            cur.execute("INSERT INTO conformance(method, url, tags, %s) VALUES (?, ?, ?, ?) " % field,
+                        (row[2], row[1], row[-1], ('', 'x')[row[3] > 0])
+            )
+        else:
+            # UPDATE
+            id = id[0]
+            cur.execute("UPDATE conformance SET %s=? WHERE id=?" % field, (('', 'x')[row[3] > 0], id))
+    cur.connection.commit()
+    cur.connection.close()
+
 def print_report(report):
     print_table(filter(lambda x: x[-1] > 0, report['by_url']), ["LEVEL", "ENDPOINT", "COUNT"], "Hit counts by URL")
     print_table(filter(lambda x: x[-1] > 0, report['by_url_and_method']), ['LEVEL', 'ENDPOINT', 'METHOD', 'COUNT'], "Hit counts by URL and method")
@@ -279,18 +357,27 @@ def print_report(report):
     print_table(report['summary_method_by_level'], ['LEVEL', 'HIT', 'UNHIT', 'TOTAL', '%'], "Endpoint / method coverage by level (alpha / beta / stable)")
     print_table(report['summary_method_total'], ['HIT', 'UNHIT', 'TOTAL', '%'], "Endpoint / method coverage overall")
 
+    write_to_csv(filter(lambda x: x[-1] > 0, report['by_url_and_method']), ['LEVEL', 'ENDPOINT', 'METHOD', 'COUNT'], "Hit counts by URL and method")
+    write_to_csv(report['summary_method_by_level'], ['LEVEL', 'HIT', 'UNHIT', 'TOTAL', '%'], "Endpoint / method coverage by level (alpha / beta / stable)")
+
+    write_to_sqlite(report['for_sqlite'], sys.argv[2])
+
     for item in report['unknown_urls']:
         print item
 
 def main():
+    if len(sys.argv) < 3 or sys.argv[2] not in ['draft', 'ksonnet', 'skaffold']:
+        print("Usage: logreview.py logpath [draft|ksonnet|skaffold]")
+        exit(0)
     # load swagger api file
     openapi_spec_url = "swagger.json"
     openapi_spec = load_openapi_spec(openapi_spec_url)
     #pprint(openapi_spec)
-    
+
     # load audit log file
     audit_log_path = sys.argv[1]
     audit_log = load_audit_log(audit_log_path)
+    load_coverage_csv("kube-conform-googledoc.csv")
     # pprint(audit_log)
     # generate coverage report
     report = generate_coverage_report(openapi_spec, audit_log)
