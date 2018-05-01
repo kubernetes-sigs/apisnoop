@@ -109,6 +109,9 @@ def create_conformance_db():
     draft TEXT DEFAULT '',
     ksonnet TEXT DEFAULT '',
     skaffold TEXT DEFAULT '',
+    draft_count INTEGER DEFAULT 0,
+    ksonnet_count INTEGER DEFAULT 0,
+    skaffold_count INTEGER DEFAULT 0,
     questions TEXT DEFAULT '',
     UNIQUE(method, url));""")
     return cur
@@ -339,13 +342,13 @@ def write_to_sqlite(data, field):
         id = query.fetchone()
         if id is None:
             # INSERT
-            cur.execute("INSERT INTO conformance(method, url, tags, %s) VALUES (?, ?, ?, ?) " % field,
-                        (row[2], row[1], row[-1], ('', 'x')[row[3] > 0])
+            cur.execute("INSERT INTO conformance(method, url, tags, %s, %s_count) VALUES (?, ?, ?, ?, ?) " % (field, field),
+                        (row[2], row[1], row[-1], ('', 'x')[row[3] > 0], row[3])
             )
         else:
             # UPDATE
             id = id[0]
-            cur.execute("UPDATE conformance SET %s=? WHERE id=?" % field, (('', 'x')[row[3] > 0], id))
+            cur.execute("UPDATE conformance SET %s=?, %s_count=?, tags=? WHERE id=?" % (field, field), (('', 'x')[row[3] > 0], row[3], row[-1], id))
     cur.connection.commit()
     cur.connection.close()
 
