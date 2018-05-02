@@ -11,7 +11,10 @@ import csv
 from urlparse import urlparse
 from collections import defaultdict
 from pprint import pprint
-from IPython import embed
+
+
+from lib import models
+
 # https://github.com/kubernetes/kubernetes/pull/50627/files
 
 
@@ -22,23 +25,11 @@ from IPython import embed
 # swagger json defs
 #
 
-def defaultdicttree():
-    return defaultdict(defaultdicttree)
-
-def defaultdict_to_dict(d):
-    if isinstance(d, defaultdict):
-        new_d = {}
-        for k, v in d.items():
-            new_d[k] = defaultdict_to_dict(v)
-        d = new_d 
-    return d 
-
-
 prefix_cache = defaultdict(dict)
 
 def load_openapi_spec(url):
     try:
-        openapi_spec = {} #defaultdicttree()
+        openapi_spec = {}
         url_parsed = urlparse(url)
         if url_parsed.scheme in ['http', 'https']:
             swagger = requests.get(url).json()
@@ -86,7 +77,7 @@ def load_openapi_spec(url):
             # crazy caching using prefixes
             bits = path.strip("/").split("/", 2)
             if bits[0] in ["apis", "api"] and len(bits) > 1:
-                prefix_cache["/" + "/".join(bits[0:2])][path_regex] = openapi_spec['paths'][path_regex] 
+                prefix_cache["/" + "/".join(bits[0:2])][path_regex] = openapi_spec['paths'][path_regex]
             else:
                 prefix_cache[None][path_regex] = openapi_spec['paths'][path_regex]
             # print path, path_regex, re.match(path_regex, path.rstrip('/')) is not None
@@ -96,47 +87,30 @@ def load_openapi_spec(url):
         print("Failed to load openapi spec \"%s\"" % url)
         raise e
 
-def create_conformance_db():
-    con = sqlite3.connect("conformance.db")
-    cur = con.cursor()
-    cur.execute("""CREATE TABLE IF NOT EXISTS conformance (
-    id INTEGER PRIMARY KEY,
-    method TEXT,
-    url TEXT,
-    file TEXT DEFAULT '',
-    tags TEXT DEFAULT '',
-    conformance TEXT DEFAULT '',
-    draft TEXT DEFAULT '',
-    ksonnet TEXT DEFAULT '',
-    skaffold TEXT DEFAULT '',
-    draft_count INTEGER DEFAULT 0,
-    ksonnet_count INTEGER DEFAULT 0,
-    skaffold_count INTEGER DEFAULT 0,
-    questions TEXT DEFAULT '',
-    UNIQUE(method, url));""")
-    return cur
+
 
 def load_coverage_csv(path):
-    cur = create_conformance_db()
     with open(path,'rb') as csvfile:
         for row in csv.DictReader(csvfile):
-            method = row['METHOD'].lower()
+            method = row['METHOD'].lower(),
             url = row['URL']
-            conforms = row['Conformance?']
-            questions = row['Open questions']
-            testfile = row['Test file']
-            query = cur.execute("SELECT id FROM conformance WHERE method=? AND url=? LIMIT 1",
-                                (method, url))
-            id = query.fetchone()
-            if id is None:
-                # INSERT
-                cur.execute("INSERT INTO conformance(method, url, file, conformance, questions) VALUES (?, ?, ?, ?, ?)", (method, url, testfile, conforms, questions))
-            else:
-                id = id[0]
-                # UPDATE
-                cur.execute("UPDATE conformance SET conformance=?, file=?, questions=? WHERE id=?", (conforms, testfile, questions, id))
-        cur.connection.commit()
-        cur.connection.close()
+
+            data = {}
+            keymap = {
+                'Conformance?': 'conforms',
+                'Open questions': 'questions',
+                'Test file': 'testfile'
+            }
+            for fromkey, tokey in keymap.items():
+                value = row[fromkey].strip()
+                if len(value) > 0:
+                    data[tokey] = value
+
+            Endpoint.update_from_coverage(method, url, **data)
+
+        # commit changes to Database
+        commit()
+
 
 def load_audit_log(path):
     audit_log = []
@@ -277,7 +251,7 @@ def generate_coverage_report(openapi_spec, audit_log):
     hit = len(filter(lambda x: x[-1] > 0, count_results['by_url']))
     nohit = len(filter(lambda x: x[-1] == 0, count_results['by_url']))
     count_results['summary_endpoint_total'] = [[hit, nohit, hit + nohit, "%.2f" % (100.0 * hit / nohit)]]
-    
+
     hit = len(filter(lambda x: x[-1] > 0, count_results['by_url_and_method']))
     nohit = len(filter(lambda x: x[-1] == 0, count_results['by_url_and_method']))
     count_results['summary_method_total'] = [[hit, nohit, hit + nohit, "%.2f" % (100.0 * hit / nohit)]]
@@ -324,33 +298,24 @@ def print_table(table, headers, title):
     print("")
 
 def write_to_csv(table, headers, title):
-    filename = sys.argv[2] + "_" + "-".join(title.replace("/", "").lower().split()) + ".csv" 
+    filename = sys.argv[2] + "_" + "-".join(title.replace("/", "").lower().split()) + ".csv"
     with open("csv/" + filename, "wb") as f:
         f.write("\t".join(headers) + "\n")
         for row in table:
             f.write("\t".join([str(r) for r in row]) + "\n")
 
-def write_to_sqlite(data, field):
-    cur = create_conformance_db()
-    # Using many to many database structure (incomplete)
-    # cur.execute("CREATE TABLE IF NOT EXISTS conformance (id INTEGER PRIMARY KEY, method TEXT, url TEXT, file TEXT DEFAULT '', questions TEXT DEFAULT '');")
-    # cur.execute("CREATE TABLE IF NOT EXISTS target (id INTEGER PRIMARY KEY, target_name TEXT)")
-    # cur.execute("CREATE TABLE IF NOT EXISTS match (id INTEGER PRIMARY KEY, conformance_id INTEGER, target_id INTEGER, FOREIGN KEY (conformance_id) REFERENCES conformance(id), FOREIGN KEY (target_id) REFERENCES target(id), UNIQUE(conformance_id, target_id))")
-    # if row exists for URL and METHOD - update 
+def write_to_sqlite(data, app_name):
+    app, _ = App.get_or_create(name=app_name)
+
     for row in data:
-        query = cur.execute("SELECT id FROM conformance WHERE method=? AND url=? LIMIT 1", (row[2], row[1]))
-        id = query.fetchone()
-        if id is None:
-            # INSERT
-            cur.execute("INSERT INTO conformance(method, url, tags, %s, %s_count) VALUES (?, ?, ?, ?, ?) " % (field, field),
-                        (row[2], row[1], row[-1], ('', 'x')[row[3] > 0], row[3])
-            )
-        else:
-            # UPDATE
-            id = id[0]
-            cur.execute("UPDATE conformance SET %s=?, %s_count=?, tags=? WHERE id=?" % (field, field), (('', 'x')[row[3] > 0], row[3], row[-1], id))
-    cur.connection.commit()
-    cur.connection.close()
+        # TODO: change array to object or dict for better readability
+        method = row[2].strip()
+        url = row[1].strip()
+        tags = row[-1].strip()
+        count = row[3]
+
+        app.update_from_log(method, url, tags=tags, count=count)
+    commit()
 
 def print_report(report):
     print_table(filter(lambda x: x[-1] > 0, report['by_url']), ["LEVEL", "ENDPOINT", "COUNT"], "Hit counts by URL")
