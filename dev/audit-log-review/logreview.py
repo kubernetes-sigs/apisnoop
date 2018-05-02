@@ -30,9 +30,8 @@ from lib.parsers import *
 def load_coverage_csv(path):
     with open(path,'rb') as csvfile:
         for row in csv.DictReader(csvfile):
-            method = row['METHOD'].lower(),
+            method = row['METHOD'].lower()
             url = row['URL']
-
             data = {}
             keymap = {
                 'Conformance?': 'conforms',
@@ -117,7 +116,7 @@ def get_count_results(count_tree):
                 'count': method_data['counter']
             }]
 
-    return sorted(results, key=lambda x: (-x['count'], x['level'], x['url'], x['method'])),
+    return sorted(results, key=lambda x: (-x['count'], x['level'], x['url'], x['method']))
 
 def generate_coverage_report(openapi_spec, audit_log):
     count_tree = generate_count_tree(openapi_spec)
@@ -194,7 +193,7 @@ def main():
         if not os.path.isfile(filename):
             print "Invalid filename given"
             usage_and_exit()
-        load_conformance_csv(filename)
+        load_coverage_csv(filename)
         return # we are done
     elif sys.argv[1] == 'load-audit':
         if len(sys.argv) < 4:

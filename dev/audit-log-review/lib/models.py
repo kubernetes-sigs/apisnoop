@@ -22,6 +22,7 @@ class Endpoint(db.Entity):
 
         :param cls: The actual entity class
         :param name: Name of the application
+
         """
         obj = cls.get(method=method, url=url)
         if not obj:
@@ -30,6 +31,7 @@ class Endpoint(db.Entity):
             return obj, False
 
     @classmethod
+    @db_session
     def update_from_coverage(cls, method, url, **kwargs):
         """
         Gets or creates a coverage entry
@@ -45,6 +47,8 @@ class Endpoint(db.Entity):
         - tags
         """
         obj, created = cls.get_or_create(method=method, url=url)
+        # if created:
+        #     print "Created", method, url
         obj.set(**kwargs)
         return obj
 
@@ -74,7 +78,7 @@ class App(db.Entity):
 
         keys = ['tags', 'level']
         data = {k: kwargs[k] for k in keys if k in kwargs}
-        endpoint.set(**endpoint_data)
+        endpoint.set(**data)
 
         hit, created = EndpointHit.get_or_create(endpoint=endpoint, app=self)
         if 'count' in kwargs:
@@ -82,12 +86,15 @@ class App(db.Entity):
         # dont commit if we dont need to - leave it up to caller
 
     @classmethod
+    @db_session
     def update_from_results(self, appname, results):
         app, created = App.get_or_create(name=appname)
         if created:
             commit()
         for result in results:
-            app.update_from_log(result['method'], result['url'], result)
+            method = result.pop('method')
+            url = result.pop('url')
+            app.update_from_log(method, url, **result)
         commit()
 
 # App - Hi
