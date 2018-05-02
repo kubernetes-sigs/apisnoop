@@ -7,6 +7,7 @@ db = Database()
 class Endpoint(db.Entity):
     method = Required(str)
     url = Required(str)
+    level = Optional(str, default='')
     tags = Optional(str, default='')
     testfile = Optional(str, default='')
     conforms = Optional(str, default='')
