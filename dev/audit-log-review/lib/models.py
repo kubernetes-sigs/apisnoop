@@ -99,5 +99,5 @@ class EndpointHit(db.Entity):
             return obj, False
 
 
-db.bind('sqlite', 'conformance.sqlite', create_db=True)
+db.bind('sqlite', '../conformance.sqlite', create_db=True)
 db.generate_mapping(create_tables=True)
