@@ -25,8 +25,6 @@ from lib import models
 # swagger json defs
 #
 
-prefix_cache = defaultdict(dict)
-
 
 def load_coverage_csv(path):
     with open(path,'rb') as csvfile:
@@ -95,13 +93,13 @@ def generate_count_tree(openapi_spec):
 
     return count_tree
 
-search_cache = {}
-
 def find_openapi_entry(openapi_spec, event):
     url = urlparse(event['requestURI'])
+    hit_cache = openapi_spec['hit_cache']
+    prefix_cache = openapi_spec['prefix_cache']
     # 1) Cached seen before results
-    if url.path in search_cache:
-        return search_cache[url.path]
+    if url.path in hit_cache:
+        return hit_cache[url.path]
     # 2) Indexed by prefix patterns to cut down search time
     for prefix in prefix_cache:
         if prefix is not None and url.path.startswith(prefix):
@@ -113,12 +111,12 @@ def find_openapi_entry(openapi_spec, event):
 
     for regex in paths:
         if re.match(regex, url.path):
-            search_cache[url.path] = openapi_spec['paths'][regex]
+            hit_cache[url.path] = openapi_spec['paths'][regex]
             return openapi_spec['paths'][regex]
         elif re.search(regex, event['requestURI']):
             print("Incomplete match", regex, event['requestURI'])
     # cache failures too
-    search_cache[url.path] = None
+    hit_cache[url.path] = None
     return None
 
 def count_event(count_tree, event, spec_entry):
