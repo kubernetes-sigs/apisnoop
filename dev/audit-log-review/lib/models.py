@@ -1,6 +1,6 @@
 from pony.orm import *
 
-__all__ = ['Endpoint', 'App', 'EndpointHit']
+__all__ = ['Endpoint', 'App', 'EndpointHit', 'commit']
 
 db = Database()
 
@@ -67,18 +67,28 @@ class App(db.Entity):
         else:
             return obj, False
 
-
-    def update_from_log(self, method, url, tags=None, count=0):
+    def update_from_log(self, method, url, **kwargs):
         endpoint, created = Endpoint.get_or_create(method, url)
-        if tags:
-            endpoint.tags = tags
-        # commit changes before m2m query
-        if tags or created:
+        if created:
             commit()
 
+        keys = ['tags', 'level']
+        data = {k: kwargs[k] for k in keys if k in kwargs}
+        endpoint.set(**endpoint_data)
+
         hit, created = EndpointHit.get_or_create(endpoint=endpoint, app=self)
-        hit.count = count
+        if 'count' in kwargs:
+            hit.count = kwargs['count']
         # dont commit if we dont need to - leave it up to caller
+
+    @classmethod
+    def update_from_results(self, appname, results):
+        app, created = App.get_or_create(name=appname)
+        if created:
+            commit()
+        for result in results:
+            app.update_from_log(result['method'], result['url'], result)
+        commit()
 
 # App - Hi
 class EndpointHit(db.Entity):
