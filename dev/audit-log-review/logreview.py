@@ -27,67 +27,6 @@ from lib import models
 
 prefix_cache = defaultdict(dict)
 
-def load_openapi_spec(url):
-    try:
-        openapi_spec = {}
-        url_parsed = urlparse(url)
-        if url_parsed.scheme in ['http', 'https']:
-            swagger = requests.get(url).json()
-        else: # if url_parsed.scheme == ''
-            # treat as file on disk
-            with open(url, "rb") as f:
-                swagger = json.load(f)
-
-        # swagger will now contain json
-
-        openapi_spec['paths'] = {}
-        for path in swagger['paths']:
-            # replace wildcards in {varname} format to a named regex
-            path_regex = re.sub("{([^}]+)}", "(?P<\\1>[^/]+)", path).rstrip('/')
-            if path_regex.endswith("proxy"):
-                path_regex += ".*$"
-            else:
-                path_regex += "$"
-            # use the path regex as the key so that we search for a match easily
-            openapi_spec['paths'][path_regex] = {}
-            openapi_spec['paths'][path_regex]['path'] = path
-            # get the level (alpha/beta/stable) and the version from the path
-            m = re.search("/v(?P<api_version>[0-9]+)(?:(?P<api_level>alpha|beta)(?P<api_level_version>[0-9]+))?", path)
-            if m:
-                extract = m.groupdict()
-
-                level = extract.get("api_level")
-                if level is None:
-                    level = "stable"
-                openapi_spec['paths'][path_regex]['level'] = level
-                openapi_spec['paths'][path_regex]['version'] = extract["api_version"]
-            else:
-                level = "stable"
-                openapi_spec['paths'][path_regex]['level'] = level
-            # methods
-            openapi_spec['paths'][path_regex]['methods'] = {}
-            methods = swagger['paths'][path].keys()
-            for method in methods:
-                if method == "parameters":
-                    continue
-                openapi_spec['paths'][path_regex]['methods'][method] = {}
-                openapi_spec['paths'][path_regex]['methods'][method]['tags'] = sorted(swagger['paths'][path][method].get('tags', list()))
-                # todo - request + response
-
-            # crazy caching using prefixes
-            bits = path.strip("/").split("/", 2)
-            if bits[0] in ["apis", "api"] and len(bits) > 1:
-                prefix_cache["/" + "/".join(bits[0:2])][path_regex] = openapi_spec['paths'][path_regex]
-            else:
-                prefix_cache[None][path_regex] = openapi_spec['paths'][path_regex]
-            # print path, path_regex, re.match(path_regex, path.rstrip('/')) is not None
-        return openapi_spec
-
-    except Exception as e:
-        print("Failed to load openapi spec \"%s\"" % url)
-        raise e
-
-
 
 def load_coverage_csv(path):
     with open(path,'rb') as csvfile:
