@@ -9,6 +9,7 @@ class Endpoint(db.Entity):
     url = Required(str)
     level = Optional(str, default='')
     tags = Optional(str, default='')
+    category = Optional(str, default='')
     testfile = Optional(str, default='')
     conforms = Optional(str, default='')
     questions = Optional(str, default='')
@@ -76,7 +77,7 @@ class App(db.Entity):
         if created:
             commit()
 
-        keys = ['tags', 'level']
+        keys = ['tags', 'level', 'category']
         data = {k: kwargs[k] for k in keys if k in kwargs}
         endpoint.set(**data)
 

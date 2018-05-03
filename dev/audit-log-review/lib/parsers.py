@@ -55,7 +55,15 @@ def load_openapi_spec(url):
                 if method == "parameters":
                     continue
                 openapi_spec['paths'][path_regex]['methods'][method] = {}
-                openapi_spec['paths'][path_regex]['methods'][method]['tags'] = sorted(swagger['paths'][path][method].get('tags', list()))
+                tags = sorted(swagger['paths'][path][method].get('tags', list()))
+                if len(tags) > 0:
+                    openapi_spec['paths'][path_regex]['methods'][method]['tags'] = tags
+                    tag = tags[0]
+                    # just use one tag for category
+                    category = tag.split("_")[0]
+                    openapi_spec['paths'][path_regex]['methods'][method]['category'] = category 
+                else:
+                    openapi_spec['paths'][path_regex]['methods'][method]['category'] = ''
                 # todo - request + response
 
             # crazy caching using prefixes

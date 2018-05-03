@@ -42,7 +42,16 @@ def load_coverage_csv(path):
                 value = row[fromkey].strip()
                 if len(value) > 0:
                     data[tokey] = value
+            m = re.search("/v(?P<api_version>[0-9]+)(?:(?P<api_level>alpha|beta)(?P<api_level_version>[0-9]+))?", url)
+            if m:
+                extract = m.groupdict()
 
+                level = extract.get("api_level")
+                if level is None:
+                    level = "stable"
+                data['level'] = level
+            else:
+                data['level'] = "stable"
             Endpoint.update_from_coverage(method, url, **data)
         # commit changes to Database
         commit()
@@ -62,7 +71,8 @@ def generate_count_tree(openapi_spec):
             count_tree[path]['methods'][method] = {
                 "counter": 0,
                 "fields": {},
-                "tags": endpoint['methods'][method]['tags']
+                "tags": endpoint['methods'][method]['tags'],
+                "category": endpoint['methods'][method]['category']
             }
 
     return count_tree
@@ -113,6 +123,7 @@ def get_count_results(count_tree):
                 'method': method,
                 'level': url_data['level'],
                 'tags': ','.join(method_data['tags']),
+                'category': method_data['category'],
                 'count': method_data['counter']
             }]
 
