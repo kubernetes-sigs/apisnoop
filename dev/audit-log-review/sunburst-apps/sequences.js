@@ -80,8 +80,12 @@ var arc = d3.arc()
 
 // Use d3.text and d3.csvParseRows so that we do not need to have a header
 // row, and can receive the csv as an array of arrays.
-d3.text("output-chart.csv", function(text) {
+d3.text("output-apps.csv", function(text) {
   var csv = d3.csvParseRows(text);
+  var chosenApp = new URL(window.location.href).searchParams.get('app')
+  if (!chosenApp) {
+    window.location = "index.html"
+  }
   var json = buildHierarchy(csv);
   createVisualization(json);
 });
@@ -127,15 +131,14 @@ function createVisualization(json) {
   // Get total size of the tree = value of root node from partition.
   totalSize = path.datum().value;
 
-  var percentage = (100 * root.data.tested / root.data.total).toPrecision(3);
-  d3.select("#reallybigline")
-      .text(percentage + "%")
+  // d3.select("#reallybigline")
+  //     .text(percentage + "%")
   d3.select("#bigline")
-      .text(root.data.tested + " / " + root.data.total + " (" + percentage + " %)")
+      .text(totalSize)
   d3.select("#midline")
-      .text("total");
+      .text("API endpoints accessed");
   d3.select("#smallline")
-      .text("tested")
+      .text("")
 
 
   // set totalSize on the root node
@@ -155,41 +158,30 @@ function mouseover(d) {
   // if (percentage < 0.1) {
   //   percentageString = "< 0.1%";
   // }
-  if (d.children == undefined) {
-    if (d.data.url == "unused") {
-      var percent = (100 * d.data.size / d.parent.data.total).toPrecision(3);
+  // if (d.children == undefined) {
+      // var percent = (100 * d.data.size / d.parent.data.total).toPrecision(3);
 
-      d3.select("#reallybigline")
-          .text(percent + "%")
-      d3.select("#bigline")
-          .text(d.parent.data.untested + " / " + d.parent.data.total)
-      d3.select("#midline")
-          .text(d.parent.data.label);
-      d3.select("#smallline")
-          .text("untested")
-    } else {
-      d3.select("#reallybigline")
-          .html("<img src=\"img/tick.png\">")
-      d3.select("#bigline")
-          .text("Tested")
-      d3.select("#midline")
-          .text(d.data.label);
-      d3.select("#smallline")
-          .text(d.data.url);
-    }
-
-  } else {
-    var percent = (100 * d.data.tested / d.data.total).toPrecision(3);
-    d3.select("#reallybigline")
-        .text(percent + "%")
+      // d3.select("#reallybigline")
+      //     .text(percent + "%")
     d3.select("#bigline")
-        .text(d.data.tested + " / " + d.data.total)
-
+        .text(d.value + " / " + totalSize)
     d3.select("#midline")
         .text(d.data.label);
-    d3.select("#smallline")
-        .text("tested");
-  }
+    // d3.select("#smallline")
+    //     .text("untested")
+
+  // } else {
+  //   // var percent = (100 * d.data.tested / d.data.total).toPrecision(3);
+  //   // d3.select("#reallybigline")
+  //   //     .text(percent + "%")
+  //   d3.select("#bigline")
+  //       .text(d.data.tested + " / " + d.data.total)
+  //
+  //   d3.select("#midline")
+  //       .text(d.data.label);
+  //   d3.select("#smallline")
+  //       .text("tested");
+  // }
 
 
   d3.select("#percentage")
@@ -236,19 +228,12 @@ function mouseleave(d) {
               d3.select(this).on("mouseover", mouseover);
             });
 
-  var root = d
-  while (root.parent) {
-    root = root.parent
-  }
-  var percentage = (100 * root.tested / root.total).toPrecision(3);
-  d3.select("#reallybigline")
-      .text(percentage + "%")
   d3.select("#bigline")
-      .text(root.tested + " / " + root.total)
+      .text(totalSize)
   d3.select("#midline")
-      .text("total");
+      .text("API endpoints accessed");
   d3.select("#smallline")
-      .text("tested")
+      .text("")
 }
 
 function initializeBreadcrumbTrail() {
@@ -407,9 +392,6 @@ function createNode(name, attrs) {
   node = {
     "name": name,
     "children": [],
-    'tested': 0,
-    'untested': 0,
-    'total': 0,
   };
   if (attrs) {
     node = Object.assign(node, attrs)
@@ -430,10 +412,17 @@ function createEndNode(name, attrs) {
 
 function buildHierarchy(csv) {
   var root = createNode('root')
+  var chosenApp = new URL(window.location.href).searchParams.get('app')
   for (var i = 0; i < csv.length; i++) {
-    var level = csv[i][0];
-    var category = csv[i][1];
-    var method_url = csv[i][2];
+    var app = csv[i][0]
+    console.log(chosenApp)
+    if (chosenApp && chosenApp != app) {
+      continue; // skip if we have chosen an app
+    } else if (app == "sonobuoy-e2e") {
+      //continue // skip sonobuoy its too big
+    }
+    var level = csv[i][1];
+    var category = csv[i][2];
     var size = +csv[i][3];
     if (isNaN(size)) { // e.g. if this is a header row
       continue;
@@ -441,9 +430,10 @@ function buildHierarchy(csv) {
 
     var node = findChild(root, level)
     if (node == null) {
+      console.log('creating node for level ', category)
       node = createNode(level, {
         'color': 'level.' + level,
-        'label': level,
+        'label': level
       })
       root['children'].push(node)
     }
@@ -451,36 +441,14 @@ function buildHierarchy(csv) {
 
     var node = findChild(parentNode, category)
     if (node == null) {
+      console.log('creating node for cat ', category)
       node = createNode(category,  {
         'color': 'category.' + category,
         'label': level + ' ' + category,
+        'size': size
       })
       parentNode['children'].push(node)
     }
-    parentNode = categoryNode = node
-
-    var node = findChild(parentNode, method_url)
-    if (node == null) {
-      if (method_url == 'unused') {
-        var attrs = {'color': 'category.unused'}
-        categoryNode.untested += size
-        levelNode.untested += size
-        root.untested += size
-      } else {
-        var attrs = {'color': 'category.' + category}
-        categoryNode.tested += size
-        levelNode.tested += size
-        root.tested += size
-      }
-      categoryNode.total += size
-      levelNode.total += size
-      root.total += size
-      attrs.label = level + ' ' + category
-      attrs.url = method_url
-      node = createEndNode(method_url, attrs)
-      parentNode['children'].push(node)
-    }
-    node['size'] = size
   }
   return root;
 };
