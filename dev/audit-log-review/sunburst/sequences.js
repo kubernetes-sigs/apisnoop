@@ -1,6 +1,11 @@
+// Author: Rohan Fletcher <rohan@ii.coop>
+
+// Based on work from https://bl.ocks.org/kerryrodden/766f8f6d31f645c39f488a0befa1e3c8
+
+
 // Dimensions of sunburst.
-var width = 1200;
-var height = 900;
+var width = 900;
+var height = 650;
 var radius = Math.min(width, height) / 2;
 
 // Breadcrumb dimensions: width, height, spacing, width of tip/tail.
@@ -13,7 +18,7 @@ var colors = {
   "level.alpha": "#e6194b",
   "level.beta": "#0082c8",
   "level.stable": "#3cb44b",
-  "unused": "#c0c0c0"
+  "category.unused": "#e0e0e0"
 }
 
 categories = [
@@ -102,9 +107,9 @@ function createVisualization(json) {
 
   // For efficiency, filter nodes to keep only those large enough to see.
   var nodes = partition(root).descendants()
-      .filter(function(d) {
-          return (d.x1 - d.x0 > 0.002); // 0.005 radians = 0.29 degrees
-      });
+      // .filter(function(d) {
+      //     return (d.x1 - d.x0 > 0.002); // 0.005 radians = 0.29 degrees
+      // });
 
   var path = vis.data([json]).selectAll("path")
       .data(nodes)
@@ -121,16 +126,70 @@ function createVisualization(json) {
 
   // Get total size of the tree = value of root node from partition.
   totalSize = path.datum().value;
+
+  var percentage = (100 * root.data.tested / root.data.total).toPrecision(3);
+
+  d3.select("#bigline")
+      .text(root.data.tested + " / " + root.data.total + " (" + percentage + " %)")
+  d3.select("#midline")
+      .text("total");
+  d3.select("#smallline")
+      .text("tested")
+
+
+  // set totalSize on the root node
+  // LABEL no mouseover - 222 / 999 API endpoints + methods tested
+  // LABEL mouseover label - 111 / 333 stable tested (999 total)
+  // LABEL mouseover category - 45 / 139 stable category tested (999 total)
+  // LABEL mouseover test - url tested
+  // LABEL mouseover untested - 88 / 139 stable category untested
+
  };
 
 // Fade all but the current sequence, and show it in the breadcrumb trail.
 function mouseover(d) {
 
   var percentage = (100 * d.value / totalSize).toPrecision(3);
-  var percentageString = percentage + "%";
-  if (percentage < 0.1) {
-    percentageString = "< 0.1%";
+  var percentageString = d.value + " / " + totalSize // percentage + "%";
+  // if (percentage < 0.1) {
+  //   percentageString = "< 0.1%";
+  // }
+  if (d.children == undefined) {
+    if (d.data.url == "unused") {
+      var percent = (100 * d.data.size / d.parent.data.total).toPrecision(3);
+
+      d3.select("#reallybigline")
+          .text(percent + "%")
+      d3.select("#bigline")
+          .text(d.parent.data.untested + " / " + d.parent.data.total)
+      d3.select("#midline")
+          .text(d.parent.data.label);
+      d3.select("#smallline")
+          .text("untested")
+    } else {
+      d3.select("#reallybigline")
+          .text("✅")
+      d3.select("#bigline")
+          .text("Tested")
+      d3.select("#midline")
+          .text(d.data.label);
+      d3.select("#smallline")
+          .text(d.data.url);
+    }
+
+  } else {
+    var percent = (100 * d.data.tested / d.data.total).toPrecision(3);
+    d3.select("#reallybigline")
+        .text(percent + "%")
+    d3.select("#bigline")
+        .text(d.data.tested + " / " + d.data.total)
+
+    d3.select("#midline")
+        .text(d.data.label);
+    d3.select("#smallline")
+        .text("tested");
   }
+
 
   d3.select("#percentage")
       .text(percentageString);
@@ -176,8 +235,17 @@ function mouseleave(d) {
               d3.select(this).on("mouseover", mouseover);
             });
 
-  d3.select("#explanation")
-      .style("visibility", "hidden");
+  var root = d
+  while (root.parent) {
+    root = root.parent
+  }
+  var percentage = (100 * root.tested / root.total).toPrecision(3);
+  d3.select("#bigline")
+      .text(root.tested + " / " + root.total)
+  d3.select("#midline")
+      .text("total");
+  d3.select("#smallline")
+      .text("tested")
 }
 
 function initializeBreadcrumbTrail() {
@@ -254,19 +322,39 @@ function drawLegend() {
 
   // Dimensions of legend item: width, height, spacing, radius of rounded rect.
   var li = {
-    w: 75, h: 30, s: 3, r: 3
+    w: 150, h: 20, s: 3, r: 3
   };
 
   var legend = d3.select("#legend").append("svg:svg")
       .attr("width", li.w)
       .attr("height", d3.keys(colors).length * (li.h + li.s));
 
+  var entries = d3.entries(colors)
+
+  var levels = []
+  var categories = []
+
+  for (idx = 0; idx < entries.length; idx++) {
+    obj = entries[idx]
+    bits = obj.key.split(".")
+    obj.key = bits[1]
+    obj.group = bits[0]
+    if (bits[0] == "level"){
+      levels.push(obj)
+    } else if (bits[0] == "category") {
+      categories.push(obj)
+    }
+  }
+
+  levels.push({key: "", value: "#fff"})
+  entries = entries.concat(categories)
+
   var g = legend.selectAll("g")
-      .data(d3.entries(colors))
+      .data(entries)
       .enter().append("svg:g")
       .attr("transform", function(d, i) {
               return "translate(0," + i * (li.h + li.s) + ")";
-           });
+           })
 
   g.append("svg:rect")
       .attr("rx", li.r)
@@ -281,6 +369,9 @@ function drawLegend() {
       .attr("dy", "0.35em")
       .attr("text-anchor", "middle")
       .text(function(d) { return d.key; });
+
+  var legend = d3.select("#legend");
+  legend.style("visibility", "");
 }
 
 function toggleLegend() {
@@ -312,7 +403,10 @@ function findChild(parentNode, nodeName) {
 function createNode(name, attrs) {
   node = {
     "name": name,
-    "children": []
+    "children": [],
+    'tested': 0,
+    'untested': 0,
+    'total': 0,
   };
   if (attrs) {
     node = Object.assign(node, attrs)
@@ -322,7 +416,7 @@ function createNode(name, attrs) {
 
 function createEndNode(name, attrs) {
   node = {
-    "name": name
+    "name": name,
   };
   if (attrs) {
     node = Object.assign(node, attrs)
@@ -346,30 +440,39 @@ function buildHierarchy(csv) {
     if (node == null) {
       node = createNode(level, {
         'color': 'level.' + level,
-        'label': level
+        'label': level,
       })
       root['children'].push(node)
     }
-    parentNode = node
+    parentNode = levelNode = node
 
     var node = findChild(parentNode, category)
     if (node == null) {
       node = createNode(category,  {
         'color': 'category.' + category,
-        'label': level + ' / ' + category
+        'label': level + ' ' + category,
       })
       parentNode['children'].push(node)
     }
-    parentNode = node
+    parentNode = categoryNode = node
 
     var node = findChild(parentNode, method_url)
     if (node == null) {
       if (method_url == 'unused') {
-        var attrs = {'color': 'unused'}
+        var attrs = {'color': 'category.unused'}
+        categoryNode.untested += size
+        levelNode.untested += size
+        root.untested += size
       } else {
         var attrs = {'color': 'category.' + category}
+        categoryNode.tested += size
+        levelNode.tested += size
+        root.tested += size
       }
-      attrs.label = level + ' / ' + category
+      categoryNode.total += size
+      levelNode.total += size
+      root.total += size
+      attrs.label = level + ' ' + category
       attrs.url = method_url
       node = createEndNode(method_url, attrs)
       parentNode['children'].push(node)
