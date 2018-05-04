@@ -97,7 +97,16 @@ class App(db.Entity):
             url = result.pop('url')
             app.update_from_log(method, url, **result)
         commit()
-
+    @classmethod
+    @db_session
+    def remove_from_db(cls, appname):
+        app = App.get(name=appname)
+        if app is None:
+            return False
+        EndpointHit.select(lambda x: x.app == app).delete(bulk=True)
+        app.delete()
+        commit()
+        return True
 # App - Hi
 class EndpointHit(db.Entity):
     endpoint = Required(Endpoint)

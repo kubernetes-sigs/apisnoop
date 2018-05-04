@@ -183,6 +183,7 @@ def usage_and_exit():
     print "logreview.py help"
     print "logreview.py load-coverage <filename>"
     print "logreview.py load-audit <filename> <appname>"
+    print "logreview.py remove-audit <appname>"
     print "logreview.py generate-report <output-filename>"
     exit(1)
 
@@ -228,5 +229,16 @@ def main():
         print_report(report)
         return
 
+    elif sys.argv[1] == 'remove-audit':
+        if len(sys.argv) < 3:
+            usage_and_exit
+        appname = sys.argv[2]
+        found = App.remove_from_db(appname)
+        if not found:
+            print "%s does not exist" % appname
+            exit(1)
+        else:
+            print "%s deleted" % appname
+        return
 if __name__ == "__main__":
     main()
