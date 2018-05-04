@@ -128,7 +128,8 @@ function createVisualization(json) {
   totalSize = path.datum().value;
 
   var percentage = (100 * root.data.tested / root.data.total).toPrecision(3);
-
+  d3.select("#reallybigline")
+      .text(percentage + "%")
   d3.select("#bigline")
       .text(root.data.tested + " / " + root.data.total + " (" + percentage + " %)")
   d3.select("#midline")
@@ -168,7 +169,7 @@ function mouseover(d) {
           .text("untested")
     } else {
       d3.select("#reallybigline")
-          .text("✅")
+          .html("<img src=\"img/tick.png\">")
       d3.select("#bigline")
           .text("Tested")
       d3.select("#midline")
@@ -229,7 +230,7 @@ function mouseleave(d) {
   // Transition each segment to full opacity and then reactivate it.
   d3.selectAll("path")
       .transition()
-      .duration(1000)
+      .duration(500)
       .style("opacity", 1)
       .on("end", function() {
               d3.select(this).on("mouseover", mouseover);
@@ -240,6 +241,8 @@ function mouseleave(d) {
     root = root.parent
   }
   var percentage = (100 * root.tested / root.total).toPrecision(3);
+  d3.select("#reallybigline")
+      .text(percentage + "%")
   d3.select("#bigline")
       .text(root.tested + " / " + root.total)
   d3.select("#midline")
