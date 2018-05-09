@@ -33,7 +33,8 @@ class Endpoint(db.Entity):
 
     @classmethod
     @db_session
-    def update_from_coverage(cls, method, url, **kwargs):
+    def update_from_coverage(cls, rows):
+        # method, url, **kwargs):
         """
         Gets or creates a coverage entry
 
@@ -47,10 +48,14 @@ class Endpoint(db.Entity):
         - questions
         - tags
         """
-        obj, created = cls.get_or_create(method=method, url=url)
-        # if created:
-        #     print "Created", method, url
-        obj.set(**kwargs)
+        for data in rows:
+            method = data.pop('method')
+            url = data.pop('url')
+            obj, created = cls.get_or_create(method=method, url=url)
+            # if created:
+            #     print "Created", method, url
+            obj.set(**data)
+        commit()
         return obj
 
 
@@ -97,6 +102,7 @@ class App(db.Entity):
             url = result.pop('url')
             app.update_from_log(method, url, **result)
         commit()
+
     @classmethod
     @db_session
     def remove_from_db(cls, appname):

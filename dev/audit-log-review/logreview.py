@@ -27,36 +27,6 @@ from lib.parsers import *
 #
 
 
-def load_coverage_csv(path):
-    with open(path,'rb') as csvfile:
-        for row in csv.DictReader(csvfile):
-            method = row['METHOD'].lower()
-            url = row['URL']
-            data = {}
-            keymap = {
-                'Conformance?': 'conforms',
-                'Open questions': 'questions',
-                'Test file': 'testfile'
-            }
-            for fromkey, tokey in keymap.items():
-                value = row[fromkey].strip()
-                if len(value) > 0:
-                    data[tokey] = value
-            m = re.search("/v(?P<api_version>[0-9]+)(?:(?P<api_level>alpha|beta)(?P<api_level_version>[0-9]+))?", url)
-            if m:
-                extract = m.groupdict()
-
-                level = extract.get("api_level")
-                if level is None:
-                    level = "stable"
-                data['level'] = level
-            else:
-                data['level'] = "stable"
-            Endpoint.update_from_coverage(method, url, **data)
-        # commit changes to Database
-        commit()
-
-
 def generate_count_tree(openapi_spec):
     count_tree = {}
 
@@ -185,7 +155,9 @@ def usage_and_exit():
     print "logreview.py load-audit <filename> <appname>"
     print "logreview.py remove-audit <appname>"
     print "logreview.py generate-report <output-filename>"
+    print "logreview.py start-server"
     exit(1)
+
 
 def main():
     ## Commands
@@ -205,7 +177,8 @@ def main():
         if not os.path.isfile(filename):
             print "Invalid filename given"
             usage_and_exit()
-        load_coverage_csv(filename)
+        rows = load_coverage_csv(filename)
+        Endpoint.update_from_coverage(rows)
         return # we are done
     elif sys.argv[1] == 'load-audit':
         if len(sys.argv) < 4:
@@ -219,16 +192,17 @@ def main():
         audit_log = load_audit_log(filename)
         report = generate_coverage_report(openapi_spec, audit_log)
         App.update_from_results(appname, report['results'])
-
         return # we are done
     elif sys.argv[1] == 'generate-report':
+        print "Not implemented"
+        return
         if len(sys.argv) < 3:
             usage_and_exit()
         filename = sys.argv[2]
+        openapi_spec = load_openapi_spec('swagger.json')
         generate_coverage_report(openapi_spec)
         print_report(report)
         return
-
     elif sys.argv[1] == 'remove-audit':
         if len(sys.argv) < 3:
             usage_and_exit
@@ -239,6 +213,10 @@ def main():
             exit(1)
         else:
             print "%s deleted" % appname
+        return
+
+    elif sys.argv[1] == 'start-server':
+
         return
 if __name__ == "__main__":
     main()
