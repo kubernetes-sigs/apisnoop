@@ -4,7 +4,7 @@
 
 
 // Dimensions of sunburst.
-var width = 900;
+var width = 650;
 var height = 650;
 var radius = Math.min(width, height) / 2;
 
@@ -86,6 +86,10 @@ d3.text("output-chart.csv", function(text) {
   createVisualization(json);
 });
 
+function setDefaultMessage() {
+
+}
+
 // Main function to draw and set up the visualization, once we have the data.
 function createVisualization(json) {
 
@@ -123,6 +127,7 @@ function createVisualization(json) {
 
   // Add the mouseleave handler to the bounding circle.
   d3.select("#container").on("mouseleave", mouseleave);
+  d3.select("#legend").on("mouseleave", mouseleaveKey);
 
   // Get total size of the tree = value of root node from partition.
   totalSize = path.datum().value;
@@ -146,6 +151,85 @@ function createVisualization(json) {
   // LABEL mouseover untested - 88 / 139 stable category untested
 
  };
+
+ function mouseoverKey(d) {
+   var group = d.group
+   var subgroup = d.key
+   var color = group + "." + subgroup
+   d3.selectAll("path").style("opacity", 0.1)
+   var objs = d3.selectAll("path").filter(function(node) {
+     return (node.data.color == color)
+   })
+   objs.style("opacity", 1.0)
+   if (color == "category.unused") {
+     var root = d3.select("path").datum()
+     total = root.data.total
+     untested = root.data.untested
+     tested = root.data.tested
+   } else {
+     total = 0
+     untested = 0
+     tested = 0
+     objs.each(function(obj) {
+       if (obj.data.url) {
+         return
+       }
+       total += obj.data.total
+       untested += obj.data.untested
+       tested += obj.data.tested
+     })
+   }
+
+   if (subgroup == "unused") {
+     var chosen_value = untested
+     var chosen_label = "untested"
+   } else {
+     var chosen_value = tested
+     var chosen_label = "tested"
+   }
+
+   var percent = (100 * chosen_value / total).toPrecision(3);
+
+   d3.select("#reallybigline")
+       .text(percent + "%")
+   d3.select("#bigline")
+       .text(chosen_value + " / " + total)
+   d3.select("#midline")
+       .text(subgroup + " " + group);
+   d3.select("#smallline")
+       .text(chosen_label)
+ }
+
+ function mouseleaveKey(d) {
+
+   // Hide the breadcrumb trail
+   d3.select("#trail")
+       .style("visibility", "hidden");
+
+   // Deactivate all segments during transition.
+   d3.selectAll("path").on("mouseover", null);
+
+   // Transition each segment to full opacity and then reactivate it.
+   d3.selectAll("path")
+       .transition()
+       .duration(100)
+       .style("opacity", 1)
+       .on("end", function() {
+               d3.select(this).on("mouseover", mouseover);
+             });
+   //
+   var root = d3.selectAll("path").datum()
+   var percentage = (100 * root.data.tested / root.data.total).toPrecision(3);
+   d3.select("#reallybigline")
+       .text(percentage + "%")
+   d3.select("#bigline")
+       .text(root.data.tested + " / " + root.data.total)
+   d3.select("#midline")
+       .text("total");
+   d3.select("#smallline")
+       .text("tested")
+
+}
 
 // Fade all but the current sequence, and show it in the breadcrumb trail.
 function mouseover(d) {
@@ -207,7 +291,7 @@ function mouseover(d) {
 
   // Fade all the segments.
   d3.selectAll("path")
-      .style("opacity", 0.3);
+      .style("opacity", 0.1);
 
   // Then highlight only those that are an ancestor of the current segment.
   vis.selectAll("path")
@@ -230,7 +314,7 @@ function mouseleave(d) {
   // Transition each segment to full opacity and then reactivate it.
   d3.selectAll("path")
       .transition()
-      .duration(500)
+      .duration(100)
       .style("opacity", 1)
       .on("end", function() {
               d3.select(this).on("mouseover", mouseover);
@@ -325,7 +409,7 @@ function drawLegend() {
 
   // Dimensions of legend item: width, height, spacing, radius of rounded rect.
   var li = {
-    w: 150, h: 20, s: 3, r: 3
+    w: 150, h: 23, s: 3, r: 3
   };
 
   var legend = d3.select("#legend").append("svg:svg")
@@ -357,7 +441,7 @@ function drawLegend() {
       .enter().append("svg:g")
       .attr("transform", function(d, i) {
               return "translate(0," + i * (li.h + li.s) + ")";
-           })
+           }).on("mouseover", mouseoverKey);
 
   g.append("svg:rect")
       .attr("rx", li.r)
