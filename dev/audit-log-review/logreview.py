@@ -19,7 +19,7 @@ from lib.parsers import *
 # https://github.com/kubernetes/kubernetes/pull/50627/files
 
 
-# "https://raw.githubusercontent.com/kubernetes/kubernetes/v1.9.6/api/openapi-spec/swagger.json"
+OPENAPI_SPEC_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/v1.9.6/api/openapi-spec/swagger.json"
 
 # inputs
 # audit log
@@ -188,7 +188,7 @@ def main():
             print "Invalid filename given"
             usage_and_exit()
         appname = sys.argv[3]
-        openapi_spec = load_openapi_spec('swagger.json')
+        openapi_spec = load_openapi_spec(OPENAPI_SPEC_URL)
         audit_log = load_audit_log(filename)
         report = generate_coverage_report(openapi_spec, audit_log)
         App.update_from_results(appname, report['results'])
@@ -199,7 +199,7 @@ def main():
         if len(sys.argv) < 3:
             usage_and_exit()
         filename = sys.argv[2]
-        openapi_spec = load_openapi_spec('swagger.json')
+        openapi_spec = load_openapi_spec(OPENAPI_SPEC_URL)
         generate_coverage_report(openapi_spec)
         print_report(report)
         return

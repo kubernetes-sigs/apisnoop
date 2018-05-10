@@ -2,19 +2,32 @@
 import re
 import json
 import csv
+import os
 
 import requests
+
+import hashlib
 
 from urlparse import urlparse
 from collections import defaultdict
 
 __all__ = ['load_openapi_spec', 'load_audit_log', 'load_coverage_csv']
 
-def load_swagger_file(url):
+def load_swagger_file(url, cache=False):
     """Load a swagger file from path or URL"""
     url_parsed = urlparse(url)
     if url_parsed.scheme in ['http', 'https']:
-        swagger = requests.get(url).json()
+        if cache:
+            key = hashlib.md5(url).hexdigest()
+            if not os.path.exists("swagger_%s.json" % key):
+                swagger = requests.get(url).json()
+                with open("swagger_%s.json" % key, "wb") as f:
+                    json.dump(swagger, f)
+            else:
+                with open("swagger_%s.json" % key, "rb") as f:
+                    swagger = json.load(f)
+        else:
+            swagger = requests.get(url).json()
     else: # treat as file on disk
         with open(url, "rb") as f:
             swagger = json.load(f)
@@ -45,7 +58,7 @@ def load_openapi_spec(url):
     # try:
     openapi_spec = {}
 
-    swagger = load_swagger_file(url)
+    swagger = load_swagger_file(url, cache=True)
     openapi_spec['paths'] = {}
     openapi_spec['prefix_cache'] = defaultdict(dict)
     openapi_spec['hit_cache'] = {}
