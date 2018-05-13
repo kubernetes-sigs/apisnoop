@@ -26,6 +26,11 @@ OPENAPI_SPEC_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/v1.9
 # swagger json defs
 #
 
+def create_folders():
+    for name in ['cache', 'output']:
+        if not os.path.exists(name):
+            os.mkdir(name)
+
 
 def generate_count_tree(openapi_spec):
     count_tree = {}
@@ -168,6 +173,9 @@ def main():
 
     if len(sys.argv) < 2:
         usage_and_exit()
+    # create folder structure on disk
+    create_folders()
+    # process 
     if sys.argv[1] == 'help':
         usage_and_exit()
     elif sys.argv[1] == 'load-coverage':

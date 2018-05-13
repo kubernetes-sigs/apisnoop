@@ -19,12 +19,13 @@ def load_swagger_file(url, cache=False):
     if url_parsed.scheme in ['http', 'https']:
         if cache:
             key = hashlib.md5(url).hexdigest()
-            if not os.path.exists("swagger_%s.json" % key):
+            cache_path = os.path.join('cache', "swagger_%s.json" % key)
+            if not os.path.exists(cache_path):
                 swagger = requests.get(url).json()
-                with open("swagger_%s.json" % key, "wb") as f:
+                with open(cache_path, "wb") as f:
                     json.dump(swagger, f)
             else:
-                with open("swagger_%s.json" % key, "rb") as f:
+                with open(cache_path, "rb") as f:
                     swagger = json.load(f)
         else:
             swagger = requests.get(url).json()
