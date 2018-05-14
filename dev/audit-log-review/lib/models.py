@@ -1,6 +1,6 @@
 from pony.orm import *
 
-__all__ = ['Endpoint', 'App', 'EndpointHit', 'commit']
+__all__ = ['Endpoint', 'App', 'EndpointHit', 'commit', 'db_session', 'desc', 'count', 'select']
 
 db = Database()
 

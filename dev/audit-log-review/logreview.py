@@ -15,6 +15,7 @@ from pprint import pprint
 
 from lib.models import *
 from lib.parsers import *
+from lib import exports
 
 # https://github.com/kubernetes/kubernetes/pull/50627/files
 
@@ -25,6 +26,11 @@ OPENAPI_SPEC_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/v1.9
 # audit log
 # swagger json defs
 #
+
+def create_folders():
+    for name in ['cache', 'output']:
+        if not os.path.exists(name):
+            os.mkdir(name)
 
 
 def generate_count_tree(openapi_spec):
@@ -150,12 +156,19 @@ def generate_coverage_report(openapi_spec, audit_log):
 
 def usage_and_exit():
     print "Usage:"
-    print "logreview.py help"
-    print "logreview.py load-coverage <filename>"
-    print "logreview.py load-audit <filename> <appname>"
-    print "logreview.py remove-audit <appname>"
-    print "logreview.py generate-report <output-filename>"
-    print "logreview.py start-server"
+    print "  logreview.py help"
+    print "    - Show this message."
+    print "  logreview.py load-coverage <filename>"
+    print "    - Load Google Docs test coverage spreadsheet from CSV."
+    print "  logreview.py load-audit <filename> <appname>"
+    print "    - Load Kubernetes audit log for app into database."
+    print "  logreview.py remove-audit <appname>"
+    print "    - Delete Kubernetes audit log for app from database."
+    print "  logreview.py export-data <exporter-name> <output-filename> <appname (optional)>"
+    print "    - Export audit log information from database as CSV files."
+    print "    - Available exporters: " + ", ".join(exports.list_exports())
+    print "  logreview.py start-server"
+    print "    - Start web server to display data visualisations."
     exit(1)
 
 
@@ -168,6 +181,9 @@ def main():
 
     if len(sys.argv) < 2:
         usage_and_exit()
+    # create folder structure on disk
+    create_folders()
+    # process
     if sys.argv[1] == 'help':
         usage_and_exit()
     elif sys.argv[1] == 'load-coverage':
@@ -193,15 +209,18 @@ def main():
         report = generate_coverage_report(openapi_spec, audit_log)
         App.update_from_results(appname, report['results'])
         return # we are done
-    elif sys.argv[1] == 'generate-report':
-        print "Not implemented"
-        return
-        if len(sys.argv) < 3:
+    elif sys.argv[1] == 'export-data':
+        if len(sys.argv) < 4:
             usage_and_exit()
-        filename = sys.argv[2]
-        openapi_spec = load_openapi_spec(OPENAPI_SPEC_URL)
-        generate_coverage_report(openapi_spec)
-        print_report(report)
+        exporter_name = sys.argv[2]
+        output_path = sys.argv[3]
+        other_args = sys.argv[4:]
+        try:
+            exports.export_data(exporter_name, output_path, *other_args)
+            print "Exported to %s successfully" % output_path
+        except Exception as e:
+            print e.message
+            raise
         return
     elif sys.argv[1] == 'remove-audit':
         if len(sys.argv) < 3:
