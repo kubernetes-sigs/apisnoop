@@ -155,12 +155,19 @@ def generate_coverage_report(openapi_spec, audit_log):
 
 def usage_and_exit():
     print "Usage:"
-    print "logreview.py help"
-    print "logreview.py load-coverage <filename>"
-    print "logreview.py load-audit <filename> <appname>"
-    print "logreview.py remove-audit <appname>"
-    print "logreview.py generate-report <output-filename>"
-    print "logreview.py start-server"
+    print "  logreview.py help"
+    print "    - Show this message."
+    print "  logreview.py load-coverage <filename>"
+    print "    - Load Google Docs test coverage spreadsheet from CSV."
+    print "  logreview.py load-audit <filename> <appname>"
+    print "    - Load Kubernetes audit log for app into database."
+    print "  logreview.py remove-audit <appname>"
+    print "    - Delete Kubernetes audit log for app from database."
+    print "  logreview.py export-data <exporter-name> <output-filename> <appname (optional)>"
+    print "    - Export audit log information from database as CSV files."
+    print "    - Available exporters: " + ", ".join(exports.list_exports())
+    print "  logreview.py start-server"
+    print "    - Start web server to display data visualisations."
     exit(1)
 
 
