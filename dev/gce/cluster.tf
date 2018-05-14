@@ -3,11 +3,9 @@ provider "google" {
   region      = "australia-southeast1"
 }
 module "k8s" {
-  source            = "../../../terraform-google-k8s-gce"
-  #source            = "github.com/ii/terraform-google-k8s-gce?ref=audit-webhook"
+  #source            = "../../../terraform-google-k8s-gce"
+  source            = "github.com/ii/terraform-google-k8s-gce?ref=audit-webhook"
   name              = "apisnoop"
-  # network           = "snoopnet"
-  # subnetwork           = "snoopsubnet"
   region            = "australia-southeast1"
   zone              = "australia-southeast1-c"
   k8s_version       = "1.9.6"
