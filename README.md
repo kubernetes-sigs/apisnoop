@@ -4,42 +4,8 @@ Snooping on the Kubernetes OpenAPI communications
 
 ## Enabling Audit Logging
 
-### GCE / terraform+kubeadm
-
-We [modified](https://github.com/GoogleCloudPlatform/terraform-google-k8s-gce/pull/13/files) [GoogleCloudPlatform/terraform-google-gce](https://github.com/GoogleCloudPlatform/terraform-google-k8s-gce) to use the AdvancedAuditing / Audit feature gates available in kubernetes/kubeadm.
-Thanks @danisla!
-
-To utilize it, create a tf config using the above module.
-Be sure to set your project and location.
-
-```terraform
-# save as my-auditable-cluster.tf
-provider "google" {
-  project     = "ii-coop"
-  region      = "us-central1"
-}
-module "k8s" {
-  source      = "github.com/ii/terraform-google-k8s-gce?ref=audit-logging"
-  name        = "apisnoop"
-  k8s_version = "1.10.2"
-}
-```
-
-We can monitor our cloud-init progress on the master, then collect the audit logs directly from the apiserver (easier if we only have one master).
-
-```
-terraform init
-terraform apply
-MASTER_NODE=$(gcloud compute instances list | grep apisnoop.\*master | awk '{print $1}')
-gcloud compute ssh $MASTER_NODE --command "sudo tail -f /var/log/cloud-init-output.log /var/log/cloud-init.log"
-# master node is up when you see: service "kubernetes-dashboard" created
-```
-
-Find the apiserver container and tail the audit log to see every api request.
-
-```
-gcloud compute ssh $MASTER_NODE --command "sudo docker exec \$(sudo docker ps -a | grep kube-apiserver-amd64 | awk '{print \$1}') tail -f /var/log/kubernetes/audit/audit.log"
-```
+kubeadm supports advanced audit logging in 1.10 and later.
+Here are two examples using that approach:
 
 ### Packet / kubicorn+kubeadm
 
@@ -77,6 +43,43 @@ ssh root@$MASTER_NODE tail -f /var/log/audit/audit.log
 -----
 
 
+### GCE / terraform+kubeadm
+
+We [modified](https://github.com/GoogleCloudPlatform/terraform-google-k8s-gce/pull/13/files) [GoogleCloudPlatform/terraform-google-gce](https://github.com/GoogleCloudPlatform/terraform-google-k8s-gce) to use the AdvancedAuditing / Audit feature gates available in kubernetes/kubeadm.
+Thanks @danisla!
+
+To utilize it, create a tf config using the above module.
+Be sure to set your project and location.
+
+```terraform
+# save as my-auditable-cluster.tf
+provider "google" {
+  project     = "ii-coop"
+  region      = "us-central1"
+}
+module "k8s" {
+  source      = "github.com/ii/terraform-google-k8s-gce?ref=audit-logging"
+  name        = "apisnoop"
+  k8s_version = "1.10.2"
+}
+```
+
+We can monitor our cloud-init progress on the master, then collect the audit logs directly from the apiserver (easier if we only have one master).
+
+```
+terraform init
+terraform apply
+MASTER_NODE=$(gcloud compute instances list | grep apisnoop.\*master | awk '{print $1}')
+gcloud compute ssh $MASTER_NODE --command "sudo tail -f /var/log/cloud-init-output.log /var/log/cloud-init.log"
+# master node is up when you see: service "kubernetes-dashboard" created
+```
+
+Find the apiserver container and tail the audit log to see every api request.
+
+```
+gcloud compute ssh $MASTER_NODE --command "sudo docker exec \$(sudo docker ps -a | grep kube-apiserver-amd64 | awk '{print \$1}') tail -f /var/log/kubernetes/audit/audit.log"
+```
+
 ## Auditing your KAPIC
 ### Capturing audit logs while your KAPIC is running
 
@@ -100,8 +103,11 @@ helm install $REPO/$KAPP \
 ```
 
 At this point, drive the KAPIC with 'helm test' or it's own e2e suite.
-Stop the logging, and optionally perform some filtering. ([gron](https://github.com/tomnomnom/gron) may prove useful)
 
+### Filtering your audit logs
+Audit logs record everything happening on the API server.
+We hope to make filtering for a particular KAPIC easier in the future.
+Until then [gron](https://github.com/tomnomnom/gron) may prove useful.
 
 ## Loading audit logs into APISnoop
 
