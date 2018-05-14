@@ -63,18 +63,18 @@ apiServerCertSANs:
 - ${PRIVATEIP}
 featureGates:
   Auditing: true
+apiServerExtraArgs:
+  feature-gates: "${FEATURE_GATES}"
+  secure-port: "${PORT}"
+  advertise-address: ${PUBLICIP}
 controllerManagerExtraArgs:
   cluster-name: ii
   allocate-node-cidrs: "true"
   cidr-allocator-type: "RangeAllocator"
   cluster-cidr: ${POD_NETWORK}
-  feature-gates: ${FEATURE_GATES}
+  feature-gates: "${FEATURE_GATES}"
 schedulerExtraArgs:
-  feature-gates: ${FEATURE_GATES}
-apiServerExtraArgs:
-  bind-port: ${PORT}
-  advertise-address: ${PUBLICIP}
-  feature-gates: ${FEATURE_GATES}
+  feature-gates: "${FEATURE_GATES}"
 auditPolicy:
   path: "/etc/kubernetes/audit-policy.yaml"
   logDir: "/var/log/audit"
