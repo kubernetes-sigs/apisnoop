@@ -40,9 +40,6 @@ ssh root@$MASTER_NODE tail -f /var/log/cloud-init-output.log
 ssh root@$MASTER_NODE tail -f /var/log/audit/audit.log
 ```
 
------
-
-
 ### GCE / terraform+kubeadm
 
 We [modified](https://github.com/GoogleCloudPlatform/terraform-google-k8s-gce/pull/13/files) [GoogleCloudPlatform/terraform-google-gce](https://github.com/GoogleCloudPlatform/terraform-google-k8s-gce) to use the AdvancedAuditing / Audit feature gates available in kubernetes/kubeadm.
@@ -52,6 +49,8 @@ To utilize it, create a tf config using the above module.
 Be sure to set your project and location.
 
 ```terraform
+export CLUSTERNAME=foo
+cat <EOF >>my.tf
 # save as my-auditable-cluster.tf
 provider "google" {
   project     = "ii-coop"
@@ -59,9 +58,10 @@ provider "google" {
 }
 module "k8s" {
   source      = "github.com/ii/terraform-google-k8s-gce?ref=audit-logging"
-  name        = "apisnoop"
+  name        = "${CLUSTERNAME}"
   k8s_version = "1.10.2"
 }
+EOF
 ```
 
 We can monitor our cloud-init progress on the master, then collect the audit logs directly from the apiserver (easier if we only have one master).
@@ -69,15 +69,32 @@ We can monitor our cloud-init progress on the master, then collect the audit log
 ```
 terraform init
 terraform apply
-MASTER_NODE=$(gcloud compute instances list | grep apisnoop.\*master | awk '{print $1}')
+MASTER_NODE=$(gcloud compute instances list | grep ${CLUSTERNAME}.\*master | awk '{print $1}')
 gcloud compute ssh $MASTER_NODE --command "sudo tail -f /var/log/cloud-init-output.log /var/log/cloud-init.log"
 # master node is up when you see: service "kubernetes-dashboard" created
+```
+
+These clusters do not have a public api endpoint, portforwarding is required.
+
+```
+# get a working kubeconfig, you may need to portforward
+gcloud compute ssh $MASTER_NODE -- -L 6443:127.0.0.1:6443
+```
+
+Copy the admin kubeconfig from the apiserver and set it to use the local portforward.
+
+```shell
+export KUBECONFIG=$PWD/kubeconfig
+gcloud compute ssh $MASTER_NODE \
+  --command "sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl config view --flatten" \
+  > $KUBECONFIG
+kubectl config set clusters.kubernetes.server https://127.0.0.1:6443
 ```
 
 Find the apiserver container and tail the audit log to see every api request.
 
 ```
-gcloud compute ssh $MASTER_NODE --command "sudo docker exec \$(sudo docker ps -a | grep kube-apiserver-amd64 | awk '{print \$1}') tail -f /var/log/kubernetes/audit/audit.log"
+gcloud compute ssh $MASTER_NODE --command "sudo tail -f /var/log/audit/audit.log"
 ```
 
 ## Auditing your KAPIC
@@ -86,7 +103,7 @@ gcloud compute ssh $MASTER_NODE --command "sudo docker exec \$(sudo docker ps -a
 Tail the audit.log via ssh and redirect the output locally.
 
 ```shell
-ssh $MASTER_NODE tail -f /var/log/kubernetes/audit/audit.log | tee MYKAPIC-audit.log
+ssh $MASTER_NODE tail -f /var/log/audit/audit.log | tee MYKAPIC-audit.log
 #^c when finished auditing
 ```
 
