@@ -13,6 +13,7 @@ from collections import defaultdict
 from pprint import pprint
 
 
+from lib.webserver import start_webserver
 from lib.models import *
 from lib.parsers import *
 from lib import exports
@@ -235,7 +236,7 @@ def main():
         return
 
     elif sys.argv[1] == 'start-server':
-
+        print "Webserver not implemented"
         return
 if __name__ == "__main__":
     main()
