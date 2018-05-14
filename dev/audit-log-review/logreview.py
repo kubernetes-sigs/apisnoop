@@ -15,6 +15,7 @@ from pprint import pprint
 
 from lib.models import *
 from lib.parsers import *
+from lib import exports
 
 # https://github.com/kubernetes/kubernetes/pull/50627/files
 
@@ -182,7 +183,7 @@ def main():
         usage_and_exit()
     # create folder structure on disk
     create_folders()
-    # process 
+    # process
     if sys.argv[1] == 'help':
         usage_and_exit()
     elif sys.argv[1] == 'load-coverage':
@@ -208,15 +209,18 @@ def main():
         report = generate_coverage_report(openapi_spec, audit_log)
         App.update_from_results(appname, report['results'])
         return # we are done
-    elif sys.argv[1] == 'generate-report':
-        print "Not implemented"
-        return
-        if len(sys.argv) < 3:
+    elif sys.argv[1] == 'export-data':
+        if len(sys.argv) < 4:
             usage_and_exit()
-        filename = sys.argv[2]
-        openapi_spec = load_openapi_spec(OPENAPI_SPEC_URL)
-        generate_coverage_report(openapi_spec)
-        print_report(report)
+        exporter_name = sys.argv[2]
+        output_path = sys.argv[3]
+        other_args = sys.argv[4:]
+        try:
+            exports.export_data(exporter_name, output_path, *other_args)
+            print "Exported to %s successfully" % output_path
+        except Exception as e:
+            print e.message
+            raise
         return
     elif sys.argv[1] == 'remove-audit':
         if len(sys.argv) < 3:
