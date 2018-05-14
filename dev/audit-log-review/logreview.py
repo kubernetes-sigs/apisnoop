@@ -236,7 +236,7 @@ def main():
         return
 
     elif sys.argv[1] == 'start-server':
-        print "Webserver not implemented"
+        start_webserver()
         return
 if __name__ == "__main__":
     main()
