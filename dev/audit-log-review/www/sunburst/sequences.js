@@ -263,7 +263,7 @@ function mouseover(d) {
           .text("untested")
     } else {
       d3.select("#reallybigline")
-          .html("<img src=\"img/tick.png\">")
+          .html("<img src=\"/static/img/tick.png\">")
       d3.select("#bigline")
           .text("Tested")
       d3.select("#midline")
