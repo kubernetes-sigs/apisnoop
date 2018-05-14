@@ -78,17 +78,33 @@ var arc = d3.arc()
     .innerRadius(function(d) { return Math.sqrt(d.y0); })
     .outerRadius(function(d) { return Math.sqrt(d.y1); });
 
+
+var chosenApp = new URL(window.location.href).searchParams.get('app')
+if (!chosenApp) {
+  window.location = "index.html"
+}
+
+d3.json("/api/v1/stats/categories?appname=" + chosenApp,function(error,response){
+  // TODO: HANDLE ERRORS
+  if (error == null) {
+    var json = buildHierarchy(response);
+    createVisualization(json);
+  } else {
+    console.log(error, response)
+  }
+});
+
 // Use d3.text and d3.csvParseRows so that we do not need to have a header
 // row, and can receive the csv as an array of arrays.
-d3.text("output-apps.csv", function(text) {
-  var csv = d3.csvParseRows(text);
-  var chosenApp = new URL(window.location.href).searchParams.get('app')
-  if (!chosenApp) {
-    window.location = "index.html"
-  }
-  var json = buildHierarchy(csv);
-  createVisualization(json);
-});
+// d3.text("output-apps.csv", function(text) {
+//   var csv = d3.csvParseRows(text);
+//   var chosenApp = new URL(window.location.href).searchParams.get('app')
+//   if (!chosenApp) {
+//     window.location = "index.html"
+//   }
+//   var json = buildHierarchy(csv);
+//   createVisualization(json);
+// });
 
 // Main function to draw and set up the visualization, once we have the data.
 function createVisualization(json) {

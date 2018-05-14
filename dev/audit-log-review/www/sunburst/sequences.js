@@ -80,11 +80,21 @@ var arc = d3.arc()
 
 // Use d3.text and d3.csvParseRows so that we do not need to have a header
 // row, and can receive the csv as an array of arrays.
-d3.text("output-chart.csv", function(text) {
-  var csv = d3.csvParseRows(text);
-  var json = buildHierarchy(csv);
-  createVisualization(json);
+d3.json("/api/v1/stats/endpoints?appname=e2e",function(error,response){
+  // TODO: HANDLE ERRORS
+  if (error == null) {
+    var json = buildHierarchy(response);
+    createVisualization(json);
+  } else {
+    console.log(error, response)
+  }
 });
+
+// d3.text("output-chart.csv", function(text) {
+//   var csv = d3.csvParseRows(text);
+//   var json = buildHierarchy(csv);
+//   createVisualization(json);
+// });
 
 function setDefaultMessage() {
 
