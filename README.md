@@ -2,6 +2,33 @@
 
 Snooping on the Kubernetes OpenAPI communications
 
+## Welcome to our really new / exploration level project.
+
+### Why
+Our initial goal is to provide a useful indicator as to which Kubernetes APIs are used the most and don't yet have conformance tests. This is specifically to ensure we are creating testing API's that are relevant, rather than just hitting all the endpoints. Our K8s API consumer/user journeys are an important model to drive this prioritization, in addition to providing insight into _how_ the APIs are being used.
+
+Our currently rough output is the most promising visualazion of how api groups endpoints and verbs are used today. The APISnoop Visualization presents in very clear terms how poor our current coverage actually is. Our high level graph shows our stable API's are mostly grey (untested / outer donut).
+
+![e2e_sunburst_screenshot.png](docs/images/e2e_sunburst_screenshot.png)
+
+![our screenshot of the sorted APIs](docs/images/screenshot.png)
+
+Our Secondary goal is a Pararellel Certification Program, using same machinery for Certified Kubernetes Provider, to certify set of Apps that utilize the Kubernetes API. ie. Itstio, Scoffold, Draft => Require K8s 1.9 If you have 1.9, it will run those tools. If they utilize only v1/stable APIS they are gauranteed to run on at least the next K8s release.
+
+### How
+
+In order to identify target applications to test, we define a Kubernetes API Consumer as a _KAPIC_.
+
+We inspect the [advanced audit logs](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/) to describe which APIs are called during KAPIC operations. For our initial data run we installed a small set of KAPIC helm charts and observing which API groups are called. We used the [d3 libary](https://github.com/d3/d3/wiki/Gallery) to create [Sunburst Partition Graphs](https://bl.ocks.org/mbostock/4063423) center stable/beta/alpha with partitions for APIGroups then APICalls/Verbs.
+
+The initial raw data is available within our [v0.0.1-audit-logs release](https://github.com/cncf/apisnoop/releases/tag/v0.0.1-audit-logs) and a simple interactive demo is running at http://apisnoop.cncf.io
+
+### Meetings / Demos
+
+#### Past
+- [May 10th, 2018 - Sig Architecture - APISnoop Introduction](https://docs.google.com/presentation/d/1JvWYSGWdiPq3YOINCJVUJaI4RVN642xSpzX9JY5HhTE/edit#slide=id.g37b1fc65d7_0_87) & [Recording](https://www.youtube.com/watch?v=gCTLdzsqzaY&feature=youtu.be&list=PL69nYSiGNLP2m6198LaLN6YahX7EEac5g&t=2635)
+- [May 4th, 2018 - KubeCon Copenhagen - Deep Dive for Conformance WG](https://docs.google.com/presentation/d/16_qeQ4wIbUMUUIRjQ22QabdcEbZ9yucUWSn7PykuF0c/edit#slide=id.p1) & [Recording](https://www.youtube.com/watch?v=LAGhshWmJAs&feature=youtu.be&list=PLj6h78yzYM2N8GdbjmhVU65KYm_68qBmo&t=2)
+
 ## Enabling Audit Logging
 
 kubeadm supports advanced audit logging in 1.10 and later.
