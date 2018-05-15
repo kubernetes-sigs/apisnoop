@@ -44,11 +44,12 @@ We created a ./bootstrap/ folder with updated scripts to enable audit-logging
 git clone https://github.com/cncf/apisnoop.git
 cd apisnoop
 export PACKET_APITOKEN=FOOBARBAZZ
+export PACKET_PROJECT=YOUR-PROJECT
 # use ./bootstrap/packet_k8s_ubuntu_16.04_*.sh
 export KUBICORN_FORCE_LOCAL_BOOTSTRAP=1
 kubicorn create apisnoop --profile packet
 # ensure clusterAPI.spec.providerConfig: project.name is set correctly
-sed -ie s:kubicorn-apisnoop:YOUR-PROJECT:  _state/apisnoop/cluster.yaml
+sed -ie "s:kubicorn-apisnoop:${PACKET_PROJECT}:"  _state/apisnoop/cluster.yaml
 kubicorn apply apisnoop
 ```
 
@@ -217,4 +218,3 @@ From the CSV, you can easily preview in terminal by using the command
 Example output
 
 ![summary_export_example.png](docs/images/summary_export_example.png)
-
