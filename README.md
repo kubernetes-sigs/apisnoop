@@ -11,7 +11,7 @@ Our currently rough output is the most promising visualazion of how api groups e
 
 [![e2e_sunburst_screenshot.png](docs/images/e2e_sunburst_screenshot.png "A Sunburst of unhit API endpoints during a Sonobouy e2e run")](http://apisnoop.cncf.io/sunburst/index.html)
 
-![our screenshot of the sorted APIs](docs/images/screenshot.png)
+[![our screenshot of the sorted APIs](docs/images/conformance_spreadsheet_screenshot.png "Conformance spreadsheet of endpoint statistics")](https://docs.google.com/spreadsheets/d/1abhElzOpRDRVKaggT8nGODoh9od84fv0QET7Nfe_f7Y/edit?usp=sharing)
 
 Our Secondary goal is a Pararellel Certification Program, using same machinery for Certified Kubernetes Provider, to certify set of Apps that utilize the Kubernetes API. ie. Itstio, Scoffold, Draft => Require K8s 1.9 If you have 1.9, it will run those tools. If they utilize only v1/stable APIS they are gauranteed to run on at least the next K8s release.
 
