@@ -7,13 +7,22 @@ Snooping on the Kubernetes OpenAPI communications
 ### Why
 Our initial goal is to provide a useful indicator as to which Kubernetes APIs are used the most and don't yet have conformance tests. This is specifically to ensure we are creating testing API's that are relevant, rather than just hitting all the endpoints. Our K8s API consumer/user journeys are an important model to drive this prioritization, in addition to providing insight into _how_ the APIs are being used.
 
-Our currently rough output is the most promising visualazion of how api groups endpoints and verbs are used today. The APISnoop Visualization presents in very clear terms how poor our current coverage actually is. Our high level graph shows our stable API's are mostly grey (untested / outer donut).
+Our currently rough output is the most promising visualazion of how api groups endpoints and verbs are used today. The APISnoop Visualization presents in very clear terms how poor our current coverage actually is. Our high level graph shows our stable API's are mostly untested ( the grey outer donut sections).
 
 [![e2e_sunburst_screenshot.png](docs/images/e2e_sunburst_screenshot.png "A Sunburst of unhit API endpoints during a Sonobouy e2e run")](http://apisnoop.cncf.io/sunburst/index.html)
 
+We also export the data to a csv / google sheet that clearly shows the most popular untested API endpoints.
+
 [![our screenshot of the sorted APIs](docs/images/conformance_spreadsheet_screenshot.png "Conformance spreadsheet of endpoint statistics")](https://docs.google.com/spreadsheets/d/1abhElzOpRDRVKaggT8nGODoh9od84fv0QET7Nfe_f7Y/edit?usp=sharing)
 
-Our Secondary goal is a Pararellel Certification Program, using same machinery for Certified Kubernetes Provider, to certify set of Apps that utilize the Kubernetes API. ie. Itstio, Scoffold, Draft => Require K8s 1.9 If you have 1.9, it will run those tools. If they utilize only v1/stable APIS they are gauranteed to run on at least the next K8s release.
+Highlighting the above untested stable core APIs:
+
+[![screenshot of untested stable core APIs](docs/images/stable_untested_sunburst_screenshot.png "Untested stable core APIs")](http://apisnoop.cncf.io/sunburst/index.html)
+
+
+Our Secondary goal is a Parallel Certification Program, using same machinery for Certified Kubernetes Provider, to certify set of Apps that utilize the Kubernetes API. ie. Istio, Skaffold, Draft => Require K8s 1.9 If you have 1.9, it will run those tools. If they utilize only v1/stable APIS they are guaranteed to run on at least the next K8s release.
+
+![mockup of what kubernetes conformance could look like](docs/images/conformance_mockup_labels.png "Conformance mockup")
 
 ### How
 
