@@ -9,7 +9,7 @@ Our initial goal is to provide a useful indicator as to which Kubernetes APIs ar
 
 Our currently rough output is the most promising visualazion of how api groups endpoints and verbs are used today. The APISnoop Visualization presents in very clear terms how poor our current coverage actually is. Our high level graph shows our stable API's are mostly grey (untested / outer donut).
 
-![e2e_sunburst_screenshot.png](docs/images/e2e_sunburst_screenshot.png)
+[![e2e_sunburst_screenshot.png](docs/images/e2e_sunburst_screenshot.png "A Sunburst of unhit API endpoints during a Sonobouy e2e run")](http://apisnoop.cncf.io/sunburst/index.html)
 
 ![our screenshot of the sorted APIs](docs/images/screenshot.png)
 
