@@ -5,9 +5,9 @@ Snooping on the Kubernetes OpenAPI communications
 ## Welcome to our really new / exploration level project.
 
 ### Why
-Our initial goal is to provide a useful indicator as to which Kubernetes APIs are used the most and don't yet have conformance tests. This is specifically to ensure we are creating testing API's that are relevant, rather than just hitting all the endpoints. Our K8s API consumer/user journeys are an important model to drive this prioritization, in addition to providing insight into _how_ the APIs are being used.
+Our initial goal is to provide a useful indicator as to which Kubernetes APIs are used the most and don't yet have conformance tests. This is specifically to ensure we are testing APIs that are relevant, rather than just hitting all the endpoints. Our K8s API consumer/user journeys are an important model to drive this prioritization, in addition to providing insight into _how_ the APIs are being used.
 
-Our currently rough output is the most promising visualazion of how api groups endpoints and verbs are used today. The APISnoop Visualization presents in very clear terms how poor our current coverage actually is. Our high level graph shows our stable API's are mostly untested ( the grey outer donut sections).
+Our currently rough output is the most promising visualazion of how api groups endpoints and verbs are used today. The APISnoop Visualization presents in very clear terms how poor our current coverage actually is. Our high level graph shows our stable API's are mostly untested (the grey sections of the outer ring).
 
 [![e2e_sunburst_screenshot.png](docs/images/e2e_sunburst_screenshot.png "A Sunburst of unhit API endpoints during a Sonobouy e2e run")](http://apisnoop.cncf.io/sunburst/index.html)
 
@@ -28,7 +28,7 @@ Our Secondary goal is a Parallel Certification Program, using same machinery for
 
 In order to identify target applications to test, we define a Kubernetes API Consumer as a _KAPIC_.
 
-We inspect the [advanced audit logs](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/) to describe which APIs are called during KAPIC operations. For our initial data run we installed a small set of KAPIC helm charts and observing which API groups are called. We used the [d3 libary](https://github.com/d3/d3/wiki/Gallery) to create [Sunburst Partition Graphs](https://bl.ocks.org/mbostock/4063423) center stable/beta/alpha with partitions for APIGroups then APICalls/Verbs.
+We inspect the [advanced audit logs](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/) to describe which APIs are called during KAPIC operations. For our initial data run we installed a small set of KAPIC helm charts and obverved which API groups are called. We used the [d3 libary](https://github.com/d3/d3/wiki/Gallery) to create [Sunburst Partition Graphs](https://bl.ocks.org/mbostock/4063423) center stable/beta/alpha with partitions for APIGroups then APICalls/Verbs.
 
 The initial raw data is available within our [v0.0.1-audit-logs release](https://github.com/cncf/apisnoop/releases/tag/v0.0.1-audit-logs) and a simple interactive demo is running at http://apisnoop.cncf.io
 
