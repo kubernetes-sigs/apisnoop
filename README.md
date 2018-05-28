@@ -4,7 +4,7 @@ Snooping on the Kubernetes OpenAPI communications
 
 ## Welcome to our really new / exploration level project.
 
-### Why
+### Why?
 Our initial goal is to provide a useful indicator as to which Kubernetes APIs are used the most and don't yet have conformance tests. This is specifically to ensure we are testing APIs that are relevant, rather than just hitting all the endpoints. Our K8s API consumer/user journeys are an important model to drive this prioritization, in addition to providing insight into _how_ the APIs are being used.
 
 Our currently rough output is the most promising visualazion of how api groups endpoints and verbs are used today. The APISnoop Visualization presents in very clear terms how poor our current coverage actually is. Our high level graph shows our stable API's are mostly untested (the grey sections of the outer ring).
@@ -24,7 +24,7 @@ Our Secondary goal is a Parallel Certification Program, using same machinery for
 
 ![mockup of what kubernetes conformance could look like](docs/images/conformance_mockup_labels.png "Conformance mockup")
 
-### How
+### How?
 
 In order to identify target applications to test, we define a Kubernetes API Consumer as a _KAPIC_.
 
