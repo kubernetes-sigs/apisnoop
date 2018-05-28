@@ -137,10 +137,6 @@ def list_apps_names():
         names += [app.name]
     return sorted(names)
 
-@route('/hello')
-def hello():
-    return "Hello World!"
-
 @route('/static/<filename:path>')
 def serve_static(filename):
     return static_file(filename, root='www/static')
