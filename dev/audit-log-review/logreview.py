@@ -20,8 +20,7 @@ from lib import exports
 
 # https://github.com/kubernetes/kubernetes/pull/50627/files
 
-
-OPENAPI_SPEC_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/v1.9.6/api/openapi-spec/swagger.json"
+OPENAPI_SPEC_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/api/openapi-spec/swagger.json"
 
 # inputs
 # audit log

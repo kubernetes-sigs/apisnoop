@@ -18,7 +18,15 @@ def load_swagger_file(url, cache=False):
     url_parsed = urlparse(url)
     if url_parsed.scheme in ['http', 'https']:
         if cache:
-            key = hashlib.md5(url).hexdigest()
+            # Use HEAD request to get the etag of the URL (assuming github here)
+            # This helps when master changes but the url doesnt change
+            head = requests.head(url)
+            key = head.headers.get('etag')
+            if key:
+                key = key.strip('"')
+            else:
+                # Fall back to old way of doing things
+                key = hashlib.md5(url).hexdigest()
             cache_path = os.path.join('cache', "swagger_%s.json" % key)
             if not os.path.exists(cache_path):
                 swagger = requests.get(url).json()
