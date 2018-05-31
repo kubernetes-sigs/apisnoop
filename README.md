@@ -35,6 +35,8 @@ The initial raw data is available within our [v0.0.1-audit-logs release](https:/
 ### Meetings / Demos
 
 #### Past
+- May 23rd, 2018 - Conformance WG - APISnoop: easing contribution and driving pod api utilization [Recording](https://www.youtube.com/watch?v=XJgK6jw_mPc&t=720
+)
 - [May 10th, 2018 - Sig Architecture - APISnoop Introduction](https://docs.google.com/presentation/d/1JvWYSGWdiPq3YOINCJVUJaI4RVN642xSpzX9JY5HhTE/edit#slide=id.g37b1fc65d7_0_87) & [Recording](https://www.youtube.com/watch?v=gCTLdzsqzaY&feature=youtu.be&list=PL69nYSiGNLP2m6198LaLN6YahX7EEac5g&t=2635)
 - [May 4th, 2018 - KubeCon Copenhagen - Deep Dive for Conformance WG](https://docs.google.com/presentation/d/16_qeQ4wIbUMUUIRjQ22QabdcEbZ9yucUWSn7PykuF0c/edit#slide=id.p1) & [Recording](https://www.youtube.com/watch?v=LAGhshWmJAs&feature=youtu.be&list=PLj6h78yzYM2N8GdbjmhVU65KYm_68qBmo&t=2)
 
