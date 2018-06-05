@@ -9,7 +9,10 @@ import os
 import sys
 import re
 import io
+
 from datetime import datetime
+
+bash_escapes = re.compile("(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
 
 # COMMAND = "./simulate-e2e.sh"
 COMMAND = "cd ~/go/src/k8s.io/kubernetes && unbuffer go run hack/e2e.go -- --test"
@@ -29,6 +32,7 @@ while True:
     logfile.write(line)
     line = line.strip('\n')
     print line
+    line = bash_escapes.sub("", line)
     if line.startswith("----------"):
         timestamp = datetime.utcnow().isoformat()
         lines_record = 3
