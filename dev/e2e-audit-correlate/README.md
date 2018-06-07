@@ -21,7 +21,7 @@ ps aux | grep "tail"
 # look for the PID
 kill <tail pid>
 ```
-10. Compress (the file will be over 1GB) and download `audit-e2e.log` from the K8s master. Put it in the same folder as the python scripts.
+10. Compress (the file will be over 1GB uncompressed and 100MB compressed) and download `audit-e2e.log` from the K8s master. Uncompress and put it in the same folder as the python scripts.
 11. Run `python correlate_timestamps.py` to correlate the timestamps from `entries.py` and `audit-e2e.log`
 12. Run `python convert_output_to_text.py` to convert the output to a human readable format
 13. Tear down the K8s cluster - `hack/e2e.go -- --down`
@@ -40,7 +40,17 @@ At the moment the e2e command that is run is `go run hack/e2e.go -- --test`. Thi
 
 ## Assumptions
 
+Some assumptions were made to reduce the complexity of the problem. These are:
+
 - The latency between kubetest writing to stdout and my program reading and detecting a new test is negligible. I measured 300us using the `simulate-e2e.py` script.
 - The audit logs are timestamped when the request is received on the Kubernetes end.
 - The time between the K8s master and where the e2e tests are being run is synchronised.
 - The mark `--------------` denotes a new test being run in the e2e output and this mark is found nowhere else in the e2e logs.
+
+## Alternative Approaches
+
+Here are some other approaches that were discussed:
+
+- Adding timestamp "marks" to the audit logs by calling a (non-existent) endpoint with identifiable URL or parameter. Even if the endpoint doesnt exist, it will still show up in the audit logs timestamped.
+  - /apisnoop-mark?test=e2e/pods.go:723&message="should do something"
+- Editing kubernetes and kubetest to pass the test information in as a "User-agent" header (or custom HTTP headers)
