@@ -1,6 +1,6 @@
 # e2e-audit-correlate
 
-> "Which Kubernetes audit log entries belong to which e2e tests?**
+> "Which Kubernetes audit log entries belong to which e2e tests?
 
 ## Method
 
@@ -52,5 +52,5 @@ Some assumptions were made to reduce the complexity of the problem. These are:
 Here are some other approaches that were discussed:
 
 - Adding timestamp "marks" to the audit logs by calling a (non-existent) endpoint with identifiable URL or parameter. Even if the endpoint doesnt exist, it will still show up in the audit logs timestamped.
-  - /apisnoop-mark?test=e2e/pods.go:723&message="should do something"
+  - eg `/apisnoop-mark?test=e2e/pods.go:723&message="should do something"`
 - Editing kubernetes and kubetest to pass the test information in as a "User-agent" header (or custom HTTP headers)
