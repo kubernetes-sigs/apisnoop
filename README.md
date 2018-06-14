@@ -19,7 +19,6 @@ Highlighting the above untested stable core APIs:
 
 [![screenshot of untested stable core APIs](docs/images/stable_untested_sunburst_screenshot.png "Untested stable core APIs")](http://apisnoop.cncf.io/sunburst/index.html)
 
-
 Our Secondary goal is a Parallel Certification Program, using same machinery for Certified Kubernetes Provider, to certify set of Apps that utilize the Kubernetes API. ie. Istio, Skaffold, Draft => Require K8s 1.9 If you have 1.9, it will run those tools. If they utilize only v1/stable APIS they are guaranteed to run on at least the next K8s release.
 
 ![mockup of what kubernetes conformance could look like](docs/images/conformance_mockup_labels.png "Conformance mockup")
@@ -35,9 +34,9 @@ The initial raw data is available within our [v0.0.1-audit-logs release](https:/
 ### Meetings / Demos
 
 #### Past
-- May 23rd, 2018 - Conformance WG - APISnoop: easing contribution and driving pod api utilization [Recording](https://www.youtube.com/watch?v=XJgK6jw_mPc&t=720
-)
-- [May 10th, 2018 - Sig Architecture - APISnoop Introduction](https://docs.google.com/presentation/d/1JvWYSGWdiPq3YOINCJVUJaI4RVN642xSpzX9JY5HhTE/edit#slide=id.g37b1fc65d7_0_87) & [Recording](https://www.youtube.com/watch?v=gCTLdzsqzaY&feature=youtu.be&list=PL69nYSiGNLP2m6198LaLN6YahX7EEac5g&t=2635)
+- [June 12th, 2018 - SIG Node - APISnoop initial mapping of endpoints to e2e tests](https://docs.google.com/presentation/d/1wrdBlLtHb_z5qmNwDDPrc9DRDs3Klpac83v8h5iAqjE/edit#slide=id.g37b1fc65d7_0_87)
+- May 23rd, 2018 - Conformance WG - APISnoop: easing contribution and driving pod api utilization [Recording](https://www.youtube.com/watch?v=XJgK6jw_mPc&t=720)
+- [May 10th, 2018 - SIG Architecture - APISnoop Introduction](https://docs.google.com/presentation/d/1JvWYSGWdiPq3YOINCJVUJaI4RVN642xSpzX9JY5HhTE/edit#slide=id.g37b1fc65d7_0_87) & [Recording](https://www.youtube.com/watch?v=gCTLdzsqzaY&feature=youtu.be&list=PL69nYSiGNLP2m6198LaLN6YahX7EEac5g&t=2635)
 - [May 4th, 2018 - KubeCon Copenhagen - Deep Dive for Conformance WG](https://docs.google.com/presentation/d/16_qeQ4wIbUMUUIRjQ22QabdcEbZ9yucUWSn7PykuF0c/edit#slide=id.p1) & [Recording](https://www.youtube.com/watch?v=LAGhshWmJAs&feature=youtu.be&list=PLj6h78yzYM2N8GdbjmhVU65KYm_68qBmo&t=2)
 
 ## Enabling Audit Logging
