@@ -1,11 +1,11 @@
-# user-agent-backtrace
+# user-agent-stacktrace
 
-Feeding a backtrace of function calls into the K8s audit log via the User-Agent header
+Feeding a stacktrace of function calls into the K8s audit log via the User-Agent header
 
 
 ## Requirements
 
-- Patch [client-go]() to set user-agent header to backtrace using patch - <link to pull request>
+- Patch [client-go]() to set user-agent header to stacktrace using patch - https://github.com/kubernetes/kubernetes/pull/65202
 - Patch [kubernetes]() to log user-agent header in the audit log - https://github.com/kubernetes/kubernetes/pull/64812
 
 
