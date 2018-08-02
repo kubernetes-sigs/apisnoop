@@ -64,6 +64,12 @@ def app_usage_endpoints(app_name=None):
         results += [[level, category, "unused", count]]
     return [headers] + results
 
+
+@db_session
+def endpoint_hits():
+    hits = select((hit.endpoint, hit.count) for hit in EndpointHit if hit.endpoint.level == 'stable')
+    return [(endpoint.method, endpoint.url, endpoint.category, count) for (endpoint, count) in hits]
+
 @db_session
 def coverage_spreadsheet():
     apps = App.select(lambda x: True).order_by(App.name)
@@ -152,6 +158,11 @@ def serve_static(filename):
     return static_file(filename, root='www/sunburst-apps')
 
 # temporary routes until sunburst is fully integrated
+@route('/conformance/<filename:path>')
+def serve_static(filename):
+    return static_file(filename, root='www/conformance')
+
+# temporary routes until sunburst is fully integrated
 @route('/')
 def serve_static():
     return static_file('index.html', root='www')
@@ -178,6 +189,14 @@ def categories_view():
 def endpoints_view():
     appname = request.query.get('appname')
     return json.dumps(app_usage_endpoints(appname))
+    #app_usage_endpoints
+
+# endpoints
+# level,category,method + url,count
+@route('/api/v1/stats/endpoint_hits')
+def endpoints_view():
+    appname = request.query.get('appname')
+    return json.dumps(endpoint_hits())
     #app_usage_endpoints
 
 # conformance spreadsheet
