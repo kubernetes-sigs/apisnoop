@@ -2,7 +2,7 @@ google.charts.load('current', {'packages': ['table']});
 google.charts.setOnLoadCallback(drawTable);
 
 async function drawTable() {
-  let req = await fetch('/api/v1/stats/endpoint_hits');
+  let req = await fetch('/api/v1/stats/endpoint_hits', {credentials: 'include'});
   let result = await req.json();
   console.log(result);
 
