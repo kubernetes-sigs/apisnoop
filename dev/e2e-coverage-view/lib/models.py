@@ -13,7 +13,7 @@ class Endpoint(db.Entity):
     testfile = Optional(str, default='')
     conforms = Optional(str, default='')
     questions = Optional(str, default='')
-    apps = Set('EndpointHit')
+    hits = Set('EndpointHit')
     composite_key(method, url)
 
     @classmethod
@@ -85,8 +85,12 @@ class App(db.Entity):
         keys = ['tags', 'level', 'category']
         data = {k: kwargs[k] for k in keys if k in kwargs}
         endpoint.set(**data)
+        print(kwargs)
 
-        hit, created = EndpointHit.get_or_create(endpoint=endpoint, app=self)
+        ua = kwargs.get('userAgent', 'none').split(' ', 1)[0]
+
+        hit, created = EndpointHit.get_or_create(endpoint=endpoint, app=self,
+                                                 user_agent=ua)
         if 'count' in kwargs:
             hit.count = kwargs['count']
         # dont commit if we dont need to - leave it up to caller
@@ -117,17 +121,18 @@ class App(db.Entity):
 class EndpointHit(db.Entity):
     endpoint = Required(Endpoint)
     app = Required(App)
-    PrimaryKey(endpoint, app)
+    user_agent = Required(str)
+    PrimaryKey(endpoint, app, user_agent)  # ehhhhhhhhh this feels too big
     count = Required(int, default=0)
 
     @classmethod
-    def get_or_create(cls, endpoint, app):
+    def get_or_create(cls, endpoint, app, user_agent):
         """
         Gets or creates a m2m relationship between an app and an endpoint
         """
-        obj = cls.get(endpoint=endpoint, app=app)
+        obj = cls.get(endpoint=endpoint, app=app, user_agent=user_agent)
         if not obj:
-            return cls(endpoint=endpoint, app=app), True
+            return cls(endpoint=endpoint, app=app, user_agent=user_agent), True
         else:
             return obj, False
 

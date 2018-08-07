@@ -11,18 +11,15 @@ from collections import defaultdict
 
 @db_session
 def endpoint_hits():
-    hits = select((hit.endpoint, hit.count) for hit in EndpointHit if hit.endpoint.level == 'stable')
-    return [(endpoint.method, endpoint.url, endpoint.category, count) for (endpoint, count) in hits]
+    endpoints = Endpoint.select(lambda x: x.level == 'stable')
 
-@db_session
-def coverage_spreadsheet():
-    apps = App.select(lambda x: True).order_by(App.name)
-    endpoints = Endpoint.select(lambda x: True).order_by(Endpoint.level, Endpoint.url, Endpoint.method)
-
-    headers = ['level', 'category', 'method', 'url', 'conforms', 'apps using it']
-    for app in apps:
-        headers += [app.name]
-    headers += ['questions']
+    #return [(endpoint.method, endpoint.url, endpoint.category, count) for (endpoint, count) in hits]
+    return [{
+        'method': endpoint.method,
+        'url': endpoint.url,
+        'category': endpoint.category,
+        'hits': [{'ua': x.user_agent, 'count': x.count} for x in endpoint.hits],
+    } for endpoint in endpoints]
 
 
 @route('/static/<filename:path>')
