@@ -11,7 +11,7 @@ import hashlib
 from urlparse import urlparse
 from collections import defaultdict
 
-__all__ = ['load_openapi_spec', 'load_audit_log', 'load_coverage_csv']
+__all__ = ['load_openapi_spec', 'load_audit_log', 'find_openapi_entry']
 
 def load_swagger_file(url, cache=False):
     """Load a swagger file from path or URL"""
@@ -135,23 +135,29 @@ def load_audit_log(path):
             audit_log.append(raw_event)
     return audit_log
 
-def load_coverage_csv(path):
-    rows = []
-    with open(path,'rb') as csvfile:
-        for row in csv.DictReader(csvfile):
-            data = {}
-            data['method'] = row['METHOD'].lower()
-            data['url'] = row['URL']
 
-            keymap = {
-                'Conformance?': 'conforms',
-                'Open questions': 'questions',
-                'Test file': 'testfile'
-            }
-            for fromkey, tokey in keymap.items():
-                value = row[fromkey].strip()
-                if len(value) > 0:
-                    data[tokey] = value
-            data['level'] = parse_level_from_path(path)
-            rows += [data]
-    return rows
+def find_openapi_entry(openapi_spec, event):
+    url = urlparse(event['requestURI'])
+    hit_cache = openapi_spec['hit_cache']
+    prefix_cache = openapi_spec['prefix_cache']
+    # 1) Cached seen before results
+    if url.path in hit_cache:
+        return hit_cache[url.path]
+    # 2) Indexed by prefix patterns to cut down search time
+    for prefix in prefix_cache:
+        if prefix is not None and url.path.startswith(prefix):
+            # print prefix, url.path
+            paths = prefix_cache[prefix]
+            break
+    else:
+        paths = prefix_cache[None]
+
+    for regex in paths:
+        if re.match(regex, url.path):
+            hit_cache[url.path] = openapi_spec['paths'][regex]
+            return openapi_spec['paths'][regex]
+        elif re.search(regex, event['requestURI']):
+            print("Incomplete match", regex, event['requestURI'])
+    # cache failures too
+    hit_cache[url.path] = None
+    return None

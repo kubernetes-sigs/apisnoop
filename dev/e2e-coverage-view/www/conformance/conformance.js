@@ -1,21 +1,29 @@
 google.charts.load('current', {'packages': ['table']});
 google.charts.setOnLoadCallback(drawTable);
 
-async function drawTable() {
+let _cache = null;
+async function fetchData() {
+  if (_cache) {
+    return _cache;
+  }
   let req = await fetch('/api/v1/stats/endpoint_hits', {credentials: 'include'});
   let result = await req.json();
-  console.log(result);
+  _cache = result;
+  return result;
+}
 
+async function drawTable() {
+  let result = await fetchData();
   let categories = {};
   for (let entry of result) {
-    let [method, endpoint, category, count] = entry;
+    let {category, hits} = entry;
     if (!categories[category]) {
       categories[category] = {name: category, total: 0, tested: 0, hits: 0}
     }
     categories[category].total++;
-    if (count > 0) {
+    if (hits.length > 0) {
       categories[category].tested++;
-      categories[category].hits += count;
+      categories[category].hits += hits.reduce((total, hit) => total + hit.count, 0);
     }
   }
 
@@ -50,13 +58,13 @@ async function drawTable() {
 }
 
 function rowSelected(result, category) {
-  let information = result.filter(([,,c]) => c === category);
+  let information = result.filter(({category: c}) => c === category);
   let rows = [];
-  for (let [method, endpoint, category, count] of information) {
+  for (let {method, url, hits} of information) {
     rows.push({c: [
-        {v: endpoint},
+        {v: url},
         {v: method},
-        {v: count}
+        {v: hits.reduce((total, hit) => total + hit.count, 0)}
       ]});
   }
 
