@@ -80,12 +80,20 @@ def load_openapi_spec(url):
         path_data['level'] = parse_level_from_path(path)
         # methods
         path_data['methods'] = {}
-        methods = swagger['paths'][path].keys()
-        for method in methods:
+        for method, swagger_method in swagger['paths'][path].items():
             if method == "parameters":
                 continue
+            if 'deprecated' in swagger_method.get('description', '').lower():
+                print("Skipping DEPRECATED method")
+                continue
+            produces = swagger_method.get('produces', [])
+            can_watch = ('application/json;stream=watch' in produces or
+                         'application/vnd.kubernetes.protobuf;stream=watch' in produces)
+            must_watch = swagger_method.get('x-kubernetes-action') == 'watch'
+            if must_watch:
+                print("must watch " + path)
             method_data = {}
-            tags = sorted(swagger['paths'][path][method].get('tags', list()))
+            tags = sorted(swagger_method.get('tags', list()))
             if len(tags) > 0:
                 method_data['tags'] = tags
                 tag = tags[0]
@@ -95,7 +103,10 @@ def load_openapi_spec(url):
             else:
                 method_data['category'] = ''
             # todo - request + response
-            path_data['methods'][method] = method_data
+            if not must_watch:
+                path_data['methods'][method] = method_data
+            if can_watch:
+                path_data['methods']['watch'] = method_data
         # use the path regex as the key so that we search for a match easily
         openapi_spec['paths'][path_regex] = path_data
 
@@ -119,10 +130,11 @@ def load_audit_log(path):
             raw_event = json.loads(entry)
             # change verb to represent http request
             verb_tt = {
-                'get': ['get', 'list', 'watch', 'proxy'],
+                'get': ['get', 'list', 'proxy'],
                 'put': ['update', 'patch'],
                 'post': ['create'],
-                'delete': ['delete', 'deletecollection']
+                'delete': ['delete', 'deletecollection'],
+                'watch': ['watch', 'watchlist'],
             }
 
             for method, verbs in verb_tt.items():
