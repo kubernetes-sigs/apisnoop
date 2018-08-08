@@ -111,9 +111,15 @@ function getNextPrefix(results, prefix) {
   return prefix;
 }
 
+function drawFilteredTable() {
+  let e = document.getElementById('ua-filter');
+  drawTable(e.options[e.selectedIndex].value);
+}
+
 async function drawTable(filter) {
   console.log(`filter: ${filter}`);
   let result = filterByUA(await fetchData(), filter);
+  updateBreadcrumbs(result);
   let categories = {};
   for (let entry of result) {
     let {category, hits} = entry;
@@ -159,24 +165,64 @@ async function drawTable(filter) {
   getTable().setSelection(selection);
   google.visualization.events.removeAllListeners(getTable());
   google.visualization.events.addListener(getTable(), 'select', () => {
-    let filtered = filterByCategory(result, rows[getTable().getSelection()[0].row][0].v);
-    detailTable(filtered, getNextPrefix(filtered, ''));
+    let category = rows[getTable().getSelection()[0].row][0].v;
+    let filtered = filterByCategory(result, category)
+    detailTable(filtered, category, [getNextPrefix(filtered, '')]);
   });
   if (selection.length) {
     rowSelected(filter, result, rows[selection[0].row][0].v);
   }
 }
 
-function detailTable(data, basePrefix) {
-  const prefixes = groupByPrefix(data, basePrefix || '');
+let _breadcrumbs = [];
+let _category = null;
+function updateBreadcrumbs(data, category, breadcrumbs) {
+  breadcrumbs = breadcrumbs || [];
+  _breadcrumbs = breadcrumbs;
+  _category = category;
+  const trail = [];
+  const element = document.getElementById('breadcrumbs');
+  element.innerHTML = '<a onclick="drawFilteredTable(); return false" href="">[categories]</a> / ';
+  if (category) {
+    let categoryLink = document.createElement('a');
+    categoryLink.innerText = `[${category}]`;
+    element.append(categoryLink);
+    if (breadcrumbs.length) {
+      element.append(document.createTextNode(' / '));
+    }
+  }
+  for (let crumb of breadcrumbs || []) {
+    trail.push(crumb);
+    let ourTrail = trail.concat()
+    let a = document.createElement('a');
+    a.setAttribute('href', '');
+    a.onclick = (e) => {
+      e.preventDefault();
+      detailTable(data, category, ourTrail);
+    };
+    if (crumb.startsWith('/')) {
+      crumb = crumb.substr(1);
+    }
+    a.innerText = crumb;
+    element.appendChild(a);
+    element.appendChild(document.createTextNode(' / '))
+  }
+  element.removeChild(element.lastChild);
+}
+
+function detailTable(data, category, breadcrumbs) {
+  const filtered = filterByCategory(data, category);
+  const basePrefix = (breadcrumbs || []).join('/');
+  const prefixes = groupByPrefix(filtered, basePrefix);
+  updateBreadcrumbs(filtered, category, breadcrumbs);
   let rows = [];
   for (let [prefix, endpoints] of Object.entries(prefixes)) {
     let tested = endpoints.reduce((total, endpoint) => total + (endpoint.hits.length > 0 ? 1 : 0), 0);
     let totalHits = endpoints.reduce((total, endpoint) => total + endpoint.hits.reduce((t, hit) => t + hit.count, 0), 0);
     let coverage = tested / endpoints.length;
-    let nextPrefix = getNextPrefix(data, prefix);
+    let nextPrefix = getNextPrefix(filtered, prefix).substring(basePrefix.length + 1);
     rows.push([
-      {v: nextPrefix, f: nextPrefix.substring(basePrefix.length)},
+      {v: nextPrefix},
       {v: coverage * 1000, f: `${tested} / ${endpoints.length} <strong>(${Math.round(coverage * 100)}%)</strong>`},
       {v: Math.round(totalHits / tested), f: (Math.round(totalHits / tested) || '').toString()}
     ])
@@ -200,10 +246,18 @@ function detailTable(data, basePrefix) {
   getTable().draw(dataTable, {allowHtml: true, ...sortDict});
 
   google.visualization.events.removeAllListeners(getTable());
-  google.visualization.events.addListener(getTable(), 'select', () => detailTable(data, rows[getTable().getSelection()[0].row][0].v));
+  google.visualization.events.addListener(getTable(), 'select', () => detailTable(filtered, category, breadcrumbs.concat(rows[getTable().getSelection()[0].row][0].v)));
+}
+
+async function updateFilter(filter) {
+  if (_category) {
+    detailTable(filterByUA(await fetchData(), filter), _category, _breadcrumbs);
+  } else {
+    drawTable(filter);
+  }
 }
 
 function doSetup() {
   drawTable();
-  document.getElementById('ua-filter').addEventListener('change', (e) => drawTable(e.target.value));
+  document.getElementById('ua-filter').addEventListener('change', (e) => updateFilter(e.target.value));
 }
