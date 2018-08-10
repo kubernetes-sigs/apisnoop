@@ -1,7 +1,5 @@
-
 import re
 import json
-import csv
 import os
 
 import requests
@@ -12,6 +10,7 @@ from urlparse import urlparse
 from collections import defaultdict
 
 __all__ = ['load_openapi_spec', 'load_audit_log', 'find_openapi_entry']
+
 
 def load_swagger_file(url, cache=False):
     """Load a swagger file from path or URL"""
@@ -42,6 +41,7 @@ def load_swagger_file(url, cache=False):
             swagger = json.load(f)
     return swagger
 
+
 VARIABLE_PATTERN = re.compile("{([^}]+)}")
 def compile_path_regex(path):
     # replace wildcards in {varname} format to a named regex
@@ -51,6 +51,7 @@ def compile_path_regex(path):
     else:
         path_regex += "$"
     return path_regex
+
 
 LEVEL_PATTERN = re.compile("/v(?P<api_version>[0-9]+)(?:(?P<api_level>alpha|beta)(?P<api_level_version>[0-9]+))?")
 def parse_level_from_path(path):
@@ -62,6 +63,7 @@ def parse_level_from_path(path):
     if level is None:
         level = "stable"
     return level
+
 
 def load_openapi_spec(url):
     # try:
@@ -122,6 +124,7 @@ def load_openapi_spec(url):
     # except Exception as e:
     #     print("Failed to load openapi spec \"%s\"" % url)
     #     raise e
+
 
 def load_audit_log(path):
     audit_log = []

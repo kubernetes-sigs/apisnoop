@@ -10,7 +10,6 @@ OPENAPI_SPEC_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/mast
 
 @db_session
 def do_import(path):
-    app = App.get_or_create('e2e')[0]
     log = load_audit_log(path)
     spec = load_openapi_spec(OPENAPI_SPEC_URL)
     endpoints = {}
@@ -24,7 +23,8 @@ def do_import(path):
         print(endpoint)
         for method, metadata in endpoint['methods'].items():
             print(path, method)
-            endpoints[path, method] = Endpoint(method=method, url=path, level=endpoint.get('level'), category=metadata['category'])
+            endpoints[path, method] = Endpoint(method=method, url=path, level=endpoint.get('level'),
+                                               category=metadata['category'])
 
     hits = {}
     for event in log:
@@ -44,7 +44,7 @@ def do_import(path):
         if t in hits:
             hits[t].count += 1
         else:
-            hits[t] = EndpointHit(endpoint=endpoints[path, method], app=app, user_agent=ua, count=1)
+            hits[t] = EndpointHit(endpoint=endpoints[path, method], user_agent=ua, count=1)
     commit()
 
 
