@@ -26,6 +26,8 @@ def load_swagger_file(url, cache=False):
             else:
                 # Fall back to old way of doing things
                 key = hashlib.md5(url).hexdigest()
+            if not os.path.exists('cache'):
+                os.mkdir('cache')
             cache_path = os.path.join('cache', "swagger_%s.json" % key)
             if not os.path.exists(cache_path):
                 swagger = requests.get(url).json()
