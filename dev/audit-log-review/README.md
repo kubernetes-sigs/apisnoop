@@ -12,7 +12,8 @@ pip install -r requirements.txt
 
 To load the audit log into the database
 ```
-python logreview.py load-audit <audit log path> <app name>
+python logreview.py load-audit <audit log path> <kubernetes version or branch> <app name>
+# eg: python logreview.py load-audit kube-apiserver-audit.log release-1.12 e2e
 ```
 
 Now that the log is in the database, lets start the webserver and have a look
