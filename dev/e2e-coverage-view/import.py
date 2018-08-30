@@ -5,13 +5,12 @@ from lib.parsers import *
 
 
 # this is a bit silly given we have it locally but we'll run with it for now.
-OPENAPI_SPEC_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/api/openapi-spec/swagger.json"
 
 
 @db_session
-def do_import(path):
+def do_import(path, openapi_spec):
     log = load_audit_log(path)
-    spec = load_openapi_spec(OPENAPI_SPEC_URL)
+    spec = load_openapi_spec(openapi_spec)
     endpoints = {}
 
     # we need to have an entry for everything in the spec, including entries
@@ -47,7 +46,15 @@ def do_import(path):
             hits[t] = EndpointHit(endpoint=endpoints[path, method], user_agent=ua, count=1)
     commit()
 
+def usage_and_exit():
+    print "Usage:"
+    print "  import.py <audit_log_path> <branch_or_tag>"
+    exit(1)
 
 if __name__ == '__main__':
     import sys
-    do_import(sys.argv[1])
+    if len(sys.argv) < 3:
+        usage_and_exit()
+    branch_or_tag = sys.argv[2]
+    openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
+    do_import(sys.argv[1], openapi_uri)

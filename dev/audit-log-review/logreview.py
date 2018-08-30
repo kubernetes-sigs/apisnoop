@@ -160,8 +160,8 @@ def usage_and_exit():
     print "    - Show this message."
     print "  logreview.py load-coverage <filename>"
     print "    - Load Google Docs test coverage spreadsheet from CSV."
-    print "  logreview.py load-audit <filename> <appname>"
-    print "    - Load Kubernetes audit log for app into database."
+    print "  logreview.py load-audit <filename> <branch_or_tag> <appname>"
+    print "    - Load Kubernetes audit log using openapi spec from specified branch or tag for app into database."
     print "  logreview.py remove-audit <appname>"
     print "    - Delete Kubernetes audit log for app from database."
     print "  logreview.py export-data <exporter-name> <output-filename> <appname (optional)>"
@@ -197,14 +197,16 @@ def main():
         Endpoint.update_from_coverage(rows)
         return # we are done
     elif sys.argv[1] == 'load-audit':
-        if len(sys.argv) < 4:
+        if len(sys.argv) < 5:
             usage_and_exit()
         filename = sys.argv[2]
         if not os.path.isfile(filename):
             print "Invalid filename given"
             usage_and_exit()
-        appname = sys.argv[3]
-        openapi_spec = load_openapi_spec(OPENAPI_SPEC_URL)
+        branch_or_tag = sys.argv[3]
+        openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
+        appname = sys.argv[4]
+        openapi_spec = load_openapi_spec(openapi_uri)
         audit_log = load_audit_log(filename)
         report = generate_coverage_report(openapi_spec, audit_log)
         App.update_from_results(appname, report['results'])

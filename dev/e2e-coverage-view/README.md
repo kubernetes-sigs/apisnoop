@@ -12,7 +12,7 @@ pip install -r requirements.txt
 
 To load the audit log into the database
 ```
-python import.py <audit log path>
+python import.py <audit log path> <kubernetes tag or branch>
 ```
 
 Now that the log is in the database, lets start the webserver and have a look
