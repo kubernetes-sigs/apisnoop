@@ -9,16 +9,18 @@ console.log('starting')
 	var userAgents = new Set()
 	var tags = new Set()
   
-  var testFile;
-console.log({testfile1: testFile})
-  testFile = fs.readFileSync('/home/z/audit-log-filter/testList.json', 'utf-8')
-var testArray = testFile.split('\n')
+  var auditLogData;
+  auditLogData = fs.readFileSync('/home/z/audit-log-filter/testList.json', 'utf-8')
+var auditLogLines = auditLogData.split('\n')
 var json = []
 
-for (var obj of testArray) {
+for (var obj of auditLogLines) {
   if (obj.length != '') {
-  console.log({obj})
   json.push(JSON.parse(obj))
   }
 }
-console.log(json)
+
+for (var item of json) {
+  var userAgent = item.userAgent
+  console.log({thing: userAgent.match(/e2e.test/)})
+}
