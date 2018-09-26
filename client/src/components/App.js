@@ -1,32 +1,26 @@
-import React from 'react'
-import { HashRouter, Route } from 'react-router-dom'
+import React, { Component } from 'react'
 
-import { bindActionCreators } from 'redux'
+import { NavLink, Route } from 'react-router-dom'
 
-import { connect } from 'react-redux'
+import Header from './Header'
+import ContactListPage from '../pages/contact-list-page'
+import ContactFormPage from '../pages/contact-form-page'
 
-import * as actionCreators from '../actions/actionCreators'
-import Main from './Main'
-
-function mapStateToProps (state) {
-  return {
-    cats: state.cats
-  }
-}
-
-function mapDispatchToProps (dispatch) {
-  return bindActionCreators(actionCreators, dispatch)
-}
-
-class App extends React.Component {
+class App extends Component {
   render(){
     return (
-    <HashRouter>
-      <div>
-        <Route exact path='/' component={Main} />
+      <div id='app'>
+        <Header />
+        <div id='nav'>
+         <NavLink exact to='/'>Contacts List</NavLink>
+         <NavLink exact to='/contacts/new'>Add a Contact</NavLink>
+        </div>
+        <Route exact path='/' component={ContactListPage} />
+        <Route path='/contacts/new' component={ContactFormPage} />
+        <Route path='/contacts/edit/:_id' component={ContactFormPage} />
       </div>
-    </HashRouter>
     )
   }
 }
-export default connect(mapStateToProps, mapDispatchToProps)(App)
+
+export default App

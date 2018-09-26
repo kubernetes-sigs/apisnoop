@@ -3,3 +3,9 @@ export function actionCats () {
     type: 'CATS_REQUESTED'
   }
 }
+
+export function funZachAction () {
+  return {
+    type: 'TEST'
+  }
+}
