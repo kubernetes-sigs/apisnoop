@@ -20,13 +20,15 @@ The current site was the most basic proof of concept. We want to build a whole b
 The site will be made to have a distinct front-end and backend, with the front-end able to be ported over to any other backend.
 The front-end will consist of multiple components that wait to be told what data to display, instead of being written as part of the component.  In this way, if we want to make changes to our 'SIG Tag Bubble', we can just find the component named that and make changes there, instead of trying to find/replace the code within the file.
 ** FRONTEND
-The frontend will be made with React, Redux, maybe Saga, and Tachyons.
+The frontend will be made with React, Redux, maybe Saga, and Tachyons, and Axios
 *** Why React?
     [[https://reactjs.org/][React]] is the most well-known and supported front-end framework among my dev friends in Wellington, and is widely used and respected globally.  It was created originally by Facebook and then made open-source.  So it has a tremendous amount of support around it and good video tutorials for learning it.  I find it to be a bulky and kinda clumsy framework (which is why the first version of this used my personal fave Choo instead), but felt it was good to pick one that more people knew (and could help with).
 
 *** Why Redux?
    [[https://redux.js.org/][Redux]]  provides one global 'state' for the app, and makes React actually usable.  It will help us push the data appropriately to the right parts and keep things clean and efficient.
 
+*** AXIOS
+   [[https://www.npmjs.com/package/axios][Axios]] is a simple tool for handling http requests across different servers.  We'll need this for the client to be portable, and able to call to multiple API's (our backend plus github for example).
 *** Why Saga?
    [[https://redux-saga.js.org/][Saga]] helps us with api calls and redux.  Redux likes pure clean objects sent to the store right away.  API calls don't work like that, and so Saga does the call and then sends the results to Redux.  It's working as a side effect.
 
@@ -357,6 +359,8 @@ I'll add a couple additions to our package.json (this is best outlined in the gi
    This is the starting point for the full app, in which we initialize React, connect it to redux, start up our store, connect to feathers and all that good stuff.
 *** Requirements
     index is really here to spin up react and redux and guide us to the beginning components and store where the real stuff happens. BrowserRouter is brought in so that clicking on different navlinks in our App component will work like url's on a standard webpage.
+
+
     #+NAME: Requirements for just React
     #+BEGIN_SRC js
       import React from 'react'
@@ -369,12 +373,13 @@ I'll add a couple additions to our package.json (this is best outlined in the gi
       import App from './components/App'
     #+END_SRC
 
-with redux, we bring in a store that holds the global state of the app as one big object to parse over.  So we bring that in now too
+
+
+WITH redux, we bring in a store that holds the global state of the app as one big object to parse over.  So we bring that in now too
     #+NAME: import store
     #+BEGIN_SRC js
       import store from './store'
     #+END_SRC
-
 *** React Only index page
     Once we have the router setup, we need to mount everything to our index.html file (in our public folder).  This is how javascript can magically render itself as html to whoever's looking at it.
 
@@ -403,6 +408,7 @@ So this is what it looks like before:
         document.getElementById('root')
       )
     #+END_SRC
+
 ** Components
 *** App
     :PROPERTIES:
@@ -503,23 +509,130 @@ Lastly, we bring in our different pages, which we can navigate between using a n
     :PROPERTIES:
     :header-args: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/components/contact-form.js
     :END:
-    part of our tutorial.  this is going to be a 'smart' component, meaning it has it's own state that is aware of and tracking.
-    #+NAME: contact-form
-    #+BEGIN_SRC js
-      import React, { Component } from 'react'
 
-      class ContactForm extends Component {
-        render(){
-          return (
-              <div>
-                <p>under construction...</p>
-              </div>
-          )
-        }
-      }
+    We're going to add form validation for this, to make sure it can fit in our backend database correctly.
 
-      export default ContactForm
-    #+END_SRC
+**** Requirements
+     We're using React for the component, redux-form for the form submission and validation, and classNames to better highlight the parts of the form that have validation errors.
+       #+NAME: Requirements
+       #+BEGIN_SRC js
+         import React, { Component } from 'react'
+         import { Field, reduxForm } from 'redux-form'
+       #+END_SRC
+**** Basic Layout
+     Forms are tricky with client-side apps, as forms like to ping a server and live somewhere there.  In a traditional model, you'd have the form do a post request to the server and redirect to a success page.  But here, we are wanting to post to another area in this client-side app, and so within the browser and not the server. Which is to say that we need to set this up with a couple wrappers so this works properly.
+
+This is essentially some React Redux weirdness conventions.  It is possible that there are now better ways to do this then I am aware, and when I learn of them I'll come back to update this.  But for now, here is a sturdy way in which to handle forms with react and redux.
+
+     The layout will create a new react Component for our form, and this component will have an included Function for what each form field should look like.
+
+Then, in the main component page, we'll create each field using the redux-form Field component, and say that it renders itself using that field function we described up above.  In other words we say, "Give us a field component that will bundle up the data nice to work with redux but for styling, have it look like this subcomponent we described elsewhere."  So we are not defining what Field does, it comes pre-made from redux-form, and it does some good data cleanup and manipulation automatically so that this page works well with redux.  The actual presentation of the component is handled in our renderField function/sub-component.
+
+Lastly, we export it wrapped up in reduxForm, similar to how we connected the component to our redux state in the contact-list.  This means we have all the properties and power of redux form whenever this component is called.
+
+And so, the whole thing is structured like so.
+
+       #+NAME: contact-form layout
+       #+BEGIN_SRC js
+         class ContactForm extends Component {
+         <<renderField sub-component>>
+           render(){
+             <<setup Props>>
+             return (
+             <<ContactForm Component>>
+             )
+           }
+         }
+        <<Export with reduxForm>>
+       #+END_SRC
+
+**** the renderField sub-component
+     React Components let you declare component specific functions that you call like so ~this.functionName~.  You don't need to declare them as a variable like usual.
+
+So we are saying our contactForm has a function within it called renderField.  It takes a number of arguments, kept up nice in an object.  Then, we render a component with different wildcards represented by those arguments.  So we can put the basic structure in, and let each one be different based on the props that our contactFrom passes to it (its label, its type, etc.)
+
+       #+NAME: renderField sub-component
+       #+BEGIN_SRC js :tangle no
+           renderField = ({ input , label, type, meta: {touched, error} }) => (
+               <div className='mt3'>
+               <label className='db fw6 1h-copy f6' for={label}>
+                 {label}
+               </label>
+               <input className='pa2 input-reset ba bg-transparent
+                                 hover-bg-black hover-white w-100'
+                      {...input}
+                      type={type}
+                      placeholder={label}>
+               </input>
+               </div>
+
+           )
+       #+END_SRC
+
+The {...input} section is kinda neat.  It's a destructured object, and so {input} is equal to {input: input}.  This goes one more and does it as a spread operator.  So now it's saying {input: whatever the current input is plus what you about to put in}.  This is what lets us enter text, and the component records each letter as you type it in as the input.  Without this if I were to type 'hello', then the component would say the input was 'o', as it just kept the last letter we entered.  Now, the input is 'h'+'e'+'l'+'l'+'o'; so it works properly even in this new weird shadowDOM react world.
+
+**** The Contact Form Component
+     Now we can set up our main component.  First, we do some tricky laziness.  We define a bunch of variables, based on the variables brought in by this.props.
+        #+NAME: setup Props
+        #+BEGIN_SRC js :tangle no
+          const {handleSubmit, submitting, loading  } = this.props
+        #+END_SRC
+
+     The whole point of this is now we can call handleSubmit with just 'handleSubmit' instead of 'this.props.handleSubmit'.  V fancy, v. lazy.
+
+     Now, we set up the contactForm.  It has a nice basic structure, since we render the field component elsewhere.  As you can see it's a form that, onSubmit calls our handleSubmit function.  It's made up of four fields and a submit button.
+
+These four fields have names that correspond to the data structure we wanna pass in our object.  This is set up just like our current contactStore object. HANDY!
+
+        #+NAME: ContactForm Component
+        #+BEGIN_SRC js :tangle no
+          <main className='pa4 black-80'>
+          <form className='measure center' onSubmit={handleSubmit} loading={loading}>
+          <fieldset id='add_new_contact' className='ba b--transparent ph0 mh0'>
+            <legend className='f4 fw6 ph0 mh0'>Add New Contact</legend>
+            <Field name='name.first' type='text' component={this.renderField} label='First Name' />
+            <Field name='name.last' type='text' component={this.renderField} label='Last Name' />
+            <Field name='phone' type='text' component={this.renderField} label='Phone' />
+            <Field name='email' type='text' component={this.renderField} label='email' />
+          </fieldset>
+          <div>
+            <input className='b ph3 pv2 input-reset ba b--black
+                              bg-transparent grow pointer f6 dib'
+                  type='submit'
+                  value='Add Contact'
+                  disabled={submitting}>
+            </input>
+          </div>
+          </form>
+          </main>
+        #+END_SRC
+
+        #+RESULTS: ContactForm Component
+
+**** Exporting it with Redux Form.
+     The last bit is to just export this whole component, but connected to redux-form.  It's the same structure as connect in our contactList, but we say that we are adding to our 'form' store a new form called 'contact'.
+
+        #+NAME: Export with reduxForm
+        #+BEGIN_SRC js :tangle no
+           export default reduxForm({form: 'contact'})(ContactForm)
+        #+END_SRC
+
+
+
+
+
+ We can define tiny components within components and pass along the proper fields to them as props.  So we are going to create a specific component for each of our fields, and set it to the variable 'renderField'.
+
+ #+NAME: define form field component
+ #+BEGIN_SRC js :tangle no
+   renderField = ({ input, label, type, meta: {touched, error } }) => (
+         <div class="measure">
+       <label for={label} class="f6 b db mb2">{name}</label>
+       <input id={name} class="input-reset ba b--black-20 pa2 mb2 db w-100" type={type} aria-describedby="name-desc" placeholder={label}>
+         <small id=`${{name}}-desc` class="f6 black-60 db mb2">Helper text for the form control.</small>
+         </div>
+   )
+ #+END_SRC
 *** Contact List
     :PROPERTIES:
     :header-args: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/components/contact-list.js
@@ -808,68 +921,224 @@ Any component that needs to be aware of our app's state will be written in this 
       export default createStore(rootReducer, middleware)
     #+END_SRC
 ** Actions
+*** index.js
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/index.js
+    :END:
+    We'll use the index page of the actions to set up our axios client.  axios handles our fetch requests, since we'll be fetching from another server and not from a data file within this app.  Axios is an http request client that uses promises (a new javascript convention for handling asynchronous calls).[[https://www.npmjs.com/package/axios][ Axios page on NPM]]
+
+    We'll want to configure a client app for axios, that sets the host we are trying to connect to and the type of information we are expecting to get.  Since we are working with a feathers api, then we know we just need to grab JSON.
+    #+BEGIN_SRC js
+      import axios from 'axios'
+
+      export const client = axios.create({
+        baseURL: "http://localhost:3030",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      })
+    #+END_SRC
    These work with redux to deliver our store an object that has a 'type' and a payload.  So the type tells our store reducers what to do with it, and the payload is the data that is being added to the global state.
+
 *** Contact Actions
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/actions/contact-actions.js
     :END:
-    #+NAME: contact-actions.js
+**** Requirements
+    We are going to ping our feathers database to grab our contacts.  We've set up an axios client (in index.js) to handle these types of requests, so we'll bring it in, and use the client to grab data.
+    #+NAME: Requirements
     #+BEGIN_SRC js
-      import { contacts } from '../contact-data.js'
+      import { client } from './'
 
-      export function fetchContacts () {
-        return dispatch => {
-          dispatch({
-            type: 'FETCH_CONTACTS',
-            payload: contacts
-          })
-        }
-      }
+      const url = '/contacts'
+
     #+END_SRC
+**** Fetching Contacts
+      The dispatch is being used so our redux stores can hear an action took place.  So we are sending out a broadcast(dispatch) that says 'FETCH CONTACTS HAPPENED!' and we're bringing with it a payload.  Redux will hear this action, and assign the payload to the correct part of the app's state.
 
-***
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./client/src/actions/contact-actions.js
+      :END:
+      #+NAME: contact-actions.js
+      #+BEGIN_SRC js
+
+        export function fetchContacts () {
+          return dispatch => {
+            dispatch({
+              type: 'FETCH_CONTACTS',
+              payload: client.get(url)
+            })
+          }
+        }
+      #+END_SRC
+
+  When this is pinged it'll create a few new type of actions:
+    + 'FETCH_CONTACTS_PENDING'
+    + 'FETCH_CONTACTS_FULFILLED'
+    + 'FETCH_CONTACTS_REJECTED'
+
+  This is done automatically, and so we don't need to create action creators for these various actions, we just need to tell our reducer to listen to the 'FETCH_CONTACTS_FULFILLED' action and handle the payload appropriately.
+
+**** New Contact
+     This action will end up being called when our contact form page mounts.  In other words, when someone clicks our 'add contact' list, we going to announce to the whole app 'New Contact coming!'
+     #+NAME: newcontact
+     #+BEGIN_SRC js
+
+       export function newContact () {
+         return dispatch => {
+           dispatch({
+           type: 'NEW_CONTACT'
+           })
+         }
+       }
+     #+END_SRC
+
+**** Save Contact
+     This will be called when we submit the form, and the data will be sent to our server and come back, hopefully, fulfilled.  It's similar to fetching contacts up above, in that we'll use axios and get 'SAVE_CONTACTS_PENDING' and '_FULFILLED' and '_REJECTED' to go along with this.
+     #+NAME: Save Contact
+     #+BEGIN_SRC js
+       export function saveContact (contact) {
+         return dispatch => {
+           return dispatch({
+             type: 'SAVE_CONTACT',
+             payload: client.post(url, contact)
+           })
+         }
+       }
+     #+END_SRC
+
 ** Reducers
    The general logic here is we make different files for the different concerns (like contacts, sigs, apps, and so on), and then these are all combined in our index.js to create a single reducer (which is then added as our app's state).
-*** TODO Define what we mean by reducer here!
+
+  It's called a reducer because we are using a reduce function on the array of properties in the various parts of the app, reducing it into a single global state.
+
 *** Contact reducer
     :PROPERTIES:
     :header-args: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/reducers/contact-reducer.js
     :END:
-    We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with good things
+**** Initial State
+    We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with good things.  We've added some state to handle new contact entries, so we can store to state the new contact we're working with, and whether we are currently waiting on a response from our server (loading), or whether the data wasn't sent or saved properly (errors).
+
     #+NAME: default state
     #+BEGIN_SRC js
       const defaultState = {
-        contacts: []
+        contacts: [],
+        contact: {name:{}},
+        loading: false,
+        errors: {}
+
       }
     #+END_SRC
+**** The Contact Reducer
 
-    Then we create our reducer, which listens to different dispatches, takes the payload associated with that dispatch, and adds it to the contact state.  We do this using javascript switch statements[[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/switch][ Mozilla Docs for Switch Statements]]
+    Then we create our reducer, which listens to different dispatches, takes the payload associated with that dispatch, and adds it to the contact state.  We do this using javascript switch statements[[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/switch][ Mozilla Docs for Switch Statements]].  This lets us handle multiple types of dispatches all gathered around the concern of the app.  In this case, we are concerned wiht contacts, but this could also be Sigs, tests run, apps called, etc.
+
+The basic syntax for switch is you set up a switch object based around some value, in our case what type of action is being sent us.  Then we handle the different 'cases' that could come up.  If none of them come up, we just return the default state.
+
+
     #+NAME: contact reducer
     #+BEGIN_SRC js
       export default (state = defaultState, action = {}) => {
         switch (action.type) {
-          case 'FETCH_CONTACTS': {
-            return {
-              ...state,
-              contacts: action.payload
-            }
-          }
+          <<Case: Fetch Contacts>>
+          <<Case: New Contact>>
+          <<Case: Save Contacts Pending>>
+          <<Case: Save Contacts Fulfilled>>
+          <<Case: Save Contacts Rejected>>
           default:
             return state;
           }
       }
+
     #+END_SRC
 
 We use the spread operator for our state (...state) and what this does is takes the entire current state object for contact and adds that in and then to that we add our new action.payload.  This keeps the reducer immutable.  We do not adjust the state, we only replace it.
 
+**** Fetching Contacts
+
+This dispatch comes when a successful call to the server has been fulfilled.  We then take the payload of data given to us and add it to our contacts array.
+
+#+NAME: Case: Fetch Contacts
+#+BEGIN_SRC js :tangle no
+  case 'FETCH_CONTACTS_FULFILLED': {
+    return {
+      ...state,
+      contacts: action.payload.data.data || action.payload.data // in case pagination is disabled.
+    }
+  }
+
+#+END_SRC
+
+**** New Contact
+     Called when the page loads.  We essentially update the state with an empty object for contact that now has a name value.  I don't think it really does anything more than this, since our newContact action delivers no payload.  This is something to explore a bit more later.
+
+#+NAME: Case: New Contact
+#+BEGIN_SRC js :tangle no
+  case 'NEW_CONTACT': {
+    return {
+      ...state,
+      contact: {name:{}}
+    }
+  }
+
+#+END_SRC
+
+**** Save Contact
+     These instances come when someone tries to submit a new contact, and so we need to handle a few more cases than just fetch.
+
+for pending, change loading to true.  This lets us set up an if/then for the component we display.
+
+#+NAME: Case: Save Contact Pending
+#+BEGIN_SRC js :tangle no
+  case 'SAVE_CONTACT_PENDING': {
+    return {
+      ...state,
+      loading: true
+    }
+  }
+#+END_SRC
+
+
+IF it's fulfilled, then update  our contacts store with the new state of our server say we no longer loading.
+#+NAME: Case: Save Contact Fulfilled
+#+BEGIN_SRC js :tangle no
+  case 'SAVE_CONTACT_FULFILLED': {
+    return {
+      ...state,
+      contacts: [...state.contacts, action.payload.data],
+      errors: {},
+      loading: false
+    }
+  }
+#+END_SRC
+
+If it's rejected, then we want to display the error message for //why// it was rejected.
+#+NAME: Case: Save Contact Rejected
+#+BEGIN_SRC js :tangle no
+  case 'SAVE_CONTACTS_REJECTED': {
+    const data = action.payload.response.data
+    // convert feathers error formatting to match client-side error formatting
+    const { "name.first": first, "name.last": last, phone, email } = data.errors
+    const errors = { global: data.message, name: {first, last}, phone, email }
+    return {
+      ...state,
+      errors: errors,
+      loading: false
+    }
+  }
+#+END_SRC
 *** index.js
     :PROPERTIES:
     :header-args: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/reducers/index.js
     :END:
     Here we combine all our different reducers into one big one.  This lets us think about the app in different, focused concerns that then get added to the larger application seamlessly.   For example, when we remove contacts, we simply delete a line in our index.js file since all the contacts concerns were handled only in their contact-reducer file and nowhere else.
+
+    To handle the form validation and submission, we are going to use an existing redux module called 'redux-form'.  this helps us package up the form to send to our backend properly (as it's one of those surprisingly hard things to do in this type of world!)
+
     #+NAME: Requirements
     #+BEGIN_SRC js
       import { combineReducers } from 'redux'
+      import { reducer as formReducer } from 'redux-form'
 
       import ContactReducer from './contact-reducer'
     #+END_SRC
@@ -877,7 +1146,8 @@ We use the spread operator for our state (...state) and what this does is takes 
     #+NAME: Reducers
     #+BEGIN_SRC js
       const reducers = {
-        contactStore: ContactReducer
+        contactStore: ContactReducer,
+        form: formReducer
       }
 
       const rootReducer = combineReducers(reducers)
@@ -918,6 +1188,10 @@ We use the spread operator for our state (...state) and what this does is takes 
 ** DONE Figure out the issue with Browser history.
    CLOSED: [2018-09-26 Wed 17:33]
    it was an issue between react v.3 and react v.4.  I'm implementing things ina  different way now.
+** TODO Figure out how to setup dev and prod configurations for axios
+   we have it hardcoded to connect to localhost:3030.  What does it look like when we want to connect to some other known server?
+** TODO lookup classnames to better understand how it works!
+  https://www.npmjs.com/package/classnames
 * Footnotes
 ** Resources
 *** Youtube Tutorial
