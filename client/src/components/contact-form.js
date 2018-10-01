@@ -1,9 +1,10 @@
 import React, { Component } from 'react'
 import { Field, reduxForm } from 'redux-form'
+import classnames from 'classnames'
 
 class ContactForm extends Component {
  renderField = ({ input , label, type, meta: {touched, error} }) => (
-     <div className='mt3'>
+     <div className={classnames('mt3', {error:touched && error})}>
      <label className='db fw6 1h-copy f6' for={label}>
        {label}
      </label>
@@ -13,6 +14,7 @@ class ContactForm extends Component {
             type={type}
             placeholder={label}>
      </input>
+     {touched && error && <span className='error'>{error.message}</span>}
      </div>
  
  )

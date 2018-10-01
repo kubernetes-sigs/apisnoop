@@ -513,11 +513,13 @@ Lastly, we bring in our different pages, which we can navigate between using a n
     We're going to add form validation for this, to make sure it can fit in our backend database correctly.
 
 **** Requirements
-     We're using React for the component, redux-form for the form submission and validation, and classNames to better highlight the parts of the form that have validation errors.
+     We're using React for the component, and redux-form for the form submission and validation.
+
        #+NAME: Requirements
        #+BEGIN_SRC js
          import React, { Component } from 'react'
          import { Field, reduxForm } from 'redux-form'
+         import classnames from 'classnames'
        #+END_SRC
 **** Basic Layout
      Forms are tricky with client-side apps, as forms like to ping a server and live somewhere there.  In a traditional model, you'd have the form do a post request to the server and redirect to a success page.  But here, we are wanting to post to another area in this client-side app, and so within the browser and not the server. Which is to say that we need to set this up with a couple wrappers so this works properly.
@@ -553,20 +555,21 @@ So we are saying our contactForm has a function within it called renderField.  I
 
        #+NAME: renderField sub-component
        #+BEGIN_SRC js :tangle no
-           renderField = ({ input , label, type, meta: {touched, error} }) => (
-               <div className='mt3'>
-               <label className='db fw6 1h-copy f6' for={label}>
-                 {label}
-               </label>
-               <input className='pa2 input-reset ba bg-transparent
-                                 hover-bg-black hover-white w-100'
-                      {...input}
-                      type={type}
-                      placeholder={label}>
-               </input>
-               </div>
+         renderField = ({ input , label, type, meta: {touched, error} }) => (
+             <div className={classnames('mt3', {error:touched && error})}>
+             <label className='db fw6 1h-copy f6' for={label}>
+               {label}
+             </label>
+             <input className='pa2 input-reset ba bg-transparent
+                               hover-bg-black hover-white w-100'
+                    {...input}
+                    type={type}
+                    placeholder={label}>
+             </input>
+             {touched && error && <span className='error'>{error.message}</span>}
+             </div>
 
-           )
+         )
        #+END_SRC
 
 The {...input} section is kinda neat.  It's a destructured object, and so {input} is equal to {input: input}.  This goes one more and does it as a spread operator.  So now it's saying {input: whatever the current input is plus what you about to put in}.  This is what lets us enter text, and the component records each letter as you type it in as the input.  Without this if I were to type 'hello', then the component would say the input was 'o', as it just kept the last letter we entered.  Now, the input is 'h'+'e'+'l'+'l'+'o'; so it works properly even in this new weird shadowDOM react world.
@@ -840,26 +843,93 @@ Any component that needs to be aware of our app's state will be written in this 
 
 *** Contact Form Page
     :PROPERTIES:
-    :header-args: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/pages/contact-form-page.js
+    :header-args: :noweb yes :tangle ./client/src/pages/contact-form-page.js
     :END:
-    Similar to the list.  Simple for now.
+**** Requirements
+    With our contact form component made, we can add it into a contact page.  This page wants to also know what to do once the form is sent--what to do in case of success, and errors, and how to send out the form to the reducer.  So we will import the correct parts from react and redux to handle the redirects and forms, and bring in the submission actions we created in our contact-actions.
+    #+NAME: Requirements
     #+BEGIN_SRC js
       import React, { Component } from 'react'
+      import { Redirect } from 'react-router'
+      import { SubmissionError } from 'redux-form'
+      import { connect } from 'react-redux'
 
+      import { newContact, saveContact } from '../actions/contact-actions'
       import ContactForm from '../components/contact-form'
+    #+END_SRC
+**** Basic Layout
+     We start up a new 'stateful' component, meaning it has a state specific to itself. The rest of the app doesn't need to know when the contact form wants to redirect.  Only the contact form really cares about that.  So we make it stateful.
+
+Then, we run a function for once the component has mounted to the dom, render the component, and do our cool 'mapStateToProps' jam, so the application's state is available to this component as properties it can render.
+
+    #+NAME: Basic Layout
+    #+BEGIN_SRC js
 
       class ContactFormPage extends Component {
-        render() {
-          return (
-              <div>
-                <ContactForm />
-              </div>
-          )
-        }
-      }
 
-      export default ContactFormPage
+        state = {
+          redirect: false
+        }
+        <<Component Did Mount>>
+        <<Define Submit Function>>
+
+        <<Render Component>>
+      }
+        <<Map State To Props>>
+
+      export default connect(mapStateToProps,{newContact, saveContact})(ContactFormPage)
     #+END_SRC
+
+**** Component Did Mount
+
+     #+NAME: Component Did Mount
+     #+BEGIN_SRC js :tangle no
+       componentDidMount () {
+         this.props.newContact()
+       }
+     #+END_SRC
+
+**** Define Submit Function
+
+     This calls our savecontact action and then waits for the response.   If it's a success, we'll redirect to our contacts page.  If it's an error, we'll explain why.
+     #+NAME: Define Submit Function
+     #+BEGIN_SRC js :tangle no
+       submit = (contact) => {
+         return this.props.saveContact(contact)
+           .then(response => this.setState({ redirect:true }))
+           .catch(err => {
+             throw new SubmissionError(this.props.errors)
+           })
+       }
+     #+END_SRC
+     For the setState--since we have 'this' in front it means 'set //this// component's state.  not the global state.'
+
+**** Render Component
+     Here we manage the redirect.  It's saying 'if redirect is true, then redirect to our homepage, else show this component'.  It's doing this using a[[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Conditional_Operator][ Ternary Operator.]]
+     #+NAME: Render Component
+     #+BEGIN_SRC js :tangle no
+       render() {
+         return (
+             <div>
+             {
+               this.state.redirect ?
+                 <Redirect to='/' /> :
+                 <ContactForm contact={this.props.contact} loading={this.props.loading} onSubmit={this.submit} />
+             }
+             </div>
+         )
+       }
+     #+END_SRC
+**** Map State to Props
+     #+NAME: Map State To Props
+     #+BEGIN_SRC js :tangle no
+       function mapStateToProps (state) {
+         return {
+           contact: state.contactStore.contact,
+           errors: state.contactStore.errors
+         }
+       }
+     #+END_SRC
 
 ** Contact Data
    :PROPERTIES:
@@ -1007,14 +1077,15 @@ Any component that needs to be aware of our app's state will be written in this 
        }
      #+END_SRC
 
-** Reducers
+** reducers
+
    The general logic here is we make different files for the different concerns (like contacts, sigs, apps, and so on), and then these are all combined in our index.js to create a single reducer (which is then added as our app's state).
 
   It's called a reducer because we are using a reduce function on the array of properties in the various parts of the app, reducing it into a single global state.
 
 *** Contact reducer
     :PROPERTIES:
-    :header-args: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/reducers/contact-reducer.js
+    :header-args: :noweb yes :tangle ./client/src/reducers/contact-reducer.js
     :END:
 **** Initial State
     We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with good things.  We've added some state to handle new contact entries, so we can store to state the new contact we're working with, and whether we are currently waiting on a response from our server (loading), or whether the data wasn't sent or saved properly (errors).
@@ -1042,9 +1113,9 @@ The basic syntax for switch is you set up a switch object based around some valu
         switch (action.type) {
           <<Case: Fetch Contacts>>
           <<Case: New Contact>>
-          <<Case: Save Contacts Pending>>
-          <<Case: Save Contacts Fulfilled>>
-          <<Case: Save Contacts Rejected>>
+          <<Case: Save Contact Pending>>
+          <<Case: Save Contact Fulfilled>>
+          <<Case: Save Contact Rejected>>
           default:
             return state;
           }
@@ -1066,7 +1137,6 @@ This dispatch comes when a successful call to the server has been fulfilled.  We
       contacts: action.payload.data.data || action.payload.data // in case pagination is disabled.
     }
   }
-
 #+END_SRC
 
 **** New Contact
@@ -1080,15 +1150,12 @@ This dispatch comes when a successful call to the server has been fulfilled.  We
       contact: {name:{}}
     }
   }
-
 #+END_SRC
-
 **** Save Contact
      These instances come when someone tries to submit a new contact, and so we need to handle a few more cases than just fetch.
 
 for pending, change loading to true.  This lets us set up an if/then for the component we display.
-
-#+NAME: Case: Save Contact Pending
+#+NAME: Case Save Contact Pending
 #+BEGIN_SRC js :tangle no
   case 'SAVE_CONTACT_PENDING': {
     return {
@@ -1112,10 +1179,10 @@ IF it's fulfilled, then update  our contacts store with the new state of our ser
   }
 #+END_SRC
 
-If it's rejected, then we want to display the error message for //why// it was rejected.
+If it's rejected, then we want to display the error message for //why// it was rejected.  We want this to be readable english, as it'll be what's displayed in the component in case of errors.  Luckily, feathers error messages are nice and clear!
 #+NAME: Case: Save Contact Rejected
 #+BEGIN_SRC js :tangle no
-  case 'SAVE_CONTACTS_REJECTED': {
+  case 'SAVE_CONTACT_REJECTED': {
     const data = action.payload.response.data
     // convert feathers error formatting to match client-side error formatting
     const { "name.first": first, "name.last": last, phone, email } = data.errors
@@ -1154,6 +1221,7 @@ If it's rejected, then we want to display the error message for //why// it was r
 
       export default rootReducer
     #+END_SRC
+
 ** Services
    This will handle our api calls, we reference it back in our [[*Sagas][Sagas]]
 *** API
