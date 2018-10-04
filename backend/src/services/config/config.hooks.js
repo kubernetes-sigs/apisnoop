@@ -1,5 +1,7 @@
 
 
+const filterConformance = require('../../hooks/filter-conformance');
+
 module.exports = {
   before: {
     all: [],
@@ -13,7 +15,7 @@ module.exports = {
 
   after: {
     all: [],
-    find: [],
+    find: [filterConformance()],
     get: [],
     create: [],
     update: [],

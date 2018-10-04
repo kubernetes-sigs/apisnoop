@@ -1,12 +1,15 @@
 import React from 'react'
 import ContactCard from './contact-card'
 
-export default function ContactList ({contacts}) {
+export default function ContactList ({contacts, deleteContact}) {
 
   const cards = () => {
     return contacts.map(contact => {
       return (
-          <ContactCard key={contact._id} contact={contact} />
+          <ContactCard
+          key={contact._id}
+          contact={contact}
+          deleteContact={deleteContact} />
       )
     })
   }

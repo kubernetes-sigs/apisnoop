@@ -3,8 +3,14 @@ import { Field, reduxForm } from 'redux-form'
 import classnames from 'classnames'
 
 class ContactForm extends Component {
+ componentWillReceiveProps =  (nextProps) => {
+   const { contact } = nextProps
+   if(contact._id !== this.props.contact._id) {
+     this.props.initialize(contact) // initialize form only once.
+   }
+ }
  renderField = ({ input , label, type, meta: {touched, error} }) => (
-     <div className={classnames('mt3', {error:touched && error})}>
+     <div className={classnames('mt3', {red:touched && error})}>
      <label className='db fw6 1h-copy f6' for={label}>
        {label}
      </label>
@@ -18,13 +24,14 @@ class ContactForm extends Component {
      </div>
  
  )
+
    render(){
      const {handleSubmit, submitting, loading  } = this.props
      return (
      <main className='pa4 black-80'>
      <form className='measure center' onSubmit={handleSubmit} loading={loading}>
      <fieldset id='add_new_contact' className='ba b--transparent ph0 mh0'>
-       <legend className='f4 fw6 ph0 mh0'>Add New Contact</legend>
+       <legend className='f4 fw6 ph0 mh0'>{this.props.contact._id ? 'Edit Contact' : 'Add New Contact!!!'}</legend>
        <Field name='name.first' type='text' component={this.renderField} label='First Name' />
        <Field name='name.last' type='text' component={this.renderField} label='Last Name' />
        <Field name='phone' type='text' component={this.renderField} label='Phone' />

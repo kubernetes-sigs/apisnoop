@@ -14,6 +14,37 @@ export default (state = defaultState, action = {}) => {
         contacts: action.payload.data.data || action.payload.data // in case pagination is disabled.
       }
     }
+    case 'FETCH_CONTACT_PENDING': {
+      return {
+        ...state,
+        loading: true,
+        contact: {name:{}}
+      }
+    }
+    case 'FETCH_CONTACT_FULFILLED': {
+      return {
+        ...state,
+        loading: false,
+        contact: action.payload.data,
+        errors: {}
+      }
+    }
+    case 'UPDATE_CONTACT_PENDING': {
+      return {
+        ...state,
+        loading: true
+      }
+    }
+    case 'UPDATE_CONTACT_FULFILLED': {
+      const contact = action.payload.data
+      return {
+        ...state,
+        loading: false,
+        errors: {},
+        contacts: state.contacts.map(item => item._id === contact._id ? contact : item)
+      }
+    }
+    
     case 'NEW_CONTACT': {
       return {
         ...state,
@@ -40,6 +71,14 @@ export default (state = defaultState, action = {}) => {
         loading: false
       }
     }
+    case 'DELETE_CONTACT_FULFILLED': {
+      const _id = action.payload.data._id
+      return {
+        ...state,
+        contacts: state.contact.filter(item => item._id !== _id)
+      }
+    }
+    
     default:
       return state;
     }

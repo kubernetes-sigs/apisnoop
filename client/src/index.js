@@ -6,13 +6,12 @@ import './index.css'
 import {Provider} from 'react-redux'
 
 import App from './components/App'
-
-import store from './store'
+import store from './store.js'
 
 ReactDOM.render(
     <BrowserRouter>
     <Provider store={store}>
-      <App />
+    <App />
     </Provider>
     </BrowserRouter>,
   document.getElementById('root')

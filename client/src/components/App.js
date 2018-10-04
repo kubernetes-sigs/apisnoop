@@ -3,8 +3,8 @@ import React, { Component } from 'react'
 import { NavLink, Route } from 'react-router-dom'
 
 import Header from './Header'
-import ContactListPage from '../pages/contact-list-page'
-import ContactFormPage from '../pages/contact-form-page'
+import TGCommitsPage from '../pages/tg-commits-page'
+import SunburstPage from '../pages/sunburst-page'
 
 class App extends Component {
   render(){
@@ -12,12 +12,11 @@ class App extends Component {
       <div id='app'>
         <Header />
         <div id='nav'>
-         <NavLink exact to='/'>Contacts List</NavLink>
-         <NavLink exact to='/contacts/new'>Add a Contact</NavLink>
+          <NavLink exact to='/'>Test Group Commits</NavLink>
+          <NavLink exact to='/sunburst'>Sunburst</NavLink>
         </div>
-        <Route exact path='/' component={ContactListPage} />
-        <Route path='/contacts/new' component={ContactFormPage} />
-        <Route path='/contacts/edit/:_id' component={ContactFormPage} />
+        <Route exact path='/' component={TGCommitsPage} />
+        <Route exact path='/sunburst' component={SunburstPage} />
       </div>
     )
   }
