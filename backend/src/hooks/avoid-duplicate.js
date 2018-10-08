@@ -4,10 +4,6 @@
 // eslint-disable-next-line no-unused-vars
 module.exports = function (options = {}) {
   return async context => {
-    context.result.conformance = []
-    var conformanceGCE = context.result.dashboards.find(dashboard => {
-      return dashboard.name === 'conformance-gce'
-    })
-    Object.assign(context.result.conformance, conformanceGCE.dashboard_tab)
+    return context
   };
 };

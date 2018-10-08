@@ -23,9 +23,9 @@ class TGCommitPage extends Component {
         <div>
         <h1>Commits for GCE Conformance</h1>
         <h2>Dev</h2>
-        <CommitList commits={dev} />
+        <CommitList commits={dev} test_groups={this.props.test_groups}/>
         <h2>Release</h2>
-        <CommitList commits={release} />
+        <CommitList commits={release} test_groups={this.props.test_groups}/>
         </div>
     )
   }
@@ -33,7 +33,8 @@ class TGCommitPage extends Component {
 
 function mapStateToProps (state) {
   return {
-    conformance: state.configStore.conformance
+    conformance: state.configStore.conformance,
+    test_groups: state.configStore.test_groups
   }
 }
 

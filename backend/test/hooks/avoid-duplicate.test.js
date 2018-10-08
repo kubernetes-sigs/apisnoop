@@ -1,8 +1,8 @@
 const assert = require('assert');
 const feathers = require('@feathersjs/feathers');
-const filterConformance = require('../../src/hooks/filter-conformance');
+const avoidDuplicate = require('../../src/hooks/avoid-duplicate');
 
-describe('\'filterConformance\' hook', () => {
+describe('\'avoidDuplicate\' hook', () => {
   let app;
 
   beforeEach(() => {
@@ -15,7 +15,7 @@ describe('\'filterConformance\' hook', () => {
     });
 
     app.service('dummy').hooks({
-      after: filterConformance()
+      before: avoidDuplicate()
     });
   });
 

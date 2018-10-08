@@ -1,7 +1,7 @@
+/* eslint-disable no-unused-vars */
 const request = require('request-promise')
 const yaml = require('js-yaml')
 
-/* eslint-disable no-unused-vars */
 var options = {
   url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
   headers: {
@@ -9,28 +9,75 @@ var options = {
   }
 }
 
-class Service {
+class service {
   constructor (options) {
     this.options = options || {};
   }
+  // async find (params) {
+  //   return [];
+  // }
+  
+  // async get (id, params) {
+  //   return {
+  //     id, text: `a new message with id: ${id}!`
+  //   };
+  // }
+  
+  // async create (data, params) {
+  //   if (array.isarray(data)) {
+  //     return promise.all(data.map(current => this.create(current, params)));
+  //   }
+  
+  //   return data;
+  // }
+  
+  // async update (id, data, params) {
+  //   return data;
+  // }
+  
+  // async patch (id, data, params) {
+  //   return data;
+  // }
+  
+  // async remove (id, params) {
+  //   return { id };
+  // }
+  
 
-  async find (params) {
-    return request(options).then(blob => {
+  async setup (app, params) {
+    request(options).then(blob => {
       blob = JSON.parse(blob)
       var content = Buffer.from(blob.content, 'base64').toString()
-      return yaml.safeLoad(content)
+      var configGroups =  yaml.safeLoad(content)
+      distribute(app, configGroups)
     })
-  }
-
-  async get (id, params) {
-    return {
-      id, text: `A new message with ID: ${id}!`
-    };
   }
 }
 
+function distribute (app, configFile) {
+  // var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
+  var relevantSections = ['dashboard_groups', 'test_groups', 'dashboards']
+  for (var section of relevantSections) {
+    var configSection = configFile[section]
+    var service = app.service(`/api/v1/${section}`)
+    populate(service, configSection)
+  }
+}
+
+async function populate (service, configSection) {
+  for (var entry of configSection) {
+     var existingEntry = await service.find({query:{name: entry.name}})
+     if (existingEntry.length === 0) {
+       service.create(entry)
+     } else {
+       service.update(existingEntry[0]._id, entry)
+     }
+   }
+ }
+
+
 module.exports = function (options) {
-  return new Service(options);
+  return new service(options);
 };
 
-module.exports.Service = Service;
+module.exports.service = service;

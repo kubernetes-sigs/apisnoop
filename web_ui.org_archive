@@ -1,0 +1,735 @@
+#    -*- mode: org -*-
+
+
+Archived entries from file /Users/Nelsonian/Projects/ii/apisnoop_webui/web_ui.org
+
+
+* Outdated or Experimental
+  :PROPERTIES:
+  :header-args: :tangle no
+  :ARCHIVE_TIME: 2018-10-04 Thu 17:58
+  :ARCHIVE_FILE: ~/Projects/ii/apisnoop_webui/web_ui.org
+  :ARCHIVE_OLPATH: Footnotes
+  :ARCHIVE_CATEGORY: web_ui
+  :END:
+** Sagas
+*** sagas.js
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle no
+    :END:
+**** requirements
+   #+NAME: requirements
+   #+BEGIN_SRC js
+     import { call, put, takeEvery } from 'redux-saga/effects'
+
+     import { getCats } from '../services/api'
+   #+END_SRC
+
+   #+RESULTS: requirements
+
+**** root function
+     This'll be the thing exported out that we call upon when we do sagaMiddleware.run(mySaga, app) in our store.js
+     We'll define our different sagas that we run...these take actions and make api calls with them.  Since they are asynchronous, we are using the * sign with the function. (this is outta my element, so I'm following a tutorial and need to better understand this syntax.)
+
+     #+NAME: root function
+     #+BEGIN_SRC js
+       <<cats saga>>
+       <<fetch cats>>
+       export default function* root(feathersApp) {
+         yield call(catsSaga, feathersApp)
+       }
+     #+END_SRC
+
+**** cats saga
+  Here is an example saga.  We'll get more complex later, but this shows the general format.  You take everyinstance of an action, send it to a function we define, and connect it with our feathers backend.
+
+  #+NAME: cats saga
+  #+BEGIN_SRC js :tangle no
+    function* catsSaga (feathersApp) {
+      yield* takeEvery('CATS_REQUESTED', fetchCats, feathersApp)
+    }
+  #+END_SRC
+
+**** fetch cats
+     This function calls our getCats function (which we'll define in our services/api) to  our backend and with its yield, sends out a call.
+  #+NAME: fetch cats
+  #+BEGIN_SRC js :tangle no
+    function* fetchCats (feathersApp) {
+  console.log('fetch cats reached')
+      try {
+        const cats = yield call(getCats, feathersApp)
+        yield put({type: 'CATS_SUCCEEDED', cats})
+      } catch (e) {
+        yield put({type: 'FETCH_CATS_FAILED', message: e.message})
+      }
+    }
+  #+END_SRC
+
+So all in all, we have a general flow for handling asynchronous calls to an api.  Within our app we'll send out an action like 'CATS_REQUESTED'.  Redux isn't ready to handle this yet, since it also just wants cats, ince and simple,  so it can add them to the state and let us display it.  We don't know when the api will respond to our cats request, and so we are in the asynchronous land.
+
+And so to help, we have a saga setup that is listening to all our 'CATS_REQUESTED' actions.  When one comes in, it runs its fetchCats function, which pings our api.  We assume success here (though can build it out so say what happens when there's a failure), and success means we are delivered some nice json.  We can take that object, then, and send //that// to redux.
+
+We do this by announcing we have something to give redux with our action 'CATS_SUCCEEDED', which redux will be setup to listen for, and will take the cats we deliver and add it to state.
+** Store
+*** store requirements with saga.
+I'd like to use these, or something like it, but it's requiring a bit too much rabbit-holing and I just wanna deliver a small improvement.  So we'll return to Sagas v. Epics v. Callbags later.
+      #+NAME: requirements with Saga
+      #+BEGIN_SRC js :tangle no
+        import { createStore, applyMiddleware } from 'redux'
+        import { composeWithDevTools } from 'redux-devtools-extension'
+
+        import createSagaMiddleware from 'redux-saga'
+        import mySaga from './sagas/sagas'
+
+        import rootReducer from './reducers/index.js'
+
+        import superagent from 'superagent'
+        import feathers from '@feathersjs/client'
+
+      #+END_SRC
+*** Create Saga Middleware
+    #+NAME: create saga middleware
+    #+BEGIN_SRC js
+      const sagaMiddleware = createSagaMiddleware()
+    #+END_SRC
+*** Apply Saga Middleware
+    #+NAME: apply saga middleware
+    #+BEGIN_SRC js
+      sagaMiddleware.run(mySaga, app)
+
+    #+END_SRC
+** Components
+*** App
+**** Requirements
+     #+NAME: Requirements
+     #+BEGIN_SRC js
+       import React from 'react'
+       import { HashRouter, Route } from 'react-router-dom'
+
+       import { bindActionCreators } from 'redux'
+
+       import { connect } from 'react-redux'
+
+       import * as actionCreators from '../actions/actionCreators'
+       import Main from './Main'
+     #+END_SRC
+**** MapStateToProps
+     This lets us bring the app's state as properties to the component, in other words as things the html elements know how to display without having to know anything about the data itself.
+     #+NAME: MapStateToProps
+     #+BEGIN_SRC js
+       function mapStateToProps (state) {
+         return {
+           cats: state.cats
+         }
+       }
+     #+END_SRC
+
+**** MapDispatchToProps
+     This lets us call out actions easily (with less this.state.actions.dispatch.action nonsense)
+     #+NAME: MapDispatchToProps
+     #+BEGIN_SRC js
+       function mapDispatchToProps (dispatch) {
+         return bindActionCreators(actionCreators, dispatch)
+       }
+     #+END_SRC
+
+**** The App Component
+     #+NAME: App
+     #+BEGIN_SRC js
+       class App extends React.Component {
+         componentDidMount () {
+           this.props.funZachAction()
+           this.props.dispatch(services.cats.get())
+           this.props.actionCats()
+         }
+         render(){
+           return (
+           <HashRouter>
+             <div>
+               <Route exact path='/' component={Main} />
+             </div>
+           </HashRouter>
+           )
+         }
+       }
+       export default connect(mapStateToProps, mapDispatchToProps)(App)
+     #+END_SRC
+
+*** Main
+**** Requirements
+     #+NAME: Requirements
+     #+BEGIN_SRC js
+       import React, { Component } from 'react'
+       import CatList from './CatList'
+     #+END_SRC
+
+**** The Main Class
+     #+NAME: Main
+     #+BEGIN_SRC js
+       class Main extends Component {
+         render(){
+           return(
+             <div>
+               <h1>This is the Main Component</h1>
+             </div>
+           )
+         }
+       }
+       export default Main
+     #+END_SRC
+
+*** Home
+**** Requirements
+     #+NAME: Requirements
+     #+BEGIN_SRC js
+       import React, { Component } from 'react'
+       import CatList from './CatList'
+     #+END_SRC
+**** The Home Class
+     #+NAME: Home
+     #+BEGIN_SRC js
+       class Home extends Component {
+         render(){
+           return(
+             <div>
+               <CatList {...this.props}/>
+             </div>
+           )
+         }
+       }
+
+       export default Home
+     #+END_SRC
+*** CatList
+**** Requirements
+     #+NAME: Requirements
+     #+BEGIN_SRC js
+       import React, { Component } from 'react'
+       import CatCard from './CatCard'
+     #+END_SRC
+
+**** The CatList Class
+     #+NAME: Cat
+     #+BEGIN_SRC js
+       class CatList extends Component {
+         constructor(props){
+           super(props)
+
+           this.props.actionCats()
+         }
+
+         render(){
+           return(
+               <ul>
+               {this.props.cats.map((cat, i) => <CatCard {...this.props} key={i} cat={cat} />)}
+             </ul>
+           )
+         }
+       }
+
+       export default CatList
+     #+END_SRC
+
+*** CatCard
+**** Requirements
+     #+NAME: Requirements
+     #+BEGIN_SRC js
+       import React, { Component } from 'react'
+     #+END_SRC
+
+**** The CatCard Class
+     #+NAME: CatCard
+     #+BEGIN_SRC js
+       class CatCard extends Component {
+         render(){
+           const { cat } = this.props
+           return (
+               <li>
+                 <h2>{cat.name}</h2>
+                 <em>{cat.catchphrase}</em>
+               </li>
+           )
+         }
+       }
+
+         export default CatCard
+     #+END_SRC
+** Actions
+*** actionCreators
+    :PROPERTIES:
+    :header-args-disabled: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/actions/actionCreators.js
+    :END:
+    This delivers the content do our reducers.  Actions are just objects with information.
+    At the beginning we want to just make sure this all works.  We have an api called /cats so let's work with that!
+    #+NAME: action
+    #+BEGIN_SRC js
+      export function actionCats () {
+        return {
+          type: 'CATS_REQUESTED'
+        }
+      }
+
+      export function funZachAction () {
+        return {
+          type: 'TEST'
+        }
+      }
+    #+END_SRC
+
+** Reducers
+   In our cats one we have a test just to make sure these reducers are working.  I can properly send out dispatches for both of these, so the reducer is correctly attached to our client.
+*** cats
+    :PROPERTIES:
+    :header-args-disabled: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/reducers/cats.js
+    :END:
+   #+NAME: cats
+   #+BEGIN_SRC js
+     function cats (state=[], action) {
+       switch(action.type) {
+         case 'CATS_SUCCEEDED':
+           return action.cats
+         case 'TEST':
+           return 'test is success'
+         default:
+           return state
+       }
+     }
+     export default cats
+   #+END_SRC
+*** index
+    :PROPERTIES:
+    :header-args-disabled: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/reducers/index.js
+    :END:
+   This one will gather all our other reducers into a single rootReducer, this is the one that gets added to our store in [[*index.js][client/index.js]]
+**** requirements
+     Right now we are doing feathers-redux, if that goes away, they can go away here too.
+    #+NAME: requirements
+    #+BEGIN_SRC js
+      import { combineReducers } from 'redux'
+      import { routerReducer } from 'react-router-redux'
+
+      import reduxifyServices from 'feathers-redux'
+      import feathers from '@feathersjs/client'
+      import superagent from 'superagent'
+
+      import cats from './cats'
+    #+END_SRC
+**** Create application
+     Our goal is to use feathers-redux (more info here:[[https://github.com/feathers-plus/feathers-redux][feathers-redux github]] )
+     We'll connect this to our feathers backend which is located at localhost:3030, using the feathers client adaptor.  This can be configured so it works with authentication, with the hooks on each thing (modifying data as it flows through the service), and we'll bring in superagent so the api calls work correctly with redux.
+     #+NAME: create application
+     #+BEGIN_SRC js
+       const host = 'http://localhost:3030'
+       export const feathersClient = feathers()
+         .configure(feathers.rest(host).superagent(superagent))
+         .configure(feathers.authentication({ store: window.localstorage }))
+     #+END_SRC
+**** setup feathers services as reducers
+   each service in the server can be rendered as an object for state here.
+   #+NAME: feathers services
+   #+BEGIN_SRC js
+     const services = reduxifyServices(feathersClient, ['cats'])
+   #+END_SRC
+
+**** Combine reducers and export
+     #+NAME: the reducer
+     #+BEGIN_SRC js
+       const rootReducer = combineReducers({
+         cats,
+         routing: routerReducer,
+         fcat: services.cats.reducer
+       })
+
+       export default rootReducer
+     #+END_SRC
+** Models
+   The models are made automatically when you generate a new service too, and are sort of service specific configurations.  These can also be edited as needed.
+*** Contact Model
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/backend/src/models/contact.model.js
+    :END:
+
+This is the beginning model, that was made automatically.
+    #+BEGIN_SRC js :tangle no
+      // contact-model.js - A mongoose model
+      //
+      // See http://mongoosejs.com/docs/models.html
+      // for more of what you can do here.
+      module.exports = function (app) {
+        const mongooseClient = app.get('mongooseClient');
+        const { Schema } = mongooseClient;
+        const contact = new Schema({
+          text: { type: String, required: true }
+        }, {
+          timestamps: true
+        });
+
+        return mongooseClient.model('contact', contact);
+      };
+    #+END_SRC
+Then we essentially alter the schema, so it has the right columns and data for our sample.
+    #+BEGIN_SRC js
+      // backend/src/models/contact.model.js zach!
+
+      require('mongoose-type-email');
+
+      module.exports = function (app) {
+        const mongooseClient = app.get('mongooseClient');
+        const contact = new mongooseClient.Schema({
+          name : {
+            first: {
+              type: String,
+              required: [true, 'First Name is required']
+            },
+            last: {
+              type: String,
+              required: false
+            }
+          },
+          email : {
+            type: mongooseClient.SchemaTypes.Email,
+            required: [true, 'Email is required']
+          },
+          phone : {
+            type: String,
+            required: [true, 'Phone is required'],
+            validate: {
+              validator: function(v) {
+                return /^\+(?:[0-9] ?){6,14}[0-9]$/.test(v);
+              },
+              message: '{VALUE} is not a valid international phone number!'
+            }
+          },
+          createdAt: { type: Date, 'default': Date.now },
+          updatedAt: { type: Date, 'default': Date.now }
+        });
+
+        return mongooseClient.model('contact', contact);
+      };
+    #+END_SRC
+** Test
+Also created by feathers by default (I love feathers).  Every new service you add gets a new test.
+*** Services
+**** Contact
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/backend/test/services/contact.test.js
+     :END:
+
+     By default our test looks like this:
+     #+NAME: default test
+     #+BEGIN_SRC js :tangle no
+       const assert = require('assert');
+       const app = require('../../src/app');
+
+       describe('\'contact\' service', () => {
+         it('registered the service', () => {
+           const service = app.service('contacts');
+
+           assert.ok(service, 'Registered the service');
+         });
+       });
+     #+END_SRC
+
+     Our change is minimal, ~~app.service('contacts')~ becomes ~~app.service('contact')~~
+     and we make 'Registered the service' lowercase.
+     #+NAME: contact.test.js
+     #+BEGIN_SRC js
+       const assert = require('assert');
+       const app = require('../../src/app');
+
+       describe('\'contact\' service', () => {
+         it('registered the service', () => {
+           const service = app.service('contact');
+
+           assert.ok(service, 'registered the service');
+         });
+       });
+     #+END_SRC
+*** Testing everything
+    :PROPERTIES:
+    :header-args: :dir ~/Projects/ii/apisnoop_webui/backend :results output verbatim drawer
+    :END:
+
+    With yr tests configured you can run them all in the terminal.
+    #+NAME: test everything
+    #+BEGIN_SRC shell
+      yarn test
+    #+END_SRC
+
+    #+RESULTS: test everything
+    :RESULTS:
+    :END:
+
+* Backend
+  :PROPERTIES:
+  :ARCHIVE_TIME: 2018-10-08 Mon 16:19
+  :ARCHIVE_FILE: ~/Projects/ii/apisnoop_webui/web_ui.org
+  :ARCHIVE_CATEGORY: web_ui
+  :END:
+** Setup
+  We can speed up this process by [[https://www.npmjs.com/package/@feathersjs/feathers][installing the feathers module through npm]], then using their ~feathers generate app~.  This will generate a full backend server for us, using their design patterns.
+  ===
+  ;;within our apisnoop_webui directory...
+
+  npm install -g @feathersjs/cli
+  mkdir backend
+  cd backend
+  feathers generate app
+  ===
+
+This will bring you through some prompts, which is why i'm not making it runnable code here.
+*** Mongodb
+    you'll need a working version of mongodb and to have the server up and running, as outlined here: https://docs.mongodb.com/manual/tutorial/install-mongodb-on-os-x/
+** Create sample service.
+   We want just something basic to make sure we can grab it later with react/redux.  So we'll make one called /cats that has different cats and their CATchphrases.
+
+   We can use feathers for this too, from within the backend directory: ~feathers generate service~
+   This will lead you through some prompts to decide what sorta service you want.
+*** Change mongoose.js
+    this is just a part of our tutorial, but you need to add mongoose's new url parser to get it to load correctly.  it's cos of an update i guess.
+    #+NAME: Mongoose.js
+    #+BEGIN_SRC js :tangle ~/Projects/ii/apisnoop_webui/backend/src/mongoose.js
+      const mongoose = require('mongoose');
+
+      module.exports = function (app) {
+        mongoose.connect(app.get('mongodb'), { useNewUrlParser: true });
+        mongoose.Promise = global.Promise;
+
+        app.set('mongooseClient', mongoose);
+      };
+    #+END_SRC
+** Config
+   This folder holds the settings for the entire backend.  When you add a new service, it's configurable values get added into here too.
+
+   You can also set separate production and dev configs, which is useful for changing the host name or other settings as needed!
+*** Default.json
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/backend/config/default.json
+    :END:
+
+    #+NAME: default.json
+    #+BEGIN_SRC json
+      {
+        "host": "localhost",
+        "port": 3030,
+        "public": "../public/",
+        "paginate": {
+          "default": 50,
+          "max": 50
+        },
+        "nedb": "../data",
+        "mongodb": "mongodb://localhost:27017/backend"
+      }
+    #+END_SRC
+*** Production.json
+** Hooks
+*** Filter Conformance
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./backend/src/hooks/filter-conformance.js
+    :END:
+    This was created by the feathers cli as part of our config.yaml task (more information here: [[*Add a Conformance section using a hook.][Add a Conformance section using a hook.]])
+
+    The data coming in will be a big thang of json.  AFter it's all been loaded in, we want to adjust the data to be more relevant to our interests.
+
+The full data object is called, in feathers parlance, context and the json itself would be the context.result.  So we want to add a new part to our results called conformance that is just the dashboards that deal with conformance-gce
+
+    #+NAME: Filter Conformance
+    #+BEGIN_SRC js
+      // Use this hook to manipulate incoming or outgoing data.
+      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+      // eslint-disable-next-line no-unused-vars
+      module.exports = function (options = {}) {
+        return async context => {
+          context.result.conformance = []
+          var conformanceGCE = context.result.dashboards.find(dashboard => {
+            return dashboard.name === 'conformance-gce'
+          })
+          Object.assign(context.result.conformance, conformanceGCE.dashboard_tab)
+        };
+      };
+
+    #+END_SRC
+
+** Services
+*** Contact
+    This is a dummy service meant to follow a tutorial.  It'll be erased later, but the process is good for discovery.
+
+   When you create a new service with feathers it makes a bunch of files automatically for you: config files, test files, models for the service and so on.  Many of these work by deefault, but you can also adjust them as needed.
+*** Config (from config.yaml)
+    This will be the api version of the config.yaml file.
+**** Create new service with feathers
+     this will take some prompts, so this isn't meant to be executed.
+     #+NAME: create new service with feathers
+     #+BEGIN_SRC
+     feathers generate service
+     #+END_SRC
+     we chose a custom service called config, at the path /config.  It's data won't be stored by us, but instead come from github.
+     Generating this custom service will give us a class file, hooks file, and service file within our services, like so:
+     #+NAME: Feathers Services
+     #+BEGIN_SRC shell :dir ./backend/src/services/config :results output verbatim drawer
+      tree
+     #+END_SRC
+     #+RESULTS: Feathers Services
+     :RESULTS:
+     .
+     ├── config.class.js
+     ├── config.hooks.js
+     └── config.service.js
+
+     0 directories, 3 files
+     :END:
+**** Install some extra modules.
+     we want to install [[https://npmjs.com/js-yaml][js-yaml]], for converting yaml into json.
+     #+NAME: Install JS-Yaml
+     #+BEGIN_SRC :dir ./backend/
+    npm install js-yaml
+     #+END_SRC
+
+     and we want request-promise for making requests to github's api.
+     #+NAME: Install Request-Promise
+     #+BEGIN_SRC shell :dir ./backend/ :results output list
+    npm install request-promise
+     #+END_SRC
+
+     #+RESULTS: Install Request-Promise
+     : - + request-promise@4.2.2
+     : - updated 1 package and audited 2967 packages in 5.823s
+     : - found 0 vulnerabilities
+
+     #+RESULTS:
+     : - + axios@0.18.0
+     : - updated 1 package and audited 2967 packages in 4.315s
+     : - found 0 vulnerabilities
+**** Find github's api url for the yaml.
+     The yaml file is stored as a blob.  We can access this blob here: [[https://raw.githubusercontent.com/kubernetes/test-infra/aa6b726dfd7cae670bb4ceeb7bd43f1cd91c4a72/testgrid/config.yaml][config.yaml at kubernetes/test-infra]]
+     To grab the contents, though, it's best to do it through the api.  This requires that we know the blob's sha file ([[https://developer.github.com/v3/git/blobs/][github developer guide on blobs]])
+     We can do this through a curl request:
+     #+NAME: get blob info through curl
+     #+BEGIN_SRC shell :results output verbatim
+     curl https://api.github.com/repos/kubernetes/test-infra/contents/testgrid/config.yaml | grep 'sha'
+     #+END_SRC
+
+     #+RESULTS: get blob info through curl
+     :   "sha": "66c3f57e899a92afc9f6fca20387220a65312915",
+
+     So then, the full path to this file, through git's api, would be:
+     https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915
+**** Configure our config class
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
+     :END:
+     Because we have a custom service, we have to define what exactly it does, this is done in our ~config.class.js
+     The default file comes with every api request we could think of. We really only wanna get and find stuff though.  Find will grab everything from the api, get will look for a particular id of a thing and bring that back.
+
+     We also want to convert the yaml into json and use request-promise to bring it over, so we'll import the both of them.
+
+     #+NAME: original fileconfig.class.js :tangle no
+     #+BEGIN_SRC  js :tangle no
+       /* eslint-disable no-unused-vars */
+       class Service {
+         constructor (options) {
+           this.options = options || {};
+         }
+
+         async find (params) {
+           return [];
+         }
+
+         async get (id, params) {
+           return {
+             id, text: `A new message with ID: ${id}!`
+           };
+         }
+
+         async create (data, params) {
+           if (Array.isArray(data)) {
+             return Promise.all(data.map(current => this.create(current, params)));
+           }
+
+           return data;
+         }
+
+         async update (id, data, params) {
+           return data;
+         }
+
+         async patch (id, data, params) {
+           return data;
+         }
+
+         async remove (id, params) {
+           return { id };
+         }
+       }
+
+       module.exports = function (options) {
+         return new Service(options);
+       };
+
+       module.exports.Service = Service;
+
+     #+END_SRC
+
+     #+NAME: our modified fileconfig.class.js
+     #+BEGIN_SRC  js
+       const request = require('request-promise')
+       const yaml = require('js-yaml')
+
+       /* eslint-disable no-unused-vars */
+       var options = {
+         url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
+         headers: {
+           'User-Agent': 'request'
+         }
+       }
+
+       class Service {
+         constructor (options) {
+           this.options = options || {};
+         }
+
+         async find (params) {
+           return request(options).then(blob => {
+             blob = JSON.parse(blob)
+             var content = Buffer.from(blob.content, 'base64').toString()
+             return yaml.safeLoad(content)
+           })
+         }
+
+         async get (id, params) {
+           return {
+             id, text: `A new message with ID: ${id}!`
+           };
+         }
+       }
+
+       module.exports = function (options) {
+         return new Service(options);
+       };
+
+       module.exports.Service = Service;
+
+     #+END_SRC
+**** Check out the Api
+     With our feathers server started and running at localhost:3030, navigate to localhost:3030/config
+     you should see a pretty json file loaded up for you with all the content we need!
+**** Add a Conformance section using a hook.
+     Part of this is just to get into the rhythms of hooks better, but also to increase the speed for our page loading.  We will make a hook that takes the full paylod from github and adds a new section to our get/api called 'conformance' that only has the dashboard named conformance-gce.
+
+  We can generate a hook, using the feathers cli like so:
+  #+NAME: Generate Hook
+  #+BEGIN_SRC shell
+   feathers generate hook
+  #+END_SRC
+  This creates a new hook in src/hooks/ named for whatever you gave it.
+
+* DONE eat some lunch.
+  CLOSED: [2018-10-08 Mon 12:01]
+  :PROPERTIES:
+  :ARCHIVE_TIME: 2018-10-09 Tue 08:17
+  :ARCHIVE_FILE: ~/Projects/ii/apisnoop_webui/web_ui.org
+  :ARCHIVE_OLPATH: TASKS/Config yaml into api
+  :ARCHIVE_CATEGORY: web_ui
+  :ARCHIVE_TODO: DONE
+  :END:

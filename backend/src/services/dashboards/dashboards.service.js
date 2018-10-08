@@ -1,22 +1,21 @@
-// Initializes the `cats` service on path `/cats`
+// Initializes the `dashboards` service on path `/api/v1/dashboards`
 const createService = require('feathers-nedb');
-const createModel = require('../../models/cats.model');
-const hooks = require('./cats.hooks');
+const createModel = require('../../models/dashboards.model');
+const hooks = require('./dashboards.hooks');
 
 module.exports = function (app) {
   const Model = createModel(app);
   const paginate = app.get('paginate');
 
   const options = {
-    Model,
-    paginate
+    Model
   };
 
   // Initialize our service with any options it requires
-  app.use('/cats', createService(options));
+  app.use('/api/v1/dashboards', createService(options));
 
   // Get our initialized service so that we can register hooks
-  const service = app.service('cats');
+  const service = app.service('api/v1/dashboards');
 
   service.hooks(hooks);
 };
