@@ -39,70 +39,24 @@ I am having a bit of an organizational bug, and so I want to clean everything up
     CLOSED: [2018-10-09 Tue 11:41]
 *** DONE Create Server Paths for each top-level array in our config.yaml file, based on the above manipulation.
     CLOSED: [2018-10-09 Tue 11:41]
-*** DONE Flesh out conformance-gce dashboards, to include their branch and their audit log url
-    CLOSED: [2018-10-09 Tue 14:48]
-**** DONE [100%] Cleanup or 'Fleshing out' We Wanna Do:
-     CLOSED: [2018-10-09 Tue 14:48]
+*** TODO Flesh out conformance-gce dashboards, to include their branch and their audit log url
+**** TODO [83%] Cleanup or 'Fleshing out' We Wanna Do:
      - [X] Check if it is gcs prefix and, if so, console.log 'HELL YEAH' to the screen.
      - [X] IF it is GCS prefix, add branch entry for whether it's DEV or RELEASE.
      - [X] For each of these, add path to their audit-log.
+     - [X] For each dashboard, add whether it is dev or release (the dashboard.branch)
+     - [X] For each dashboard, add its latest build
+     - [ ] For each dashboard, d/l its latest build.
 **** Notes
     I think we could do this using an update feature for our dashboards.  If their dashboard name = conformance-gce, then find their accompanying gce prefix and add it to the mix.
 **** Generate Hook for cleaning up dashboard data
-     do this with ~feathers generate hook~
-**** The Generated Hook: cleanup-gcs-dashboard.js
-     :PROPERTIES:
-     :header-args: :noweb yes :tangle ./backend/src/hooks/cleanup-gcs-dashboard.js
-     :END:
+    we can do this with feathers generate hook.  This one lives in this document at: [[*cleanupGcsDashboard][cleanupGcsDashboard]]
 
-     #+NAME: cleanup-gcs-dashboard.js
-     #+BEGIN_SRC js
-       // Use this hook to manipulate incoming or outgoing data.
-       // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
-
-       // eslint-disable-next-line no-unused-vars
-       module.exports = function (options = {}) {
-         return async context => {
-           if (context.data.name === 'conformance-gce') {
-             console.log('it working')
-             console.log({context: context.data.name})
-             context = await elaborateUpon(context)
-           }
-           return context;
-         };
-         async function elaborateUpon (context) {
-           var dashboardTab = context.data.dashboard_tab
-           var test_groups = context.app.service('/api/v1/test_groups')
-           console.log({d1: context.data.dashboard_tab === dashboardTab})
-           dashboardTab = await addGcsPrefix(dashboardTab, test_groups)
-           console.log({d2: context.data.dashboard_tab})
-           return context
-         }
-
-         async function addGcsPrefix (dashboards, test_groups) {
-           var promises = dashboards.map(async dashboard => {
-             var gcsPrefix = await grabGcsPrefix(dashboard, test_groups)
-             dashboard.gcs_prefix = gcsPrefix
-             return dashboard
-           })
-           const results = await Promise.all(promises)
-         }
-
-         async function grabGcsPrefix (dashboard, test_groups) {
-           var tg = dashboard.test_group_name
-           var test_group = await test_groups.find({query: {name: tg}})
-           return test_group[0].gcs_prefix
-         }
-       };
-
-     #+END_SRC
-
-
-
-
-
-**** TODO Take every conformance-gce dashboard_tab.name, and separate them to dev and stable using regex on the name (dev) versus (release).
-**** TODO For each of these, add their latest build number.
+**** DONE For each of these, add their latest build number.
+     CLOSED: [2018-10-10 Wed 11:01]
+     I think I want this to be its own hook, that comes after the cleanup section.  My hope is that I can use the details from the cleanup section for the next hook.
+     So first we will generate the hook with feathers generate hook.  this one will be called addLatestBuild, and it'll be done before every creation or update of a dashboard.
+     The work, and code, will be stored here: [[*AddLatestBuild][AddLatestBuild]]
 **** TODO For each of these, bring in the audit-log for that build number.
 *** TODO Have server ping github based on time, not based on client request, and return our config.yaml file.
 ** Connecting to our configs.yaml
@@ -215,8 +169,12 @@ This dispatch comes when a successful call to the server has been fulfilled.  We
     Why is there the two dispatches?  Is there a better way to write these?  and could we use 'mapDispatchToProps' to make it even easier?
 ** Org Tasks
 *** TODO how do you show code blocks that you don't wanna execute, just examples?
+*** TODO pull from the most recent files to make this org mode more collaborative
+    org makes it hard to collaborate withc ode like this, unless folks are using the literate style.  I accidentally tangled a code block that had older code in it.  It's my mistake for making changes to teh file itself, when i started work on it here.  But at the same time, there should be a way perhaps to pull all the code in here from the latest git commit.  This helps too when someone makes a pull request.  I am not sure how to make this collaborative without ditching the literate style maybe?
 
 ** Overall
+*** TODO figure out the best way to handle errors with feathers, to not get 'unhandled promise rejection'
+    I just had to spend too long debugging a problem that was due to a variable called the wrong name somewhere else.  but the only error was 'promised rejected at meta'.  I found the function that did it (a service.update call), but when I added a catch nothing happened.  I'd like to get ina  habit of just putting in catches for everything, but would like to know the proper way to do this.
 
 *** TODO add loading screen at beginning, maybe with the apisnoop magnifying glass?
 
@@ -891,8 +849,7 @@ You can read more about this error on [[https://developer.mozilla.org/en-US/docs
  #+NAME: Distribute Config Groups To Individual Services
  #+BEGIN_SRC js :tangle no
    function distribute (app, configFile) {
-     // var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
-     var relevantSections = ['dashboard_groups']
+     var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
      for (var section of relevantSections) {
        var configSection = configFile[section]
        var service = app.service(`/api/v1/${section}`)
@@ -918,10 +875,9 @@ You can read more about this error on [[https://developer.mozilla.org/en-US/docs
           for (var entry of configSection) {
              var existingEntry = await service.find({query:{name: entry.name}})
              if (existingEntry.length === 0) {
-               console.log(entry.name)
                service.create(entry)
              } else {
-               service.update(fun[0]._id, entry)
+               service.update(existingEntry[0]._id, entry)
              }
            }
          }
@@ -946,6 +902,179 @@ You can read more about this error on [[https://developer.mozilla.org/en-US/docs
      };
    };
  #+END_SRC
+** Services
+*** Dashboards
+  accessible at /api/v1/dashboards
+**** Hooks
+***** cleanupGcsDashboard
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/cleanup-gcs-dashboard.js
+      :END:
+      Interesting thing here with async functions.  I have to put the quick ones in (like addBranch) before I do the addGcsPrefix.  If I try to add branch //after// this, then dashboardTab becomes undefined, or rather it is a pending promise of sorts.  There is a style of chaining these together that I know will make me happy, I feel like I am on the edge of comfort and this likely means someone else figured out a solution to this problem I am having.
+      #+NAME: cleanup-gcs-dashboard.js
+      #+BEGIN_SRC js
+        // Use this hook to manipulate incoming or outgoing data.
+        // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+        // eslint-disable-next-line no-unused-vars
+        module.exports = function (options = {}) {
+          return async context => {
+            if (context.data.name === 'conformance-gce') {
+              console.log({context})
+              context = await elaborateUpon(context)
+            }
+            return context;
+          };
+          async function elaborateUpon (context) {
+            console.log({elabContext: context})
+            var dashboardTab = context.data.dashboard_tab
+            console.log({dashboardTab})
+            var test_groups = context.app.service('/api/v1/test_groups')
+            dashboardTab = addBranch(dashboardTab)
+            dashboardTab = await addGcsPrefix(dashboardTab, test_groups)
+            return context
+          }
+
+          async function addGcsPrefix (dashboards, test_groups) {
+            var promises = dashboards.map(async dashboard => {
+              var gcsPrefix = await grabGcsPrefix(dashboard, test_groups)
+              dashboard.gcs_prefix = gcsPrefix
+              return dashboard
+            })
+            const results = await Promise.all(promises)
+            return results
+          }
+
+          async function grabGcsPrefix (dashboard, test_groups) {
+            var tg = dashboard.test_group_name
+            var test_group = await test_groups.find({query: {name: tg}})
+            return test_group[0].gcs_prefix
+          }
+          function addBranch (dashboards) {
+            return dashboards.map(dashboard => {
+              var name = dashboard.name.toLowerCase()
+              console.log({dName: name})
+              if (name.includes('(dev)')) {
+                dashboard.branch = 'dev'
+              } else if (name.includes('release')) {
+                dashboard.branch = 'release'
+              } else {
+                dashboard.branch = 'none given'
+              }
+              return dashboard
+            })
+          }
+
+        };
+
+      #+END_SRC
+***** AddLatestBuild
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/add-latest-build.js
+      :END:
+      After the dashboard has been cleaned up, we check it's gcs_prefix and use that to find its latest build number.  This will require pinging that server and awaiting its response back.
+
+      When you generate a hook using feathers cli, it automatically makes it an asynchronous hook.  This means that the functions happen in sequence in our dashboards.hooks.js.  So because addLatestBuild comes after
+
+I started with a basic skeleton, and kinda like how i debugged this (or set it up as a thing to work on).  I wrote up the functions for the steps I'm trying to do, knowing each one would be asynchronous.  So here it's saying: if the thing coming in is for conformance, then add Builds for the Dashboards in its data before you return the context to the next thing (i.e. add it to the database).
+
+For adding builds, we want to define the dashboards and then say they are going to be transformed by addingtheLatest build.  This is an asynchronous map function that returns just some hard-coded text back.
+
+I console.log that text in my addLatestBuild section then, in my terminal running the program I have ~npm start | grep latestBuild~  .  So now I can just monitor that feed and make sure it shows what I think it should show.  If it does, I can then check out the dashboard on localhost to confirm that a latestBuild section has been added.
+
+So now, I have a console.log setup to help me quickly, and I can confirm that the basic structure of all of this (the logic or whateveR) works.  Now I just need to have the grabLatestBuild portion ping a server.
+    #+NAME add-latest-build.js rough
+    #+BEGIN_SRC js :tangle no
+      // Use this hook to manipulate incoming or outgoing data.
+      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+      // eslint-disable-next-line no-unused-vars
+      const rp = require('request-promise')
+
+      module.exports = function (options = {}) {
+        return async context => {
+            if (context.data.name === 'conformance-gce') {
+              console.log({buildContext: context.data.dashboard_tab})
+              addBuildsForDashboards(context)
+            }
+          return context;
+        };
+
+        async function addBuildsForDashboards (context) {
+          var dashboards = context.data.dashboard_tab
+          dashboards = await addLatestBuild(dashboards)
+          return context
+        }
+
+        async function addLatestBuild (dashboards) {
+          var promises = dashboards.map(async dashboard => {
+            var latestBuild = await grabLatestBuild(dashboard)
+            dashboard.latestBuild = latestBuild
+            console.log({latestBuild})
+            return dashboard
+          })
+          const results = await Promise.all(promises)
+          return results
+        }
+        async function grabLatestBuild (dashboard) {
+          var buildURL = `http://gcsweb.io/${dashboard.gcs_prefix}/latest-build.txt`
+
+          return `put build here for ${buildURL}`
+        }
+      };
+
+    #+END_SRC
+
+so here is the good stuff.
+    #+NAME add-latest-build.js
+    #+BEGIN_SRC js
+      // Use this hook to manipulate incoming or outgoing data.
+      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+      // eslint-disable-next-line no-unused-vars
+      const rp = require('request-promise')
+
+      module.exports = function (options = {}) {
+        return async context => {
+            if (context.data.name === 'conformance-gce') {
+              console.log({buildContext: context.data.dashboard_tab})
+              context = await addBuildsForDashboards(context)
+            }
+          return context;
+        };
+
+        async function addBuildsForDashboards (context) {
+          var dashboards = context.data.dashboard_tab
+          dashboards = await addLatestBuild(dashboards)
+          console.log({latestBuildDash: dashboards})
+          return context
+        }
+
+        async function addLatestBuild (dashboards) {
+          var promises = dashboards.map(async dashboard => {
+            var latestBuild = await grabLatestBuild(dashboard)
+            console.log({latestBuild})
+            dashboard.latestBuild = latestBuild
+            console.log({latestBuildDashboard: dashboard})
+            return dashboard
+          })
+          const results = await Promise.all(promises)
+          return results
+        }
+        async function grabLatestBuild (dashboard) {
+          var url = `http://gcsweb.k8s.io/gcs/${dashboard.gcs_prefix}/latest-build.txt`
+          var latestBuild = await rp(url)
+          return latestBuild
+        }
+      };
+
+    #+END_SRC
+***** next
+
+
+
+
+
 
 * Process
 ** Working with d3

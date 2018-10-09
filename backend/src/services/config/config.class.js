@@ -55,8 +55,7 @@ class service {
 }
 
 function distribute (app, configFile) {
-  // var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
-  var relevantSections = ['dashboard_groups', 'test_groups', 'dashboards']
+  var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
   for (var section of relevantSections) {
     var configSection = configFile[section]
     var service = app.service(`/api/v1/${section}`)

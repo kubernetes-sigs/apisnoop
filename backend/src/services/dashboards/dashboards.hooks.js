@@ -1,12 +1,14 @@
 const cleanupGcsDashboard = require('../../hooks/cleanup-gcs-dashboard');
 
+const addLatestBuild = require('../../hooks/add-latest-build');
+
 module.exports = {
   before: {
     all: [],
     find: [],
     get: [],
-    create: [cleanupGcsDashboard()],
-    update: [cleanupGcsDashboard()],
+    create: [cleanupGcsDashboard(), addLatestBuild()],
+    update: [cleanupGcsDashboard(), addLatestBuild()],
     patch: [],
     remove: []
   },
