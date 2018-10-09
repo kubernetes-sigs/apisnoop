@@ -18,63 +18,9 @@ The current site was the most basic proof of concept. We want to build a whole b
 
 * TASKS
 ** Config yaml into api
-**** scratch
-   Our current process is to filter our test groups for each commit card.  So in the commitlist component we have a function that maps over our conformance object and returns a card for every single commit.  During this function, we now also take that commit and find it's matching test_group in our test_group object.  We then render a CommitCard, passing along its commit and its test_group as the two props.
-
- I think this now means we can have the card do a query to the proper page when it mounts and set the build number to whatever is on that page.
-
-**** Understand the config.yaml file and what it's pointing to.
-***** TestGrid
-      Our testgrid is located at: https://k8s-testgrid.appspot.com/
-
-   https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml#L3028
-   Dashboard Config for conformance-all: https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml#L3231
-   Production instance of conformance-all: https://k8s-testgrid.appspot.com/conformance-all
-
-   GCE https://k8s-testgrid.appspot.com/conformance-all#GCE,%20master%20(dev)
-
-   JOBS for GCE 1.12-dev https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12
-   Historical artifa8cts, including latest:
-   https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12
-   The specific latest build:
-   https://k8s-gubernator.appspot.com/build/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/
-   Grab SOMETHING from the artifact folder for this job:
-   http://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/
-   The audit log: https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log
-***** Navigating the config.yaml
-      Starting at , here is how to relate the url view with the info on
-      <<
-****** [[file:config_yamls/config.yaml::dashboard_groups:][dashboard_groups:]]
-
-      These top level dashboard groups are what populate the top level of [[https://k8s-testgrid.appspot.com][k8s-testgrid.appspot.com]]
-******* [[file:config_yamls/config.yaml::dashboards:][dashboards:]]
-******** [[file:config_yamls/config.yaml::test_groups:][test_groups:]]
-
-****** Example [[file:config_yamls/config.yaml::-%20name:%20conformance-gce][For dashboard: conformance-gce]]
-    if you were to look at
-    dashboards.name['conformance-gce'].dashboard_tab, that ties to the summary tab you see at [[https://k8s-testgrid.appspot.com/conformance-gce][k8s-testgrid.appspot.com/conformance-gce]]
-****** Test groups
-    Every testgroup name you find at:
-   dashboards.name['conformance-gce'].dashboard_tab.name
-   has a section called 'test_group_name', and each test group name has its gcs_prefix (GCS standing for 'Google Cloud Services')
-
-   For example, the test group name 'ci-kubernetes-gce-conformance-stable-1-12' has a gcs prefix of 'kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-stable-1-12'.
-
-   The json path for this testgroup gcs prefix would be:
-   test_groups.name['ci-kubernetes-gce-conformance-stable-1-12'].gcs_prefix
-
-   which takes you here: [[file:config_yamls/config.yaml::gcs_prefix:%20kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-stable-1-12][gce-conformance-latest-1-12 gcs_prefix]]
-
-   We could then...point that to a url where we'd grab the artifacts?
-   like:
-  http://gcsweb.k8s.io/gcs/$GCS_PREFIX
-
-  we want to grab the latest text build, which is found at
-  http://gcsweb.k8s.io/gcs/$GCS_PREFIX/latest-build.txt
-   The goal now is to try to get as much done on the server, instead of trying to do it upon page requests in the client.  So what we would like is to have a server with an api that the client can ping that would give back the data needed based on the branch.  So I could do a request in the client for gce-conformance branch 1.12(dev), and that'd tie to some easy to reason about api path (/branches/1.12-dev), and this gives us the name of the latest build and the data taken from kube-servers api log.
-
-So ultimately we want to be bringing down the gigs of data for the audit-logs and converted into something that can be rendered into a graph.
-*** TODO Have server ping github based on time, not based on client request, and return our config.yaml file.
+*** DONE Create an api, based off pinging github, when the server starts up
+    CLOSED: [2018-10-09 Tue 11:44]
+**** Notes
     For this, hh mentioned using something like a generator.  essentially, I want to load up an in-memory database, when the server starts up that parses our config file and renders it into different paths of our server.  I want to keep using Feathers for this because I know of a team here using it, and its been pleasant to use so far, just new and strange.
 
 So I am going to look up feathersjs and generators and see what the path to do this would be, keeping my notes here.  When the notes feel good, I'll refile them somewhere else on our page.
@@ -87,167 +33,78 @@ You can generate a new service with ~feathers generate service~.  I could create
 It looks like you can actually pretty easily add a setup option to each service you make, and pass it along the app and any params.  If you have the app, that means you have access to all its services and all that good stuff.  And i wrote up a function called 'distribute' that takes content and puts it in another service using a simple app.service('something').
 
 I am having a bit of an organizational bug, and so I want to clean everything up.  I am going to remake the backend, with an api/v1/ setup so we can improve more easily.
-**** Generating the backend app.
-     #+NAME: Generate Feathers App
-     #+BEGIN_SRC shell
-       mkdir backend && cd backend
-       feathers generate app
-     #+END_SRC
-**** Generating the Services
-     We'll need a config service, which will be custom.  It makes a request to our config.yaml file and then distributes its contents to our various other services.
- From there, we need a service named for each of the major groups:
- - dashboards
- - test_groups
- - dashboard_names
-**** Setting up config service.
+**** DONE find better way to handle the populate service function in config.class.js
+     CLOSED: [2018-10-09 Tue 11:48]
+*** DONE convert this file into json that can be transformed by the server, and store its values.
+    CLOSED: [2018-10-09 Tue 11:41]
+*** DONE Create Server Paths for each top-level array in our config.yaml file, based on the above manipulation.
+    CLOSED: [2018-10-09 Tue 11:41]
+*** DONE Flesh out conformance-gce dashboards, to include their branch and their audit log url
+    CLOSED: [2018-10-09 Tue 14:48]
+**** DONE [100%] Cleanup or 'Fleshing out' We Wanna Do:
+     CLOSED: [2018-10-09 Tue 14:48]
+     - [X] Check if it is gcs prefix and, if so, console.log 'HELL YEAH' to the screen.
+     - [X] IF it is GCS prefix, add branch entry for whether it's DEV or RELEASE.
+     - [X] For each of these, add path to their audit-log.
+**** Notes
+    I think we could do this using an update feature for our dashboards.  If their dashboard name = conformance-gce, then find their accompanying gce prefix and add it to the mix.
+**** Generate Hook for cleaning up dashboard data
+     do this with ~feathers generate hook~
+**** The Generated Hook: cleanup-gcs-dashboard.js
      :PROPERTIES:
-     :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
+     :header-args: :noweb yes :tangle ./backend/src/hooks/cleanup-gcs-dashboard.js
      :END:
-     Since it's a custom one, it has no Model or built-in functionality.  What we'll want to do is create a 'setup' function fro it that pings github and returns the config.yaml.  Then, it'll distribute its contents to our different api's.
 
- We can alter the class of our config service, defining what every single type of method does.  The big one for us is the 'setup' method.  And, in fact, since this is just a sorta dashboard arranger, we could get rid of alot of the other methods.
-***** Basic Layout
- So we create a new class for the service and construct it with the options we give it.  In this case, the options relate to the request to our github api that we want to send.  Then, we have a number of commented out methods followed by our setup method.  The setup method requests the configyaml from github, loads it into json, and then distributes each group using our distribute function (described in more detail below).
- #+NAME: config.class.js
- #+BEGIN_SRC js
-   /* eslint-disable no-unused-vars */
-   const request = require('request-promise')
-   const yaml = require('js-yaml')
+     #+NAME: cleanup-gcs-dashboard.js
+     #+BEGIN_SRC js
+       // Use this hook to manipulate incoming or outgoing data.
+       // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
 
-   var options = {
-     url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
-     headers: {
-       'User-Agent': 'request'
-     }
-   }
-
-   class service {
-     constructor (options) {
-       this.options = options || {};
-     }
-     <<commented out methods>>
-
-     async setup (app, params) {
-       request(options).then(blob => {
-         blob = JSON.parse(blob)
-         var content = Buffer.from(blob.content, 'base64').toString()
-         var configGroups =  yaml.safeLoad(content)
-         distribute(app, configGroups)
-       })
-     }
-   }
-
-   <<Distribute Config Groups To Individual Services>>
-   <<Populate Entries For Each Service>>
-
-   module.exports = function (options) {
-     return new service(options);
-   };
-
-   module.exports.service = service;
- #+END_SRC
-
- #+RESULTS: config.class.js
-***** Commented Out Methods
- #+NAME: commented out methods
- #+BEGIN_SRC js :tangle no
-     // async find (params) {
-     //   return [];
-     // }
-
-     // async get (id, params) {
-     //   return {
-     //     id, text: `a new message with id: ${id}!`
-     //   };
-     // }
-
-     // async create (data, params) {
-     //   if (array.isarray(data)) {
-     //     return promise.all(data.map(current => this.create(current, params)));
-     //   }
-
-     //   return data;
-     // }
-
-     // async update (id, data, params) {
-     //   return data;
-     // }
-
-     // async patch (id, data, params) {
-     //   return data;
-     // }
-
-     // async remove (id, params) {
-     //   return { id };
-     // }
-
- #+END_SRC
-***** Distribute Config Groups To Invidiual Services
-
- Our config file is given a number of groups, and half of them we don't care about.  We want to just create api services for these.
- Each of these will need to have a service named like so: 'api/v1/service_name', this is done using the feathers cli (feathers generate service)
- #+NAME: Distribute Config Groups To Individual Services
- #+BEGIN_SRC js :tangle no
-   function distribute (app, configFile) {
-     var relevantSections = ['dashboard_groups', 'test_groups', 'dashboards']
-     for (var section of relevantSections) {
-       var configSection = configFile[section]
-       var service = app.service(`/api/v1/${section}`)
-       populate(service, configSection)
-     }
-   }
-
- #+END_SRC
-
-***** Populate Entries For Each Service
-      Here we want to check for an existing entry, and so essentially run an if/then to say 'if existing entry details equal our entry details, then update the existing entry withour own.'  Since checking for an entry requires a ping to the database, and we don't know when that ping will come back, we'll make this an async function.  Then we can assign a variable to the result of our ping (the await function).
-
-for service find, we can give a query, checking on some key in the db object.  IF there's nothing, it returns an empty array.  If there's something, it returns an array with the first(and only) item being that something.  So we can say 'if the result of our ping's length is 0, we know there isn't an ything there and we'll create it! otherwise, let's update it.)
-      #+NAME: Populate Entries For Each Service
-      #+BEGIN_SRC js :tangle no
-        async function populate (service, configSection) {
-          for (var entry of configSection) {
-             var existingEntry = await service.find({query:{name: entry.name}})
-             if (existingEntry.length === 0) {
-               service.create(entry)
-             } else {
-               service.update(existingEntry[0]._id, entry)
-             }
+       // eslint-disable-next-line no-unused-vars
+       module.exports = function (options = {}) {
+         return async context => {
+           if (context.data.name === 'conformance-gce') {
+             console.log('it working')
+             console.log({context: context.data.name})
+             context = await elaborateUpon(context)
            }
+           return context;
+         };
+         async function elaborateUpon (context) {
+           var dashboardTab = context.data.dashboard_tab
+           var test_groups = context.app.service('/api/v1/test_groups')
+           console.log({d1: context.data.dashboard_tab === dashboardTab})
+           dashboardTab = await addGcsPrefix(dashboardTab, test_groups)
+           console.log({d2: context.data.dashboard_tab})
+           return context
          }
 
-      #+END_SRC
-**** Setup creation hook to not make duplicates.
-     We can make a hook for each of our services that says, upon creation, check whether or not they actually exist and if so, don't create.
+         async function addGcsPrefix (dashboards, test_groups) {
+           var promises = dashboards.map(async dashboard => {
+             var gcsPrefix = await grabGcsPrefix(dashboard, test_groups)
+             dashboard.gcs_prefix = gcsPrefix
+             return dashboard
+           })
+           const results = await Promise.all(promises)
+         }
 
-      Generate the hook with ~feathers generate hook~.  This will lead you through some questions of what service the hook is for, and in which part of the service.  We set it for test_groups, dashboards, and dashboard_names, to happen before any create method.  My thinking is that we can then say, "Before you try to create, check whether it already exists, and if so, update instead."
+         async function grabGcsPrefix (dashboard, test_groups) {
+           var tg = dashboard.test_group_name
+           var test_group = await test_groups.find({query: {name: tg}})
+           return test_group[0].gcs_prefix
+         }
+       };
 
-   When you make a hook in this way, it lives in ~src/hooks/~
-
- #+NAME: Avoid Duplicate
- #+BEGIN_SRC js :tangle ./backend/src/hooks/avoid-duplicate.js
-   // Use this hook to manipulate incoming or outgoing data.
-   // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
-
-   // eslint-disable-next-line no-unused-vars
-   module.exports = function (options = {}) {
-     return async context => {
-       return context
-     };
-   };
- #+END_SRC
+     #+END_SRC
 
 
 
 
-*** TODO convert this file into json that can be transformed by the server, and store its values.
-*** TODO Create Server Paths for each top-level array in our config.yaml file, based on the above manipulation.
-*** TODO Take every conformance-gce dashboard_tab.name, and list them in their own api path.
-    We can do this in the same way as the contact example in our [[*Sitepoint tutorial][Sitepoint tutorial]]
-*** TODO Take every conformance-gce dashboard_tab.name, and separate them to dev and stable using regex on the name (dev) versus (release).
-*** TODO For each of these, add their latest build number.
 
-*** TODO For each of these, bring in the audit-log for that build number.
+**** TODO Take every conformance-gce dashboard_tab.name, and separate them to dev and stable using regex on the name (dev) versus (release).
+**** TODO For each of these, add their latest build number.
+**** TODO For each of these, bring in the audit-log for that build number.
+*** TODO Have server ping github based on time, not based on client request, and return our config.yaml file.
 ** Connecting to our configs.yaml
 *** DONE pull our config.yaml from github's latest version
     CLOSED: [2018-10-04 Thu 13:09]
@@ -364,7 +221,6 @@ This dispatch comes when a successful call to the server has been fulfilled.  We
 *** TODO add loading screen at beginning, maybe with the apisnoop magnifying glass?
 
 
-** TODO find better way to handle the populate service function in config.class.js
 * Architecture
 The site will be made to have a distinct front-end and backend, with the front-end able to be ported over to any other backend.
 The front-end will consist of multiple components that wait to be told what data to display, instead of being written as part of the component.  In this way, if we want to make changes to our 'SIG Tag Bubble', we can just find the component named that and make changes there, instead of trying to find/replace the code within the file.
@@ -931,6 +787,165 @@ You can read more about this error on [[https://developer.mozilla.org/en-US/docs
 
       export default rootReducer
     #+END_SRC
+* Backend
+** Setting up our API Initially
+**** Generating the backend app.
+     #+NAME: Generate Feathers App
+     #+BEGIN_SRC shell
+       mkdir backend && cd backend
+       feathers generate app
+     #+END_SRC
+**** Generating the Services
+     We'll need a config service, which will be custom.  It makes a request to our config.yaml file and then distributes its contents to our various other services.
+ From there, we need a service named for each of the major groups:
+ - dashboards
+ - test_groups
+ - dashboard_names
+**** Setting up config service.
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
+     :END:
+     Since it's a custom one, it has no Model or built-in functionality.  What we'll want to do is create a 'setup' function fro it that pings github and returns the config.yaml.  Then, it'll distribute its contents to our different api's.
+
+ We can alter the class of our config service, defining what every single type of method does.  The big one for us is the 'setup' method.  And, in fact, since this is just a sorta dashboard arranger, we could get rid of alot of the other methods.
+***** Basic Layout
+ So we create a new class for the service and construct it with the options we give it.  In this case, the options relate to the request to our github api that we want to send.  Then, we have a number of commented out methods followed by our setup method.  The setup method requests the configyaml from github, loads it into json, and then distributes each group using our distribute function (described in more detail below).
+ #+NAME: config.class.js
+ #+BEGIN_SRC js
+   /* eslint-disable no-unused-vars */
+   const request = require('request-promise')
+   const yaml = require('js-yaml')
+
+   var options = {
+     url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
+     headers: {
+       'User-Agent': 'request'
+     }
+   }
+
+   class service {
+     constructor (options) {
+       this.options = options || {};
+     }
+     <<commented out methods>>
+
+     async setup (app, params) {
+       request(options).then(blob => {
+         blob = JSON.parse(blob)
+         var content = Buffer.from(blob.content, 'base64').toString()
+         var configGroups =  yaml.safeLoad(content)
+         distribute(app, configGroups)
+       })
+     }
+   }
+
+   <<Distribute Config Groups To Individual Services>>
+   <<Populate Entries For Each Service>>
+
+   module.exports = function (options) {
+     return new service(options);
+   };
+
+   module.exports.service = service;
+ #+END_SRC
+
+ #+RESULTS: config.class.js
+***** Commented Out Methods
+ #+NAME: commented out methods
+ #+BEGIN_SRC js :tangle no
+     // async find (params) {
+     //   return [];
+     // }
+
+     // async get (id, params) {
+     //   return {
+     //     id, text: `a new message with id: ${id}!`
+     //   };
+     // }
+
+     // async create (data, params) {
+     //   if (array.isarray(data)) {
+     //     return promise.all(data.map(current => this.create(current, params)));
+     //   }
+
+     //   return data;
+     // }
+
+     // async update (id, data, params) {
+     //   return data;
+     // }
+
+     // async patch (id, data, params) {
+     //   return data;
+     // }
+
+     // async remove (id, params) {
+     //   return { id };
+     // }
+
+ #+END_SRC
+***** Distribute Config Groups To Invidiual Services
+
+ Our config file is given a number of groups, and half of them we don't care about.  We want to just create api services for these.
+ Each of these will need to have a service named like so: 'api/v1/service_name', this is done using the feathers cli (feathers generate service)
+ #+NAME: Distribute Config Groups To Individual Services
+ #+BEGIN_SRC js :tangle no
+   function distribute (app, configFile) {
+     // var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
+     var relevantSections = ['dashboard_groups']
+     for (var section of relevantSections) {
+       var configSection = configFile[section]
+       var service = app.service(`/api/v1/${section}`)
+       populate(service, configSection)
+     }
+   }
+
+ #+END_SRC
+
+***** Populate Entries For Each Service
+      Here we check the current db for the entry, using its name.  If it doesn't exist, we make it.  If it does, we should update it.
+      first we have to check whether there's anything that exists.  So we do a service.find() and if there are no results, we create the entry.  If there are results, we check if they match our query.
+
+     This is kind of a gross function (or a straight up gross function) I don't l ike nested if/else statements.  I feel there is a better way to handle this.
+     I am also having a problem where it is only creating a single entry every single time for each one.  like...it knows
+
+    Once I do have this, then i'll be able to restart the server, it'll make a db if needed, if not it will check the db for the existing entry, and then it will add or updae the entry....
+
+    For some reason right now, it is only adding the last one--but enough times that I know it's going through each one.  Do I need to await some respone on a thing?
+      #+NAME: Populate Entries For Each Service
+      #+BEGIN_SRC js :tangle no
+        async function populate (service, configSection) {
+          for (var entry of configSection) {
+             var existingEntry = await service.find({query:{name: entry.name}})
+             if (existingEntry.length === 0) {
+               console.log(entry.name)
+               service.create(entry)
+             } else {
+               service.update(fun[0]._id, entry)
+             }
+           }
+         }
+
+      #+END_SRC
+**** Setup creation hook to not make duplicates.
+     We can make a hook for each of our services that says, upon creation, check whether or not they actually exist and if so, don't create.
+
+      Generate the hook with ~feathers generate hook~.  This will lead you through some questions of what service the hook is for, and in which part of the service.  We set it for test_groups, dashboards, and dashboard_names, to happen before any create method.  My thinking is that we can then say, "Before you try to create, check whether it already exists, and if so, update instead."
+
+   When you make a hook in this way, it lives in ~src/hooks/~
+
+ #+NAME: Avoid Duplicate
+ #+BEGIN_SRC js :tangle ./backend/src/hooks/avoid-duplicate.js
+   // Use this hook to manipulate incoming or outgoing data.
+   // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+   // eslint-disable-next-line no-unused-vars
+   module.exports = function (options = {}) {
+     return async context => {
+       return context
+     };
+   };
+ #+END_SRC
 
 * Process
 ** Working with d3
@@ -979,6 +994,57 @@ If this is the purpose of apisnoop then let's do it.  If it's too much overkill 
      http://recharts.org/en-US/
 
 * Footnotes
+** Understand the config.yaml file and what it's pointing to.
+*** TestGrid
+    Our testgrid is located at: https://k8s-testgrid.appspot.com/
+
+ https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml#L3028
+ Dashboard Config for conformance-all: https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml#L3231
+ Production instance of conformance-all: https://k8s-testgrid.appspot.com/conformance-all
+
+ GCE https://k8s-testgrid.appspot.com/conformance-all#GCE,%20master%20(dev)
+
+ JOBS for GCE 1.12-dev https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12
+ Historical artifa8cts, including latest:
+ https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12
+ The specific latest build:
+ https://k8s-gubernator.appspot.com/build/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/
+ Grab SOMETHING from the artifact folder for this job:
+ http://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/
+ The audit log: https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log
+*** Navigating the config.yaml
+    Starting at , here is how to relate the url view with the info on
+    <<
+**** [[file:config_yamls/config.yaml::dashboard_groups:][dashboard_groups:]]
+
+    These top level dashboard groups are what populate the top level of [[https://k8s-testgrid.appspot.com][k8s-testgrid.appspot.com]]
+***** [[file:config_yamls/config.yaml::dashboards:][dashboards:]]
+****** [[file:config_yamls/config.yaml::test_groups:][test_groups:]]
+
+**** Example [[file:config_yamls/config.yaml::-%20name:%20conformance-gce][For dashboard: conformance-gce]]
+  if you were to look at
+  dashboards.name['conformance-gce'].dashboard_tab, that ties to the summary tab you see at [[https://k8s-testgrid.appspot.com/conformance-gce][k8s-testgrid.appspot.com/conformance-gce]]
+**** Test groups
+    Every testgroup name you find at:
+   dashboards.name['conformance-gce'].dashboard_tab.name
+   has a section called 'test_group_name', and each test group name has its gcs_prefix (GCS standing for 'Google Cloud Services')
+
+   For example, the test group name 'ci-kubernetes-gce-conformance-stable-1-12' has a gcs prefix of 'kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-stable-1-12'.
+
+   The json path for this testgroup gcs prefix would be:
+   test_groups.name['ci-kubernetes-gce-conformance-stable-1-12'].gcs_prefix
+
+   which takes you here: [[file:config_yamls/config.yaml::gcs_prefix:%20kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-stable-1-12][gce-conformance-latest-1-12 gcs_prefix]]
+
+   We could then...point that to a url where we'd grab the artifacts?
+   like:
+  http://gcsweb.k8s.io/gcs/$GCS_PREFIX
+
+  we want to grab the latest text build, which is found at
+  http://gcsweb.k8s.io/gcs/$GCS_PREFIX/latest-build.txt
+   The goal now is to try to get as much done on the server, instead of trying to do it upon page requests in the client.  So what we would like is to have a server with an api that the client can ping that would give back the data needed based on the branch.  So I could do a request in the client for gce-conformance branch 1.12(dev), and that'd tie to some easy to reason about api path (/branches/1.12-dev), and this gives us the name of the latest build and the data taken from kube-servers api log.
+
+So ultimately we want to be bringing down the gigs of data for the audit-logs and converted into something that can be rendered into a graph.
 ** Resources
 *** Youtube Tutorial
     I followed [[https://www.youtube.com/watch?v=etq_vv_RVcU&index=2&list=PLN3n1USn4xlnulnnBGD2RMid_p7xVj9xU][This Tutorial]] for a lot of the setup and found it quite useful, but actually it's mad outdated and might be a set back.  It helped me get a better sense of Sagas but react and redux have changed too much since this tutorial.

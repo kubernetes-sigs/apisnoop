@@ -1,14 +1,12 @@
-
-
-const avoidDuplicate = require('../../hooks/avoid-duplicate');
+const cleanupGcsDashboard = require('../../hooks/cleanup-gcs-dashboard');
 
 module.exports = {
   before: {
     all: [],
     find: [],
     get: [],
-    create: [avoidDuplicate()],
-    update: [],
+    create: [cleanupGcsDashboard()],
+    update: [cleanupGcsDashboard()],
     patch: [],
     remove: []
   },

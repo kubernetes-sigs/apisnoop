@@ -1,13 +1,9 @@
-
-
-const avoidDuplicate = require('../../hooks/avoid-duplicate');
-
 module.exports = {
   before: {
     all: [],
     find: [],
     get: [],
-    create: [avoidDuplicate()],
+    create: [],
     update: [],
     patch: [],
     remove: []
