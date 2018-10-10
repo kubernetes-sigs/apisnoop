@@ -1,12 +1,14 @@
 
 
+const acquireAuditLog = require('../../hooks/acquire-audit-log');
+
 module.exports = {
   before: {
     all: [],
     find: [],
     get: [],
-    create: [],
-    update: [],
+    create: [acquireAuditLog()],
+    update: [acquireAuditLog()],
     patch: [],
     remove: []
   },
