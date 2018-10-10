@@ -7,7 +7,6 @@ const rp = require('request-promise')
 module.exports = function (options = {}) {
   return async context => {
       if (context.data.name === 'conformance-gce') {
-        console.log({buildContext: context.data.dashboard_tab})
         context = await addBuildsForDashboards(context)
       }
     return context;
@@ -16,16 +15,13 @@ module.exports = function (options = {}) {
   async function addBuildsForDashboards (context) {
     var dashboards = context.data.dashboard_tab
     dashboards = await addLatestBuild(dashboards)
-    console.log({latestBuildDash: dashboards})
     return context
   }
 
   async function addLatestBuild (dashboards) {
     var promises = dashboards.map(async dashboard => {
       var latestBuild = await grabLatestBuild(dashboard)
-      console.log({latestBuild})
       dashboard.latestBuild = latestBuild
-      console.log({latestBuildDashboard: dashboard})
       return dashboard
     })
     const results = await Promise.all(promises)

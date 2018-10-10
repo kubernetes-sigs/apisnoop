@@ -58,16 +58,28 @@ I am having a bit of an organizational bug, and so I want to clean everything up
      So first we will generate the hook with feathers generate hook.  this one will be called addLatestBuild, and it'll be done before every creation or update of a dashboard.
      The work, and code, will be stored here: [[*AddLatestBuild][AddLatestBuild]]
 **** TODO For each of these, bring in the audit-log for that build number.
+     I think I would want this to be its own service...Though I guess I could just add it to the bottom of each dashboard tab.  But this doesn't seem like the right language.  IT seems like i'd want /audits, and each audit tied to the dashboard_tab name.
+
+I know this will change, and so for right now I will make a path at ~/api/v1/audits~ and expect this to change.  The path will include the full audit log (to see if we can do it) along with info about the audit log--it's build, the version of kubernetes, and the branch.  These would be taken from our dashboard entry---so really I just need something to connect the two....i can connect them by dashboard_tab.name...and so it'd be dashboard['conformance-gce'].dashboard_tab filtered to the dashboard_tab.name that matches the /audit's version name.
+
+This is intended to grow in size, but if we are really only concerned wit conformance gce and no other part of your config.yaml, then the other option is to create the dashboard file to //only// have the dashboard_tabs given in conformance-gce, so we arent' having to filter through that array every time.
+
+But for right now, I wanna just try to ping based on version and build number.
+
+I'll manage this with an after hook.  After creation, send a services(audits).create with a selected portion of the contents.
 *** TODO Have server ping github based on time, not based on client request, and return our config.yaml file.
 ** Connecting to our configs.yaml
 *** DONE pull our config.yaml from github's latest version
     CLOSED: [2018-10-04 Thu 13:09]
     I'm pretty sure this can be done with just axios and a https request, then we convert the returned yaml into json which gets added to our feathers api.  I'll be documenting this here: [[*Config (from config.yaml)][Services/Config (from config.yaml)]]
     This is handled by our feathers service here:  [[*Config (from config.yaml)][Services/Config (from config.yaml)]]
-*** TODO develop a better process for this to increase perf...and ability to query just a single item.
-*** TODO Clean up the data coming into config page so the default groups aren't there at all
+*** DONE develop a better process for this to increase perf...and ability to query just a single item.
+    CLOSED: [2018-10-10 Wed 12:44]
+*** DONE Clean up the data coming into config page so the default groups aren't there at all
+    CLOSED: [2018-10-10 Wed 12:44]
     I can figure out how to clean up the load once we get it, but I can't quite figure out how to only ask for a single thing.  the problem, really, is that we are requesting a blob from github...and so we can only git the full big thing, parse it, and then filter it down.  I am not sure if performance is improved in any way by filtering it after...it just makes navigating it easier.
-*** TODO make the config page load faster...somehow
+*** DONE make the config page load faster...somehow
+    CLOSED: [2018-10-10 Wed 12:44]
     It's taking a couple seconds for it to load.  I know it's cos i'm pinging feathers which is pinging github, which is returning to feathers, which is cleaning up the data, and then sending it to our client.  What would  it look like if I just pinged github directly from the client?  This is something I can do when I have a bit more time though, unless the slowness get worse.
 
   #+NAME: default state
@@ -152,8 +164,6 @@ This dispatch comes when a successful call to the server has been fulfilled.  We
 *** TODO check out page on props
     https://reactjs.org/blog/2018/06/07/you-probably-dont-need-derived-state.html#recommendation-fully-controlled-component
 *** TODO figure out why there's padding added by default to our app, even though no padding appears when you inspect element.
-*** TODO Figure out how to setup dev and prod configurations for axios
-    we have it hardcoded to connect to localhost:3030.  What does it look like when we want to connect to some other known server?
 *** TODO Why are the action creators formed the way they are?  could it be more compact?
     right now it is:
     #+BEGIN_SRC js :tangle no
@@ -167,6 +177,8 @@ This dispatch comes when a successful call to the server has been fulfilled.  We
       }
     #+END_SRC
     Why is there the two dispatches?  Is there a better way to write these?  and could we use 'mapDispatchToProps' to make it even easier?
+*** TODO Refactor createAuditEntry so we aren't doing everything in an asynchronous success function.
+    for more details: [[*createAuditEntry][createAuditEntry]]
 ** Org Tasks
 *** TODO how do you show code blocks that you don't wanna execute, just examples?
 *** TODO pull from the most recent files to make this org mode more collaborative
@@ -177,7 +189,6 @@ This dispatch comes when a successful call to the server has been fulfilled.  We
     I just had to spend too long debugging a problem that was due to a variable called the wrong name somewhere else.  but the only error was 'promised rejected at meta'.  I found the function that did it (a service.update call), but when I added a catch nothing happened.  I'd like to get ina  habit of just putting in catches for everything, but would like to know the proper way to do this.
 
 *** TODO add loading screen at beginning, maybe with the apisnoop magnifying glass?
-
 
 * Architecture
 The site will be made to have a distinct front-end and backend, with the front-end able to be ported over to any other backend.
@@ -759,13 +770,13 @@ You can read more about this error on [[https://developer.mozilla.org/en-US/docs
  - dashboards
  - test_groups
  - dashboard_names
+** Services
+*** Config
+    This is the service used to ping github for our config file, and then populate the various dashboards from there.
 **** Setting up config service.
      :PROPERTIES:
      :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
      :END:
-     Since it's a custom one, it has no Model or built-in functionality.  What we'll want to do is create a 'setup' function fro it that pings github and returns the config.yaml.  Then, it'll distribute its contents to our different api's.
-
- We can alter the class of our config service, defining what every single type of method does.  The big one for us is the 'setup' method.  And, in fact, since this is just a sorta dashboard arranger, we could get rid of alot of the other methods.
 ***** Basic Layout
  So we create a new class for the service and construct it with the options we give it.  In this case, the options relate to the request to our github api that we want to send.  Then, we have a number of commented out methods followed by our setup method.  The setup method requests the configyaml from github, loads it into json, and then distributes each group using our distribute function (described in more detail below).
  #+NAME: config.class.js
@@ -808,40 +819,6 @@ You can read more about this error on [[https://developer.mozilla.org/en-US/docs
  #+END_SRC
 
  #+RESULTS: config.class.js
-***** Commented Out Methods
- #+NAME: commented out methods
- #+BEGIN_SRC js :tangle no
-     // async find (params) {
-     //   return [];
-     // }
-
-     // async get (id, params) {
-     //   return {
-     //     id, text: `a new message with id: ${id}!`
-     //   };
-     // }
-
-     // async create (data, params) {
-     //   if (array.isarray(data)) {
-     //     return promise.all(data.map(current => this.create(current, params)));
-     //   }
-
-     //   return data;
-     // }
-
-     // async update (id, data, params) {
-     //   return data;
-     // }
-
-     // async patch (id, data, params) {
-     //   return data;
-     // }
-
-     // async remove (id, params) {
-     //   return { id };
-     // }
-
- #+END_SRC
 ***** Distribute Config Groups To Invidiual Services
 
  Our config file is given a number of groups, and half of them we don't care about.  We want to just create api services for these.
@@ -883,26 +860,43 @@ You can read more about this error on [[https://developer.mozilla.org/en-US/docs
          }
 
       #+END_SRC
-**** Setup creation hook to not make duplicates.
-     We can make a hook for each of our services that says, upon creation, check whether or not they actually exist and if so, don't create.
+***** Commented Out Methods
+ #+NAME: commented out methods
+ #+BEGIN_SRC js :tangle no
+     // async find (params) {
+     //   return [];
+     // }
 
-      Generate the hook with ~feathers generate hook~.  This will lead you through some questions of what service the hook is for, and in which part of the service.  We set it for test_groups, dashboards, and dashboard_names, to happen before any create method.  My thinking is that we can then say, "Before you try to create, check whether it already exists, and if so, update instead."
+     // async get (id, params) {
+     //   return {
+     //     id, text: `a new message with id: ${id}!`
+     //   };
+     // }
 
-   When you make a hook in this way, it lives in ~src/hooks/~
+     // async create (data, params) {
+     //   if (array.isarray(data)) {
+     //     return promise.all(data.map(current => this.create(current, params)));
+     //   }
 
- #+NAME: Avoid Duplicate
- #+BEGIN_SRC js :tangle ./backend/src/hooks/avoid-duplicate.js
-   // Use this hook to manipulate incoming or outgoing data.
-   // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+     //   return data;
+     // }
 
-   // eslint-disable-next-line no-unused-vars
-   module.exports = function (options = {}) {
-     return async context => {
-       return context
-     };
-   };
+     // async update (id, data, params) {
+     //   return data;
+     // }
+
+     // async patch (id, data, params) {
+     //   return data;
+     // }
+
+     // async remove (id, params) {
+     //   return { id };
+     // }
+
  #+END_SRC
-** Services
+     Since it's a custom one, it has no Model or built-in functionality.  What we'll want to do is create a 'setup' function fro it that pings github and returns the config.yaml.  Then, it'll distribute its contents to our different api's.
+
+ We can alter the class of our config service, defining what every single type of method does.  The big one for us is the 'setup' method.  And, in fact, since this is just a sorta dashboard arranger, we could get rid of alot of the other methods.
 *** Dashboards
   accessible at /api/v1/dashboards
 **** Hooks
@@ -920,15 +914,12 @@ You can read more about this error on [[https://developer.mozilla.org/en-US/docs
         module.exports = function (options = {}) {
           return async context => {
             if (context.data.name === 'conformance-gce') {
-              console.log({context})
               context = await elaborateUpon(context)
             }
             return context;
           };
           async function elaborateUpon (context) {
-            console.log({elabContext: context})
             var dashboardTab = context.data.dashboard_tab
-            console.log({dashboardTab})
             var test_groups = context.app.service('/api/v1/test_groups')
             dashboardTab = addBranch(dashboardTab)
             dashboardTab = await addGcsPrefix(dashboardTab, test_groups)
@@ -953,7 +944,6 @@ You can read more about this error on [[https://developer.mozilla.org/en-US/docs
           function addBranch (dashboards) {
             return dashboards.map(dashboard => {
               var name = dashboard.name.toLowerCase()
-              console.log({dName: name})
               if (name.includes('(dev)')) {
                 dashboard.branch = 'dev'
               } else if (name.includes('release')) {
@@ -1037,7 +1027,6 @@ so here is the good stuff.
       module.exports = function (options = {}) {
         return async context => {
             if (context.data.name === 'conformance-gce') {
-              console.log({buildContext: context.data.dashboard_tab})
               context = await addBuildsForDashboards(context)
             }
           return context;
@@ -1046,16 +1035,13 @@ so here is the good stuff.
         async function addBuildsForDashboards (context) {
           var dashboards = context.data.dashboard_tab
           dashboards = await addLatestBuild(dashboards)
-          console.log({latestBuildDash: dashboards})
           return context
         }
 
         async function addLatestBuild (dashboards) {
           var promises = dashboards.map(async dashboard => {
             var latestBuild = await grabLatestBuild(dashboard)
-            console.log({latestBuild})
             dashboard.latestBuild = latestBuild
-            console.log({latestBuildDashboard: dashboard})
             return dashboard
           })
           const results = await Promise.all(promises)
@@ -1069,13 +1055,59 @@ so here is the good stuff.
       };
 
     #+END_SRC
+***** createAuditEntry
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/create-audit-entry.js
+      :END:
+      We'll be given a dashboard context that, if it has conformance-gce, should submit itself to the audits service with all the relevant deeetails.  We'll make this simpel right now, and handle the pinging of the server with the audits service.
+
+      I also have confusion about async stuff still, of course.  I had issues when passing along the data originally that the dashboards would suddenly lose alot of details.  It works when I made success asynchronous, even though it's nonsense.  Like, everything I do is a 'sideffect' of the success function.  This doesn't smell right. and should be refactored.
+
+      #+NAME: create-audit-entry.js
+      #+BEGIN_SRC js
+        // Use this hook to manipulate incoming or outgoing data.
+        // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+        // eslint-disable-next-line no-unused-vars
+        module.exports = function (options = {}) {
+          return async context => {
+            console.log({context: context.data.name})
+            if (context.data.name === 'conformance-gce') {
+              var dashboards = context.data.dashboard_tab
+              var success = await createAuditsFrom(context, dashboards)
+            }
+            return context;
+          };
+
+          async function createAuditsFrom (context, dashboards) {
+            var auditService = context.app.service('/api/v1/audits')
+            for (var dashboard of dashboards) {
+              var auditPath = `http://gcsweb.k8s.io/gcs/${dashboard.gcs_prefix}/${dashboard.latestBuild}/artifacts/`
+              var existingEntry = await auditService.find({query:{branch: dashboard.name}})
+              if (existingEntry.length === 0) {
+                auditService.create({
+                  branch: dashboard.name,
+                  path: dashboard.branch,
+                  build: dashboard.latestBuild,
+                  auditPath: auditPath
+                }).then(res => console.log('entry made!', {res}))
+              } else {
+                service.update(existingEntry[0]._id, {
+                  branch: dashboard.name,
+                  path: dashboard.branch,
+                  build: dashboard.latestBuild,
+                  auditPath: auditPath
+                }).then(res => console.log('entry updated!', {res}))
+              }
+            }
+            return 'good job'
+          }
+        }
+      #+END_SRC
+      #+RESULTS: create-audit-entry.js
 ***** next
 
-
-
-
-
-
+*** Audits
 * Process
 ** Working with d3
 *** Introduction

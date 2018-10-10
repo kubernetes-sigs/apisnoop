@@ -5,15 +5,12 @@
 module.exports = function (options = {}) {
   return async context => {
     if (context.data.name === 'conformance-gce') {
-      console.log({context})
       context = await elaborateUpon(context)
     }
     return context;
   };
   async function elaborateUpon (context) {
-    console.log({elabContext: context})
     var dashboardTab = context.data.dashboard_tab
-    console.log({dashboardTab})
     var test_groups = context.app.service('/api/v1/test_groups')
     dashboardTab = addBranch(dashboardTab)
     dashboardTab = await addGcsPrefix(dashboardTab, test_groups)
@@ -38,7 +35,6 @@ module.exports = function (options = {}) {
   function addBranch (dashboards) {
     return dashboards.map(dashboard => {
       var name = dashboard.name.toLowerCase()
-      console.log({dName: name})
       if (name.includes('(dev)')) {
         dashboard.branch = 'dev'
       } else if (name.includes('release')) {

@@ -2,6 +2,8 @@ const cleanupGcsDashboard = require('../../hooks/cleanup-gcs-dashboard');
 
 const addLatestBuild = require('../../hooks/add-latest-build');
 
+const createAuditEntry = require('../../hooks/create-audit-entry');
+
 module.exports = {
   before: {
     all: [],
@@ -17,8 +19,8 @@ module.exports = {
     all: [],
     find: [],
     get: [],
-    create: [],
-    update: [],
+    create: [createAuditEntry()],
+    update: [createAuditEntry()],
     patch: [],
     remove: []
   },
