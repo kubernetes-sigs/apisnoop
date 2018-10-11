@@ -4,7 +4,6 @@
 // eslint-disable-next-line no-unused-vars
 module.exports = function (options = {}) {
   return async context => {
-    console.log({context: context.data.name})
     if (context.data.name === 'conformance-gce') {
       var dashboards = context.data.dashboard_tab
       var success = await createAuditsFrom(context, dashboards)
@@ -23,14 +22,14 @@ module.exports = function (options = {}) {
           path: dashboard.branch,
           build: dashboard.latestBuild,
           artifactsPath: artifactsPath
-        }).then(res => console.log('entry made!', {res}))
+        }).then(res => console.log(`entry made for ${res.branch}!`))
       } else {
         auditService.update(existingEntry[0]._id, {
           branch: dashboard.name,
           path: dashboard.branch,
           build: dashboard.latestBuild,
           artifactsPath: artifactsPath
-        }).then(res => console.log('entry updated!', {res}))
+        }).then(res => console.log('entry updated! for ' + res.branch))
       }
     }
     return 'good job'

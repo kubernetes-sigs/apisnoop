@@ -8,8 +8,8 @@ const cheerio = require('cheerio')
 module.exports = function (options = {}) {
   return async context => {
     var auditLogPage = context.data.artifactsPath + 'bootstrap-e2e-master/'
-    var auditLogLink = await crawlPage(auditLogPage)
-    context.data.auditLogLink = auditLogLink
+    var auditLogArray = await crawlPage(auditLogPage)
+    context.data.auditLogArray = auditLogArray
     return context;
   };
 
@@ -21,11 +21,6 @@ module.exports = function (options = {}) {
     return rp(options).then(($) => {
       var links = $('.pure-u-2-5 a:first-of-type:contains(audit)').attr('href')
       return links
-    })
-  }
-  function downloadLog (logLink) {
-    return rp(logLink).then(info => {
-      return info
     })
   }
 }

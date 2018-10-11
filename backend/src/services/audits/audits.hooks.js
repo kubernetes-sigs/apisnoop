@@ -2,6 +2,8 @@
 
 const acquireAuditLog = require('../../hooks/acquire-audit-log');
 
+const downloadAuditLog = require('../../hooks/download-audit-log');
+
 module.exports = {
   before: {
     all: [],
@@ -17,8 +19,8 @@ module.exports = {
     all: [],
     find: [],
     get: [],
-    create: [],
-    update: [],
+    create: [downloadAuditLog()],
+    update: [downloadAuditLog()],
     patch: [],
     remove: []
   },
