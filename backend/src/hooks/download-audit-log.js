@@ -18,9 +18,9 @@ module.exports = function (options = {}) {
     var formattedPath = _.replace(branch, regex, formatByPattern)
     var fileName = `${formattedPath}audit.log`
     var writeStream = fs.createWriteStream(`./data/audit-logs/${fileName}`)
+    console.log(`Attempting to write file for: ${fileName}` + '\n' + 'from:' + '\n' + path + '\n' + '~*~*~*~*~*~*~~*~*')
     rp(path)
       .then(response => {
-        console.log('Starting to write file for:' + '\n' + fileName + '\n' + 'from:' + '\n' + path)
         writeStream.write(response)
         writeStream.end()
         writeStream.on('finish', () => console.log(`file written: ./data/audit-logs/${fileName}!`))
