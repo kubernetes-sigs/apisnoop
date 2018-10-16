@@ -1,0 +1,2312 @@
+#+NAME: APISnoop WebUI
+#+AUTHOR: Zach Mandeville
+#+EMAIL: zz@ii.coop
+#+PROPERTY: :dir ~/Projects/ii/apisnoop_webui
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(i) | DONE(d) DONE-AND-SHARED(!)
+
+* Introduction
+  This project is a proof of concept for making the web interface of modular and dynamic, by turning it into a React app.  Our current site can be found here:[[https://apisnoop.ii.coop][apisnoop.ii.coop]].  For the first go of this, we want our app to look nearly identical, with the same functionality:
+- visual display
+- Dropdown to choose between csv's
+- Ability to download the audit-log or csv.
+** Why Do this?
+   The current site is entirely hard-coded html. Whenever we want to make a change to the site (like adding a new dataset), it requires going into the html file, finding the right section, and adding a new static link.  Not only is this time-consuming, it's error-prone. It's also really hard to maintain.
+
+The site also bears the mark of different hands with different ideas moving quickly to get something 'working' but not pretty.  So the site is using multiple CSS frameworks plus custom CSS and multiple javascript helper utilities.  This also makes the site hard to reason about or design, as you don't know what things you can change and what things are required for the framework.
+
+The current site was the most basic proof of concept. We want to build a whole bunch of things on top of this, including github authorization and site-visitor customizatioin, and the ability to really customize the view you are seeing.  So I want to start again with a foundation to the site that is easier to reason about, easier to maintain, and easier to extend.
+
+* Architecture
+The site will be made to have a distinct front-end and backend, with the front-end able to be ported over to any other backend.
+The front-end will consist of multiple components that wait to be told what data to display, instead of being written as part of the component.  In this way, if we want to make changes to our 'SIG Tag Bubble', we can just find the component named that and make changes there, instead of trying to find/replace the code within the file.
+** FRONTEND
+The frontend will be made with React, Redux, maybe Saga, and Tachyons, and Axios
+*** Why React?
+    [[https://reactjs.org/][React]] is the most well-known and supported front-end framework among my dev friends in Wellington, and is widely used and respected globally.  It was created originally by Facebook and then made open-source.  So it has a tremendous amount of support around it and good video tutorials for learning it.  I find it to be a bulky and kinda clumsy framework (which is why the first version of this used my personal fave Choo instead), but felt it was good to pick one that more people knew (and could help with).
+
+*** Why Redux?
+   [[https://redux.js.org/][Redux]]  provides one global 'state' for the app, and makes React actually usable.  It will help us push the data appropriately to the right parts and keep things clean and efficient.
+
+*** AXIOS
+   [[https://www.npmjs.com/package/axios][Axios]] is a simple tool for handling http requests across different servers.  We'll need this for the client to be portable, and able to call to multiple API's (our backend plus github for example).
+*** Why Saga?
+   [[https://redux-saga.js.org/][Saga]] helps us with api calls and redux.  Redux likes pure clean objects sent to the store right away.  API calls don't work like that, and so Saga does the call and then sends the results to Redux.  It's working as a side effect.
+
+*** Why Tachyons?
+    Tachyons is a css framework for writing functional CSS.  It's a much different approach to CSS, but it's one that matches a unix philosophy and is super easy to spin things up and maintain them.  AS we make changes, we don't have to worry that some class hidden deep in some css file causes our whole site to look weird.  Instead, every class has a single purpose, and you add multiple classes to a site to add-upon and combine each of these classes functions (like piping commands together on the command line).  This makes all our components //reusable// too, as we only need to copy over the code and not any stylesheet attached to the code.
+** BACKEND
+   For the backend we will be using Feathers //for right now//.  We may find that we want something completely different, or that we want our webui to be able to live in multiple places.  Our goal is for the two to be entirely separate, so either can change if needed.
+*** Feathers
+    [[https://feathersjs.com/][Feathers]] is a well-designed and well-documented api layer written in Node.  It has good support among my Wellington dev friends, and so I have better help if I encounter any sorta problem.  It also is just really pleasant to use so far, with a good model for how to create different services.  It also has an existing React connector.
+**** Feathers Resources
+***** [[https://www.youtube.com/playlist?list=PLwSdIiqnDlf_lb5y1liQK2OW5daXYgKOe][youtube channel]]
+***** [[https://stackoverflow.com/questions/tagged/feathersjs][stackoverflow tag]]
+***** [[https://github.com/issues?utf8=%25E2%259C%2593&q=is%253Aopen+is%253Aissue+user%253Afeathersjs+][github page]]
+***** [[https://blog.feathersjs.com/][medium page]]
+***** [[http://slack.feathersjs.com/][slack channel]]
+
+** Our Current Flow
+   I would like to document the current setup, to make sure I can reason about it.
+
+  We will have a site listed anywhere, for now it's localhost so we'll call it LH.
+
+  We want to know which commits(?) of kubernetes should have conformance tests made for them, this is handled in a config.yaml file in kubernetes test-infra folder on github.
+
+ The log of their tests is found in the artifacts of the latest build of the test found in gcsweb.k8s.io.  We need to know the exact url to ping for gcs to return any proper info for us.
+
+
+And so we grab the config info from github and parse its contents looking for commits that we are intersted in (like all gce-conformance commits).  Then, we take a look at the test_group_name for each commit and use that info to parse the config file again.  Each test group name has a GCS_Prefix, which gives us the url path we can ping with gcsweb.io
+
+So let's say there's a commit called 'commmit1.2'.  This commit has a test_group_name of 'foo_test'.  That test_group has a prefix of '/jenkins/tests/log/foo_test'.  This means we can go to gcsweb.io/gcs/jenkins/tests/log/foo_test and get more information about this particular test group.
+
+That information is a bit of an overload though.  It has folders for all the builds along with a text file that contains a number that is the latest build.  so in foo_test we'd see a bunch of folders named "100, 101, 102, 103" plus "latest-build.txt".  Clicking on latest-build.txt gives us something like: '103', which we know means we should look in folder 103 for all the relevant stuff.
+
+The txt file, though just a number, isn't stored on gcsweb.io.  It's actually stored at 'storage.googleapis.com'.  So trying to grab gcsweb.io/$GCS_PREFIX/latest-build.txt will give us a redirect.  If we grab that number, following the path of that latest build folder leads us to a url of something like:
+http://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/foo_test-1-12/187/artifacts/bootstrap-e2e-master/
+
+there's also different bootstrap folders beyond master for many of these.
+
+Then, inside //this// folder would be some audit-logs.  These logs are what we are REALLLY looking for, as they have the data we want to visualize.
+
+
+This means, though, that when we start up the app we need to ping github and with the converted response from that ping gcsweb.k8s.io and with the response from that site ping gcsweb again but at a specific url, looking for a specific type of file and with the response of that get a big buffer of text that we try to convert into json so that we can feed it into our components.
+
+
+I feel like this is a tremendous amount to put onto a webpage upon first loading, and that there's a number of errors that could come up.  How much of this can be done by our server so it's at the ready when the page loads up.
+
+For example: I can't imagine the config.yaml file updates /aaaalll/ that much.  If we have something that is current to the latest day, or even yesterday, would that be okay?  And if that's okay, is there a way we could pull the yaml file and add it to our database so we'd have something like:
+- ourserver.com/dashboards
+- ourserver.com/test_groups
+- ourserver.com/commits
+and each of these we could ping instead to get the info we want?  Then we aren't doing real-time conversion of a blob into a string into yaml into json---it's just ready for us.
+
+In the same way, is there anyway we can parse our own api and grab the audit logs we need, and have them converted into json for us to parse.  So the web page loads, pings our server, finds the audit logs, and renders them.....That might be redundancy though, since they //are// already available on a server at gcsweb.  It just takes us some loops to figure out where.
+
+The question I have, ultimately, is how much should be handled by the client and how much should be pre-requested/filtered/converted by the server before the client latches on---and whether there's a simpler way to do what we're trying to do.
+
+* Backend
+** Setting up our API Initially
+**** Generating the backend app.
+     #+NAME: Generate Feathers App
+     #+BEGIN_SRC shell
+       mkdir backend && cd backend
+       feathers generate app
+     #+END_SRC
+**** Generating the Services
+     We'll need a config service, which will be custom.  It makes a request to our config.yaml file and then distributes its contents to our various other services.
+ From there, we need a service named for each of the major groups:
+ - dashboards
+ - test_groups
+ - dashboard_names
+** Services
+*** Config
+    This is the service used to ping github for our config file, and then populate the various dashboards from there.
+**** Setting up config service.
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
+     :END:
+***** Basic Layout
+ So we create a new class for the service and construct it with the options we give it.  In this case, the options relate to the request to our github api that we want to send.  Then, we have a number of commented out methods followed by our setup method.  The setup method requests the configyaml from github, loads it into json, and then distributes each group using our distribute function (described in more detail below).
+ #+NAME: config.class.js
+ #+BEGIN_SRC js
+   /* eslint-disable no-unused-vars */
+   const request = require('request-promise')
+   const yaml = require('js-yaml')
+
+   var options = {
+     url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
+     headers: {
+       'User-Agent': 'request'
+     }
+   }
+
+   class service {
+     constructor (options) {
+       this.options = options || {};
+     }
+     <<commented out methods>>
+
+     async setup (app, params) {
+       request(options).then(blob => {
+         blob = JSON.parse(blob)
+         var content = Buffer.from(blob.content, 'base64').toString()
+         var configGroups =  yaml.safeLoad(content)
+         distribute(app, configGroups)
+       })
+     }
+   }
+
+   <<Distribute Config Groups To Individual Services>>
+   <<Populate Entries For Each Service>>
+
+   module.exports = function (options) {
+     return new service(options);
+   };
+
+   module.exports.service = service;
+ #+END_SRC
+
+ #+RESULTS: config.class.js
+***** Distribute Config Groups To Invidiual Services
+
+ Our config file is given a number of groups, and half of them we don't care about.  We want to just create api services for these.
+ Each of these will need to have a service named like so: 'api/v1/service_name', this is done using the feathers cli (feathers generate service)
+ #+NAME: Distribute Config Groups To Individual Services
+ #+BEGIN_SRC js :tangle no
+   function distribute (app, configFile) {
+     var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
+     for (var section of relevantSections) {
+       var configSection = configFile[section]
+       var service = app.service(`/api/v1/${section}`)
+       populate(service, configSection)
+     }
+   }
+
+ #+END_SRC
+
+***** Populate Entries For Each Service
+      Here we check the current db for the entry, using its name.  If it doesn't exist, we make it.  If it does, we should update it.
+      first we have to check whether there's anything that exists.  So we do a service.find() and if there are no results, we create the entry.  If there are results, we check if they match our query.
+
+     This is kind of a gross function (or a straight up gross function) I don't l ike nested if/else statements.  I feel there is a better way to handle this.
+     I am also having a problem where it is only creating a single entry every single time for each one.  like...it knows
+
+    Once I do have this, then i'll be able to restart the server, it'll make a db if needed, if not it will check the db for the existing entry, and then it will add or updae the entry....
+
+    For some reason right now, it is only adding the last one--but enough times that I know it's going through each one.  Do I need to await some respone on a thing?
+      #+NAME: Populate Entries For Each Service
+      #+BEGIN_SRC js :tangle no
+        async function populate (service, configSection) {
+          for (var entry of configSection) {
+             var existingEntry = await service.find({query:{name: entry.name}})
+             if (existingEntry.length === 0) {
+               service.create(entry)
+             } else {
+               service.update(existingEntry[0]._id, entry)
+             }
+           }
+         }
+
+      #+END_SRC
+***** Commented Out Methods
+ #+NAME: commented out methods
+ #+BEGIN_SRC js :tangle no
+     // async find (params) {
+     //   return [];
+     // }
+
+     // async get (id, params) {
+     //   return {
+     //     id, text: `a new message with id: ${id}!`
+     //   };
+     // }
+
+     // async create (data, params) {
+     //   if (array.isarray(data)) {
+     //     return promise.all(data.map(current => this.create(current, params)));
+     //   }
+
+     //   return data;
+     // }
+
+     // async update (id, data, params) {
+     //   return data;
+     // }
+
+     // async patch (id, data, params) {
+     //   return data;
+     // }
+
+     // async remove (id, params) {
+     //   return { id };
+     // }
+
+ #+END_SRC
+     Since it's a custom one, it has no Model or built-in functionality.  What we'll want to do is create a 'setup' function fro it that pings github and returns the config.yaml.  Then, it'll distribute its contents to our different api's.
+
+ We can alter the class of our config service, defining what every single type of method does.  The big one for us is the 'setup' method.  And, in fact, since this is just a sorta dashboard arranger, we could get rid of alot of the other methods.
+*** Dashboards
+  accessible at /api/v1/dashboards
+**** Hooks
+***** cleanupGcsDashboard
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/cleanup-gcs-dashboard.js
+      :END:
+      Interesting thing here with async functions.  I have to put the quick ones in (like addBranch) before I do the addGcsPrefix.  If I try to add branch //after// this, then dashboardTab becomes undefined, or rather it is a pending promise of sorts.  There is a style of chaining these together that I know will make me happy, I feel like I am on the edge of comfort and this likely means someone else figured out a solution to this problem I am having.
+      #+NAME: cleanup-gcs-dashboard.js
+      #+BEGIN_SRC js
+        // Use this hook to manipulate incoming or outgoing data.
+        // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+        // eslint-disable-next-line no-unused-vars
+        module.exports = function (options = {}) {
+          return async context => {
+            if (context.data.name === 'conformance-gce') {
+              context = await elaborateUpon(context)
+            }
+            return context;
+          };
+          async function elaborateUpon (context) {
+            var dashboardTab = context.data.dashboard_tab
+            var test_groups = context.app.service('/api/v1/test_groups')
+            dashboardTab = addBranch(dashboardTab)
+            dashboardTab = await addGcsPrefix(dashboardTab, test_groups)
+            return context
+          }
+
+          async function addGcsPrefix (dashboards, test_groups) {
+            var promises = dashboards.map(async dashboard => {
+              var gcsPrefix = await grabGcsPrefix(dashboard, test_groups)
+              dashboard.gcs_prefix = gcsPrefix
+              return dashboard
+            })
+            const results = await Promise.all(promises)
+            return results
+          }
+
+          async function grabGcsPrefix (dashboard, test_groups) {
+            var tg = dashboard.test_group_name
+            var test_group = await test_groups.find({query: {name: tg}})
+            return test_group[0].gcs_prefix
+          }
+          function addBranch (dashboards) {
+            return dashboards.map(dashboard => {
+              var name = dashboard.name.toLowerCase()
+              if (name.includes('(dev)')) {
+                dashboard.branch = 'dev'
+              } else if (name.includes('release')) {
+                dashboard.branch = 'release'
+              } else {
+                dashboard.branch = 'none given'
+              }
+              return dashboard
+            })
+          }
+
+        };
+
+      #+END_SRC
+***** AddLatestBuild
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/add-latest-build.js
+      :END:
+      After the dashboard has been cleaned up, we check it's gcs_prefix and use that to find its latest build number.  This will require pinging that server and awaiting its response back.
+
+      When you generate a hook using feathers cli, it automatically makes it an asynchronous hook.  This means that the functions happen in sequence in our dashboards.hooks.js.  So because addLatestBuild comes after
+
+I started with a basic skeleton, and kinda like how i debugged this (or set it up as a thing to work on).  I wrote up the functions for the steps I'm trying to do, knowing each one would be asynchronous.  So here it's saying: if the thing coming in is for conformance, then add Builds for the Dashboards in its data before you return the context to the next thing (i.e. add it to the database).
+
+For adding builds, we want to define the dashboards and then say they are going to be transformed by addingtheLatest build.  This is an asynchronous map function that returns just some hard-coded text back.
+
+I console.log that text in my addLatestBuild section then, in my terminal running the program I have ~npm start | grep latestBuild~  .  So now I can just monitor that feed and make sure it shows what I think it should show.  If it does, I can then check out the dashboard on localhost to confirm that a latestBuild section has been added.
+
+So now, I have a console.log setup to help me quickly, and I can confirm that the basic structure of all of this (the logic or whateveR) works.  Now I just need to have the grabLatestBuild portion ping a server.
+    #+NAME add-latest-build.js rough
+    #+BEGIN_SRC js :tangle no
+      // Use this hook to manipulate incoming or outgoing data.
+      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+      // eslint-disable-next-line no-unused-vars
+      const rp = require('request-promise')
+
+      module.exports = function (options = {}) {
+        return async context => {
+            if (context.data.name === 'conformance-gce') {
+              addBuildsForDashboards(context)
+            }
+          return context;
+        };
+
+        async function addBuildsForDashboards (context) {
+          var dashboards = context.data.dashboard_tab
+          dashboards = await addLatestBuild(dashboards)
+          return context
+        }
+
+        async function addLatestBuild (dashboards) {
+          var promises = dashboards.map(async dashboard => {
+            var latestBuild = await grabLatestBuild(dashboard)
+            dashboard.latestBuild = latestBuild
+            return dashboard
+          })
+          const results = await Promise.all(promises)
+          return results
+        }
+        async function grabLatestBuild (dashboard) {
+          var buildURL = `http://gcsweb.io/${dashboard.gcs_prefix}/latest-build.txt`
+
+          return `put build here for ${buildURL}`
+        }
+      };
+
+    #+END_SRC
+
+so here is the good stuff.
+    #+NAME add-latest-build.js
+    #+BEGIN_SRC js
+      // Use this hook to manipulate incoming or outgoing data.
+      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+      // eslint-disable-next-line no-unused-vars
+      const rp = require('request-promise')
+
+      module.exports = function (options = {}) {
+        return async context => {
+            if (context.data.name === 'conformance-gce') {
+              context = await addBuildsForDashboards(context)
+            }
+          return context;
+        };
+
+        async function addBuildsForDashboards (context) {
+          var dashboards = context.data.dashboard_tab
+          dashboards = await addLatestBuild(dashboards)
+          return context
+        }
+
+        async function addLatestBuild (dashboards) {
+          var promises = dashboards.map(async dashboard => {
+            var latestBuild = await grabLatestBuild(dashboard)
+            dashboard.latestBuild = latestBuild
+            return dashboard
+          })
+          const results = await Promise.all(promises)
+          return results
+        }
+        async function grabLatestBuild (dashboard) {
+          var url = `http://gcsweb.k8s.io/gcs/${dashboard.gcs_prefix}/latest-build.txt`
+          var latestBuild = await rp(url)
+          return latestBuild
+        }
+      };
+
+    #+END_SRC
+***** createAuditEntry
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/create-audit-entry.js
+      :END:
+      We'll be given a dashboard context that, if it has conformance-gce, should submit itself to the audits service with all the relevant deeetails.  We'll make this simpel right now, and handle the pinging of the server with the audits service.
+
+      I also have confusion about async stuff still, of course.  I had issues when passing along the data originally that the dashboards would suddenly lose alot of details.  It works when I made success asynchronous, even though it's nonsense.  Like, everything I do is a 'sideffect' of the success function.  This doesn't smell right. and should be refactored.
+
+      #+NAME: create-audit-entry.js
+      #+BEGIN_SRC js
+        // Use this hook to manipulate incoming or outgoing data.
+        // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+        // eslint-disable-next-line no-unused-vars
+        module.exports = function (options = {}) {
+          return async context => {
+            if (context.data.name === 'conformance-gce') {
+              var dashboards = context.data.dashboard_tab
+              var success = await createAuditsFrom(context, dashboards)
+            }
+            return context;
+          };
+
+          async function createAuditsFrom (context, dashboards) {
+            var auditService = context.app.service('/api/v1/audits')
+            for (var dashboard of dashboards) {
+              var artifactsPath = `http://gcsweb.k8s.io/gcs/${dashboard.gcs_prefix}/${dashboard.latestBuild}/artifacts/`
+              var existingEntry = await auditService.find({query:{branch: dashboard.name}})
+              if (existingEntry.length === 0) {
+                auditService.create({
+                  branch: dashboard.name,
+                  path: dashboard.branch,
+                  build: dashboard.latestBuild,
+                  artifactsPath: artifactsPath
+                }).then(res => console.log(`entry made for ${res.branch}!`))
+              } else {
+                auditService.update(existingEntry[0]._id, {
+                  branch: dashboard.name,
+                  path: dashboard.branch,
+                  build: dashboard.latestBuild,
+                  artifactsPath: artifactsPath
+                }).then(res => console.log('entry updated! for ' + res.branch))
+              }
+            }
+            return 'good job'
+          }
+        }
+      #+END_SRC
+      #+RESULTS: create-audit-entry.js
+***** next
+*** Audits
+**** Hooks
+***** acquireAuditLog
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/acquire-audit-log.js
+      :END:
+      We are using rp and cheerio to ping the gcsweb url that has all the various info from each k8s branch.  Our relevant info is within their bootstrap e2e master section, and we want to just look at the audit-log we find within there.
+
+I checked the strucure of the file, and each link is held within a ~pure-u-2-5~ class.  Cheerio is like the node version of jquery, and so we can do nice jquery stuff like grab the hreft for the a link witin the pure class that contains the word 'audit'.
+
+    #+NAME: acquireAuditLog
+    #+BEGIN_SRC js
+      // Use this hook to manipulate incoming or outgoing data.
+      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+      // eslint-disable-next-line no-unused-vars
+      const rp = require('request-promise')
+      const cheerio = require('cheerio')
+
+      module.exports = function (options = {}) {
+        return async context => {
+          var auditLogPage = context.data.artifactsPath + 'bootstrap-e2e-master/'
+          var auditLogArray = await crawlPage(auditLogPage)
+          context.data.auditLogArray = auditLogArray
+          return context;
+        };
+
+        function crawlPage (page)  {
+          var options = {
+            uri: page,
+            transform: (body) => cheerio.load(body)
+          }
+          return rp(options).then(($) => {
+            var links = $('.pure-u-2-5 a:first-of-type:contains(audit)').attr('href')
+            return links
+          })
+        }
+      }
+    #+END_SRC
+***** downloadAuditLog
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/download-audit-log.js
+      :END:
+****** General Notes
+       This will happen after acquire, so we know that we have auditLogArray.  We'll take this array's url, and use request promise to grab all the stuff located there and write it to file.
+
+       Since it's a big file, we'll wanna have a write stream, and perhaps upon success a ping saying '${branch} was successfully written.'
+
+       A way to test this is to download the audit log to the same directory with a diff name, and then compare the line count for both files.
+
+       We already have a data folder, that's holding our databases, and so I made a new folder called audit-logs within that file.  And I //think// we can just do a direct path to that from our hook.  So...i'ma try it now!
+****** Code
+    If you don't want to write all the logs to disk, then you can comment out writeToFile(branch, logPath)
+    #+NAME: download-audit-log.js
+    #+BEGIN_SRC js
+      // Use this hook to manipulate incoming or outgoing data.
+      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+      // eslint-disable-next-line no-unused-vars
+      const rp = require('request-promise')
+      const fs = require('fs')
+      const _ = require('lodash')
+
+      module.exports = function (options = {}) {
+        return async context => {
+          var logPath = context.data.auditLogArray
+          var branch = context.data.branch
+          writeToFile(branch, logPath)
+          return context;
+        }
+        <<write to file>>
+        <<format by pattern>>
+      }
+
+    #+END_SRC
+
+    If given the path to the file, I should be able to set up a write stream that writes all the contents.  I am a little unsure where everything would download (like the relative path), and so I'll do a simple stream that just takes the name given and writes it to a file named after that particular branch.
+
+    The branch will have a name like 'GCE, v1.12 (release)'. I'd like this to be a filename, but it should be closer to gce_v1-12-release_audit.log
+    I could do a bunch of string replacements, but I think lodash would be faster.
+    #+NAME: write to file
+    #+BEGIN_SRC js :tangle no
+      function writeToFile(branch, path) {
+        var regex = /(,|.| |\(|\))/g
+        var formattedPath = _.replace(branch, regex, formatByPattern)
+        var fileName = `${formattedPath}audit.log`
+        var writeStream = fs.createWriteStream(`./data/audit-logs/${fileName}`)
+        console.log(`Attempting to write file for: ${fileName}` + '\n' + 'from:' + '\n' + path + '\n' + '~*~*~*~*~*~*~~*~*')
+        rp(path)
+          .then(response => {
+            writeStream.write(response)
+            writeStream.end()
+            writeStream.on('finish', () => console.log(`file written: ./data/audit-logs/${fileName}!`))
+            writeStream.on('error', (err) => console.log(`error for ${fileName}: ${err}`))})
+          .catch(err => console.log('request promise error: ' + err))
+      }
+    #+END_SRC
+
+    #+NAME: format by pattern
+    #+BEGIN_SRC js :tangle no
+      function formatByPattern (str) {
+        switch (str) {
+          case ',':
+          case ')':
+            return '_'
+          case '(':
+          case '.':
+            return '-'
+          case ' ':
+            return ''
+          default:
+            return str
+        }
+      }
+    #+END_SRC
+
+    #+RESULTS: format by pattern
+    : undefined
+
+***** other one?
+
+* Client
+  :PROPERTIES:
+  :header-args: :dir ~/Projects/ii/apisnoop_webui/client
+  :END:
+  The client will be all the files that bundle up into a bundle.js file that is called on our index.html page.  In other words, the FRONTEND
+** Running the Client
+ In the web ui folder:
+===
+cd client
+npm start
+===
+Then navigate to localhost:3000, if it isn't already opened for you.
+** File Structure
+   Our client is set up as so...
+   #+NAME: Our Directory Structure
+   #+BEGIN_SRC shell :dir ./client :results output verbatim drawer replace
+  tree  -I 'node_modules' -d
+   #+END_SRC
+
+   #+RESULTS: Our Directory Structure
+   :RESULTS:
+   .
+   ├── build
+   │   └── static
+   │       └── js
+   ├── public
+   └── src
+       ├── actions
+       ├── components
+       ├── css
+       ├── pages
+       ├── reducers
+       └── sagas
+
+   11 directories
+   :END:
+
+   The core work is done in the src folder. Public holds our stylesheets and assets, and build holds everything when we set it up for production.
+
+Within our Src, file:
+- Actions manage calls to the app's state, requesting new data.
+- Components are modular parts of our UI, like dropdown boxes and navbars and such.
+- Pages are collections of components that display based on the route of the site and the actions of the user.  They are similar to html pages.
+- reducers listens to actions and the payload of data they contain and reducer that data into a single state tree for the app.  This is the data being called upon in the components.
+- Sagas are not being used yet.
+** Setup
+*** Creation
+**** initial react app
+     We are going to use the default app style (because we want this to be familiar to others), and luckily there's an npm module to create react apps for us to do just that!
+     #+NAME: Create React App
+     #+BEGIN_SRC sh :dir ~/Projects/ii/apisnoop_webui :results output
+       npx create-react-app client
+     #+END_SRC
+     #+RESULTS: Create React App
+**** dependencies
+    We want to add some adaptors for react to use redux //and// feathers //and// tachyons
+    #+NAME: install dependencies
+    #+BEGIN_SRC sh :results output verbatim drawer
+      npm install --save \
+          @feathersjs/client \
+          feathers-localstorage \
+          feathers-redux \
+          react-dom \
+          react-redux \
+          react-router \
+          react-router-redux \
+          react-router-dom \
+          redux \
+          redux-thunk \
+          redux-devtools-extension \
+          redux-saga \
+          superagent
+    #+END_SRC
+
+    #+RESULTS: install dependencies
+    :RESULTS:
+    + react-dom@16.5.2
+    + react-router@4.3.1
+    + feathers-localstorage@3.0.0
+    + react-redux@5.0.7
+    + redux@4.0.0
+    + superagent@4.0.0-beta.5
+    + redux-saga@0.16.0
+    + react-router-redux@4.0.8
+    + @feathersjs/client@3.7.3
+    added 11 packages from 11 contributors, updated 5 packages and audited 14613 packages in 12.257s
+    found 0 vulnerabilities
+
+    :END:
+**** file structure
+     Within our client we want to manage our various components, the actions they can call upon, and the reducers that turn all these actions into a single state of the app. These dont' come with the basic react app, so we'll create them.
+     We also want to delete any of the default react icons or CSS stuff and move our App.js into a component (cos that's what it is.
+     #+BEGIN_SRC sh :results output
+       cd src
+       rm App.css index.css logo.svg
+       mkdir components actions reducers sagas
+       mv App.js components
+       cd ..
+       tree -I 'node_modules'
+     #+END_SRC
+     #+RESULTS:
+     #+begin_example
+     .
+     ├── README.md
+     ├── package-lock.json
+     ├── package.json
+     ├── public
+     │   ├── favicon.ico
+     │   ├── index.html
+     │   └── manifest.json
+     ├── src
+     │   ├── App.test.js
+     │   ├── actions
+     │   ├── components
+     │   │   └── App.js
+     │   ├── index.js
+     │   ├── reducers
+     │   ├── registerServiceWorker.js
+     │   └── sagas
+     └── yarn.lock
+
+     5 directories, 11 files
+     #+end_example
+
+*** Adding Tachyons
+    We want to bring tachyons right into our app, installing it through node.  This way we have full access to the css library without relying on outside links and this library is as up-to-date as possible(or rather, v. easy to stay up to date.)  I am following the guide for react that tachyons listed[[https://github.com/tachyons-css/tachyons-and-react][ on their github page.]]
+**** Install Tachyons and Sheetify
+     I wont' be using sheetify right now, but the goal is to use it upon a refactor (when we've moved away from webpack to browseriy)
+     #+NAME: Install Tachyons
+     #+BEGIN_SRC shell :dir ~/Projects/ii/apisnoop_webui/client :results output verbatim drawer
+       npm install --save tachyons tachyons-cli sheetify
+     #+END_SRC
+
+     #+RESULTS: Install Tachyons
+     :RESULTS:
+     + tachyons-cli@1.3.2
+     + tachyons@4.11.1
+     + sheetify@7.3.3
+     added 31 packages from 18 contributors, updated 2 packages, moved 3 packages and audited 20856 packages in 29.843s
+     found 1 low severity vulnerability
+       run `npm audit fix` to fix them, or `npm audit` for details
+     :END:
+**** Find Home for CSS
+     #+NAME: Find Home for CSS
+     #+BEGIN_SRC shell :dir ~/Projects/ii/apisnoop_webui/client/src :results output verbatim drawer
+       mkdir css
+       echo '@import "tachyons"' > css/app.css
+       tree css
+     #+END_SRC
+
+     #+RESULTS: Find Home for CSS
+     :RESULTS:
+     css
+     └── app.css
+
+     0 directories, 1 file
+     :END:
+**** Add CSS scripts
+ I'll add a couple additions to our package.json (this is best outlined in the github link)
+** index.js
+   :PROPERTIES:
+   :header-args: :noweb yes :tangle ./client/src/index.js
+   :END:
+   The entry point of the app.  This is what gets mounted to our index.html page, and then leads us into the rest of the frontend.  So we want to make a nice package to mount that has our redux store and our react app bundled up together.
+*** Requirements
+    #+NAME: Requirements
+    #+BEGIN_SRC js
+      import React from 'react'
+      import ReactDOM from 'react-dom'
+      import { BrowserRouter } from 'react-router-dom'
+      import './index.css'
+
+      import {Provider} from 'react-redux'
+
+      import App from './components/App'
+      import store from './store.js'
+
+    #+END_SRC
+*** index mounted to dom.
+Here we define the wrapped up chunk of code that will be mounted to the 'root' id in our index.html page, and flower into the full app
+#+NAME: main index.js
+#+BEGIN_SRC js
+  ReactDOM.render(
+      <BrowserRouter>
+      <Provider store={store}>
+      <App />
+      </Provider>
+      </BrowserRouter>,
+    document.getElementById('root')
+  )
+#+END_SRC
+** Our App(app.js)
+   :PROPERTIES:
+   :header-args: :noweb yes :tangle ./client/src/components/App.js
+   :END:
+***** Introduction
+    The app component is often seen as the 'layout template' for the frontend.  Anything we want to be displayed at all times should go here (e.g. a header and navbar).  The app component will also handle the navigation between the different components, based on routes given.
+
+    This is a 'single-page-app' which means: to the server, we are only showing a single html page, the index.html.  Within this page we have javascript code running that renders different views dynamically, based on what the site visitor wants to see.  We can give these views the format of a URL, so it appears like we are going to different pages within apisnoop (and so we can share specific urls to others), but it's all really a continually transforming bit of Javascript.
+***** Requirements
+ I'll dive a bit into the import/requirements section as it sets up a style you see in a lot of React apps.
+
+ We'll start by bringing in React and its Component class-we inherit all the features of this class when we render our own components, which gives them all the power we may not see at first.
+   #+NAME: Import React
+   #+BEGIN_SRC js
+     import React, { Component } from 'react'
+   #+END_SRC
+
+ Next, we'll bring in react's smart navigation.  These are what make the app appear to be multiple pages.
+ #+NAME: import routing and navigation
+ #+BEGIN_SRC js
+   import { NavLink, Route } from 'react-router-dom'
+ #+END_SRC
+
+ Lastly, we bring in our different pages, which we can navigate between using a nice lil' tab and navlinks..
+ #+NAME: import components
+ #+BEGIN_SRC js
+   import Header from './header'
+   import Footer from './footer'
+   import MainPage from '../pages/main-page.js'
+ #+END_SRC
+
+ #+RESULTS: import components
+
+***** The overall Layout
+      The general shape of this template is here:
+    #+NAME: App Layout
+    #+BEGIN_SRC js
+      class App extends Component {
+        render(){
+          return (
+            <div id='app'>
+              <Header />
+              <<Routes>>
+              <Footer />
+            </div>
+          )
+        }
+      }
+
+      export default App
+    #+END_SRC
+
+***** the Navlinks
+
+    the navlinks will be visual components that act like standard links;  and so ~exact to~ acts like href.
+
+    #+NAME: Nav Links
+    #+BEGIN_SRC js :tangle no
+      <div id='nav'>
+        <NavLink exact to='/'>Audits</NavLink>
+      </div>
+    #+END_SRC
+***** the Routes
+    The routes listen to the paths chosen by nav and routes to the correct component.  So the components don't show unless the url path matches their route.
+    #+NAME: Routes
+    #+BEGIN_SRC js :tangle no
+        <Route exact path='/' component={MainPage} />
+    #+END_SRC
+** Components
+The various visual parts of the app.  For the most part, we want these to be as dumb as possible--they present the stuff they're given, and if they have to do any interactive stuff it remains contained to within itself.  Any other changes should be handled outside of the component through actionCreators our and reducer updating the global state of the app.  In other words, the components display the state as it is now, and they can trigger events which update the state, but they always simply display it as it is now.
+*** CommitList
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/components/commit-list.js
+    :END:
+    Grabs all the commits coming from conformance, which is related to dashboards.name['conformance-gce'].dashboard_tab
+
+    We also want to grab the gcs_prefix for each test_group_name of the commit.  Then we can pass both along to the component.  So we make sure we have a test_groups object, and when so we find each commit's particular test, and pass that along to our Commitcard component as a prop.
+
+    #+NAME: CommitList
+    #+BEGIN_SRC js
+      import React from 'react'
+
+      import CommitCard from './commit-card'
+
+      export default function CommitList ({commits, test_groups }) {
+
+        const commitNames = () => {
+          if (test_groups) {
+            return commits.map(commit => {
+              var key_id = 'gce_commit_' + commits.indexOf(commit)
+              var test_group = getTGforCommit(commit, test_groups)
+              return (
+                  <li key={key_id}>
+                  <CommitCard commit={commit} test_group={test_group} />
+                  </li>
+              )
+            })
+          }
+        }
+
+        function getTGforCommit (commit, test_groups) {
+          return test_groups.find(test_group => {
+            return test_group.name === commit.test_group_name
+          })
+        }
+
+      return (
+          <div>
+          <ul className ='flex-row flex-wrap'>
+          { commitNames() }
+        </ul>
+          </div>
+      )
+      }
+      #+END_SRC
+
+    #+END_SRC
+*** CommitCard
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/components/commit-card.js
+    :END:
+   Component for displaying the conformance-gce commits.  I think i want to do the test_group logic here.  This way, we could potentially only call something up when they've grabbed the particular commit and aren't trying to do all the requests at once.
+
+And so the basic logic would be:
+- Having this information, it can ping the server to grab its latest build number.
+
+I am having difficulties with this due to CORS requests.  It's giving the error:
+ 'Cross-Origin Request Blocked: The Same Origin Policy disallows reading the remote resource at https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance/latest-build.txt. (Reason: CORS header ‘Access-Control-Allow-Origin’ missing).'
+
+You can read more about this error on [[https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS/Errors/CORSMissingAllowOrigin?utm_source=devtools&utm_medium=firefox-cors-errors&utm_campaign=default][Mozilla's dev page]], but upon reading it, it seems like you'd want to add a header not on our requesting server but on the server that holds this info.  I can't imagine that I'm the only one who would have this problem, so I'm wondering if there's just a step I'm missing.  I know this worked in our api server, I could try to do something there again.
+
+
+    #+NAME: Commit Card
+    #+BEGIN_SRC js
+      import React, { Component } from 'react'
+      import request from 'request-promise'
+
+      class ContactCard extends Component {
+        constructor(props) {
+          super(props)
+          this.state = {
+            gcs_prefix: '',
+            latest_build: ''
+          }
+          this.getLatestBuild = this.getLatestBuild.bind(this)
+        }
+        componentDidMount () {
+          this.setState({
+            latest_build: this.getLatestBuild()
+          })
+        }
+
+        getLatestBuild () {
+          var options = {
+            url: `https://storage.googleapis.com/${this.props.test_group.gcs_prefix}/latest-build.txt`,
+            headers: {
+              'User-Agent': 'request'
+            }
+          }
+          return request(options).then(response => {
+            return response
+          })
+        }
+
+
+        render(){
+          return (
+              <article className="center mw5 mw6-ns hidden ba mv4">
+              <h1 className="f4 bg-near-black white mv0 pv2 ph3">{this.props.commit.name}</h1>
+              <div className="pa3 bt">
+              <p className="f6 f5-ns lh-copy measure mv0">
+              {this.props.commit.description}
+            </p>
+              <p className="f6 f5-ns lh-copy measure mv0">
+              <a href={`https://storage.googleapis.com/${this.props.test_group.gcs_prefix}/latest-build.txt`}>link to latest build</a>
+            </p>
+              </div>
+              </article>
+          )
+        }
+      }
+      export default ContactCard
+    #+END_SRC
+*** Header
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/components/header.js
+    :END:
+    The classic APISnoop header, rendered in short and sweet tachyons
+    #+NAME: Header
+    #+BEGIN_SRC js
+      import React from 'react'
+
+      export default () => (
+          <header className='flex flex-row pt2 pb2 pl4 pr4 items-center justify-between bg-light-gray black shadow-3'>
+            <div id='logo' className= 'flex flex-wrap items-center'>
+            <img className='h2' src='./apisnoop_logo_v1.png' alt='logo for apisnoop, a magnifying glass with a sunburst graph inside.' />
+            <h1 className='ma0 f4 fw4 pl2 avenir'>APISnoop</h1>
+            </div>
+            <div id='source-code' className='flex items-center'>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+              <a href='https://github.com/cncf/apisnoop' title='github repo for apisnoop' className='link f7 pl1'>Source Code</a>
+            </div>
+          </header>
+      )
+    #+END_SRC
+
+    #+RESULTS: Header
+
+*** Footer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/components/footer.js
+    :END:
+    The classic APISnoop header, rendered in short and sweet tachyons
+    #+NAME: Header
+    #+BEGIN_SRC js
+      import React from 'react'
+
+      export default () => (
+          <footer className='flex flex-row pt2 pb2 pl4 pr4 items-center justify-between bg-black black shadow-3'>
+            <div id='logo' className= 'flex flex-wrap items-center'>
+            <img className='mw2' src='./apisnoop_logo_v1.png' alt='logo for apisnoop, a magnifying glass with a sunburst graph inside.' />
+            <h1 className='ma0 f4 fw4 pl2 avenir'>APISnoop</h1>
+            </div>
+            <div id='source-code' className='flex items-center'>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+              <a href='https://github.com/cncf/apisnoop' title='github repo for apisnoop' className='link f7 pl1'>Source Code</a>
+            </div>
+          </footer>
+      )
+    #+END_SRC
+
+    #+RESULTS: Header
+
+** Pages
+   We are following a convention where, if a component acts as its own route and holds many different components within it, then it's called a page.  Think of navigating between different pages in a site, and each one is made up of several diff. section.  It is the same here, just that we are navigating between JS dispalying different Page components.
+*** Sunburst
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/pages/sunburst-page.js
+    :END:
+   This will hold our d3 visualization.  Right now it is just a placeholder.
+      #+BEGIN_SRC js
+        import React from 'react'
+
+        export default function SunburstPage(){
+            return (
+                <div>
+                <h1>Test Coverage</h1>
+                <p>Sunburst goes here</p>
+                </div>
+            )
+        }
+      #+END_SRC
+*** Test Groups Commits
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/pages/tg-commits-page.js
+    :END:
+    This will hold all the names taken from conformance-gce dashboard_tab.name
+      #+BEGIN_SRC js
+        import React, { Component } from 'react'
+        import { connect } from 'react-redux'
+
+  //      import { fetchConfig } from '../actions/config-actions'
+ //       import CommitList from '../components/commit-list'
+
+        class TGCommitPage extends Component {
+          componentDidMount() {
+//            this.props.fetchConfig()
+          }
+
+          filterByBranch (arr, branchStr) {
+            return arr.filter(item => {
+              return item.name.includes(branchStr)
+            })
+          }
+
+          render(){
+            return (
+                <div>
+                <h1>Commits for GCE Conformance</h1>
+                <h2>Dev</h2>
+                <CommitList commits={dev} test_groups={this.props.test_groups}/>
+                <h2>Release</h2>
+                <CommitList commits={release} test_groups={this.props.test_groups}/>
+                </div>
+            )
+          }
+        }
+
+        function mapStateToProps (state) {
+          return {
+            conformance: state.configStore.conformance,
+            test_groups: state.configStore.test_groups
+          }
+        }
+
+        export default connect(mapStateToProps, {fetchConfig})(TGCommitPage)
+      #+END_SRC
+*** MainPage
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/pages/main-page.js
+    :END:
+    This will hold all the names taken from conformance-gce dashboard_tab.name
+      #+BEGIN_SRC js
+        import React, { Component } from 'react'
+        import { connect } from 'react-redux'
+
+        import { fetchAudits } from '../actions/audits-actions'
+
+        class MainPage extends Component {
+          componentDidMount() {
+            this.props.fetchAudits()
+          }
+
+          render(){
+            return (
+                <main id='main-splash' className='min-vh-100'>
+                  <h1>This Page Will Have</h1>
+                  <h2>Number of Audits: {this.props.audits.length}</h2>
+                  <ul>
+                  <li>existing sunburst visualization</li>
+                  <li>tag cloud as taken from our audits</li>
+                  <li>information about sigs when a sig-tag is present.</li>
+                  <li>A dropdown for the sunburst to filter by user-agent</li>
+                  </ul>
+                </main>
+            )
+          }
+        }
+
+        function mapStateToProps (state) {
+          return {
+            audits: state.auditsStore.audits
+          }
+        }
+
+        export default connect(mapStateToProps, {fetchAudits})(MainPage)
+      #+END_SRC
+** Actions
+*** index.js
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/index.js
+    :END:
+    We'll use the index page of the actions to set up our axios client.  axios handles our fetch requests, since we'll be fetching from another server and not from a data file within this app.  Axios is an http request client that uses promises (a new javascript convention for handling asynchronous calls).[[https://www.npmjs.com/package/axios][ Axios page on NPM]]
+
+    We'll want to configure a client app for axios, that sets the host we are trying to connect to and the type of information we are expecting to get.  Since we are working with a feathers api, then we know we just need to grab JSON.
+    #+BEGIN_SRC js
+      import axios from 'axios'
+
+      export const client = axios.create({
+        baseURL: "http://localhost:3030",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      })
+    #+END_SRC
+   These work with redux to deliver our store an object that has a 'type' and a payload.  So the type tells our store reducers what to do with it, and the payload is the data that is being added to the global state.
+
+*** Config Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/config-actions.js
+    :END:
+**** Requirements
+    We are going to ping our feathers database to grab our contacts.  We've set up an axios client (in index.js) to handle these types of requests, so we'll bring it in, and use the client to grab data.
+    #+NAME: Requirements
+    #+BEGIN_SRC js
+      import { client } from './'
+
+      const url = '/config'
+
+    #+END_SRC
+**** Fetching Config
+      The dispatch is being used so our redux stores can hear an action took place.  So we are sending out a broadcast(dispatch) that says 'FETCH CONFIG HAPPENED!' and we're bringing with it a payload.  Redux will hear this action, and assign the payload to the correct part of the app's state.
+      #+NAME: config-actions.js
+      #+BEGIN_SRC js
+
+        export function fetchConfig () {
+          return dispatch => {
+            dispatch({
+              type: 'FETCH_CONFIG',
+              payload: client.get(url)
+            })
+          }
+        }
+      #+END_SRC
+
+  When this is pinged it'll create a few new type of actions:
+    + 'FETCH_CONFIG_PENDING'
+    + 'FETCH_CONFIG_FULFILLED'
+    + 'FETCH_CONFIG_REJECTED'
+
+  This is done automatically, and so we don't need to create action creators for these various actions, we just need to tell our reducer to listen to the 'FETCH_CONFIG_FULFILLED' action and handle the payload appropriately.
+**** Fetch Particular Dashboard
+**** Fetch Particular Testgroup
+*** Audits Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/audits-actions.js
+    :END:
+**** Requirements
+    We are going to ping our feathers database to grab our contacts.  We've set up an axios client (in index.js) to handle these types of requests, so we'll bring it in, and use the client to grab data.
+    #+NAME: Requirements
+    #+BEGIN_SRC js
+      import { client } from './'
+      const url = '/api/v1/audits'
+
+    #+END_SRC
+**** Fetching Audits
+      The dispatch is being used so our redux stores can hear an action took place.  So we are sending out a broadcast(dispatch) that says 'FETCH AUDITS HAPPENED!' and we're bringing with it a payload.  Redux will hear this action, and assign the payload to the correct part of the app's state.
+      #+NAME: audits-actions.js
+      #+BEGIN_SRC js
+
+        export function fetchAudits () {
+          return dispatch => {
+            dispatch({
+              type: 'FETCH_AUDITS',
+              payload: client.get(url)
+            })
+          }
+        }
+      #+END_SRC
+
+  When this is pinged it'll create a few new type of actions:
+    + 'FETCH_AUDITS_PENDING'
+    + 'FETCH_AUDITS_FULFILLED'
+    + 'FETCH_AUDITS_REJECTED'
+
+  This is done automatically, and so we don't need to create action creators for these various actions, we just need to tell our reducer to listen to the 'FETCH_AUDITS_FULFILLED' action and handle the payload appropriately.
+** Reducers
+*** index.js
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/index.js
+    :END:
+    Here we combine all our different reducers into one big one.  This lets us think about the app in different, focused concerns that then get added to the larger application seamlessly.
+
+    #+NAME: Requirements
+    #+BEGIN_SRC js
+      import { combineReducers } from 'redux'
+
+      import AuditsReducer from './audits-reducer'
+    #+END_SRC
+
+    #+NAME: Reducers
+    #+BEGIN_SRC js
+      const reducers = {
+        auditsStore: AuditsReducer
+      }
+
+      const rootReducer = combineReducers(reducers)
+
+      export default rootReducer
+    #+END_SRC
+*** Audits Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/audits-reducer.js
+    :END:
+**** Initial State
+    We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with data from our server.  In either case, we are giving our components a structure for what they can expect to display, and then the data to display.
+#+NAME: Audits Initial State
+#+BEGIN_SRC js
+  const defaultState = {
+    audits: [],
+    loading: true,
+    errors: {}
+  }
+
+#+END_SRC
+
+**** The Reducer
+     #+NAME: The Audits Reducer
+     #+BEGIN_SRC js
+       export default (state = defaultState, action = {}) => {
+         switch (action.type) {
+           case 'FETCH_AUDITS_FULFILLED': {
+             var config = action.payload.data
+             console.log(config)
+             return {
+               ...state,
+               audits: action.payload.data
+             }
+           }
+           default:
+             return state;
+         }
+       }
+
+     #+END_SRC
+
+
+
+* Process
+** Working with d3
+*** Introduction
+   d3 is the data visualization library that was used to make our original sunburst.  The way it works is to mount itself to the dom, and then appends new elements to the dom based on the data it was given. If that data changes, it transforms the elements as needed.
+
+   The way react works is it attaches itself to the dom, then creates a //shadow dom// that it is continually listening to, adding and removing elements in this dom as needed based on the data(the state) it was given.
+
+   In other words, they work in largely the same way, and both wanna attach themselves to the dom and manipulate it.  This...isn't good.  We want to have /1/ thing making shadow doms and calls on the website, and so it is a bit tricky to get react and d3 working together.
+
+The upside is that a number of people have tackled this challenge and created different react/d3 libraries for how the two can work together.  The downside is that I'm not sure yet which is the best to do.
+
+Put simply, it is not easy to take our existing sunburst code and just paste it into our new app.  We are going to need to transform it in some way based on the guidance of the library we are using.
+
+So the question is why we are putting ourselves into this trouble?
+*** WHY WE ARE PUTTING OURSELVES INTO THIS TROUBLE
+    My assumption with all of this is that when people hear 'apisnoop', they are thinking of the site in which you can see the data visualziations.  And so the webapp is important for the project and will be expanded.  React would be great for this in the long run.
+
+Similarly, I am expecting that we are going to have more types of visualizations than just the sunburst--and that even the sunburst may change.  So we are going to want to have an understanding for a language in which we can make a //bunch// of visualizations. d3 is great for this.
+
+If we do it right, we can have reusable components too that other teams could use for their own k8s projects, and that we could use ourselves.  For example--displaying two sunburst charts side by side would be much easier in react/d3 then what i ws trying to do before (appending both to the same id on a standard html document.)  This requires that I move through some d3 tutorials though.
+
+At the end of this, though, we will have a backend server that is easy to setup and can ping different url's (github repos or testgrid artifacts) and grab their data.  Then, we can manipulate that data in whatever way we want but also pass it along to our frontend.  This front-end can then have different options and tags setto really dive in and explore.
+
+If this is the purpose of apisnoop then let's do it.  If it's too much overkill though, then I can try a simpler solution.
+*** Possible Process to get going
+**** Setup a simple d3 visualization to understand the process
+**** pipe data into this simple visualization through our redux state.
+**** Pore over the original code again (the original blog post) to see how to best convert it
+**** Change the sunburst's origin point from a CSV file to JSON
+**** Change the sunbursts origin point from JSON to our redux store.
+*** Second Process
+**** Setup different pages for different d3-react libraries that already have ubilt components.
+**** explore piping our data into the one we like.
+**** Use testgrid conformance data and make simple visualizations to it.
+     We are wanting to keep the data retrieval tied into the visualizing, so we dont' end up with a pretty graph that can't be used for what we have.  So we can grab the testgrid stuff now and see what we can do with it.
+
+
+**** Use that going forward.
+*** Possible Libraries to use
+**** Victory
+     https://formidable.com/open-source/victory/
+**** Britecharts react
+     https://eventbrite.github.io/britecharts-react/
+**** Recharts
+     http://recharts.org/en-US/
+** Plan for Demo
+- show our sunburst
+- show a cloud of all tags.
+- show a dropdown for user-agent
+- if you chooose a tag, the user-agent dropdown reduces to just tests run by that tag.
+- If you click on a sig tag, pull its general info from kubernetes/community/sigs.yaml
+- when you hover over an endpoint, show a list of tests that also hit that endpoint. and nubmer of times that test hits that endpoint.
+* Footnotes
+** Understand the config.yaml file and what it's pointing to.
+*** TestGrid
+    Our testgrid is located at: https://k8s-testgrid.appspot.com/
+
+ https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml#L3028
+ Dashboard Config for conformance-all: https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml#L3231
+ Production instance of conformance-all: https://k8s-testgrid.appspot.com/conformance-all
+
+ GCE https://k8s-testgrid.appspot.com/conformance-all#GCE,%20master%20(dev)
+
+ JOBS for GCE 1.12-dev https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12
+ Historical artifa8cts, including latest:
+ https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12
+ The specific latest build:
+ https://k8s-gubernator.appspot.com/build/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/
+ Grab SOMETHING from the artifact folder for this job:
+ http://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/
+ The audit log: https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log
+*** Navigating the config.yaml
+    Starting at , here is how to relate the url view with the info on
+    <<
+**** [[file:config_yamls/config.yaml::dashboard_groups:][dashboard_groups:]]
+
+    These top level dashboard groups are what populate the top level of [[https://k8s-testgrid.appspot.com][k8s-testgrid.appspot.com]]
+***** [[file:config_yamls/config.yaml::dashboards:][dashboards:]]
+****** [[file:config_yamls/config.yaml::test_groups:][test_groups:]]
+
+**** Example [[file:config_yamls/config.yaml::-%20name:%20conformance-gce][For dashboard: conformance-gce]]
+  if you were to look at
+  dashboards.name['conformance-gce'].dashboard_tab, that ties to the summary tab you see at [[https://k8s-testgrid.appspot.com/conformance-gce][k8s-testgrid.appspot.com/conformance-gce]]
+**** Test groups
+     k8s
+    Every testgroup name you find at:
+   ~dashboards.name['conformance-gce'].dashboard_tab.name~
+   has a section called 'test_group_name', and each test group name has its gcs_prefix (GCS standing for 'Google Cloud Services')
+
+   For example, the test group name 'ci-kubernetes-gce-conformance-stable-1-12' has a gcs prefix of 'kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-stable-1-12'.
+
+   The json path for this testgroup gcs prefix would be:
+   test_groups.name['ci-kubernetes-gce-conformance-stable-1-12'].gcs_prefix
+
+   which takes you here: [[file:config_yamls/config.yaml::gcs_prefix:%20kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-stable-1-12][gce-conformance-latest-1-12 gcs_prefix]]
+
+   We could then...point that to a url where we'd grab the artifacts?
+   like:
+  http://gcsweb.k8s.io/gcs/$GCS_PREFIX
+
+  we want to grab the latest text build, which is found at
+  http://gcsweb.k8s.io/gcs/$GCS_PREFIX/latest-build.txt
+   The goal now is to try to get as much done on the server, instead of trying to do it upon page requests in the client.  So what we would like is to have a server with an api that the client can ping that would give back the data needed based on the branch.  So I could do a request in the client for gce-conformance branch 1.12(dev), and that'd tie to some easy to reason about api path (/branches/1.12-dev), and this gives us the name of the latest build and the data taken from kube-servers api log.
+
+So ultimately we want to be bringing down the gigs of data for the audit-logs and converted into something that can be rendered into a graph.
+** Resources
+*** Youtube Tutorial
+    I followed [[https://www.youtube.com/watch?v=etq_vv_RVcU&index=2&list=PLN3n1USn4xlnulnnBGD2RMid_p7xVj9xU][This Tutorial]] for a lot of the setup and found it quite useful, but actually it's mad outdated and might be a set back.  It helped me get a better sense of Sagas but react and redux have changed too much since this tutorial.
+*** Sitepoint tutorial
+   [[https://www.sitepoint.com/crud-app-react-redux-feathersjs/][sitepoint tutorial]]
+    this one is far newer, and scanning it after doing all my research it is using mostly up-to-date code samples.  I think it'd be best to follow this going forward.
+*** d3
+**** [[https://medium.com/@Elijah_Meeks/interactive-applications-with-react-d3-f76f7b3ebc71][interactive applications with react-d3]]
+     this is really good.
+**** [[https://www.smashingmagazine.com/2018/02/react-d3-ecosystem/][Bringing Together react, d3, and their ecosystem]]
+**** [[http://www.adeveloperdiary.com/react-js/integrate-react-and-d3/][How to Integrate React and d3 the right way]]
+**** [[https://bost.ocks.org/mike/join/][Thinking with Joins]]
+
+** Learning Work
+*** Making Contacts App through Tutorial
+**** index.js
+     :PROPERTIES:
+     :header-args-dis: :noweb yes
+     :END:
+     This is the starting point for the full app, in which we initialize React, connect it to redux, start up our store, connect to feathers and all that good stuff.
+***** Requirements
+      index is really here to spin up react and redux and guide us to the beginning components and store where the real stuff happens. BrowserRouter is brought in so that clicking on different navlinks in our App component will work like url's on a standard webpage.
+
+
+      #+NAME: Requirements for just React
+      #+BEGIN_SRC js
+        import React from 'react'
+        import ReactDOM from 'react-dom'
+        import { BrowserRouter } from 'react-router-dom'
+        import './index.css'
+
+        import {Provider} from 'react-redux'
+
+        import App from './components/App'
+      #+END_SRC
+
+
+
+  WITH redux, we bring in a store that holds the global state of the app as one big object to parse over.  So we bring that in now too
+      #+NAME: import store
+      #+BEGIN_SRC js
+        import store from './store'
+      #+END_SRC
+***** React Only index page
+      Once we have the router setup, we need to mount everything to our index.html file (in our public folder).  This is how javascript can magically render itself as html to whoever's looking at it.
+
+      However, there is no data yet, it needs to be provided by the store.  Meaning, we need to wrap everything inside a Provider tag, and that provider tag to bring along the store.
+
+  So this is what it looks like before:
+      #+NAME: ReactDOM render
+      #+BEGIN_SRC js :tangle no
+        ReactDOM.render(
+            <BrowserRouter>
+            <App />
+            </BrowserRouter>,
+          document.getElementById('root')
+        )
+      #+END_SRC
+***** React and Redux index
+      big difference is the provider tag which brings in the store we are importing from store.js
+      #+NAME: React and Redux index
+      #+BEGIN_SRC js
+        ReactDOM.render(
+            <BrowserRouter>
+            <Provider store={store}>
+              <App />
+            </Provider>
+            </BrowserRouter>,
+          document.getElementById('root')
+        )
+      #+END_SRC
+
+**** Components
+***** App
+      :PROPERTIES:
+      :header-args-dis: :noweb yes :tangle no
+      :END:
+****** Introduction
+        The starting place for our whole front-end.  Right now it is light, and based on the sitepoint tutorial.
+
+       The app component is often seen as the 'layout template' for the entire single page app (as said by Wes Bos) and so it is meant to handle the navigation and the routes that determine which components we show.
+
+    The entire app will actually take place on the index.html page, but will render different views dynamically.  These views can be shared by their URL's, so it's like we have a deep webpage of thangs--but really it's a continually transforming bit of javascript code.
+
+    our original app component looked like this.
+        #+NAME: Original App Component
+        #+BEGIN_SRC js :tangle no
+          import React, { Component } from 'react'
+
+          class App extends Component {
+            render(){
+              return (
+                  <div>
+                  <h1>APISNOOP/Contact Manager</h1>
+                  <h2>ignore these words for now, they are just proof that this works.</h2>
+                  </div>
+              )
+            }
+          }
+
+          export default App
+        #+END_SRC
+
+    Let's deep dive into how it'll look now, as this is a structure that we'll see in a bunch of React apps.
+
+****** Requirements
+
+  We'll start with the classic requirement: react and the Component class.
+    #+NAME: Import React-dis
+    #+BEGIN_SRC js
+      import React, { Component } from 'react'
+    #+END_SRC
+
+  Next, we'll bring in react's smart navigation.  These are what make the app appear to be multiple pages.
+
+  #+NAME: import routing and navigation-dis
+  #+BEGIN_SRC js
+    import { NavLink, Route } from 'react-router-dom'
+  #+END_SRC
+
+  Lastly, we bring in our different pages, which we can navigate between using a nice lil' tab and navlinks..
+
+  #+NAME: import components-dis
+  #+BEGIN_SRC js
+    import Header from './Header'
+    import ContactListPage from '../pages/contact-list-page'
+    import ContactFormPage from '../pages/contact-form-page'
+  #+END_SRC
+
+****** The overall Layout
+       The general shape of this template is here:
+       #+NAME: App Layout-dis
+       #+BEGIN_SRC js :tangle no
+         class App extends Component {
+           render(){
+             return (
+               <div id='app'>
+                 <Header />
+                 <<Nav Links>>
+                 <<Routes>>
+               </div>
+             )
+           }
+         }
+
+         export default App
+       #+END_SRC
+
+
+
+****** the Navlinks
+       the navlinks will be visual components that act like standard links;  exact to acts like href.
+       #+NAME: Nav Links-dis
+       #+BEGIN_SRC js :tangle no
+         <div id='nav'>
+          <NavLink exact to='/'>Contacts List</NavLink>
+          <NavLink exact to='/contacts/new'>Add a Contact</NavLink>
+         </div>
+       #+END_SRC
+****** the Routes
+       The routes listen to the paths chosen by nav and routes to the correct component.  So the components don't show unless the url path matches their route.
+       #+NAME: Routes-dis
+       #+BEGIN_SRC js :tangle no
+           <Route exact path='/' component={ContactListPage} />
+           <Route path='/contacts/new' component={ContactFormPage} />
+           <Route path='/contacts/edit/:_id' component={ContactFormPage} />
+       #+END_SRC
+
+***** Contact Form
+      :PROPERTIES:
+      :header-args-dis: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/components/contact-form.js
+      :END:
+
+      This is the form itself, that fits inside our contact-form-page.  It changes its behavior depending on if the form is for a new contact or an existing one.
+****** Requirements
+       We're using React for the component, and redux-form for the form submission and validation.
+
+         #+NAME: Requirements
+         #+BEGIN_SRC js
+           import React, { Component } from 'react'
+           import { Field, reduxForm } from 'redux-form'
+           import classnames from 'classnames'
+         #+END_SRC
+****** Basic Layout
+       Forms are tricky with client-side apps, as forms like to ping a server and live somewhere there.  In a traditional model, you'd have the form do a post request to the server and redirect to a success page.  But here, we are wanting to post to another area in this client-side app, and so within the browser and not the server. Which is to say that we need to set this up with a couple wrappers so this works properly.
+
+  This is essentially some React Redux weirdness conventions.  It is possible that there are now better ways to do this then I am aware, and when I learn of them I'll come back to update this.  But for now, here is a sturdy way in which to handle forms with react and redux.
+
+       The layout will create a new react Component for our form, and this component will have an included Function for what each form field should look like.
+
+  Then, in the main component page, we'll create each field using the redux-form Field component, and say that it renders itself using that field function we described up above.  In other words we say, "Give us a field component that will bundle up the data nice to work with redux but for styling, have it look like this subcomponent we described elsewhere."  So we are not defining what Field does, it comes pre-made from redux-form, and it does some good data cleanup and manipulation automatically so that this page works well with redux.  The actual presentation of the component is handled in our renderField function/sub-component.
+
+  Lastly, we export it wrapped up in reduxForm, similar to how we connected the component to our redux state in the contact-list.  This means we have all the properties and power of redux form whenever this component is called.
+
+  And so, the whole thing is structured like so.
+
+         #+NAME: contact-form layout
+         #+BEGIN_SRC js
+            class ContactForm extends Component {
+            <<Component Updated?>>
+            <<renderField sub-component>>
+
+              render(){
+                <<setup Props>>
+                return (
+                <<ContactForm Component>>
+                )
+              }
+            }
+           <<Export with reduxForm>>
+         #+END_SRC
+
+****** Component Updated? What do we do?
+       If there aren't any props yet, initialize the form.  When they come, put them in the appropriate fields, but don't create the form again.
+
+       This style has been deprecated since the tutorial.  You'll wanna use another method instead, check out this page: https://reactjs.org/blog/2018/06/07/you-probably-dont-need-derived-state.html#recommendation-fully-controlled-component
+
+       #+NAME: Component Updated?
+       #+BEGIN_SRC js :tangle no
+         componentWillReceiveProps =  (nextProps) => {
+           const { contact } = nextProps
+           if(contact._id !== this.props.contact._id) {
+             this.props.initialize(contact) // initialize form only once.
+           }
+         }
+       #+END_SRC
+
+       #+RESULTS: Component Updated?
+       : undefined
+
+
+****** the renderField sub-component
+       React Components let you declare component specific functions that you call like so ~this.functionName~.  You don't need to declare them as a variable like usual.
+
+  So we are saying our contactForm has a function within it called renderField.  It takes a number of arguments, kept up nice in an object.  Then, we render a component with different wildcards represented by those arguments.  So we can put the basic structure in, and let each one be different based on the props that our contactFrom passes to it (its label, its type, etc.)
+
+         #+NAME: renderField sub-component
+         #+BEGIN_SRC js :tangle no
+           renderField = ({ input , label, type, meta: {touched, error} }) => (
+               <div className={classnames('mt3', {red:touched && error})}>
+               <label className='db fw6 1h-copy f6' for={label}>
+                 {label}
+               </label>
+               <input className='pa2 input-reset ba bg-transparent
+                                 hover-bg-black hover-white w-100'
+                      {...input}
+                      type={type}
+                      placeholder={label}>
+               </input>
+               {touched && error && <span className='error'>{error.message}</span>}
+               </div>
+
+           )
+         #+END_SRC
+
+  The {...input} section is kinda neat.  It's a destructured object, and so {input} is equal to {input: input}.  This goes one more and does it as a spread operator.  So now it's saying {input: whatever the current input is plus what you about to put in}.  This is what lets us enter text, and the component records each letter as you type it in as the input.  Without this if I were to type 'hello', then the component would say the input was 'o', as it just kept the last letter we entered.  Now, the input is 'h'+'e'+'l'+'l'+'o'; so it works properly even in this new weird shadowDOM react world.
+
+  The {touched} code section is neat too!  This is an if/then statement for an html element.  It's saying 'If this component has been touched at all, and there are errors, display this span that shows the error message.'  this logic would let us easily display names only if some part of the app is true, or quickly hide and show thangs that are definitely a part of the component, but not an always visible part.
+
+****** The Contact Form Component
+       Now we can set up our main component.  First, we do some tricky laziness.  We define a bunch of variables, based on the variables brought in by this.props.
+          #+NAME: setup Props
+          #+BEGIN_SRC js :tangle no
+            const {handleSubmit, submitting, loading  } = this.props
+          #+END_SRC
+
+       The whole point of this is now we can call handleSubmit with just 'handleSubmit' instead of 'this.props.handleSubmit'.  V fancy, v. lazy.
+
+       Now, we set up the contactForm.  It has a nice basic structure, since we render the field component elsewhere.  As you can see it's a form that, onSubmit calls our handleSubmit function.  It's made up of four fields and a submit button.
+
+  These four fields have names that correspond to the data structure we wanna pass in our object.  This is set up just like our current contactStore object. HANDY!
+
+          #+NAME: ContactForm Component
+          #+BEGIN_SRC js :tangle no
+            <main className='pa4 black-80'>
+            <form className='measure center' onSubmit={handleSubmit} loading={loading}>
+            <fieldset id='add_new_contact' className='ba b--transparent ph0 mh0'>
+              <legend className='f4 fw6 ph0 mh0'>{this.props.contact._id ? 'Edit Contact' : 'Add New Contact!!!'}</legend>
+              <Field name='name.first' type='text' component={this.renderField} label='First Name' />
+              <Field name='name.last' type='text' component={this.renderField} label='Last Name' />
+              <Field name='phone' type='text' component={this.renderField} label='Phone' />
+              <Field name='email' type='text' component={this.renderField} label='email' />
+            </fieldset>
+            <div>
+              <input className='b ph3 pv2 input-reset ba b--black
+                                bg-transparent grow pointer f6 dib'
+                    type='submit'
+                    value='Add Contact'
+                    disabled={submitting}>
+              </input>
+            </div>
+            </form>
+            </main>
+          #+END_SRC
+
+          #+RESULTS: ContactForm Component
+
+****** Exporting it with Redux Form.
+       The last bit is to just export this whole component, but connected to redux-form.  It's the same structure as connect in our contactList, but we say that we are adding to our 'form' store a new form called 'contact'.
+
+          #+NAME: Export with reduxForm
+          #+BEGIN_SRC js :tangle no
+             export default reduxForm({form: 'contact'})(ContactForm)
+          #+END_SRC
+
+
+
+
+
+   We can define tiny components within components and pass along the proper fields to them as props.  So we are going to create a specific component for each of our fields, and set it to the variable 'renderField'.
+
+   #+NAME: define form field component
+   #+BEGIN_SRC js :tangle no
+     renderField = ({ input, label, type, meta: {touched, error } }) => (
+           <div class="measure">
+         <label for={label} class="f6 b db mb2">{name}</label>
+         <input id={name} class="input-reset ba b--black-20 pa2 mb2 db w-100" type={type} aria-describedby="name-desc" placeholder={label}>
+           <small id=`${{name}}-desc` class="f6 black-60 db mb2">Helper text for the form control.</small>
+           </div>
+     )
+   #+END_SRC
+***** Contact List
+      :PROPERTIES:
+      :header-args-dis: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/components/contact-list.js
+      :END:
+      This list is purely presentational, and so does not need to be a full stateful component (meaning it doesn't need to have its own, component specific state that it manages, it just needs to present the application's state).  We pass it contacts from our ContactListPage, which it is getting from our global state.  So there's a pattern where this component doesn't care about what inside it, it just needs to have a space for the data we give it to land.
+
+****** Simple Version
+      #+NAME: contact-list
+      #+BEGIN_SRC js :tangle no
+        import React from 'react'
+
+        export default function ContactList ({contacts}) {
+
+    <<make a list of contacts>>
+
+          return (
+              <div>
+                <ul>
+                  { list() }
+                </ul>
+              </div>
+          )
+        }
+      #+END_SRC
+****** Card Component Version
+      #+NAME: contact-list
+      #+BEGIN_SRC js
+        import React from 'react'
+        import ContactCard from './contact-card'
+
+        export default function ContactList ({contacts, deleteContact}) {
+
+          const cards = () => {
+            return contacts.map(contact => {
+              return (
+                  <ContactCard
+                  key={contact._id}
+                  contact={contact}
+                  deleteContact={deleteContact} />
+              )
+            })
+          }
+          return (
+              <div>
+                <div className ='flex-row flex-wrap'>
+                  { cards() }
+                </div>
+              </div>
+          )
+        }
+      #+END_SRC
+
+      #+RESULTS: contact-list
+
+  The contact form is rendering its list inside the <ul>  the list can also be a react component, and we can use the data that's passed along to make it meaningful.
+
+  Since we know the contacts are an array, we can map over the array.  And for each item in that we'll return a <li> item holding it's information.
+
+  #+NAME: make a list of contacts
+  #+BEGIN_SRC js :tangle no
+    var list = () => {
+      return contacts.map(contact => {
+        return (
+            <li key={contact._id}>{contact.name.first} {contact.name.last}</li>
+        )
+      })
+    }
+
+  #+END_SRC
+  But we can also make an external component that is being return, instead of hardcoding the list item.  So we can make that as design complex as we want using tachyons. So for example, we'll make a contact card that is a box with big font for the name and a button to edit or delete.
+***** Contact Card
+      :PROPERTIES:
+      :header-args-dis: :noweb yes :tangle ./client/src/components/contact-card.js
+      :END:
+      This is what goes in the contact list. Since we are using tachyons, we can literally just copy and paste their starting components from their webpage, and then customize this by adjusting the classnames only.  We don't need to worry about maintaining a stylesheet.  We'll use their[[http://tachyons.io/components/cards/basic-text-card/index.html][ card]] and [[http://tachyons.io/components/buttons/basic-rounded-extra-small/index.html#0][button]] as our starters.
+
+  Check out the Links for edit and delete.  They are some react magic, that can summon up a component as if it were a url, and bring along anyting we'd like as params.
+
+  It's through the Link that we can use one component view, but change it's purpose depending ont he link that came to it--while making it seem like we are going to all these different pages.
+
+
+      #+NAME: contact card
+      #+BEGIN_SRC js
+        import React from 'react'
+        import { Link } from 'react-router-dom'
+
+        export default function ContactCard({contact, deleteContact}) {
+          return (
+              <article className="center mw5 mw6-ns hidden ba mv4">
+              <h1 className="f4 bg-near-black white mv0 pv2 ph3">{contact.name.first} {contact.name.last}</h1>
+              <div className="pa3 bt">
+              <p className="f6 f5-ns lh-copy measure mv0">
+                {contact.phone} ||| {contact.email}
+              </p>
+              <Link to={`/contacts/edit/${contact._id}`} className="f6 link dim br1 ba ph3 pv2 mb2 dib dark-green"> Edit</Link>
+              <a className="f6 link dim br1 ba ph3 pv2 mb2 dib dark-pink" href="#0" onClick={()=> deleteContact(contact._id)}>Delete</a>
+              </div>
+              </article>
+          )
+        }
+      #+END_SRC
+**** Pages
+     This is a format i haven't seen before, but present in the sitepoint tutorial, but seems useful for routing.  Our top level containers, or components, are under our Pages directory.
+***** Contact List Page
+      :PROPERTIES:
+      :header-args-dis: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/pages/contact-list-page.js
+      :END:
+****** React Only
+   Slightly different from contact-list, in that it is now a class extending our react component.  I'm curious how we imported react in our contact-list component but didn't actually use it. I believe it's because we are calling it within this render function here.
+
+  In this state, it can render what we want, but it has nothing to show.  The contact list is empty.  It needs data that'll be provided by redux.
+
+       #+NAME: contact-list-page, react only
+       #+BEGIN_SRC js :tangle no
+         import React, { Component } from 'react'
+         import ContactList from '../components/contact-list'
+
+
+         class ContactListPage extends Component {
+           render(){
+             return(
+                 <div>
+                   <h1>List of Contacts</h1>
+                   <ContactList />
+                 </div>
+             )
+           }
+         }
+
+         export default ContactListPage
+       #+END_SRC
+****** React-Redux
+       We'll bring in a new module to connect react to redux called, naturally, 'connect'.  Then we'll bring in our fetchContacts action, which we've coded to grab our contact list and add it to our state.
+
+       #+NAME: contact-list-page, reduxified
+       #+BEGIN_SRC js
+         import React, { Component } from 'react'
+         import { connect } from 'react-redux'
+
+         import ContactList from '../components/contact-list'
+         import { fetchContacts, deleteContact } from '../actions/contact-actions'
+
+         class ContactListPage extends Component {
+
+
+         <<componentDidMount action>>
+
+           render(){
+             return(
+                 <div>
+                   <h1>List of Contacts</h1>
+                 <ContactList contacts={this.props.contacts} deleteContact={this.props.deleteContact}/>
+                 </div>
+             )
+           }
+         }
+
+         <<map state to props>>
+         <<export connected component>>
+       #+END_SRC
+
+     There's a new function in our class that is a common one for react components, and is related to the[[https://reactjs.org/docs/state-and-lifecycle.html][ React Lifecycle]].  We only want to concern ourselves with components when they actually on the page.  If they aren't needed yet, their various data and functions aren't needed either.  This'll help keep the resources we are asking from the browser relatively low.
+
+  And so with this contact list, for example, we only make a call to grab data from state when this component is displayed on the page, or said another way 'mounted to the DOM'.  the React Component class has these types of functions built in, that check what stage of the lifecycle of the component we in and calls that lifecycle's functions appropriately.
+
+  And so, when the component Did Mount, fetch our contacts from our store and add it to the application's state.
+
+  #+NAME: componentDidMount action
+  #+BEGIN_SRC js :tangle no
+    componentDidMount() {
+      this.props.fetchContacts()
+    }
+  #+END_SRC
+
+  There's a strange thing to how we called fetchContacts, writing it as this.props... Why?
+
+  It's due to how react works with the browser, and the big illusion it's pulling. The component is all javascript code pretending to be html elements.  And like html elements it can have properties or props--like 'onclick' or 'title' or what-have-you.  But in React the props can be full javascript functions and the entirety of the state.  This is the power of Redux, it allows you to have fairly simple presentational components of redux, that suddenly are filled with complex info and interactions from the larger application.
+
+  To do this though, we need to map the state (or the parts of the state we care about) to the components properties, and connect the imported action as a prop to the component too.
+
+  We map state to props with a function:
+
+  #+NAME: map state to props
+  #+BEGIN_SRC js :tangle no
+   function mapStateToProps (state) {
+      return {
+        contacts: state.contactStore.contacts
+      }
+    }
+  #+END_SRC
+
+  So this function is expecting state, and for state to have a contactstore object.  If that part is true, it'll map that object to the component's props under this.props.contacts.  To get the proper state to be mapped to, we 'connect' our component to redux's store, referencing this map function and our fetchContacts function....and then export the connected component.
+
+  #+NAME: export connected component
+  #+BEGIN_SRC js :tangle no
+    export default connect(mapStateToProps, {fetchContacts, deleteContact})(ContactListPage)
+  #+END_SRC
+
+  Any component that needs to be aware of our app's state will be written in this way.
+
+***** Contact Form Page
+      :PROPERTIES:
+      :header-args-dis: :noweb yes :tangle ./client/src/pages/contact-form-page.js
+      :END:
+****** Requirements
+      With our contact form component made, we can add it into a contact page.  This page wants to also know what to do once the form is sent--what to do in case of success, and errors, and how to send out the form to the reducer.  So we will import the correct parts from react and redux to handle the redirects and forms, and bring in the submission actions we created in our contact-actions.
+      #+NAME: Requirements
+      #+BEGIN_SRC js
+        import React, { Component } from 'react'
+        import { Redirect } from 'react-router'
+        import { SubmissionError } from 'redux-form'
+        import { connect } from 'react-redux'
+
+        import { newContact, saveContact, fetchContact, updateContact } from '../actions/contact-actions'
+        import ContactForm from '../components/contact-form'
+      #+END_SRC
+****** Basic Layout
+       We start up a new 'stateful' component, meaning it has a state specific to itself. The rest of the app doesn't need to know when the contact form wants to redirect.  Only the contact form really cares about that.  So we make it stateful.
+
+  Then, we run a function for once the component has mounted to the dom, render the component, and do our cool 'mapStateToProps' jam, so the application's state is available to this component as properties to render.
+
+      #+NAME: Basic Layout
+      #+BEGIN_SRC js
+
+        class ContactFormPage extends Component {
+
+          state = {
+            redirect: false
+          }
+          <<Component Did Mount>>
+          <<Define Submit Function>>
+
+          <<Render Component>>
+        }
+          <<Map State To Props>>
+
+        export default connect(
+          mapStateToProps,
+          {newContact, saveContact, fetchContact, updateContact})(ContactFormPage)
+      #+END_SRC
+
+****** Component Did Mount
+
+       Here is some **REACT FUN!**.  REUSABLE COMPONENTS.
+       This component is a 'Contact Form Page'.  It is not //the// form page.  Which is to say, there are different ways someone could get to a form page: adding someone new, or udpating an existing person.
+
+      We will put a conditional statement for our mount, that determines which action to call.  If someone came to this component through the edit button, then their url will have an id in it.  If that's the case, fetch the details of that ID.  Otherwise, we'll know they're makings omeone new, and call out the action 'new person coming!'
+
+       #+NAME: Component Did Mount
+       #+BEGIN_SRC js :tangle no
+         componentDidMount = () => {
+           const { _id } = this.props.match.params
+           if(_id) {
+             this.props.fetchContact(_id)
+           } else {
+             this.props.newContact()
+           }
+         }
+       #+END_SRC
+
+****** Define Submit Function
+
+       This calls our savecontact action and then waits for the response.   If it's a success, we'll redirect to our contacts page.  If it's an error, we'll explain why.
+
+       Id's are given to contacts from our feathers api.  When we make a new contact, there wont' be an id for us yes.  This lets us set a nice conditional operator that says 'if the id is present, we know it's an update, and call the update command.  For all other cases, save it as a new contact.
+
+       #+NAME: Define Submit Function
+       #+BEGIN_SRC js :tangle no
+         submit = (contact) => {
+           if (!contact._id) {
+           return this.props.saveContact(contact)
+             .then(response => this.setState({ redirect:true }))
+             .catch(err => {
+               throw new SubmissionError(this.props.errors)
+             })
+           } else {
+             return this.props.updateContact(contact)
+               .then(response => this.setState({ redirect:true }))
+               .catch(err => {
+                 throw new SubmissionError(this.props.errors)
+               })
+           }
+         }
+       #+END_SRC
+       For the setState--since we have 'this' in front it means 'set //this// component's state.  not the global state.'
+
+****** Render Component
+       Here we manage the redirect.  It's saying 'if redirect is true, then redirect to our homepage, else show this component'.  It's doing this using a[[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Conditional_Operator][ Ternary Operator.]]
+
+       #+NAME: Render Component
+       #+BEGIN_SRC js :tangle no
+         render() {
+           return (
+               <div>
+               {
+                 this.state.redirect ?
+                   <Redirect to='/' /> :
+                   <ContactForm contact={this.props.contact} loading={this.props.loading} onSubmit={this.submit} />
+               }
+               </div>
+           )
+         }
+       #+END_SRC
+****** Map State to Props
+       #+NAME: Map State To Props
+       #+BEGIN_SRC js :tangle no
+         function mapStateToProps (state) {
+           return {
+             contact: state.contactStore.contact,
+             errors: state.contactStore.errors
+           }
+         }
+       #+END_SRC
+
+**** Contact Data
+     :PROPERTIES:
+     :header-args-dis: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/contact-data.js
+     :END:
+     This is just creating a basic json object that we'll feed into redux and this will ulimately be added into our db on our backend.
+     #+NAME: Contact Data
+     #+BEGIN_SRC js
+       export const contacts = [
+         {
+           _id: "1",
+           name : {
+             first: "John",
+             last: "Doe"
+           },
+           phone: "555",
+           email: "john@gmail.com"
+         },
+         {
+           _id: "2",
+           name : {
+             first: "Bruce",
+             last: "Wayne"
+           },
+           phone: "777",
+           email: "bruce.wayne@gmail.com"
+         }
+       ]
+     #+END_SRC
+
+**** Store
+     :PROPERTIES:
+     :header-args-dis: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/store.js
+     :END:
+     :LOGBOOK:
+     - Note taken on [2018-09-26 Wed 16:35] \\
+       I want to be using Saga, ultimately, but I think I'm shooting too far iwth it.  First goal is to just get react talking to feathers.
+     :END:
+   This will store the global state of the app as store.js.  We are using redux for this, which is a wonderful purely functional way of maintaining state.  Because of how it operates, though, it doesn't work well, directly, for API calls and so we will create sagas that handle those calls for us.  So the saga will call our feathers api and give its result to redux as input and redux will reduce this and output our state.
+
+***** Requirements
+        #+NAME: requirements
+        #+BEGIN_SRC js
+          import { createStore, applyMiddleware } from 'redux'
+          import thunk from 'redux-thunk'
+          import promise from 'redux-promise-middleware'
+          import { composeWithDevTools } from 'redux-devtools-extension'
+          import rootReducer from './reducers'
+        #+END_SRC
+***** Apply Middleware
+      As we want to use feathers and external servers, we need to have some middleware put into place to wrap up our actions so they can be received by redux properly.  This is the purpose of ~thunk~ and ~promiseMiddleware~.  This keeps redux and react happy, able to render a webpage even before there's data, essentially.
+
+      #+NAME: apply middleware
+      #+BEGIN_SRC js
+        const middleware = composeWithDevTools(applyMiddleware(promise(), thunk))
+      #+END_SRC
+***** Create and Export Store
+      #+NAME: createStore
+      #+BEGIN_SRC js
+        export default createStore(rootReducer, middleware)
+      #+END_SRC
+**** Reducers
+
+     The general logic here is we make different files for the different concerns (like contacts, sigs, apps, and so on), and then these are all combined in our index.js to create a single reducer (which is then added as our app's state).
+
+    It's called a reducer because we are using a reduce function on the array of properties in the various parts of the app, reducing it into a single global state.
+
+***** Contact reducer
+      :PROPERTIES:
+      :header-args-dis: :noweb yes :tangle ./client/src/reducers/contact-reducer.js
+      :END:
+****** Initial State
+      We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with good things.  We've added some state to handle new contact entries, so we can store to state the new contact we're working with, and whether we are currently waiting on a response from our server (loading), or whether the data wasn't sent or saved properly (errors).
+
+      #+NAME: default state
+      #+BEGIN_SRC js
+        const defaultState = {
+          contacts: [],
+          contact: {name:{}},
+          loading: false,
+          errors: {}
+
+        }
+      #+END_SRC
+****** The Contact Reducer
+
+      Then we create our reducer, which listens to different dispatches, takes the payload associated with that dispatch, and adds it to the contact state.  We do this using javascript switch statements[[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/switch][ Mozilla Docs for Switch Statements]].  This lets us handle multiple types of dispatches all gathered around the concern of the app.  In this case, we are concerned wiht contacts, but this could also be Sigs, tests run, apps called, etc.
+
+  The basic syntax for switch is you set up a switch object based around some value, in our case what type of action is being sent us.  Then we handle the different 'cases' that could come up.  If none of them come up, we just return the default state.
+
+
+      #+NAME: contact reducer
+      #+BEGIN_SRC js
+        export default (state = defaultState, action = {}) => {
+          switch (action.type) {
+            <<Case: Fetch Contacts>>
+            <<Case: Fetch A Single Contact Pending>>
+            <<Case: Fetch A Single Contact Fulfilled>>
+            <<Case: Update A Contact Pending>>
+            <<Case: Update A Contact Fulfilled>>
+            <<Case: Update A Contact Rejected>>
+            <<Case: New Contact>>
+            <<Case: Save Contact Pending>>
+            <<Case: Save Contact Fulfilled>>
+            <<Case: Save Contact Rejected>>
+            <<Case: Delete Contact Fulfilled>>
+            default:
+              return state;
+            }
+        }
+
+      #+END_SRC
+
+  We use the spread operator for our state (...state) and what this does is takes the entire current state object for contact and adds that in and then to that we add our new action.payload.  This keeps the reducer immutable.  We do not adjust the state, we only replace it.
+
+****** Fetching Contacts
+
+  This dispatch comes when a successful call to the server has been fulfilled.  We then take the payload of data given to us and add it to our contacts array.
+
+  #+NAME: Case: Fetch Contacts
+  #+BEGIN_SRC js :tangle no
+    case 'FETCH_CONTACTS_FULFILLED': {
+      return {
+        ...state,
+        contacts: action.payload.data.data || action.payload.data // in case pagination is disabled.
+      }
+    }
+  #+END_SRC
+
+****** Fetching a Single Contact
+       Similar to our saving, there's a different states to put in as we await the response from our server.
+
+       When it's pending...
+       #+NAME: Case: Fetch A Single Contact Pending
+       #+BEGIN_SRC js :tangle no
+         case 'FETCH_CONTACT_PENDING': {
+           return {
+             ...state,
+             loading: true,
+             contact: {name:{}}
+           }
+         }
+       #+END_SRC
+       And when it's fulfilled...
+       #+NAME: Case: Fetch A Single Contact Fulfilled
+       #+BEGIN_SRC js :tangle no
+         case 'FETCH_CONTACT_FULFILLED': {
+           return {
+             ...state,
+             loading: false,
+             contact: action.payload.data,
+             errors: {}
+           }
+         }
+       #+END_SRC
+****** Updating a Contact
+       The pending is straightforward, set the loading to true.  But fulfilled has some cool logic.
+       #+NAME: Case: Update A Contact Pending
+       #+BEGIN_SRC js :tangle no
+         case 'UPDATE_CONTACT_PENDING': {
+           return {
+             ...state,
+             loading: true
+           }
+         }
+       #+END_SRC
+
+       When fulfilled, we want to set only a specific contact within our contacts array.  So we are going to map over the array, which will allow us to return a new array with its items transformed in some way.  In this case, we want to search and transform a single item with an array and then return that entire array.
+       #+NAME: Case: Update A Contact Fulfilled
+       #+BEGIN_SRC js :tangle no
+         case 'UPDATE_CONTACT_FULFILLED': {
+           const contact = action.payload.data
+           return {
+             ...state,
+             loading: false,
+             errors: {},
+             contacts: state.contacts.map(item => item._id === contact._id ? contact : item)
+           }
+         }
+       #+END_SRC
+       In other words, we are expecting a paylod of data that will be the contact object with its id and details.  We'll set that to the variable 'contact'.  Then, when we map over the array we'll ask each item, "does yr id match our contacts?"  if no, we'll return the item back to the array (leave it unchanged).  If the answer is yes, we'll return the contact in the item's place (transforming it with the new details).
+
+       For rejected, it's the same as Save Contact Rejected, essentially.
+  #+NAME: Case: Update Contact Rejected
+  #+BEGIN_SRC js :tangle no
+    case 'UPDATE_CONTACT_REJECTED': {
+      const data = action.payload.response.data
+      const { "name.first": first, "name.last": last, phone, email } = data.errors
+      const errors = { global: data.message, name: {first, last}, phone, email }
+      return {
+        ...state,
+        errors: errors,
+        loading: false
+      }
+    }
+  #+END_SRC
+****** New Contact
+       Called when the page loads.  We essentially update the state with an empty object for contact that now has a name value.  I don't think it really does anything more than this, since our newContact action delivers no payload.  This is something to explore a bit more later.
+
+  #+NAME: Case: New Contact
+  #+BEGIN_SRC js :tangle no
+    case 'NEW_CONTACT': {
+      return {
+        ...state,
+        contact: {name:{}}
+      }
+    }
+  #+END_SRC
+****** Save Contact
+       These instances come when someone tries to submit a new contact, and so we need to handle a few more cases than just fetch.
+
+  for pending, change loading to true.  This lets us set up an if/then for the component we display.
+  #+NAME: Case Save Contact Pending
+  #+BEGIN_SRC js :tangle no
+    case 'SAVE_CONTACT_PENDING': {
+      return {
+        ...state,
+        loading: true
+      }
+    }
+  #+END_SRC
+
+
+  IF it's fulfilled, then update  our contacts store with the new state of our server say we no longer loading.
+  #+NAME: Case: Save Contact Fulfilled
+  #+BEGIN_SRC js :tangle no
+    case 'SAVE_CONTACT_FULFILLED': {
+      return {
+        ...state,
+        contacts: [...state.contacts, action.payload.data],
+        errors: {},
+        loading: false
+      }
+    }
+  #+END_SRC
+
+  If it's rejected, then we want to display the error message for //why// it was rejected.  We want this to be readable english, as it'll be what's displayed in the component in case of errors.  Luckily, feathers error messages are nice and clear!
+  #+NAME: Case: Save Contact Rejected
+  #+BEGIN_SRC js :tangle no
+    case 'SAVE_CONTACT_REJECTED': {
+      const data = action.payload.response.data
+      // convert feathers error formatting to match client-side error formatting
+      const { "name.first": first, "name.last": last, phone, email } = data.errors
+      const errors = { global: data.message, name: {first, last}, phone, email }
+      return {
+        ...state,
+        errors: errors,
+        loading: false
+      }
+    }
+  #+END_SRC
+
+****** Delete Contact
+       Here's a simple logic that's nice: when we delete an item in feathers, it'll show success by returning the deleted object.  So we know that DELETE_CONTACT_FULFILLED will bring a payload of our deleted contact.  We can then make a new state that is filtered to every id that //isn't// this one, meaning our new state has filtered out this deleted friend.
+       #+NAME: Case: Delete Contact Fulfilled
+       #+BEGIN_SRC js :tangle no
+         case 'DELETE_CONTACT_FULFILLED': {
+           const _id = action.payload.data._id
+           return {
+             ...state,
+             contacts: state.contact.filter(item => item._id !== _id)
+           }
+         }
+
+       #+END_SRC
+
+       #+RESULTS: Case: Delete Contact Fulfilled
+
+***** index.js
+      :PROPERTIES:
+      :header-args-dis: :noweb yes :tangle ~/Projects/ii/apisnoop_webui/client/src/reducers/index.js
+      :END:
+      Here we combine all our different reducers into one big one.  This lets us think about the app in different, focused concerns that then get added to the larger application seamlessly.   For example, when we remove contacts, we simply delete a line in our index.js file since all the contacts concerns were handled only in their contact-reducer file and nowhere else.
+
+      To handle the form validation and submission, we are going to use an existing redux module called 'redux-form'.  this helps us package up the form to send to our backend properly (as it's one of those surprisingly hard things to do in this type of world!)
+
+      #+NAME: Requirements
+      #+BEGIN_SRC js
+        import { combineReducers } from 'redux'
+        import { reducer as formReducer } from 'redux-form'
+
+        import ContactReducer from './contact-reducer'
+      #+END_SRC
+
+      #+NAME: Reducers
+      #+BEGIN_SRC js
+        const reducers = {
+          contactStore: ContactReducer,
+          form: formReducer
+        }
+
+        const rootReducer = combineReducers(reducers)
+
+        export default rootReducer
+      #+END_SRC
+*** Jobs and Understanding these outputs
+    When we talk of 'jobs', the 'job' is to spin up kubernetes on some machines, run our conformance tests, output the results of these tests to some data buckets, and spin itself down.
+
+    We can trace the history of all the job results.  the audit.logs we grab are the jobResults which are l isted at gcsweb.k8s.io
+
+
+https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes/sig-gcp/gce-conformance.yaml
+
+** Diary
+   - It can become a bit hard to follow the bigger this thing is.  At the smae time, I really love the approach of lit programming, where I am seeing the entire thing far more logically and I feel I am able to be a bit freeer with the comments in a helpful way. But it's hard for me to test that.  Like, i am unsure if this is overwhelming for anyone to receive it.
+
+There are times that I wanna just see the entire page, instead of how i broke it up.  In those cases i am inclined to just view the file and change it there--but then it messes up the flow.  If I just throw in the entire code page, though, that defeats the purpose of what we doing.  It will be nice to find a balance.
+
+`SPC s j` is incredible
+
+getting your noweb names right is a doooozy.  Spent too long debugging a thing that was just because I misspelled the documentation and it never tangled.  that feels real dumb.
+** Process
+*** Tutorials
+    I am going through some simple tutorials for connecting react to redux to feathers.  It's a slightly longer process, but it's going to set me up better for maintaining apisnoop.  My assumption is that this is not a one-and-done thing.  We will be continually adding features to apisnoop and these features will become increasingly more complex. In addition, we'll be needing to adapt apisnoop for different scenarios. So I want to understand the stack for our webapp entirely.
+
+ I am coming in with good html and css knowledge for building personal projects.  What we are building is a production level app.  No matter how simple we make it, we will be pinging different sites, manipulating the data within those sites, and then displaying visualizations of our manipulations.  There isn't really a way to do this casually.  Especially if we want it to be stury and testable.  So I am biting off the sizable task of 'build a full-stack production-ready app by myself'.  I want to have all the tools I can to do this.
+
+ So I am going to make a v. simple fullstack app and then add in our own customizations until we get to the point where I can hear a task and know exactly how to realize it in this code.
+* APISNoop TASKS
+** Overall Priorities
+   Ordered by priority.
+**** IN-PROGRESS Fully Understand the Tech Stack in which our modular apisnoop is built
+**** TODO Integrate our existing D3 visualization into that stack.
+**** TODO Add user agent filtering to our sunburst.
+** Config yaml into api
+*** TODO Have server ping github based on time, not based on client request, and return our config.yaml file.
+    :LOGBOOK:
+    - State "DONE-AND-SHARED" from "TODO"       [2018-10-16 Tue 11:16]
+    :END:
+** Overall
+*** TODO figure out the best way to handle errors with feathers, to not get 'unhandled promise rejection'
+    I just had to spend too long debugging a problem that was due to a variable called the wrong name somewhere else.  but the only error was 'promised rejected at meta'.  I found the function that did it (a service.update call), but when I added a catch nothing happened.  I'd like to get ina  habit of just putting in catches for everything, but would like to know the proper way to do this.
+
+*** TODO add loading screen at beginning, maybe with the apisnoop magnifying glass?
+* Glossary
+- gcr :: google container registry
+- gce ::
+- kubekins ::
+- kubectl ::
+-  ::
