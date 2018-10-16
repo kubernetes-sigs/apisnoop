@@ -1,9 +1,9 @@
 import { combineReducers } from 'redux'
 
-import ConfigReducer from './config-reducer'
+import AuditsReducer from './audits-reducer'
 
 const reducers = {
-  configStore: ConfigReducer
+  auditsStore: AuditsReducer
 }
 
 const rootReducer = combineReducers(reducers)

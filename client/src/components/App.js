@@ -2,21 +2,17 @@ import React, { Component } from 'react'
 
 import { NavLink, Route } from 'react-router-dom'
 
-import Header from './Header'
-import TGCommitsPage from '../pages/tg-commits-page'
-import SunburstPage from '../pages/sunburst-page'
+import Header from './header'
+import Footer from './footer'
+import MainPage from '../pages/main-page.js'
 
 class App extends Component {
   render(){
     return (
       <div id='app'>
         <Header />
-        <div id='nav'>
-          <NavLink exact to='/'>Test Group Commits</NavLink>
-          <NavLink exact to='/sunburst'>Sunburst</NavLink>
-        </div>
-        <Route exact path='/' component={TGCommitsPage} />
-        <Route exact path='/sunburst' component={SunburstPage} />
+        <Route exact path='/' component={MainPage} />
+        <Footer />
       </div>
     )
   }
