@@ -1,6 +1,6 @@
 import React, { Component } from 'react'
 
-import { NavLink, Route } from 'react-router-dom'
+import { Route } from 'react-router-dom'
 
 import Header from './header'
 import Footer from './footer'
