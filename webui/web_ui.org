@@ -965,254 +965,6 @@ The various visual parts of the app.  For the most part, we want these to be as 
     #+RESULTS: Header
 
 *** Sunburst
-**** SunburstChart
-     :PROPERTIES:
-     :header-args: :noweb yes :tangle ./client/src/components/sunburst-chart.js
-     :END:
-***** Introduction
-     We will be using react-vis' basic sunburst example as our guide for this, as it is the closest to what we want.  Our goal is to add in zoom animation and percentages in the center area, but for now let's just get this loading.
-     It comes with flare data as its first data set.  We also have this 'MyData' data set.  We can use both and try switching between the two with some sorta button.  This will help us see what it loosk like when yous witch between different jobs later on.
-***** License
-      #+NAME: License
-      #+BEGIN_SRC js
-     // Copyright (c) 2016 - 2017 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-      #+END_SRC
-***** Requirements
-      The example uses extended discrete color range and label series, and both are referencing something with the files themselves.  I believe that we can just use labelseries since we are bringing in sunburst from react-vis, and the theme was just to help make the fill, which we can use with other colors instead.
-
-     We'll bring in the flareData and Sample Data to try switching between the two.
-      #+NAME: Requirements
-      #+BEGIN_SRC js
-        import React, { Component } from 'react';
-        import { Sunburst, LabelSeries } from 'react-vis'
-        import flareData from '../sample-data/flareData.json'
-      #+END_SRC
-***** Label Style
-      This will be used for our LabelSeries later, defining how iit should look.
-      #+NAME: Label Style Definition
-      #+BEGIN_SRC js
-        const LABEL_STYLE = {
-          fontSize: '20px',
-          textAnchor: 'middle'
-        }
-      #+END_SRC
-      It's written in the JSX style, so it's equal to a div having a 'style='font-size: 8px;', but in reactLand you can't just have the equal things be equal...we gotta do this camelCase stuff.
-***** Get Key Path
-      This tree map is tracing the path of nodes through the JSON tree, like tracing the url path of a singular webpage within a website.  This is the function that defines this path.
-
-IT does so recursively.  For each node it asks, 'do you have a parent?' if it doesn't we know it's root and we'll return 'root.'   If it does, we will return the node's name and its' data (or just its name if no data is available).  Then, we'll [[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/concat][concatenate]]  this array to whatever array is returned when we apply the same function to this node's parent.  So we'll end up with an array of strings, where each one is chained as a parent to the one before.
-
-This is explained well in the code example too, so we keeping it.
-#+NAME: Get Key Path
-#+BEGIN_SRC js
-  /**
-  ,* Recursively work backwards from highlighted node to find path of valid nodes
-  ,* @param {Object} node - the current node being considered
-  ,* @returns {Array} - an array of strings describing the key route to teh current node.
-  ,*/
-
-  function getKeyPath (node) {
-    if (!node.parent) {
-      return ['root']
-    }
-
-    return [(node.data && node.data.name) || node.name].concat(
-      getKeyPath(node.parent)
-    )
-  }
-#+END_SRC
-***** Update Data
-      This takes care of when the graph is first loaded, and upon mouse hover events.  It essentially adds a fill color to each node if it's part of the path we current have our mouse on.
-   It's another recursive one, applying the fill at the very bottom and moving up.
-
-   #+NAME: Update Data
-   #+BEGIN_SRC js
-     /**
-       ,* Recursivey modify data depending on whetehr or not each cell has been selected by the hover/hlighlight
-       ,* @param {Object} data - the current node being considered
-       ,* @param {Object|Boolean} keyPath - a map of keys that are in the highlight path
-       ,* if this is false then all nodes are marked as selected.
-       ,* @returns {Object} Updated tree structure
-       ,*/
-
-     function updateData (data, keyPath) {
-       if (data.children) {
-         data.children.map(child => updateData(child,  keyPath))
-       }
-       // add a fill to all the uncolored cells
-       if (!data.hex) {
-         data.style = { fill: 'aliceBlue' }
-       }
-       data.style = {
-         ...data.style,
-         fillOpacity: keyPath && !keyPath[data.name] ? 0.2 : 1
-         // if there's a keypath AND that keypath has a data.name, then 0.2
-       }
-
-       return data
-     }
-
-     // sets up initial coloring of chart.
-     const decoratedData = updateData(flareData, false)
-   #+END_SRC
-
-
-   I have a question around the data.hex and the data.name and such, and whether that's info given by the Sunburst component, or whether it's supposed to be present in the data from Flare.  I think it's the former, but it will be good to check.
-***** The Basic Component
-      I'll give the basic overview here, and then cover each special part in detail.
-****** Component Overview
-      #+NAME: Component Overview
-      #+BEGIN_SRC js
-        export default class BasicSunburst extends Component {
-          constructor(props) {
-            super(props)
-              <<SB Initial State>>
-          }
-
-
-          render() {
-            const {clicked, data, finalValue, pathValue} = this.state
-            return (
-                <div className='basic-sunburst-wrapper'>
-                <<SB Click/Unclick Indicator>>
-                <Sunburst
-              animation
-              className='basic-sunburst-example'
-              hideRootNode
-              // when you click on the chart, set clicked to the opposite of what it is currently.
-              <<SB onValueMouseOver>>
-              <<SB onValueMouseOut>>
-              onValueClick={()=> this.setState({clicked: !clicked})}
-              style={{
-                stroke: '#ddd',
-                strokeOpacity: 0.3,
-                strokeWidth: '0.5'
-              }}
-              // colorType is a style for react-vis. literal means 'literally the color palette given'
-              colorType="literal"
-              <<SB getColor and getSize>>
-              data={data}
-              height={600}
-              width={700}
-              >
-        <<SB Display Center finalValue>>
-        </Sunburst>
-                <div className='basic-sunburst-example-path-name'>{pathValue}</div>
-                </div>
-            )
-          }
-        }
-      #+END_SRC
-****** SB Initial State
-    #+NAME: SB Initial State
-    #+BEGIN_SRC js :tangle no
-      this.state = {
-        pathValue: false,
-        data: decoratedData,
-        finalValue: 'SUNBURST',
-        clicked: false
-      }
-    #+END_SRC
-    This state is specific to each component.
-    - data :: the json we are feeding, but with each cell colored in.
-    - pathValue :: when you mouse over a node, the path it took to get to that node.
-    - finalValue :: from above, the final value of the path that this node is in.
-    - clicked :: based on mouse events, whether a cell is clicked on or not.
-
-****** Click/Unclick Indicator
-       #+NAME: SB Click/Unclick Indicator
-       #+BEGIN_SRC js :tangle no
-           <div>
-           {clicked ? 'click to unlock selection' : 'click to lock selection'}
-         </div>
-       #+END_SRC
-       This checks the component's state, if click is true, then let them know you can unlock selection.  otherwise, let them know they can click to lock.
-
-****** onValueMouseOver
-       #+NAME: SB onValueMouseOver
-       #+BEGIN_SRC js :tangle no
-         onValueMouseOver={node => {
-           if (clicked) {
-             return
-           }
-           const path = getKeyPath(node).reverse()
-           const pathAsMap = path.reduce((res, row) => {
-             console.log({res,row})
-             console.log({resRow: res[row]})
-             res[row] = true
-             return res
-           }, {})
-           this.setState({
-             finalValue: path[path.length - 1],
-             pathValue: path.join(' > '),
-             data: updateData(decoratedData, pathAsMap)
-           })
-         }}
-       #+END_SRC
-       #+RESULTS:
-       This is a value that is part of the react-vis api.  From that doc, this is a function that accepts (arc node, domEvent) as arguments.  In other words, we'll know the exact node upon which the mouse is over, and all the values given from our browser about that node element.
-
-       We know that getKeyPath returns an array of strings, each subsequent one being the parent of the node string prior.  So here we set the path to being that array reversed, so it goes from root to smallest child.
-
-       pathAsMap, to be honest, I don't fully understand.  It's used to decorate the data, and the data colors up a cell based on each section of the map being true or false.  So It hink it's saying "if this cell is in the path, mark it as true, otherwise it be false".
-
-       Then, we set the state with these values.  finalValue is going to be the last node string in our path and pathValue is going to be the full path outlined like so: 'root > child1 > child2 > lastChild'
-
-       Everytime you set the state with a react Component the whole component rerenders.  We will have things later down that are meant to display the pathVAlue and finalValue...so since we are setting them in the state and rendering the component again it's going to continually update what these show.
-****** onValueMouseOut
-  #+NAME: SB onValueMouseOut
-  #+BEGIN_SRC js :tangle no
-    onValueMouseOut={()=>
-        clicked
-        ? () => {} // an empty function, essentially 'do nothing'
-        : this.setState({
-          pathValue: false,
-          finalValue: false,
-          data: updateData(decoratedData, false)
-        })
-      }
-  #+END_SRC
-  This is like onValueMouseOver, but handling when we leave the chart.  Clicking locks the arc's position--and so, if it's clicked we do nothing...we keep all the coloring and info as it is as it's locked in place.
-
-  If clicked isn't set, and we've left the chart, then return everything back to nothing.  No finalVAlue, no path that we're on, and update the data so all cells are colored again.
-****** getColor and getSize
-       #+NAME: SB getColor and getSize
-       #+BEGIN_SRC js :tangle no
-         getSize={d => d.value}
-         getColor={d => d.hex}
-       #+END_SRC
-       This is setting the color and size for each bit of data given to the sunburst.  In this particular example, the values are given within the data itself.  If you look at the flareDataset, each child has a hex and value.  But this could a lso be a function, so we could incorporate the same color and size thinking that happened in the original sunburst.
-
-****** Display Center finalValue
-       #+NAME: SB Display Center finalValue
-       #+BEGIN_SRC js :tangle no
-         {finalValue && (
-             <LabelSeries
-           data={[{x: 0, y: 0, label: finalValue, style: LABEL_STYLE}]}
-             />
-         )}
-       #+END_SRC
-
-       LabelSeries is another component given to us by react-vis.  The data will want to know where the label will be placed, what it should be labelling, and what it should look like.  We are saying 'put it right in the center: x0/y0 and display the final node we are highlighting.'
-
 **** Sunburst Segment
      :PROPERTIES:
      :header-args: :noweb yes :tangle ./client/src/components/sunburst-segment.js
@@ -1239,6 +991,281 @@ This is explained well in the code example too, so we keeping it.
      #+END_SRC
 
      #+RESULTS: Sunburst Segment
+**** SunburstChart
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./client/src/components/sunburst-chart.js
+     :END:
+***** Introduction
+     We will be using react-vis' basic sunburst example as our guide for this, as it is the closest to what we want.  Our goal is to add in zoom animation and percentages in the center area, but for now let's just get this loading.
+
+    Use code layout to see how it all fits, then check out each thing in specifics in the headers below.
+***** Code Layout
+      #+NAME: Code Layout
+      #+BEGIN_SRC js
+        <<License>>
+        <<Import Modules>>
+
+        <<Set Styling for Label>>
+
+        class BasicSunburst extends Component {
+          <<SB Setup Constructor>>
+          <<SB Define componentDidMount>>
+          <<Define getKeyPath>>
+          <<Define updateData>>
+
+          render() {
+            const {clicked, data, finalValue, pathValue} = this.state
+            const updateData = this.updateData
+            const decoratedData = this.decoratedData
+            const getKeyPath = this.getKeyPath
+            return (
+                <div className='basic-sunburst-wrapper'>
+                  <<SB Click/Unclick Indicator>>
+                  <Sunburst
+                    animation
+                    className='basic-sunburst-example'
+                    hideRootNode
+                    <<SB onValueMouseOver>>
+                    <<SB onValueMouseOut>>
+                    onValueClick={()=> this.setState({clicked: !clicked})}
+                    style={{
+                      stroke: '#ddd',
+                      strokeOpacity: 0.3,
+                      strokeWidth: '0.5'
+                    }}
+                    colorType="literal" // a style for react-vis. literal means 'literally the color palette given'
+                    getSize={d => d.value} // d refers to data, will need to be set differently for audit log
+                    getColor={d => d.hex}  // same
+                    data={data} // Make sure you're actually providing data to the chart!
+                    height={600}
+                    width={700}
+                  >
+                  <<SB Display Center finalValue>>
+                  </Sunburst>
+                  <div className='basic-sunburst-example-path-name'>{pathValue}</div>
+                </div>
+            )
+          }
+        }
+
+        function mapStateToProps (state) {
+          return {
+            audits: state.auditsStore.audits,
+            flareData: state.D3FlareStore.data
+          }
+        }
+
+        export default connect(mapStateToProps)(BasicSunburst)
+      #+END_SRC
+***** License
+      #+NAME: License
+      #+BEGIN_SRC js :tangle no
+        // Copyright (c) 2016 - 2017 Uber Technologies, Inc.
+        //
+        // Permission is hereby granted, free of charge, to any person obtaining a copy
+        // of this software and associated documentation files (the "Software"), to deal
+        // in the Software without restriction, including without limitation the rights
+        // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        // copies of the Software, and to permit persons to whom the Software is
+        // furnished to do so, subject to the following conditions:
+        //
+        // The above copyright notice and this permission notice shall be included in
+        // all copies or substantial portions of the Software.
+        //
+        // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        // AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+        // THE SOFTWARE.
+      #+END_SRC
+***** Import Modules
+      The example uses extended discrete color range and label series, and both are referencing something with the files themselves.  I believe that we can just use labelseries since we are bringing in sunburst from react-vis, and the theme was just to help make the fill, which we can use with other colors instead.
+
+     We'll bring in the flareData and Sample Data to try switching between the two.
+      #+NAME: Import Modules
+      #+BEGIN_SRC js :tangle no
+        import React, { Component } from 'react';
+        import { connect } from 'react-redux'
+        import { Sunburst, LabelSeries } from 'react-vis'
+      #+END_SRC
+***** Set Styling For Label
+      This will be used for our LabelSeries later, defining how it should look.
+      #+NAME: Set Styling for Label
+      #+BEGIN_SRC js :tangle no
+        const LABEL_STYLE = {
+          fontSize: '20px',
+          textAnchor: 'middle'
+        }
+      #+END_SRC
+      It's written in the JSX style, so it's equal to a div having a 'style='font-size: 8px;', but in reactLand you can't just have the equal things be equal...we gotta do this camelCase stuff.
+***** Setup Constructor
+      #+NAME: SB Setup Constructor
+      #+BEGIN_SRC js :tangle no
+        constructor(props) {
+          super(props)
+          this.state = {
+            pathValue: false,
+            data: {},
+            finalValue: 'SUNBURST',
+            clicked: false
+          }
+          this.decoratedData = {}
+          this.updateData = this.updateData.bind(this)
+          this.getKeyPath = this.getKeyPath.bind(this)
+        }
+
+
+      #+END_SRC
+
+      The constructor sets up the component-specific state; which helps us contain all the function and data within the component  itself.  So we set up the state for the component with the following values:
+- pathValue :: When you hover over a node, shows the path you took to get to that node.  Will end up being the array created by getKeyPath joined together into a string.
+- data :: the data given to us by our store.  Right now it is flareData, but it will one day be a specific build.
+- finalValue :: the name of the node you are on, essentially.  For the path it took through the url's to get to this node.  So this could be our literal endpoints.
+- clicked :: true/false on whether we've clicked to lock our current node path.
+
+We have to do some kinda verbose binding of our functions.  The point of this is so we can have this function show multiple times throughout the page and not have the results leak out into other components, it prevents bugs and strange behavior, essentially.
+***** Define componentDidMount
+      #+NAME: SB Define componentDidMount
+      #+BEGIN_SRC js :tangle no
+        componentDidMount() {
+          this.decoratedData = this.updateData(this.props.flareData, false)
+          this.setState({data: this.decoratedData})
+        }
+      #+END_SRC
+
+      We don't want to hard-code the state of our component based on props, because then if the props change, the component itself doesn't.  Instead, we mount it on the page, and then update the state based on the props given.  This ensures that the component will always appear properly.  So here we are saying, "When the graph appears, take the props given to us by our state (the flareData) and decorate it.  Then, set the data in our state to this new decorated data.  The sunburst component renders whatever is in this.state.data, and so it will render now the json from our store.
+
+      This is a common pattern with react components.  Let the initial state be a fairly solid thing, that then gets set again by actions after its already been mounted.
+
+***** Define getKeyPath
+      #+NAME: Define getKeyPath
+      #+BEGIN_SRC js :tangle no
+        /**
+         ,* Recursively work backwards from highlighted node to find path of valid nodes
+         ,* @param {Object} node - the current node being considered
+         ,* @returns {Array} - an array of strings describing the key route to teh current node.
+         ,*/
+
+        getKeyPath (node) {
+          if (!node.parent) {
+            return ['root']
+          }
+
+          return [(node.data && node.data.name) || node.name].concat(
+            this.getKeyPath(node.parent)
+          )
+        }
+      #+END_SRC
+
+      This tree map is tracing the path of nodes through the JSON tree, like tracing the url path of a singular webpage within a website.  This is the function that defines this path.
+
+      IT does so recursively.  For each node it asks, 'do you have a parent?' if it doesn't we know it's root and we'll return 'root.'   If it does, we will return the node's name and its' data (or just its name if no data is available).  Then, we'll [[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/concat][concatenate]]  this array to whatever array is returned when we apply the same function to this node's parent.  So we'll end up with an array of strings, where each one is chained as a parent to the one before.
+
+      This is explained well in the code example too, so we keeping it.
+***** Define updateData
+     #+NAME: Define updateData
+      #+BEGIN_SRC js :tangle no
+        updateData (data, keyPath) {
+          if (data.children) {
+            data.children.map(child => this.updateData(child,  keyPath))
+          }
+          // add a fill to all the uncolored cells
+          if (!data.hex) {
+            data.style = { fill: 'lightgray' }
+          }
+          data.style = {
+            ...data.style,
+            fillOpacity: keyPath && !keyPath[data.name] ? 0.2 : 1
+            // if there's a keypath AND that keypath has a data.name, then 0.2
+          }
+
+          return data
+        }
+      #+END_SRC
+
+       This takes care of when the graph is first loaded, and upon mouse hover events.  It essentially adds a fill color to each node if it's part of the path we current have our mouse on.
+    It's another recursive one, applying the fill at the very bottom and moving up.
+ from the sites definition:
+    Recursivey modify data depending on whetehr or not each cell has been selected by the hover/hlighlight
+    @param {Object} data - the current node being considered
+    @param {Object|Boolean} keyPath - a map of keys that are in the highlight path
+       //if this is false then all nodes are marked as selected.//
+    @returns {Object} Updated tree structure
+
+***** Click/Unclick Indicator
+      #+NAME: SB Click/Unclick Indicator
+      #+BEGIN_SRC js :tangle no
+          <div>
+          {clicked ? 'click to unlock selection' : 'click to lock selection'}
+        </div>
+      #+END_SRC
+
+      This checks the component's state, if click is true, then let them know you can unlock selection.  otherwise, let them know they can click to lock.
+
+***** onValueMouseOver
+      #+NAME: SB onValueMouseOver
+      #+BEGIN_SRC js :tangle no
+        onValueMouseOver={node => {
+          if (clicked) {
+            return
+          }
+          const path = getKeyPath(node).reverse()
+          const pathAsMap = path.reduce((res, row) => {
+            console.log({res,row})
+            console.log({resRow: res[row]})
+            res[row] = true
+            return res
+          }, {})
+          this.setState({
+            finalValue: path[path.length - 1],
+            pathValue: path.join(' > '),
+            data: updateData(decoratedData, pathAsMap)
+          })
+        }}
+      #+END_SRC
+
+      This is a value that is part of the react-vis api.  From that doc, this is a function that accepts (arc node, domEvent) as arguments.  In other words, we'll know the exact node upon which the mouse is over, and all the values given from our browser about that node element.
+
+      We know that getKeyPath returns an array of strings, each subsequent one being the parent of the node string prior.  So here we set the path to being that array reversed, so it goes from root to smallest child.
+
+      pathAsMap, to be honest, I don't fully understand.  It's used to decorate the data, and the data colors up a cell based on each section of the map being true or false.  So It hink it's saying "if this cell is in the path, mark it as true, otherwise it be false".
+
+      Then, we set the state with these values.  finalValue is going to be the last node string in our path and pathValue is going to be the full path outlined like so: 'root > child1 > child2 > lastChild'
+
+      Everytime you set the state with a react Component the whole component rerenders.  We will have things later down that are meant to display the pathVAlue and finalValue...so since we are setting them in the state and rendering the component again it's going to continually update what these show.
+
+***** onValueMouseOut
+ #+NAME: SB onValueMouseOut
+ #+BEGIN_SRC js :tangle no
+   onValueMouseOut={()=>
+       clicked
+       ? () => {} // an empty function, essentially 'do nothing'
+       : this.setState({
+         pathValue: false,
+         finalValue: false,
+         data: updateData(decoratedData, false)
+       })
+     }
+ #+END_SRC
+
+ This is like onValueMouseOver, but handling when we leave the chart.  Clicking locks the arc's position--and so, if it's clicked we do nothing...we keep all the coloring and info as it is as it's locked in place.
+
+ If clicked isn't set, and we've left the chart, then return everything back to nothing.  No finalVAlue, no path that we're on, and update the data so all cells are colored again.
+
+***** Display Center finalValue
+      #+NAME: SB Display Center finalValue
+      #+BEGIN_SRC js :tangle no
+        {finalValue && (
+            <LabelSeries
+          data={[{x: 0, y: 0, label: finalValue, style: LABEL_STYLE}]}
+            />
+        )}
+      #+END_SRC
+
+      LabelSeries is another component given to us by react-vis.  The data will want to know where the label will be placed, what it should be labelling, and what it should look like.  We are saying 'put it right in the center: x0/y0 and display the final node we are highlighting.'
+
 **** Example Data for Sunburst
 ***** Basic Sample Data
      :PROPERTIES:
@@ -1946,12 +1973,14 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
       import { combineReducers } from 'redux'
 
       import AuditsReducer from './audits-reducer'
+      import D3FlareReducer from './flare-reducer'
     #+END_SRC
 
     #+NAME: Reducers
     #+BEGIN_SRC js
       const reducers = {
-        auditsStore: AuditsReducer
+        auditsStore: AuditsReducer,
+        D3FlareStore: D3FlareReducer
       }
 
       const rootReducer = combineReducers(reducers)
@@ -1993,6 +2022,27 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
        }
 
      #+END_SRC
+*** flare Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/flare-reducer.js
+    :END:
+    This is just a sample to grab our json from redux instead of directly froma  file.  The idea is when this works, we can then change the logic to pull from our audits file instead which includes the nice json of info we need.
+    #+NAME: Flare Reducer
+    #+BEGIN_SRC js
+      const D3FlareData = require('../sample-data/flareData.json')
+
+      const initialState = {
+        data: D3FlareData
+      }
+
+      export default (state = initialState, action = {}) => {
+        switch (action.type) {
+        default:
+          return state
+        }
+      }
+    #+END_SRC
+
 
 * Process
 ** Working with d3
