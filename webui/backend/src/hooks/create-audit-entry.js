@@ -5,7 +5,7 @@
 module.exports = function (options = {}) {
   return async context => {
     if (context.data.name === 'conformance-gce') {
-      var dashboards = context.data.dashboard_tab
+        var dashboards = context.data.dashboard_tab.filter(dashboard => dashboard.branch.includes('dev'))
       var success = await createAuditsFrom(context, dashboards)
     }
     return context;
@@ -19,14 +19,12 @@ module.exports = function (options = {}) {
       if (existingEntry.length === 0) {
         auditService.create({
           branch: dashboard.name,
-          path: dashboard.branch,
           build: dashboard.latestBuild,
           artifactsPath: artifactsPath
         }).then(res => console.log(`entry made for ${res.branch}!`))
       } else {
         auditService.update(existingEntry[0]._id, {
           branch: dashboard.name,
-          path: dashboard.branch,
           build: dashboard.latestBuild,
           artifactsPath: artifactsPath
         }).then(res => console.log('entry updated! for ' + res.branch))
