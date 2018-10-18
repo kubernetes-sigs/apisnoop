@@ -1,159 +1,148 @@
-import React from 'react';
-import { isEqual } from 'lodash/lang';
-import * as d3 from 'd3';
-import * as utils from '../lib/utils';
-/**
- * Sunburst Chart React Stateless Component with the following allowable Props *
- * data => JSON Array - Typically same for every Sunburst Chart *
- * scale => String - Options: linear | exponential - Linear renders each arc with same radii, Exponential reduces gradually by SquareRoot *
- * onSelect => Function - Called on Arc Click for re-rendering the chart and passing back to User as props *
- * tooltip => Boolean - Display Tooltip or not *
- * tooltipContent => HTMLNode - Customized Node for Tooltip rendering *
- * keyId => String - Unique Id for Chart SVG *
- * width => Integer - Width of the Chart Container *
- * height => Integer - Height of the Chart Container *
- */
-class Sunburst extends React.Component {
-  componentDidMount() {
-     console.log('sunburstMOUNTED')
-    this.renderSunburst(this.props);
-  }
-  componentWillReceiveProps(nextProps) {
-    if (!isEqual(this.props, nextProps)) {
-      this.renderSunburst(nextProps);
-    }
-  }
-  arcTweenData(a, i, node, x, arc) {  // eslint-disable-line
-    const oi = d3.interpolate({ x0: (a.x0s ? a.x0s : 0), x1: (a.x1s ? a.x1s : 0) }, a);
-    function tween(t) {
-      const b = oi(t);
-      a.x0s = b.x0;   // eslint-disable-line
-      a.x1s = b.x1;   // eslint-disable-line
-      return arc(b);
-    }
-    if (i === 0) {
-      const xd = d3.interpolate(x.domain(), [node.x0, node.x1]);
-      return function (t) {
-        x.domain(xd(t));
-        return tween(t);
-      };
-    } else {  // eslint-disable-line
-      return tween;
-    }
-  }
-  update(root, firstBuild, svg, partition, hueDXScale, x, y, radius, arc, node, self) {  // eslint-disable-line
-    if (firstBuild) {
-      firstBuild = false; // eslint-disable-line
-      function arcTweenZoom(d) { // eslint-disable-line
-        const xd = d3.interpolate(x.domain(), [d.x0, d.x1]), // eslint-disable-line
-              yd = d3.interpolate(y.domain(), [d.y0, 1]),
-              yr = d3.interpolate(y.range(), [d.y0 ? 40 : 0, radius]);
-        return function (data, i) {
-          return i
-            ? () => arc(data)
-            : (t) => { x.domain(xd(t)); y.domain(yd(t)).range(yr(t)); return arc(data); };
-        };
-      }
-      function click(d) { // eslint-disable-line
-        node = d; // eslint-disable-line
-        self.props.onSelect && self.props.onSelect(d);
-        svg.selectAll('path').transition().duration(1000).attrTween('d', arcTweenZoom(d));
-      }
-      const tooltipContent = self.props.tooltipContent;
-      const tooltip = d3.select(`#${self.props.keyId}`)
-            .append(tooltipContent ? tooltipContent.type : 'div')
-            .style('position', 'absolute')
-            .style('z-index', '10')
-            .style('opacity', '0');
-      if (tooltipContent) {
-        Object.keys(tooltipContent.props).forEach((key) => {
-          tooltip.attr(key, tooltipContent.props[key]);
-        });
-      }
-      svg.selectAll('path').data(partition(root).descendants()).enter().append('path')
-        .style('fill', (d) => {
-          let hue;
-          const current = d;
-          if (current.depth === 0) {
-            return '#33cccc';
-          }
-          if (current.depth <= 1) {
-            hue = hueDXScale(d.x0);
-            current.fill = d3.hsl(hue, 0.5, 0.6);
-            return current.fill;
-          }
-          current.fill = current.parent.fill.brighter(0.5);
-          const hsl = d3.hsl(current.fill);
-          hue = hueDXScale(current.x0);
-          const colorshift = hsl.h + (hue / 4);
-          return d3.hsl(colorshift, hsl.s, hsl.l);
-        })
-        .attr('stroke', '#fff')
-        .attr('stroke-width', '1')
-        .on('click', d => click(d, node, svg, self, x, y, radius, arc))
-        .on('mouseover', function (d) {
-          if (self.props.tooltip) {
-            d3.select(this).style('cursor', 'pointer');
-            tooltip.html(() => { const name = utils.formatNameTooltip(d); return name; });
-            return tooltip.transition().duration(50).style('opacity', 1);
-          }
-          return null;
-        })
-        .on('mousemove', () => {
-          if (self.props.tooltip) {
-            tooltip
-              .style('top', `${d3.event.pageY - 50}px`)
-              .style('left', `${self.props.tooltipPosition === 'right' ? d3.event.pageX - 100 : d3.event.pageX - 50}px`);
-          }
-          return null;
-        })
-        .on('mouseout', function () {
-          if (self.props.tooltip) {
-            d3.select(this).style('cursor', 'default');
-            tooltip.transition().duration(50).style('opacity', 0);
-          }
-          return null;
-        });
-    } else {
-      svg.selectAll('path').data(partition(root).descendants());
-    }
-    svg.selectAll('path').transition().duration(1000).attrTween('d', (d, i) => self.arcTweenData(d, i, node, x, arc));
-  }
-  renderSunburst(props) {
-    if (props.data) {
-      console.log('we got props!', props.data)
-      const self = this, // eslint-disable-line
-            gWidth = props.width,
-            gHeight = props.height,
-            radius = (Math.min(gWidth, gHeight) / 2) - 10,
-            svg = d3.select('svg').append('g').attr('transform', `translate(${gWidth / 2},${gHeight / 2})`),
-            x = d3.scaleLinear().range([0, 2 * Math.PI]),
-            y = props.scale === 'linear' ? d3.scaleLinear().range([0, radius]) : d3.scaleSqrt().range([0, radius]),
-            partition = d3.partition(),
-            arc = d3.arc()
-            .startAngle(d => Math.max(0, Math.min(2 * Math.PI, x(d.x0))))
-            .endAngle(d => Math.max(0, Math.min(2 * Math.PI, x(d.x1))))
-            .innerRadius(d => Math.max(0, y(d.y0)))
-            .outerRadius(d => Math.max(0, y(d.y1))),
-            hueDXScale = d3.scaleLinear()
-            .domain([0, 1])
-            .range([0, 360]),
-            rootData = d3.hierarchy(props.data);
-      const firstBuild = true;
-      const node = rootData;
-      rootData.sum(d => d.size);
-      console.log({rootData})
-      self.update(rootData, firstBuild, svg, partition, hueDXScale, x, y, radius, arc, node, self); // GO!
-    }
-  }
-  render() {
-    console.log('rendering sunburst')
-    return (
-        <div id={this.props.keyId} className="text-center b--silver">
-        <svg style={{ width: parseInt(this.props.width, 10) || 480, height: parseInt(this.props.height, 10) || 400 }} id={`${this.props.keyId}-svg`} />
-        </div>
-    );
-  }
+// Copyright (c) 2016 - 2017 Uber Technologies, Inc.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+import React, { Component } from 'react';
+import { Sunburst, LabelSeries } from 'react-vis'
+import flareData from '../sample-data/flareData.json'
+
+const LABEL_STYLE = {
+  fontSize: '20px',
+  textAnchor: 'middle'
 }
 
-export default Sunburst;
+/**
+* Recursively work backwards from highlighted node to find path of valid nodes
+* @param {Object} node - the current node being considered
+* @returns {Array} - an array of strings describing the key route to teh current node.
+*/
+
+function getKeyPath (node) {
+  if (!node.parent) {
+    return ['root']
+  }
+
+  return [(node.data && node.data.name) || node.name].concat(
+    getKeyPath(node.parent)
+  )
+}
+
+/**
+  * Recursivey modify data depending on whetehr or not each cell has been selected by the hover/hlighlight
+  * @param {Object} data - the current node being considered
+  * @param {Object|Boolean} keyPath - a map of keys that are in the highlight path
+  * if this is false then all nodes are marked as selected.
+  * @returns {Object} Updated tree structure
+  */
+
+function updateData (data, keyPath) {
+  if (data.children) {
+    data.children.map(child => updateData(child,  keyPath))
+  }
+  // add a fill to all the uncolored cells
+  if (!data.hex) {
+    data.style = { fill: 'aliceBlue' }
+  }
+  data.style = {
+    ...data.style,
+    fillOpacity: keyPath && !keyPath[data.name] ? 0.2 : 1
+    // if there's a keypath AND that keypath has a data.name, then 0.2
+  }
+
+  return data
+}
+
+// sets up initial coloring of chart.
+const decoratedData = updateData(flareData, false)
+
+export default class BasicSunburst extends Component {
+  constructor(props) {
+    super(props)
+      this.state = {
+        pathValue: false,
+        data: decoratedData,
+        finalValue: 'SUNBURST',
+        clicked: false
+      }
+  }
+
+
+  render() {
+    const {clicked, data, finalValue, pathValue} = this.state
+    return (
+        <div className='basic-sunburst-wrapper'>
+          <div>
+          {clicked ? 'click to unlock selection' : 'click to lock selection'}
+        </div>
+        <Sunburst
+      animation
+      className='basic-sunburst-example'
+      hideRootNode
+      // when you click on the chart, set clicked to the opposite of what it is currently.
+      onValueMouseOver={node => {
+        if (clicked) {
+          return
+        }
+        const path = getKeyPath(node).reverse()
+        const pathAsMap = path.reduce((res, row) => {
+          console.log({res,row})
+          console.log({resRow: res[row]})
+          res[row] = true
+          return res
+        }, {})
+        this.setState({
+          finalValue: path[path.length - 1],
+          pathValue: path.join(' > '),
+          data: updateData(decoratedData, pathAsMap)
+        })
+      }}
+      onValueMouseOut={()=>
+          clicked
+          ? () => {} // an empty function, essentially 'do nothing'
+          : this.setState({
+            pathValue: false,
+            finalValue: false,
+            data: updateData(decoratedData, false)
+          })
+        }
+      onValueClick={()=> this.setState({clicked: !clicked})}
+      style={{
+        stroke: '#ddd',
+        strokeOpacity: 0.3,
+        strokeWidth: '0.5'
+      }}
+      // colorType is a style for react-vis. literal means 'literally the color palette given'
+      colorType="literal"
+      getSize={d => d.value}
+      getColor={d => d.hex}
+      data={data}
+      height={600}
+      width={700}
+      >
+{finalValue && (
+    <LabelSeries
+  data={[{x: 0, y: 0, label: finalValue, style: LABEL_STYLE}]}
+    />
+)}
+</Sunburst>
+        <div className='basic-sunburst-example-path-name'>{pathValue}</div>
+        </div>
+    )
+  }
+}

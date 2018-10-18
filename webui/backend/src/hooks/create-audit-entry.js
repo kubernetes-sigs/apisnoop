@@ -25,7 +25,6 @@ module.exports = function (options = {}) {
       } else {
         auditService.update(existingEntry[0]._id, {
           branch: dashboard.name,
-          path: dashboard.branch,
           build: dashboard.latestBuild,
           artifactsPath: artifactsPath
         }).then(res => console.log('entry updated! for ' + res.branch))

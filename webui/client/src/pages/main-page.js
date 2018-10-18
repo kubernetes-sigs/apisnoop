@@ -12,7 +12,7 @@ class MainPage extends Component {
   render(){
     return (
         <main id='main-splash' className='min-vh-100'>
-          <SunburstSegment />
+          <SunburstSegment version='First'/>
           <h1>This Page Will Have</h1>
           <h2>Number of Audits: {this.props.audits.length}</h2>
           <ul>
