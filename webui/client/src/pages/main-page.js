@@ -12,7 +12,7 @@ class MainPage extends Component {
   render(){
     return (
         <main id='main-splash' className='min-vh-100'>
-          <SunburstSegment version='First' audits={this.props.audits}/>
+          {this.props.audits.length !== 0 && <SunburstSegment version='First' audits={this.props.audits}/>}
           <h1>This Page Will Have</h1>
           <h2>Number of Audits: {this.props.audits.length}</h2>
           <ul>
@@ -28,7 +28,7 @@ class MainPage extends Component {
 
 function mapStateToProps (state) {
   return {
-    audits: state.auditsStore
+    audits: state.auditsStore.audits
   }
 }
 

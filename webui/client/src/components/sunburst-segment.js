@@ -7,7 +7,7 @@ class SunburstSegment extends Component {
     return (
         <div id='sunburst-segment' className='bg_washed-red pa4'>
         <h2>{this.props.version} Sunburst Graph</h2>
-        <SunburstChart />
+        <SunburstChart audits={this.props.audits}/>
         </div>
    )
   }
