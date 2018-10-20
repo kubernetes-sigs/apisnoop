@@ -436,6 +436,7 @@ so here is the good stuff.
       #+RESULTS: create-audit-entry.js
 ***** next
 *** Audits
+    Takes the conformance-gce dashboards, finds the ones that are on dev, and adds their info as audit entries.
 **** Hooks
 ***** acquireAuditLog
       :PROPERTIES:
@@ -502,7 +503,7 @@ I checked the strucure of the file, and each link is held within a ~pure-u-2-5~ 
         return async context => {
           var logPath = context.data.auditLogArray
           var branch = context.data.branch
-          writeToFile(branch, logPath)
+          // writeToFile(branch, logPath)
           return context;
         }
         <<write to file>>
@@ -554,6 +555,42 @@ I checked the strucure of the file, and each link is held within a ~pure-u-2-5~ 
     #+RESULTS: format by pattern
     : undefined
 
+***** generateDataFromJson
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/generate-data-from-json.js
+      :END:
+      FOR THE DEMO, GONNA CHANGE: we have a number of json files in our /jsons/ folder within the backend.  They are named stuff like `dev-1.10.json'.  We want to match the audit entry to this json file and then add it as ~DATA~ (name will change).
+      So then we will generate a feathers hook for:
+    - Audits Service
+    - named: generateDataFromJson
+    - After
+    - Create, or Update
+    #+NAME: generateDataFromJson
+    #+BEGIN_SRC js
+      const _ = require('lodash')
+      const fs = require('fs')
+      // Use this hook to manipulate incoming or outgoing data.
+      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+      // eslint-disable-next-line no-unused-vars
+      module.exports = function (options = {}) {
+        return async context => {
+          var entry = context.data
+          var build = _.words(entry.branch, /([0-9]|\.)/g).join('')
+          var jsons = fs.readdirSync('./jsons')
+          var json = jsons.filter(fileName => fileName.includes(build) && fileName.includes('.json'))[0]
+          var rawString = fs.readFileSync(`./jsons/${json}`, 'utf-8')
+          context.data.data = JSON.parse(rawString)
+          console.log({context: context.data})
+          return context;
+        };
+      };
+
+    #+END_SRC
+
+    #+RESULTS: generateDataFromJson
+
+It's a huge file, so we are going to need to
 ***** other one?
 
 * Client
@@ -825,51 +862,6 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
     #+END_SRC
 ** Pages
    We are following a convention where, if a component acts as its own route and holds many different components within it, then it's called a page.  Think of navigating between different pages in a site, and each one is made up of several diff. section.  It is the same here, just that we are navigating between JS dispalying different Page components.
-*** Test Groups Commits
-    :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/pages/tg-commits-page.js
-    :END:
-    This will hold all the names taken from conformance-gce dashboard_tab.name
-      #+BEGIN_SRC js
-        import React, { Component } from 'react'
-        import { connect } from 'react-redux'
-
-  //      import { fetchConfig } from '../actions/config-actions'
- //       import CommitList from '../components/commit-list'
-
-        class TGCommitPage extends Component {
-          componentDidMount() {
-//            this.props.fetchConfig()
-          }
-
-          filterByBranch (arr, branchStr) {
-            return arr.filter(item => {
-              return item.name.includes(branchStr)
-            })
-          }
-
-          render(){
-            return (
-                <div>
-                <h1>Commits for GCE Conformance</h1>
-                <h2>Dev</h2>
-                <CommitList commits={dev} test_groups={this.props.test_groups}/>
-                <h2>Release</h2>
-                <CommitList commits={release} test_groups={this.props.test_groups}/>
-                </div>
-            )
-          }
-        }
-
-        function mapStateToProps (state) {
-          return {
-            conformance: state.configStore.conformance,
-            test_groups: state.configStore.test_groups
-          }
-        }
-
-        export default connect(mapStateToProps, {fetchConfig})(TGCommitPage)
-      #+END_SRC
 *** MainPage
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/pages/main-page.js
@@ -890,7 +882,7 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
           render(){
             return (
                 <main id='main-splash' className='min-vh-100'>
-                  <SunburstSegment version='First'/>
+                  <SunburstSegment version='First' audits={this.props.audits}/>
                   <h1>This Page Will Have</h1>
                   <h2>Number of Audits: {this.props.audits.length}</h2>
                   <ul>
@@ -906,7 +898,7 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
 
         function mapStateToProps (state) {
           return {
-            audits: state.auditsStore.audits
+            audits: state.auditsStore
           }
         }
 
@@ -1012,12 +1004,13 @@ The various visual parts of the app.  For the most part, we want these to be as 
           <<SB Define componentDidMount>>
           <<Define getKeyPath>>
           <<Define updateData>>
-
+          <<Define Build JSON Hierarchy>>
           render() {
             const {clicked, data, finalValue, pathValue} = this.state
             const updateData = this.updateData
             const decoratedData = this.decoratedData
             const getKeyPath = this.getKeyPath
+            buildJsonHierarchy(this.props.audits)
             return (
                 <div className='basic-sunburst-wrapper'>
                   <<SB Click/Unclick Indicator>>
@@ -1050,8 +1043,8 @@ The various visual parts of the app.  For the most part, we want these to be as 
 
         function mapStateToProps (state) {
           return {
-            audits: state.auditsStore.audits,
-            flareData: state.D3FlareStore.data
+            flareData: state.D3FlareStore.data,
+            audits: state.auditsStore.audits
           }
         }
 
@@ -1087,9 +1080,20 @@ The various visual parts of the app.  For the most part, we want these to be as 
       #+NAME: Import Modules
       #+BEGIN_SRC js :tangle no
         import React, { Component } from 'react';
+        import { buildJsonHierarchy } from '../lib/utils'
         import { connect } from 'react-redux'
         import { Sunburst, LabelSeries } from 'react-vis'
       #+END_SRC
+***** Build JSON Hierachy
+      This is an experiment to see if I can easily get our csv json into a state that our sunburst can understand.  as in the  [[http://uber.github.io/react-vis/documentation/other-charts/sunburst-diagram][react-vis docs for sunburst diagrams]] , the sunburst wants the data to be in a tree-like structure.  The json we have coming straight from our csv is in a flat structure.
+
+    However, there was an existing function in our site to build a hierarchy, that i feel is for the same reason.  Ia m going to try to just paste that right in, and see what it does
+    #+NAME: Define Build JSON Hierarchy
+    #+BEGIN_SRC js :tangle no
+    #+END_SRC
+
+    #+RESULTS: Define Build JSON Hierarchy
+
 ***** Set Styling For Label
       This will be used for our LabelSeries later, defining how it should look.
       #+NAME: Set Styling for Label
@@ -1696,66 +1700,6 @@ We have to do some kinda verbose binding of our functions.  The point of this is
 
 ** Lib
 *** Utilities
-    :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/lib/utils.js
-    :END:
-    #+BEGIN_SRC js
-   import * as d3 from 'd3';
-
-function formatNumberTooltip(x) {
-  return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-export function formatNameTooltip(d) {
-  const name = d.data.name;
-  return `${name}<br> (${formatNumberTooltip(d.value)})`;
-}
-export function computeTextRotation(d, x) {
-  if (d.depth !== 0) {
-    return ((x((d.x0 + d.x1) / 2) - (Math.PI / 2)) / Math.PI) * 180;
-  }
-  return 0;
-}
-export function wrap() {
-  const self = d3.select(this);
-  let textLength = self.node().getComputedTextLength();
-  let text = self.text();
-  while (textLength > (20) && text.length > 0) {
-    text = text.slice(0, -1);
-    self.text(`${text}...`);
-    textLength = self.node().getComputedTextLength();
-  }
-}
-export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
-  const self = context;
-  text.transition().attr('opacity', 0);
-  SVG.transition()
-    .duration(750)
-    .tween('scale', () => {
-      const xd = d3.interpolate(x.domain(), [d.x0, d.x1]);
-      const yd = d3.interpolate(y.domain(), [d.y0, 1]);
-      const yr = d3.interpolate(y.range(), [d.y0 ? 20 : 0, RADIUS]);
-      return function (t) { x.domain(xd(t)); y.domain(yd(t)).range(yr(t)); };
-    })
-    .selectAll('path')
-    .attrTween('d', select => function () { return ARC(select); })
-    .on('end', function (e) {
-      if (e.x0 > d.x0 && e.x0 < d.x1 && e.depth <= 3) {
-        const arcText = d3.select(this.parentNode).select('text');
-        arcText.transition().duration(750)
-            .attr('opacity', 1)
-            .attr('class', 'visible')
-            .attr('transform', () => `rotate(${computeTextRotation(e, x)})`)
-            .attr('x', select => y(select.y0))
-            .text(select => self.props.label ? select.data.name : '') // eslint-disable-line no-confusing-arrow
-            .each(wrap);
-      }
-    })
-    .selectAll('path')
-    .attrTween('d', tweenedData => function () { return ARC(tweenedData); });
-  self.props.onSelect(d);
-}
-
-    #+END_SRC
 *** Service workers
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/lib/service-workers.js
@@ -1884,7 +1828,7 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
       import axios from 'axios'
 
       export const client = axios.create({
-        baseURL: "http://apisnoop.cncf.io:3030",
+        baseURL: "http://localhost:3030",
         headers: {
           "Content-Type": "application/json"
         }
@@ -1937,14 +1881,13 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
     #+NAME: Requirements
     #+BEGIN_SRC js
       import { client } from './'
-      const url = '/api/v1/audits'
 
     #+END_SRC
 **** Fetching Audits
       The dispatch is being used so our redux stores can hear an action took place.  So we are sending out a broadcast(dispatch) that says 'FETCH AUDITS HAPPENED!' and we're bringing with it a payload.  Redux will hear this action, and assign the payload to the correct part of the app's state.
       #+NAME: audits-actions.js
       #+BEGIN_SRC js
-
+      const url = '/api/v1/audits'
         export function fetchAudits () {
           return dispatch => {
             dispatch({
@@ -2010,10 +1953,10 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
          switch (action.type) {
            case 'FETCH_AUDITS_FULFILLED': {
              var config = action.payload.data
-             console.log(config)
              return {
                ...state,
-               audits: action.payload.data
+               audits: action.payload.data,
+               loading: false
              }
            }
            default:

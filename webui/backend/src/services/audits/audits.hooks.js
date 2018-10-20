@@ -4,13 +4,15 @@ const acquireAuditLog = require('../../hooks/acquire-audit-log');
 
 const downloadAuditLog = require('../../hooks/download-audit-log');
 
+const generateDataFromJson = require('../../hooks/generate-data-from-json');
+
 module.exports = {
   before: {
     all: [],
     find: [],
     get: [],
-    create: [acquireAuditLog()],
-    update: [acquireAuditLog()],
+    create: [acquireAuditLog(), generateDataFromJson()],
+    update: [acquireAuditLog(), generateDataFromJson()],
     patch: [],
     remove: []
   },

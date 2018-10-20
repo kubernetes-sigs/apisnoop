@@ -18,6 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 import React, { Component } from 'react';
+import { buildJsonHierarchy } from '../lib/utils'
 import { connect } from 'react-redux'
 import { Sunburst, LabelSeries } from 'react-vis'
 
@@ -76,12 +77,13 @@ class BasicSunburst extends Component {
   
     return data
   }
-
+  
   render() {
     const {clicked, data, finalValue, pathValue} = this.state
     const updateData = this.updateData
     const decoratedData = this.decoratedData
     const getKeyPath = this.getKeyPath
+    buildJsonHierarchy(this.props.audits)
     return (
         <div className='basic-sunburst-wrapper'>
             <div>
@@ -144,8 +146,8 @@ class BasicSunburst extends Component {
 
 function mapStateToProps (state) {
   return {
-    audits: state.auditsStore.audits,
-    flareData: state.D3FlareStore.data
+    flareData: state.D3FlareStore.data,
+    audits: state.auditsStore.audits
   }
 }
 
