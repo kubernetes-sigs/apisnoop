@@ -2,17 +2,19 @@ import React, { Component } from 'react'
 import { connect } from 'react-redux'
 
 import { fetchAudits } from '../actions/audits-actions'
+import { fetchStatistics } from '../actions/statistics-actions'
 import SunburstSegment from '../components/sunburst-segment'
 
 class MainPage extends Component {
   componentDidMount() {
     this.props.fetchAudits()
+    this.props.fetchStatistics()
   }
 
   render(){
     return (
         <main id='main-splash' className='min-vh-100'>
-          <SunburstSegment version='First'/>
+          {this.props.audits.length !== 0 && <SunburstSegment version='First' audits={this.props.audits}/>}
           <h1>This Page Will Have</h1>
           <h2>Number of Audits: {this.props.audits.length}</h2>
           <ul>
@@ -28,8 +30,9 @@ class MainPage extends Component {
 
 function mapStateToProps (state) {
   return {
-    audits: state.auditsStore.audits
+    audits: state.auditsStore.audits,
+    statistics: state.statisticsStore.statistics
   }
 }
 
-export default connect(mapStateToProps, {fetchAudits})(MainPage)
+export default connect(mapStateToProps, {fetchAudits, fetchStatistics})(MainPage)

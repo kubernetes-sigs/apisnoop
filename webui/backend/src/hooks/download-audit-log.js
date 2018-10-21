@@ -10,7 +10,7 @@ module.exports = function (options = {}) {
   return async context => {
     var logPath = context.data.auditLogArray
     var branch = context.data.branch
-    writeToFile(branch, logPath)
+    // writeToFile(branch, logPath)
     return context;
   }
   function writeToFile(branch, path) {

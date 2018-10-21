@@ -105,6 +105,7 @@ The question I have, ultimately, is how much should be handled by the client and
  - test_groups
  - dashboard_names
 ** Services
+   for each service, make sure paginate is turned off.  In the future I should do this automatically.
 *** Config
     This is the service used to ping github for our config file, and then populate the various dashboards from there.
 **** Setting up config service.
@@ -118,6 +119,7 @@ The question I have, ultimately, is how much should be handled by the client and
    /* eslint-disable no-unused-vars */
    const request = require('request-promise')
    const yaml = require('js-yaml')
+   const fs = require('fs')
 
    var options = {
      url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
@@ -133,16 +135,16 @@ The question I have, ultimately, is how much should be handled by the client and
      <<commented out methods>>
 
      async setup (app, params) {
-       request(options).then(blob => {
-         blob = JSON.parse(blob)
-         var content = Buffer.from(blob.content, 'base64').toString()
-         var configGroups =  yaml.safeLoad(content)
-         distribute(app, configGroups)
-       })
-     }
-   }
+   //     request(options).then(blob => {
+   //       blob = JSON.parse(blob)
+   //       var content = Buffer.from(blob.content, 'base64').toString()
+   //       var configGroups =  yaml.safeLoad(content)
+   //       distribute(app, configGroups)
+   //     })
+      }
+    }
 
-   <<Distribute Config Groups To Individual Services>>
+    <<Distribu te Config Groups To Individual Services>>
    <<Populate Entries For Each Service>>
 
    module.exports = function (options) {
@@ -231,6 +233,108 @@ The question I have, ultimately, is how much should be handled by the client and
      Since it's a custom one, it has no Model or built-in functionality.  What we'll want to do is create a 'setup' function fro it that pings github and returns the config.yaml.  Then, it'll distribute its contents to our different api's.
 
  We can alter the class of our config service, defining what every single type of method does.  The big one for us is the 'setup' method.  And, in fact, since this is just a sorta dashboard arranger, we could get rid of alot of the other methods.
+*** Release
+**** Setting up Release service.
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./backend/src/services/release/release.class.js
+     :END:
+***** Basic Layout
+ #+NAME: service.class.js
+ #+BEGIN_SRC js
+   /* eslint-disable no-unused-vars */
+   const fs = require('fs')
+
+   var options = {
+   }
+
+   var services = [
+     'statistics',
+     'results',
+     'unknown_methods',
+     'unknown_urls',
+     'counts'
+   ]
+
+   class service {
+     constructor (options) {
+       this.options = options || {}
+     }
+
+     async setup (app, params) {
+       var dir = './jsons/release'
+       fs.readdir(dir, (err, jsons) => {
+         if (err) {
+           console.log({setup_err: err})
+         }
+         for (var json of jsons) {
+           populateServicesFromJson(app,dir, json)
+         }
+       })
+     }
+   }
+
+   <<Populate Services From Json>>
+   <<Parse and Distribute>>
+   <<Update Service of Section>>
+
+   module.exports = function (options) {
+     return new service(options)
+   }
+
+   module.exports.service = service
+ #+END_SRC
+
+  the purpose is to read through our directory of results json and make an entry in the correct service for each section of the json.
+
+***** Populate Services From Json
+      #+NAME: Populate Services From Json
+      #+BEGIN_SRC js :tangle no
+        async function populateServicesFromJson (app, dir, JSON) {
+          fs.readFile(`${dir}/${JSON}`, 'utf-8', (err, results) => {
+            if (err) {
+              console.log({ERR_populate_json: err})
+            }
+            parseAndDistribute(app, results, JSON)
+          })
+        }
+      #+END_SRC
+***** Parse and Distribute Sections of JSON file
+      #+NAME: Parse and Distribute
+      #+BEGIN_SRC js :tangle no
+         async function parseAndDistribute (app, results, Name) {
+           results = JSON.parse(results)
+           var keys = ['statistics', 'results', 'unknown_methods', 'unknown_urls']
+           for (var key of keys){
+             var service = services.find(service => service.includes(key))
+             var section = results[key]
+             updateServiceOfSection(app, service, section, Name)
+           }
+         }
+
+      #+END_SRC
+
+***** Update Service of Section
+      #+NAME: Update Service of Section
+      #+BEGIN_SRC js :tangle no
+        async function updateServiceOfSection (app, service, section, name) {
+          var appService = app.service(`/api/v1/${service}`)
+          name = name.replace('-audit-data.json','')
+          var existingEntry = await appService.find({query:{name: name}})
+          if (existingEntry.length === 0) {
+            appService.create({name, data: section})
+            console.log(`Entry Added to ${service} from ${name}`)
+          } else {
+            appService.update(existingEntry[0]._id, {name, data: section})
+            console.log(`Entry Updated for ${service} from ${name}`)
+          }
+        }
+      #+END_SRC
+
+
+
+***** TODO Refactor data coming in so paths don't have '.'
+      feathers cannot add things to the Db if the field name includes a '.'.  I think it's an issue with nedb...so I could change the db there...but i'm not sure the best path to go forward to be honest.
+***** TODO refactor  to not have to pass app so many times, take advantage of async
 *** Dashboards
   accessible at /api/v1/dashboards
 **** Hooks
@@ -436,6 +540,7 @@ so here is the good stuff.
       #+RESULTS: create-audit-entry.js
 ***** next
 *** Audits
+    Takes the conformance-gce dashboards, finds the ones that are on dev, and adds their info as audit entries.
 **** Hooks
 ***** acquireAuditLog
       :PROPERTIES:
@@ -502,7 +607,7 @@ I checked the strucure of the file, and each link is held within a ~pure-u-2-5~ 
         return async context => {
           var logPath = context.data.auditLogArray
           var branch = context.data.branch
-          writeToFile(branch, logPath)
+          // writeToFile(branch, logPath)
           return context;
         }
         <<write to file>>
@@ -554,8 +659,42 @@ I checked the strucure of the file, and each link is held within a ~pure-u-2-5~ 
     #+RESULTS: format by pattern
     : undefined
 
-***** other one?
+***** generateDataFromJson
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/generate-data-from-json.js
+      :END:
+      FOR THE DEMO, GONNA CHANGE: we have a number of json files in our /jsons/ folder within the backend.  They are named stuff like `dev-1.10.json'.  We want to match the audit entry to this json file and then add it as ~DATA~ (name will change).
+      So then we will generate a feathers hook for:
+    - Audits Service
+    - named: generateDataFromJson
+    - After
+    - Create, or Update
+    #+NAME: generateDataFromJson
+    #+BEGIN_SRC js
+      const _ = require('lodash')
+      const fs = require('fs')
+      // Use this hook to manipulate incoming or outgoing data.
+      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
 
+      // eslint-disable-next-line no-unused-vars
+      module.exports = function (options = {}) {
+        return async context => {
+          var entry = context.data
+          var build = _.words(entry.branch, /([0-9]|\.)/g).join('')
+          var jsons = fs.readdirSync('./jsons')
+          var json = jsons.filter(fileName => fileName.includes(build) && fileName.includes('.json'))[0]
+          var rawString = fs.readFileSync(`./jsons/${json}`, 'utf-8')
+          context.data.data = JSON.parse(rawString)
+          return context;
+        };
+      };
+
+    #+END_SRC
+
+    #+RESULTS: generateDataFromJson
+
+It's a huge file, so we are going to need to
+***** other one?
 * Client
   :PROPERTIES:
   :header-args: :dir ./client
@@ -825,51 +964,6 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
     #+END_SRC
 ** Pages
    We are following a convention where, if a component acts as its own route and holds many different components within it, then it's called a page.  Think of navigating between different pages in a site, and each one is made up of several diff. section.  It is the same here, just that we are navigating between JS dispalying different Page components.
-*** Test Groups Commits
-    :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/pages/tg-commits-page.js
-    :END:
-    This will hold all the names taken from conformance-gce dashboard_tab.name
-      #+BEGIN_SRC js
-        import React, { Component } from 'react'
-        import { connect } from 'react-redux'
-
-  //      import { fetchConfig } from '../actions/config-actions'
- //       import CommitList from '../components/commit-list'
-
-        class TGCommitPage extends Component {
-          componentDidMount() {
-//            this.props.fetchConfig()
-          }
-
-          filterByBranch (arr, branchStr) {
-            return arr.filter(item => {
-              return item.name.includes(branchStr)
-            })
-          }
-
-          render(){
-            return (
-                <div>
-                <h1>Commits for GCE Conformance</h1>
-                <h2>Dev</h2>
-                <CommitList commits={dev} test_groups={this.props.test_groups}/>
-                <h2>Release</h2>
-                <CommitList commits={release} test_groups={this.props.test_groups}/>
-                </div>
-            )
-          }
-        }
-
-        function mapStateToProps (state) {
-          return {
-            conformance: state.configStore.conformance,
-            test_groups: state.configStore.test_groups
-          }
-        }
-
-        export default connect(mapStateToProps, {fetchConfig})(TGCommitPage)
-      #+END_SRC
 *** MainPage
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/pages/main-page.js
@@ -880,17 +974,19 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
         import { connect } from 'react-redux'
 
         import { fetchAudits } from '../actions/audits-actions'
+        import { fetchStatistics } from '../actions/statistics-actions'
         import SunburstSegment from '../components/sunburst-segment'
 
         class MainPage extends Component {
           componentDidMount() {
             this.props.fetchAudits()
+            this.props.fetchStatistics()
           }
 
           render(){
             return (
                 <main id='main-splash' className='min-vh-100'>
-                  <SunburstSegment version='First'/>
+                  {this.props.audits.length !== 0 && <SunburstSegment version='First' audits={this.props.audits}/>}
                   <h1>This Page Will Have</h1>
                   <h2>Number of Audits: {this.props.audits.length}</h2>
                   <ul>
@@ -906,11 +1002,12 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
 
         function mapStateToProps (state) {
           return {
-            audits: state.auditsStore.audits
+            audits: state.auditsStore.audits,
+            statistics: state.statisticsStore.statistics
           }
         }
 
-        export default connect(mapStateToProps, {fetchAudits})(MainPage)
+        export default connect(mapStateToProps, {fetchAudits, fetchStatistics})(MainPage)
       #+END_SRC
 ** Components
 The various visual parts of the app.  For the most part, we want these to be as dumb as possible--they present the stuff they're given, and if they have to do any interactive stuff it remains contained to within itself.  Any other changes should be handled outside of the component through actionCreators our and reducer updating the global state of the app.  In other words, the components display the state as it is now, and they can trigger events which update the state, but they always simply display it as it is now.
@@ -981,7 +1078,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
            return (
                <div id='sunburst-segment' className='bg_washed-red pa4'>
                <h2>{this.props.version} Sunburst Graph</h2>
-               <SunburstChart />
+               <SunburstChart audits={this.props.audits}/>
                </div>
           )
          }
@@ -999,6 +1096,17 @@ The various visual parts of the app.  For the most part, we want these to be as 
      We will be using react-vis' basic sunburst example as our guide for this, as it is the closest to what we want.  Our goal is to add in zoom animation and percentages in the center area, but for now let's just get this loading.
 
     Use code layout to see how it all fits, then check out each thing in specifics in the headers below.
+***** Import Modules
+      The example uses extended discrete color range and label series, and both are referencing something with the files themselves.  I believe that we can just use labelseries since we are bringing in sunburst from react-vis, and the theme was just to help make the fill, which we can use with other colors instead.
+
+     We'll bring in the flareData and Sample Data to try switching between the two.
+      #+NAME: Import Modules
+      #+BEGIN_SRC js :tangle no
+        import React, { Component } from 'react';
+        import { formatForSunburst } from '../lib/utils'
+        import { connect } from 'react-redux'
+        import { Sunburst, LabelSeries } from 'react-vis'
+      #+END_SRC
 ***** Code Layout
       #+NAME: Code Layout
       #+BEGIN_SRC js
@@ -1006,57 +1114,103 @@ The various visual parts of the app.  For the most part, we want these to be as 
         <<Import Modules>>
 
         <<Set Styling for Label>>
+        // Mapping of step names to colors.
+        var colors = {
+          'level.alpha': '#e6194b',
+          'level.beta': '#0082c8',
+          'level.stable': '#3cb44b',
+          'category.unused': '#ffffff'
+        }
+
+        var categories = [
+          "admissionregistration",
+          "apiextensions",
+          "apiregistration",
+          "apis",
+          "apps",
+          "authentication",
+          "authorization",
+          "autoscaling",
+          "batch",
+          "certificates",
+          "core",
+          "events",
+          "extensions",
+          "logs",
+          "networking",
+          "policy",
+          "rbacAuthorization",
+          "scheduling",
+          "settings",
+          "storage",
+          "version"
+        ]
+
+        var more_colors = [
+          "#b71c1c", "#880E4F", "#4A148C", "#311B92", "#1A237E", "#0D47A1",
+          "#01579B", "#006064", "#004D40", "#1B5E20", "#33691E", "#827717",
+          "#F57F17", "#FF6F00", "#E65100", "#BF360C", "#f44336", "#E91E63",
+          "#9C27B0", "#673AB7", "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4",
+          "#009688", "#4CAF50", "#8BC34A", "#CDDC39", "#FFEB3B", "#FFC107",
+          "#FF9800", "#FF5722"
+        ]
+
+        for (var catidx = 0; catidx < categories.length; catidx++) {
+          var category = categories[catidx]
+          colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
+        }
 
         class BasicSunburst extends Component {
-          <<SB Setup Constructor>>
-          <<SB Define componentDidMount>>
-          <<Define getKeyPath>>
-          <<Define updateData>>
-
-          render() {
-            const {clicked, data, finalValue, pathValue} = this.state
-            const updateData = this.updateData
-            const decoratedData = this.decoratedData
-            const getKeyPath = this.getKeyPath
-            return (
-                <div className='basic-sunburst-wrapper'>
+            <<SB Setup Constructor>>
+            <<SB Define componentDidMount>>
+            <<Define getKeyPath>>
+            <<Define updateData>>
+            render() {
+              const {clicked, data, finalValue, pathValue} = this.state
+              const updateData = this.updateData
+              const decoratedData = this.decoratedData
+              const getKeyPath = this.getKeyPath
+              return (
+                  <div className='basic-sunburst-wrapper'>
                   <<SB Click/Unclick Indicator>>
                   <Sunburst
-                    animation
-                    className='basic-sunburst-example'
-                    hideRootNode
-                    <<SB onValueMouseOver>>
-                    <<SB onValueMouseOut>>
-                    onValueClick={()=> this.setState({clicked: !clicked})}
-                    style={{
-                      stroke: '#ddd',
-                      strokeOpacity: 0.3,
-                      strokeWidth: '0.5'
-                    }}
-                    colorType="literal" // a style for react-vis. literal means 'literally the color palette given'
-                    getSize={d => d.value} // d refers to data, will need to be set differently for audit log
-                    getColor={d => d.hex}  // same
-                    data={data} // Make sure you're actually providing data to the chart!
-                    height={600}
-                    width={700}
+                animation
+                className='basic-sunburst-example'
+                hideRootNode
+                  <<SB onValueMouseOver>>
+                  <<SB onValueMouseOut>>
+                  onValueClick={()=> this.setState({clicked: !clicked})}
+                style={{
+                  stroke: '#ddd',
+                  strokeOpacity: 0.3,
+                  strokeWidth: '0.5'
+                }}
+                colorType="literal" // a style for react-vis. literal means 'literally the color palette given'
+                getSize={d => d.size + 1} // d refers to data, will need to be set differently for audit log
+                getColor={d => colors[d.color]}  // same
+                data={data} // Make sure you're actually providing data to the chart!
+                height={900}
+                width={1000}
                   >
                   <<SB Display Center finalValue>>
                   </Sunburst>
                   <div className='basic-sunburst-example-path-name'>{pathValue}</div>
-                </div>
-            )
-          }
+                  </div>
+              )
+            }
         }
 
         function mapStateToProps (state) {
           return {
-            audits: state.auditsStore.audits,
             flareData: state.D3FlareStore.data
           }
         }
 
         export default connect(mapStateToProps)(BasicSunburst)
       #+END_SRC
+
+      #+RESULTS: Code Layout
+
 ***** License
       #+NAME: License
       #+BEGIN_SRC js :tangle no
@@ -1080,16 +1234,16 @@ The various visual parts of the app.  For the most part, we want these to be as 
         // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
         // THE SOFTWARE.
       #+END_SRC
-***** Import Modules
-      The example uses extended discrete color range and label series, and both are referencing something with the files themselves.  I believe that we can just use labelseries since we are bringing in sunburst from react-vis, and the theme was just to help make the fill, which we can use with other colors instead.
+***** Build JSON Hierachy
+      This is an experiment to see if I can easily get our csv json into a state that our sunburst can understand.  as in the  [[http://uber.github.io/react-vis/documentation/other-charts/sunburst-diagram][react-vis docs for sunburst diagrams]] , the sunburst wants the data to be in a tree-like structure.  The json we have coming straight from our csv is in a flat structure.
 
-     We'll bring in the flareData and Sample Data to try switching between the two.
-      #+NAME: Import Modules
-      #+BEGIN_SRC js :tangle no
-        import React, { Component } from 'react';
-        import { connect } from 'react-redux'
-        import { Sunburst, LabelSeries } from 'react-vis'
-      #+END_SRC
+    However, there was an existing function in our site to build a hierarchy, that i feel is for the same reason.  Ia m going to try to just paste that right in, and see what it does
+    #+NAME: Define Build JSON Hierarchy
+    #+BEGIN_SRC js :tangle no
+    #+END_SRC
+
+    #+RESULTS: Define Build JSON Hierarchy
+
 ***** Set Styling For Label
       This will be used for our LabelSeries later, defining how it should look.
       #+NAME: Set Styling for Label
@@ -1130,7 +1284,10 @@ We have to do some kinda verbose binding of our functions.  The point of this is
       #+NAME: SB Define componentDidMount
       #+BEGIN_SRC js :tangle no
         componentDidMount() {
-          this.decoratedData = this.updateData(this.props.flareData, false)
+          console.log(this.props.audits)
+          var funson = formatForSunburst(this.props.audits[2])
+          console.log({funson})
+          this.decoratedData = this.updateData(funson, false)
           this.setState({data: this.decoratedData})
         }
       #+END_SRC
@@ -1149,6 +1306,7 @@ We have to do some kinda verbose binding of our functions.  The point of this is
          ,*/
 
         getKeyPath (node) {
+          console.log({node})
           if (!node.parent) {
             return ['root']
           }
@@ -1172,7 +1330,7 @@ We have to do some kinda verbose binding of our functions.  The point of this is
             data.children.map(child => this.updateData(child,  keyPath))
           }
           // add a fill to all the uncolored cells
-          if (!data.hex) {
+          if (!data.color) {
             data.style = { fill: 'lightgray' }
           }
           data.style = {
@@ -1207,19 +1365,18 @@ We have to do some kinda verbose binding of our functions.  The point of this is
 ***** onValueMouseOver
       #+NAME: SB onValueMouseOver
       #+BEGIN_SRC js :tangle no
-        onValueMouseOver={node => {
+        onValueMouseOver={(node, dom) => {
           if (clicked) {
             return
           }
+          console.log({hoverNode: node, dom})
           const path = getKeyPath(node).reverse()
           const pathAsMap = path.reduce((res, row) => {
-            console.log({res,row})
-            console.log({resRow: res[row]})
             res[row] = true
             return res
           }, {})
           this.setState({
-            finalValue: path[path.length - 1],
+            finalValue: `tested: ${node.tested}`,
             pathValue: path.join(' > '),
             data: updateData(decoratedData, pathAsMap)
           })
@@ -1699,63 +1856,110 @@ We have to do some kinda verbose binding of our functions.  The point of this is
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/lib/utils.js
     :END:
+    This is just holding our buildJsonHierarchy utility for right now, but could potentially expand as needed.
+    #+Utils
     #+BEGIN_SRC js
-   import * as d3 from 'd3';
+      export function formatForSunburst (audit) {
+        console.log({audit})
+          var json = buildHierarchy(audit.data)
+          return json
+        }
 
-function formatNumberTooltip(x) {
-  return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-export function formatNameTooltip(d) {
-  const name = d.data.name;
-  return `${name}<br> (${formatNumberTooltip(d.value)})`;
-}
-export function computeTextRotation(d, x) {
-  if (d.depth !== 0) {
-    return ((x((d.x0 + d.x1) / 2) - (Math.PI / 2)) / Math.PI) * 180;
-  }
-  return 0;
-}
-export function wrap() {
-  const self = d3.select(this);
-  let textLength = self.node().getComputedTextLength();
-  let text = self.text();
-  while (textLength > (20) && text.length > 0) {
-    text = text.slice(0, -1);
-    self.text(`${text}...`);
-    textLength = self.node().getComputedTextLength();
-  }
-}
-export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
-  const self = context;
-  text.transition().attr('opacity', 0);
-  SVG.transition()
-    .duration(750)
-    .tween('scale', () => {
-      const xd = d3.interpolate(x.domain(), [d.x0, d.x1]);
-      const yd = d3.interpolate(y.domain(), [d.y0, 1]);
-      const yr = d3.interpolate(y.range(), [d.y0 ? 20 : 0, RADIUS]);
-      return function (t) { x.domain(xd(t)); y.domain(yd(t)).range(yr(t)); };
-    })
-    .selectAll('path')
-    .attrTween('d', select => function () { return ARC(select); })
-    .on('end', function (e) {
-      if (e.x0 > d.x0 && e.x0 < d.x1 && e.depth <= 3) {
-        const arcText = d3.select(this.parentNode).select('text');
-        arcText.transition().duration(750)
-            .attr('opacity', 1)
-            .attr('class', 'visible')
-            .attr('transform', () => `rotate(${computeTextRotation(e, x)})`)
-            .attr('x', select => y(select.y0))
-            .text(select => self.props.label ? select.data.name : '') // eslint-disable-line no-confusing-arrow
-            .each(wrap);
+
+      function buildHierarchy(csv) {
+        var root = createNode('root')
+        var parentNode;
+        var levelNode;
+        var categoryNode;
+        for (var i = 0; i < csv.length; i++) {
+          var level = csv[i]['level']
+          var category = csv[i]['category']
+          var method_url = csv[i]['method + url']
+          var size = +csv[i]['count'];
+          if (isNaN(size)) { // e.g. if this is a header row
+            continue;
+          }
+
+          var node = findChild(root, level)
+          if (node == null) {
+            node = createNode(level, {
+              'color': 'level.' + level
+            })
+            root['children'].push(node)
+          }
+          parentNode = levelNode = node
+
+          node = findChild(parentNode, category)
+          if (node == null) {
+            node = createNode(category,  {
+              'color': 'category.' + category
+            })
+            parentNode['children'].push(node)
+          }
+          parentNode = categoryNode = node
+
+          node = findChild(parentNode, method_url)
+          if (node == null) {
+            if (method_url === 'unused') {
+              method_url = 'untested'
+              var attrs = {'color': 'category.unused'}
+              categoryNode.untested += size
+              levelNode.untested += size
+              root.untested += size
+            } else {
+              attrs = {'color': 'category.' + category}
+              categoryNode.tested += size
+              levelNode.tested += size
+              root.tested += size
+            }
+            categoryNode.total += size
+            levelNode.total += size
+            root.total += size
+            attrs.url = method_url
+            node = createEndNode(method_url, attrs)
+            parentNode['children'].push(node)
+          }
+          node['size'] = size
+        }
+        return root;
       }
-    })
-    .selectAll('path')
-    .attrTween('d', tweenedData => function () { return ARC(tweenedData); });
-  self.props.onSelect(d);
-}
+
+      function findChild(parentNode, nodeName) {
+        var children = parentNode.children;
+        for (var k = 0; k < children.length; k++) {
+          if (children[k]["name"] === nodeName) {
+            return children[k];
+          }
+        }
+        return null
+      }
+
+      function createNode(name, attrs) {
+        var node = {
+          "name": name,
+          "children": [],
+          'tested': 0,
+          'untested': 0,
+          'total': 0,
+        };
+        if (attrs) {
+          node = Object.assign(node, attrs)
+        }
+        return node
+      }
+
+      function createEndNode(name, attrs) {
+        var node = {
+          "name": name,
+        };
+        if (attrs) {
+          node = Object.assign(node, attrs)
+        }
+        return node
+      }
 
     #+END_SRC
+    I don't think I need the colors in here.  They will likely end up in our sunburst component.
 *** Service workers
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/lib/service-workers.js
@@ -1884,7 +2088,7 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
       import axios from 'axios'
 
       export const client = axios.create({
-        baseURL: "http://apisnoop.cncf.io:3030",
+        baseURL: "http://localhost:3030",
         headers: {
           "Content-Type": "application/json"
         }
@@ -1937,14 +2141,13 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
     #+NAME: Requirements
     #+BEGIN_SRC js
       import { client } from './'
-      const url = '/api/v1/audits'
 
     #+END_SRC
 **** Fetching Audits
       The dispatch is being used so our redux stores can hear an action took place.  So we are sending out a broadcast(dispatch) that says 'FETCH AUDITS HAPPENED!' and we're bringing with it a payload.  Redux will hear this action, and assign the payload to the correct part of the app's state.
       #+NAME: audits-actions.js
       #+BEGIN_SRC js
-
+      const url = '/api/v1/audits'
         export function fetchAudits () {
           return dispatch => {
             dispatch({
@@ -1961,6 +2164,30 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
     + 'FETCH_AUDITS_REJECTED'
 
   This is done automatically, and so we don't need to create action creators for these various actions, we just need to tell our reducer to listen to the 'FETCH_AUDITS_FULFILLED' action and handle the payload appropriately.
+*** Statistics Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/statistics-actions.js
+    :END:
+**** Requirements
+    #+NAME: Requirements
+    #+BEGIN_SRC js
+      import { client } from './'
+
+    #+END_SRC
+**** Fetching Statistics
+      The dispatch is being used so our redux stores can hear an action took place.  So we are sending out a broadcast(dispatch) that says 'FETCH AUDITS HAPPENED!' and we're bringing with it a payload.  Redux will hear this action, and assign the payload to the correct part of the app's state.
+      #+NAME: audits-actions.js
+      #+BEGIN_SRC js
+      const url = '/api/v1/statistics'
+        export function fetchStatistics () {
+          return dispatch => {
+            dispatch({
+              type: 'FETCH_STATISTICS',
+              payload: client.get(url)
+            })
+          }
+        }
+      #+END_SRC
 ** Reducers
 *** index.js
     :PROPERTIES:
@@ -1973,6 +2200,7 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
       import { combineReducers } from 'redux'
 
       import AuditsReducer from './audits-reducer'
+      import StatisticsReducer from './statistics-reducer'
       import D3FlareReducer from './flare-reducer'
     #+END_SRC
 
@@ -1980,6 +2208,7 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
     #+BEGIN_SRC js
       const reducers = {
         auditsStore: AuditsReducer,
+        statisticsStore: StatisticsReducer,
         D3FlareStore: D3FlareReducer
       }
 
@@ -2009,11 +2238,44 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
        export default (state = defaultState, action = {}) => {
          switch (action.type) {
            case 'FETCH_AUDITS_FULFILLED': {
-             var config = action.payload.data
-             console.log(config)
              return {
                ...state,
-               audits: action.payload.data
+               audits: action.payload.data,
+               loading: false
+             }
+           }
+           default:
+             return state;
+         }
+       }
+
+     #+END_SRC
+*** Statistics Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/statistics-reducer.js
+    :END:
+**** Initial State
+    We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with data from our server.  In either case, we are giving our components a structure for what they can expect to display, and then the data to display.
+#+NAME: Statistics Initial State
+#+BEGIN_SRC js
+  const defaultState = {
+    statistics: [],
+    loading: true,
+    errors: {}
+  }
+
+#+END_SRC
+
+**** The Reducer
+     #+NAME: The Statistics Reducer
+     #+BEGIN_SRC js
+       export default (state = defaultState, action = {}) => {
+         switch (action.type) {
+           case 'FETCH_STATISTICS_FULFILLED': {
+             return {
+               ...state,
+               statistics: action.payload.data,
+               loading: false
              }
            }
            default:
@@ -2042,7 +2304,6 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
         }
       }
     #+END_SRC
-
 
 * Process
 ** Working with d3

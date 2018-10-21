@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 const request = require('request-promise')
 const yaml = require('js-yaml')
+const fs = require('fs')
 
 var options = {
   url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
@@ -45,24 +46,16 @@ class service {
   
 
   async setup (app, params) {
-    request(options).then(blob => {
-      blob = JSON.parse(blob)
-      var content = Buffer.from(blob.content, 'base64').toString()
-      var configGroups =  yaml.safeLoad(content)
-      distribute(app, configGroups)
-    })
-  }
-}
+//     request(options).then(blob => {
+//       blob = JSON.parse(blob)
+//       var content = Buffer.from(blob.content, 'base64').toString()
+//       var configGroups =  yaml.safeLoad(content)
+//       distribute(app, configGroups)
+//     })
+   }
+ }
 
-function distribute (app, configFile) {
-  var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
-  for (var section of relevantSections) {
-    var configSection = configFile[section]
-    var service = app.service(`/api/v1/${section}`)
-    populate(service, configSection)
-  }
-}
-
+ 
 async function populate (service, configSection) {
   for (var entry of configSection) {
      var existingEntry = await service.find({query:{name: entry.name}})

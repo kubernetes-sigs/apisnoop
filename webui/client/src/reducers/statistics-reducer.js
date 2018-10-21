@@ -1,15 +1,15 @@
 const defaultState = {
-  audits: [],
+  statistics: [],
   loading: true,
   errors: {}
 }
 
 export default (state = defaultState, action = {}) => {
   switch (action.type) {
-    case 'FETCH_AUDITS_FULFILLED': {
+    case 'FETCH_STATISTICS_FULFILLED': {
       return {
         ...state,
-        audits: action.payload.data,
+        statistics: action.payload.data,
         loading: false
       }
     }
