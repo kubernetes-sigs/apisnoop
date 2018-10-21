@@ -85,15 +85,16 @@ def load_openapi_spec(url):
         for method, swagger_method in swagger['paths'][path].items():
             if method == "parameters":
                 continue
-            if 'deprecated' in swagger_method.get('description', '').lower():
-                print("Skipping DEPRECATED method")
-                continue
+            # if 'deprecated' in swagger_method.get('description', '').lower():
+            #     import ipdb; ipdb.set_trace(context=5)
+            #     print("Skipping DEPRECATED method")
+            #     continue
             produces = swagger_method.get('produces', [])
             can_watch = ('application/json;stream=watch' in produces or
                          'application/vnd.kubernetes.protobuf;stream=watch' in produces)
             must_watch = swagger_method.get('x-kubernetes-action') == 'watch'
-            if must_watch:
-                print("must watch " + path)
+            # if must_watch:
+            #     print("must watch " + path)
             method_data = {}
             tags = sorted(swagger['paths'][path][method].get('tags', list()))
             if len(tags) > 0:
@@ -104,6 +105,13 @@ def load_openapi_spec(url):
                 method_data['category'] = category
             else:
                 method_data['category'] = ''
+            method_data['description'] = swagger_method.get('description', '')
+            method_data['operationId'] = swagger_method.get('operationId', '')
+            group_version_kind = swagger_method.get('x-kubernetes-group-version-kind', {})
+            method_data['group'] = group_version_kind.get('group', '')
+            method_data['version'] = group_version_kind.get('version', '')
+            method_data['kind'] = group_version_kind.get('kind', '')
+            # import ipdb; ipdb.set_trace(context=15)
             # todo - request + response
             if not must_watch:
                 path_data['methods'][method] = method_data
@@ -147,6 +155,7 @@ def load_audit_log(path):
                 print("Error parsing event - HTTP method map not defined at \"%s\" for verb \"%s\"" % (raw_event['requestURI'], raw_event['verb']))
 
             audit_log.append(raw_event)
+            # import ipdb; ipdb.set_trace(context=15)
     return audit_log
 
 def load_coverage_csv(path):

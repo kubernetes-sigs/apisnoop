@@ -18,14 +18,6 @@ from lib.models import *
 from lib.parsers import *
 from lib import exports
 
-# https://github.com/kubernetes/kubernetes/pull/50627/files
-
-OPENAPI_SPEC_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/api/openapi-spec/swagger.json"
-
-# inputs
-# audit log
-# swagger json defs
-#
 
 def create_folders():
     for name in ['cache', 'output']:
@@ -41,17 +33,21 @@ def generate_count_tree(openapi_spec):
         count_tree[path] = {
             "counter": 0,
             "methods": {},
+            "misses": {},
             "level": endpoint.get("level")
         }
         for method in endpoint['methods']:
             count_tree[path]['methods'][method] = {
                 "counter": 0,
                 "fields": {},
+                "agents": [],
+                "tests": [],
                 "tags": endpoint['methods'][method]['tags'],
                 "category": endpoint['methods'][method]['category']
             }
 
     return count_tree
+
 
 def find_openapi_entry(openapi_spec, event):
     url = urlparse(event['requestURI'])
@@ -79,15 +75,59 @@ def find_openapi_entry(openapi_spec, event):
     hit_cache[url.path] = None
     return None
 
+
 def count_event(count_tree, event, spec_entry):
     path = spec_entry['path']
     method = event['method']
+    useragent = event.get('userAgent', ' ')
+    agent = useragent.split(' ')[0]
+    test_name_start = ' -- '
+    count_type = 'methods'
+
     count_tree[path]['counter'] += 1
-    try:
-        count_tree[path]['methods'][method]['counter'] += 1
-    except:
-        print method, event['requestURI'], path, count_tree[path]['methods'].keys(), event['verb']
-        raise
+
+    if method not in count_tree[path]['methods']:
+        count_type = 'misses'
+        if method not in count_tree[path]['misses']:
+            count_tree[path]['misses'][method] = {
+                'counter': 0, 'agents': [], 'tests': []
+            }
+    count_tree[path][count_type][method]['counter'] += 1
+
+    if agent not in count_tree[path][count_type][method]['agents']:
+        count_tree[path][count_type][method]['agents'].append(agent)
+
+    if 'e2e.test' in useragent:
+        if test_name_start in useragent:
+            test_name = useragent.split(test_name_start)[1]
+        else:
+            test_name = 'none given'
+        if test_name not in count_tree[path][count_type][method]['tests']:
+            count_tree[path][count_type][method]['tests'].append(test_name)
+
+
+def test_event(test_tree, event, spec_entry):
+    path = spec_entry['path']
+    useragent = event['userAgent']
+    test_name_start = ' -- '
+
+    if useragent.find(test_name_start) > -1:
+        test_name = useragent.split(test_name_start)[1]
+        test_tags = re.findall(r'\[.+?\]', test_name)
+        for tag in test_tags:
+            if tag not in test_tree['tags']:
+                test_tree['tags'].append(tag)
+            if test_name not in test_tree['tests'].keys():
+                test_tree['tests'][test_name] = {
+                    'paths': {}
+                }
+        if path not in test_tree['tests'][test_name]['paths'].keys():
+            test_tree['tests'][test_name]['paths'][path] = {
+                'counter': 1
+            }
+        else:
+            test_tree['tests'][test_name]['paths'][path]['counter'] += 1
+
 
 def get_count_results(count_tree):
     results = []
@@ -103,10 +143,14 @@ def get_count_results(count_tree):
                 'count': method_data['counter']
             }]
 
-    return sorted(results, key=lambda x: (-x['count'], x['level'], x['url'], x['method']))
+    r = sorted(results,
+               key=lambda x: (-x['count'], x['level'], x['url'], x['method']))
+    return r
+
 
 def generate_coverage_report(openapi_spec, audit_log):
     count_tree = generate_count_tree(openapi_spec)
+    test_tree = {'tests': {}, 'tags': []}
     event_summary = []
     unknown_urls = []
     unknown_url_methods = []
@@ -116,18 +160,23 @@ def generate_coverage_report(openapi_spec, audit_log):
             print("Entry not found for event URL \"%s\"" % event['requestURI'])
             unknown_urls += [event['requestURI']]
             continue
+        if event['userAgent'] and event['userAgent'].startswith('e2e.test'):
+            test_event(test_tree, event, spec_entry)
         try:
             count_event(count_tree, event, spec_entry)
-        except:
-            unknown_url_methods += [(event['requestURI'], event['method'], event['verb'])]
+        except Exception:
+            unknown_url_methods += [(event['requestURI'],
+                                     event['method'],
+                                     event['verb'])]
             continue
-        # event_summary.append([
-        #     event['timestamp'],
-        #     event['requestURI'],
-        #     spec_entry['path'],
-        #     event['method'],
-        #     spec_entry.get('level'),
-        #     ", ".join(event.get('sourceIPs', []))])
+    #     import ipdb; ipdb.set_trace(context=60)
+    # event_summary.append([
+    #     event['timestamp'],
+    #     event['requestURI'],
+    #     spec_entry['path'],
+    #     event['method'],
+    #     spec_entry.get('level'),
+    #     ", ".join(event.get('sourceIPs', []))])
 
     report = {}
     report['results'] = get_count_results(count_tree)
@@ -142,17 +191,25 @@ def generate_coverage_report(openapi_spec, audit_log):
 
     for level in ['alpha', 'beta', 'stable']:
         statistics[level] = {
-            'hit': len(filter(lambda x: x['level'] == level and x['count'] > 0, report['results'])),
-            'total': len(filter(lambda x: x['level'] == level, report['results']))
+            'hit': len(
+                filter(lambda x: x['level'] == level and x['count'] > 0,
+                       report['results'])),
+            'total': len(
+                filter(lambda x: x['level'] == level,
+                       report['results']))
         }
         statistics['total']['hit'] += statistics[level]['hit']
         statistics['total']['total'] += statistics[level]['total']
 
+    report['count'] = count_tree
+    report['test'] = test_tree
     report['statistics'] = statistics
 
-    report['unknown_methods'] = set([" | ".join(x) for x in unknown_url_methods])
+    report['unknown_methods'] = list(
+        set([" | ".join(x) for x in unknown_url_methods]))
 
     return report
+
 
 def usage_and_exit():
     print "Usage:"
@@ -161,7 +218,7 @@ def usage_and_exit():
     print "  logreview.py load-coverage <filename>"
     print "    - Load Google Docs test coverage spreadsheet from CSV."
     print "  logreview.py load-audit <filename> <branch_or_tag> <appname>"
-    print "    - Load Kubernetes audit log using openapi spec from specified branch or tag for app into database."
+    print "    - Load audit log with openapi spec from branch or tag for app into database."
     print "  logreview.py remove-audit <appname>"
     print "    - Delete Kubernetes audit log for app from database."
     print "  logreview.py export-data <exporter-name> <output-filename> <appname (optional)>"
@@ -173,16 +230,17 @@ def usage_and_exit():
 
 
 def main():
-    ## Commands
+    # Commands
 
-    ## load-coverage [filename] -- loads extract from google spreadsheet
-    ## load-audit [filename] [app] -- loads an audit log under the name of app
-    ## generate-report [output-filename] -- outputs the details to a file
+    # load-coverage [filename] -- loads extract from google spreadsheet
+    # load-audit [filename] [app] -- loads an audit log under the name of app
+    # generate-report [output-filename] -- outputs the details to a file
 
     if len(sys.argv) < 2:
         usage_and_exit()
     # create folder structure on disk
     create_folders()
+
     # process
     if sys.argv[1] == 'help':
         usage_and_exit()
@@ -195,7 +253,8 @@ def main():
             usage_and_exit()
         rows = load_coverage_csv(filename)
         Endpoint.update_from_coverage(rows)
-        return # we are done
+        return  # we are done
+
     elif sys.argv[1] == 'load-audit':
         if len(sys.argv) < 5:
             usage_and_exit()
@@ -210,7 +269,11 @@ def main():
         audit_log = load_audit_log(filename)
         report = generate_coverage_report(openapi_spec, audit_log)
         App.update_from_results(appname, report['results'])
-        return # we are done
+        # write json next to logfile
+        open("%s-audit-data.json" % (branch_or_tag), 'w').write(
+            json.dumps(report))
+        return  # we are done
+
     elif sys.argv[1] == 'export-data':
         if len(sys.argv) < 4:
             usage_and_exit()
@@ -224,6 +287,7 @@ def main():
             print e.message
             raise
         return
+
     elif sys.argv[1] == 'remove-audit':
         if len(sys.argv) < 3:
             usage_and_exit
@@ -239,5 +303,7 @@ def main():
     elif sys.argv[1] == 'start-server':
         start_webserver()
         return
+
+
 if __name__ == "__main__":
     main()
