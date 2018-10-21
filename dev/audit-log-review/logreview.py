@@ -117,10 +117,10 @@ def test_event(test_tree, event, spec_entry):
         for tag in test_tags:
             if tag not in test_tree['tags']:
                 test_tree['tags'].append(tag)
-            if test_name not in test_tree['tests'].keys():
-                test_tree['tests'][test_name] = {
-                    'paths': {}
-                }
+        if test_name not in test_tree['tests'].keys():
+            test_tree['tests'][test_name] = {
+                'paths': {}
+            }
         if path not in test_tree['tests'][test_name]['paths'].keys():
             test_tree['tests'][test_name]['paths'][path] = {
                 'counter': 1

@@ -139,6 +139,7 @@ def load_audit_log(path):
         for entry in logfile:
             raw_event = json.loads(entry)
             # change verb to represent http request
+            # TODO: request that audit logging record http verb?
             verb_tt = {
                 'get': ['get', 'list', 'proxy'],
                 'put': ['update', 'patch'],
