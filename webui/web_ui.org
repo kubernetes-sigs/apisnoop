@@ -105,6 +105,7 @@ The question I have, ultimately, is how much should be handled by the client and
  - test_groups
  - dashboard_names
 ** Services
+   for each service, make sure paginate is turned off.  In the future I should do this automatically.
 *** Config
     This is the service used to ping github for our config file, and then populate the various dashboards from there.
 **** Setting up config service.
@@ -118,6 +119,7 @@ The question I have, ultimately, is how much should be handled by the client and
    /* eslint-disable no-unused-vars */
    const request = require('request-promise')
    const yaml = require('js-yaml')
+   const fs = require('fs')
 
    var options = {
      url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
@@ -133,16 +135,16 @@ The question I have, ultimately, is how much should be handled by the client and
      <<commented out methods>>
 
      async setup (app, params) {
-       request(options).then(blob => {
-         blob = JSON.parse(blob)
-         var content = Buffer.from(blob.content, 'base64').toString()
-         var configGroups =  yaml.safeLoad(content)
-         distribute(app, configGroups)
-       })
-     }
-   }
+   //     request(options).then(blob => {
+   //       blob = JSON.parse(blob)
+   //       var content = Buffer.from(blob.content, 'base64').toString()
+   //       var configGroups =  yaml.safeLoad(content)
+   //       distribute(app, configGroups)
+   //     })
+      }
+    }
 
-   <<Distribute Config Groups To Individual Services>>
+    <<Distribu te Config Groups To Individual Services>>
    <<Populate Entries For Each Service>>
 
    module.exports = function (options) {
@@ -231,6 +233,108 @@ The question I have, ultimately, is how much should be handled by the client and
      Since it's a custom one, it has no Model or built-in functionality.  What we'll want to do is create a 'setup' function fro it that pings github and returns the config.yaml.  Then, it'll distribute its contents to our different api's.
 
  We can alter the class of our config service, defining what every single type of method does.  The big one for us is the 'setup' method.  And, in fact, since this is just a sorta dashboard arranger, we could get rid of alot of the other methods.
+*** Release
+**** Setting up Release service.
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./backend/src/services/release/release.class.js
+     :END:
+***** Basic Layout
+ #+NAME: service.class.js
+ #+BEGIN_SRC js
+   /* eslint-disable no-unused-vars */
+   const fs = require('fs')
+
+   var options = {
+   }
+
+   var services = [
+     'statistics',
+     'results',
+     'unknown_methods',
+     'unknown_urls',
+     'counts'
+   ]
+
+   class service {
+     constructor (options) {
+       this.options = options || {}
+     }
+
+     async setup (app, params) {
+       var dir = './jsons/release'
+       fs.readdir(dir, (err, jsons) => {
+         if (err) {
+           console.log({setup_err: err})
+         }
+         for (var json of jsons) {
+           populateServicesFromJson(app,dir, json)
+         }
+       })
+     }
+   }
+
+   <<Populate Services From Json>>
+   <<Parse and Distribute>>
+   <<Update Service of Section>>
+
+   module.exports = function (options) {
+     return new service(options)
+   }
+
+   module.exports.service = service
+ #+END_SRC
+
+  the purpose is to read through our directory of results json and make an entry in the correct service for each section of the json.
+
+***** Populate Services From Json
+      #+NAME: Populate Services From Json
+      #+BEGIN_SRC js :tangle no
+        async function populateServicesFromJson (app, dir, JSON) {
+          fs.readFile(`${dir}/${JSON}`, 'utf-8', (err, results) => {
+            if (err) {
+              console.log({ERR_populate_json: err})
+            }
+            parseAndDistribute(app, results, JSON)
+          })
+        }
+      #+END_SRC
+***** Parse and Distribute Sections of JSON file
+      #+NAME: Parse and Distribute
+      #+BEGIN_SRC js :tangle no
+         async function parseAndDistribute (app, results, Name) {
+           results = JSON.parse(results)
+           var keys = ['statistics', 'results', 'unknown_methods', 'unknown_urls']
+           for (var key of keys){
+             var service = services.find(service => service.includes(key))
+             var section = results[key]
+             updateServiceOfSection(app, service, section, Name)
+           }
+         }
+
+      #+END_SRC
+
+***** Update Service of Section
+      #+NAME: Update Service of Section
+      #+BEGIN_SRC js :tangle no
+        async function updateServiceOfSection (app, service, section, name) {
+          var appService = app.service(`/api/v1/${service}`)
+          name = name.replace('-audit-data.json','')
+          var existingEntry = await appService.find({query:{name: name}})
+          if (existingEntry.length === 0) {
+            appService.create({name, data: section})
+            console.log(`Entry Added to ${service} from ${name}`)
+          } else {
+            appService.update(existingEntry[0]._id, {name, data: section})
+            console.log(`Entry Updated for ${service} from ${name}`)
+          }
+        }
+      #+END_SRC
+
+
+
+***** TODO Refactor data coming in so paths don't have '.'
+      feathers cannot add things to the Db if the field name includes a '.'.  I think it's an issue with nedb...so I could change the db there...but i'm not sure the best path to go forward to be honest.
+***** TODO refactor  to not have to pass app so many times, take advantage of async
 *** Dashboards
   accessible at /api/v1/dashboards
 **** Hooks
@@ -581,7 +685,6 @@ I checked the strucure of the file, and each link is held within a ~pure-u-2-5~ 
           var json = jsons.filter(fileName => fileName.includes(build) && fileName.includes('.json'))[0]
           var rawString = fs.readFileSync(`./jsons/${json}`, 'utf-8')
           context.data.data = JSON.parse(rawString)
-          console.log({context: context.data})
           return context;
         };
       };
@@ -592,7 +695,6 @@ I checked the strucure of the file, and each link is held within a ~pure-u-2-5~ 
 
 It's a huge file, so we are going to need to
 ***** other one?
-
 * Client
   :PROPERTIES:
   :header-args: :dir ./client
@@ -872,11 +974,13 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
         import { connect } from 'react-redux'
 
         import { fetchAudits } from '../actions/audits-actions'
+        import { fetchStatistics } from '../actions/statistics-actions'
         import SunburstSegment from '../components/sunburst-segment'
 
         class MainPage extends Component {
           componentDidMount() {
             this.props.fetchAudits()
+            this.props.fetchStatistics()
           }
 
           render(){
@@ -898,11 +1002,12 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
 
         function mapStateToProps (state) {
           return {
-            audits: state.auditsStore.audits
+            audits: state.auditsStore.audits,
+            statistics: state.statisticsStore.statistics
           }
         }
 
-        export default connect(mapStateToProps, {fetchAudits})(MainPage)
+        export default connect(mapStateToProps, {fetchAudits, fetchStatistics})(MainPage)
       #+END_SRC
 ** Components
 The various visual parts of the app.  For the most part, we want these to be as dumb as possible--they present the stuff they're given, and if they have to do any interactive stuff it remains contained to within itself.  Any other changes should be handled outside of the component through actionCreators our and reducer updating the global state of the app.  In other words, the components display the state as it is now, and they can trigger events which update the state, but they always simply display it as it is now.
@@ -2059,6 +2164,30 @@ We have to do some kinda verbose binding of our functions.  The point of this is
     + 'FETCH_AUDITS_REJECTED'
 
   This is done automatically, and so we don't need to create action creators for these various actions, we just need to tell our reducer to listen to the 'FETCH_AUDITS_FULFILLED' action and handle the payload appropriately.
+*** Statistics Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/statistics-actions.js
+    :END:
+**** Requirements
+    #+NAME: Requirements
+    #+BEGIN_SRC js
+      import { client } from './'
+
+    #+END_SRC
+**** Fetching Statistics
+      The dispatch is being used so our redux stores can hear an action took place.  So we are sending out a broadcast(dispatch) that says 'FETCH AUDITS HAPPENED!' and we're bringing with it a payload.  Redux will hear this action, and assign the payload to the correct part of the app's state.
+      #+NAME: audits-actions.js
+      #+BEGIN_SRC js
+      const url = '/api/v1/statistics'
+        export function fetchStatistics () {
+          return dispatch => {
+            dispatch({
+              type: 'FETCH_STATISTICS',
+              payload: client.get(url)
+            })
+          }
+        }
+      #+END_SRC
 ** Reducers
 *** index.js
     :PROPERTIES:
@@ -2071,6 +2200,7 @@ We have to do some kinda verbose binding of our functions.  The point of this is
       import { combineReducers } from 'redux'
 
       import AuditsReducer from './audits-reducer'
+      import StatisticsReducer from './statistics-reducer'
       import D3FlareReducer from './flare-reducer'
     #+END_SRC
 
@@ -2078,6 +2208,7 @@ We have to do some kinda verbose binding of our functions.  The point of this is
     #+BEGIN_SRC js
       const reducers = {
         auditsStore: AuditsReducer,
+        statisticsStore: StatisticsReducer,
         D3FlareStore: D3FlareReducer
       }
 
@@ -2119,6 +2250,40 @@ We have to do some kinda verbose binding of our functions.  The point of this is
        }
 
      #+END_SRC
+*** Statistics Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/statistics-reducer.js
+    :END:
+**** Initial State
+    We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with data from our server.  In either case, we are giving our components a structure for what they can expect to display, and then the data to display.
+#+NAME: Statistics Initial State
+#+BEGIN_SRC js
+  const defaultState = {
+    statistics: [],
+    loading: true,
+    errors: {}
+  }
+
+#+END_SRC
+
+**** The Reducer
+     #+NAME: The Statistics Reducer
+     #+BEGIN_SRC js
+       export default (state = defaultState, action = {}) => {
+         switch (action.type) {
+           case 'FETCH_STATISTICS_FULFILLED': {
+             return {
+               ...state,
+               statistics: action.payload.data,
+               loading: false
+             }
+           }
+           default:
+             return state;
+         }
+       }
+
+     #+END_SRC
 *** flare Reducer
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/reducers/flare-reducer.js
@@ -2139,7 +2304,6 @@ We have to do some kinda verbose binding of our functions.  The point of this is
         }
       }
     #+END_SRC
-
 
 * Process
 ** Working with d3

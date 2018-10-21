@@ -12,7 +12,6 @@ module.exports = function (options = {}) {
     var json = jsons.filter(fileName => fileName.includes(build) && fileName.includes('.json'))[0]
     var rawString = fs.readFileSync(`./jsons/${json}`, 'utf-8')
     context.data.data = JSON.parse(rawString)
-    console.log({context: context.data})
     return context;
   };
 };

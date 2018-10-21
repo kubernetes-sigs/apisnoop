@@ -2,11 +2,13 @@ import React, { Component } from 'react'
 import { connect } from 'react-redux'
 
 import { fetchAudits } from '../actions/audits-actions'
+import { fetchStatistics } from '../actions/statistics-actions'
 import SunburstSegment from '../components/sunburst-segment'
 
 class MainPage extends Component {
   componentDidMount() {
     this.props.fetchAudits()
+    this.props.fetchStatistics()
   }
 
   render(){
@@ -28,8 +30,9 @@ class MainPage extends Component {
 
 function mapStateToProps (state) {
   return {
-    audits: state.auditsStore.audits
+    audits: state.auditsStore.audits,
+    statistics: state.statisticsStore.statistics
   }
 }
 
-export default connect(mapStateToProps, {fetchAudits})(MainPage)
+export default connect(mapStateToProps, {fetchAudits, fetchStatistics})(MainPage)
