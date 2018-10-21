@@ -4,6 +4,7 @@ import { connect } from 'react-redux'
 import { fetchAudits } from '../actions/audits-actions'
 import { fetchStatistics } from '../actions/statistics-actions'
 import SunburstSegment from '../components/sunburst-segment'
+import BranchList from '../components/branch-list'
 
 class MainPage extends Component {
   componentDidMount() {
@@ -14,6 +15,9 @@ class MainPage extends Component {
   render(){
     return (
         <main id='main-splash' className='min-vh-100'>
+        <div id='branch-statistics'>
+        <BranchList statistics={this.props.statistics} />
+        </div>
           {this.props.audits.length !== 0 && <SunburstSegment version='First' audits={this.props.audits}/>}
           <h1>This Page Will Have</h1>
           <h2>Number of Audits: {this.props.audits.length}</h2>
