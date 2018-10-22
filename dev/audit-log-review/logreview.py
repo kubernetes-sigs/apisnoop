@@ -24,6 +24,39 @@ def create_folders():
         if not os.path.exists(name):
             os.mkdir(name)
 
+def generate_endpoints_tree(openapi_spec):
+    # Base tests structure, without audit / test loaded
+
+    endpoints = {}
+
+    for endpoint in openapi_spec['paths'].values():
+        for (method_name, method) in endpoint['methods'].items():
+            method = endpoint['methods'][method_name]
+            deprecated = re.match("[Dd]eprecated", method["description"])
+            if deprecated:
+                import ipdb; ipdb.set_trace(context=60)
+                continue
+
+            op = method['operationId']
+            if op not in endpoints.keys():
+                endpoints[op] = {}
+
+            endpoints[op][method_name] = {
+                "cat": method["category"],
+                "desc": method["description"],
+                "group": method["group"],
+                "kind": method["kind"],
+                "ver": method["version"],
+                "path": endpoint['path'],
+                "level": endpoint['level'],
+                # "deprecated": deprecated,
+                "counter": 0,
+                "agents": [],
+                "test_tags": []
+                # "tests": [],
+            }
+
+    return endpoints
 
 def generate_sunburst_tree(openapi_spec):
     # Base sunburst structure, without audit / test loaded
@@ -40,28 +73,50 @@ def generate_sunburst_tree(openapi_spec):
         for method_name in endpoint['methods'].keys():
             method = endpoint['methods'][method_name]
             category = method['category']
+            op = method['operationId']
+            path = endpoint['path']
 
             if category not in sunburst[level].keys():
                 sunburst[level][category] = {
                 }
 
-            path = endpoint['path']
-            if path not in sunburst[level][category].keys():
-                sunburst[level][category][path] = {
+            if op not in sunburst[level][category].keys():
+                sunburst[level][category][op] = {
                 }
 
-            sunburst[level][category][path][method_name] = {
-                "description": method['description'],
-                "operationId": method['operationId'],
-                "counter": 0,
-                "agents": [],
-                "tests": [],
-                "test_tags": []
+            sunburst[level][category][op][method_name] = {
+                # "counter": 0,
             }
 
-            # import ipdb; ipdb.set_trace(context=60)
 
-    return sunburst
+    root = {
+        "name": "root",
+        "children": []
+    }
+    level_children = []
+    for level, categories in sunburst.items():
+        category_children = []
+        for category, paths in categories.items():
+            path_children = []
+            for path, methods in paths.items():
+                method_children = []
+                for method, method_info in methods.items():
+                    method_info["name"] = method
+                    method_info["color"] = "green"
+                    # method_info["color"] = "green"
+                    # method_info["size"] = "1"
+                    method_children.append(method_info)
+                path_children.append(
+                    {"name": path,
+                     "children": method_children})
+            category_children.append(
+                {"name": category,
+                 "children": path_children})
+        root['children'].append(
+            {"name": level,
+             "children": category_children})
+    # import ipdb; ipdb.set_trace(context=60)
+    return root
 
 def generate_count_tree(openapi_spec):
     count_tree = {}
@@ -78,9 +133,9 @@ def generate_count_tree(openapi_spec):
             count_tree[path]['methods'][method] = {
                 "counter": 0,
                 "fields": {},
-                "agents": [],
-                "tests": [],
-                "test_tags": [],
+                # "agents": [],
+                # "tests": [],
+                # "test_tags": [],
                 "tags": endpoint['methods'][method]['tags'],
                 "category": endpoint['methods'][method]['category']
             }
@@ -116,26 +171,13 @@ def find_openapi_entry(openapi_spec, event):
 
 
 def sunburst_event(sunburst, event, spec_entry):
+    #spec_entry must have method for event
     path = spec_entry['path']
     level = spec_entry.get('level')
     method = event['method']
     useragent = event.get('userAgent', ' ')
     test_name_start = ' -- '
     agent = useragent.split(' ')[0]
-
-    # Check to see if the method is avaliable at this path
-    # some are not
-    if method not in spec_entry['methods'].keys():
-        # import ipdb; ipdb.set_trace(context=60)
-        # TODO: we should do something with calls that don't hit the API Spec
-        return
-    #count_type = 'methods'
-    # count_type = 'misses'
-    # if method not in sunburst[path]['misses']:
-    #     sunburst[path]['misses'][method] = {
-    #         'counter': 0, 'agents': [], 'tests': []
-    #     }
-
     category = spec_entry['methods'][method]['category']
     sunburst[level][category][path][method]['counter'] += 1
 
@@ -219,19 +261,22 @@ def get_count_results(count_tree):
                 'level': url_data['level'],
                 'tags': ','.join(method_data['tags']),
                 'category': method_data['category'],
-                'count': method_data['counter']
+                'counter': method_data['counter']
             }]
 
     r = sorted(results,
-               key=lambda x: (-x['count'], x['level'], x['url'], x['method']))
+               key=lambda x: (-x['counter'], x['level'], x['url'], x['method']))
     return r
 
 
 def generate_coverage_report(openapi_spec, audit_log):
+    endpoints = generate_endpoints_tree(openapi_spec)
     sunburst = generate_sunburst_tree(openapi_spec)
     # count_tree = generate_count_tree(openapi_spec)
     # test_tree = {'tests': {}, 'tags': []}
-    event_summary = []
+    tests = {}
+    test_tags = {}
+    useragents = {}
     unknown_urls = {}
     unknown_url_methods = {}
     for event in audit_log:
@@ -250,15 +295,15 @@ def generate_coverage_report(openapi_spec, audit_log):
                 unknown_urls[uri] = {}
             if method not in unknown_urls[uri]:
                 unknown_urls[uri][method] = {
-                    'count': 0,
+                    'counter': 0,
                     'agents': []
                 }
             if useragent and useragent not in unknown_urls[uri][method]['agents']:
                 unknown_urls[uri][method]['agents'].append(useragent)
-            unknown_urls[uri][method]['count'] += 1
+            unknown_urls[uri][method]['counter'] += 1
             continue
         # look for the url+method in the OpenAPI spec
-        if event['method'] not in spec_entry['methods'].keys():
+        if method not in spec_entry['methods'].keys():
             # Mostly it's valid urls with /localsubjectaccesreviews appended
             # TODO: figure out what /localsubjectaccessreviews are
             # print("API Method %s not found for event URL \"%s\"" % (
@@ -267,39 +312,90 @@ def generate_coverage_report(openapi_spec, audit_log):
                 unknown_url_methods[uri] = {}
             if method not in unknown_url_methods[uri]:
                 unknown_url_methods[uri][method] = {
-                    'count': 0,
+                    'counter': 0,
                     'agents': []
                 }
             if useragent and useragent not in unknown_url_methods[uri][method]['agents']:
                 unknown_url_methods[uri][method]['agents'].append(useragent)
-            unknown_url_methods[uri][method]['count'] += 1
+            unknown_url_methods[uri][method]['counter'] += 1
             continue
-        # Should be available in for sunburst
-        sunburst_event(sunburst, event, spec_entry)
-        # if event['userAgent'] and event['userAgent'].startswith('e2e.test'):
-            # test_event(test_tree, event, spec_entry)
-        # try:
-        #     count_event(count_tree, event, spec_entry)
-        # except Exception:
-        #     unknown_url_methods += [(event['requestURI'],
-        #                              event['method'],
-        #                              event['verb'])]
-    #     import ipdb; ipdb.set_trace(context=60)
-    # event_summary.append([
-    #     event['timestamp'],
-    #     event['requestURI'],
-    #     spec_entry['path'],
-    #     event['method'],
-    #     spec_entry.get('level'),
-    #     ", ".join(event.get('sourceIPs', []))])
+        # We should now have level, category, path, and operationId
+        op = spec_entry['methods'][method]['operationId']
+        level = spec_entry.get('level')
+        category = spec_entry['methods'][method]['category']
+        path = spec_entry['path']
+        # sb_level=filter(lambda l: l['name']==level, sunburst['children'])[0]
+        # sb_category=filter(lambda c: c['name']==category, sb_level['children'])[0]
+        # sb_path=filter(lambda p: p['name']==path, sb_category['children'])[0]
+        # sb_method=filter(lambda m: m['name']==method, sb_path['children'])[0]
+        # sunburst_event(sunburst, event, spec_entry)
+        if event.get('userAgent',False) and useragent.startswith('e2e.test'):
+            test_name_start = ' -- '
+            if useragent.find(test_name_start) > -1:
+                test_name = useragent.split(test_name_start)[1]
+                if test_name not in tests.keys():
+                    tests[test_name] = {}
+                if op not in tests[test_name].keys():
+                    tests[test_name][op] = {}
+                if method not in tests[test_name][op].keys():
+                    tests[test_name][op][method] = {
+                        "counter": 0
+                    }
+                tests[test_name][op][method]["counter"] += 1
+                tags = re.findall(r'\[.+?\]', test_name)
+                for tag in tags:
+                    if tag not in test_tags.keys():
+                        test_tags[tag] = {}
+                    if op not in test_tags[tag].keys():
+                        test_tags[tag][op] = {}
+                    if method not in test_tags[tag][op].keys():
+                        test_tags[tag][op][method] = {
+                            "counter": 0
+                        }
+                    test_tags[tag][op][method]["counter"] += 1
+                    if tag not in endpoints[op][method]['test_tags']:
+                        endpoints[op][method]['test_tags'].append(tag)
+                    # if tag not in sb_method['test_tags']:
+                    #     sb_method['test_tags'].append(tag)
+
+        agent = event.get('userAgent', ' ').split(' ')[0]
+        if agent not in useragents.keys():
+            useragents[agent] = {}
+        if op not in useragents[agent].keys():
+            useragents[agent][op] = {}
+        if method not in useragents[agent][op].keys():
+            useragents[agent][op][method] = {
+                "counter": 0
+            }
+        endpoints[op][method]["counter"] += 1
+        useragents[agent][op][method]["counter"] += 1
+        # sunburst[level][category][path][method]['counter'] += 1
+        # if agent not in sb_method['agents']:
+        #     sb_method['agents'].append(agent)
+        # if agent not in sb_method['agents']:
+        #     sb_method['agents'].append(agent)
+        #     sunburst[level][category][path][method]['agents'].append(agent)
+
+# This should be calculated on the server, via an index
+        # import ipdb; ipdb.set_trace(context=60)
+        if agent not in endpoints[op][method]['agents']:
+            endpoints[op][method]['agents'].append(agent)
 
     report = {}
-    # report['results'] = get_count_results(count_tree)
     report['sunburst'] = sunburst
+    report['endpoints'] = endpoints
+    report['tests'] = tests
+    report['test_tags'] = test_tags
+    report['useragents'] = useragents
+    report['unknown_urls'] = unknown_urls
+    report['unknown_url_methods'] = unknown_url_methods
     # import ipdb; ipdb.set_trace(context=60)
-    # report['tree'] = sunburst
-    # report['unknown_urls'] = unknown_urls
+
+    # count_tree = generate_count_tree(openapi_spec)
+    # report['count'] = count_tree
+    # report['results'] = get_count_results(count_tree)
     # report['unknown_url_methods'] = unknown_url_methods
+
     # generate some simple statistics
     # statistics = {
     #     'total': {
@@ -320,8 +416,6 @@ def generate_coverage_report(openapi_spec, audit_log):
     #     statistics['total']['hit'] += statistics[level]['hit']
     #     statistics['total']['total'] += statistics[level]['total']
 
-    # report['count'] = count_tree
-    # report['test'] = test_tree
     # report['statistics'] = statistics
 
     # report['unknown_methods'] = list(
@@ -389,6 +483,7 @@ def main():
         openapi_spec = load_openapi_spec(openapi_uri)
         audit_log = load_audit_log(filename)
         report = generate_coverage_report(openapi_spec, audit_log)
+        # report = generate_coverage_report(openapi_spec, audit_log)
         # import ipdb; ipdb.set_trace(context=60)
         # App.update_from_results(appname, report['results'])
         # write json next to logfile
