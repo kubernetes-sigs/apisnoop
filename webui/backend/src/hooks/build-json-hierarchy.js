@@ -1,4 +1,15 @@
-export function formatForSunburst (audit) {
+// Use this hook to manipulate incoming or outgoing data.
+// For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+// eslint-disable-next-line no-unused-vars
+module.exports = function (options = {}) {
+  return async context => {
+    context.data.formatted = 'hi'
+    console.log({hierarchy: context.data.formatted})
+    return context;
+  };
+
+function formatForSunburst (audit) {
   console.log({audit})
     var json = buildHierarchy(audit.data)
     return json
@@ -96,3 +107,5 @@ function createEndNode(name, attrs) {
   }
   return node
 }
+
+};

@@ -6,7 +6,7 @@ module.exports = function (options = {}) {
   return async context => {
     if (context.data.name === 'conformance-gce') {
         var dashboards = context.data.dashboard_tab.filter(dashboard => dashboard.branch.includes('dev'))
-      var success = await createAuditsFrom(context, dashboards)
+        var success = await createAuditsFrom(context, dashboards)
     }
     return context;
   };

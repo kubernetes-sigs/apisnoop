@@ -9,41 +9,13 @@ var options = {
     'User-Agent': 'request'
   }
 }
+//location of sunburst jsons
+var dir = './jsons/sunbursts'
 
 class service {
   constructor (options) {
     this.options = options || {};
   }
-  // async find (params) {
-  //   return [];
-  // }
-  
-  // async get (id, params) {
-  //   return {
-  //     id, text: `a new message with id: ${id}!`
-  //   };
-  // }
-  
-  // async create (data, params) {
-  //   if (array.isarray(data)) {
-  //     return promise.all(data.map(current => this.create(current, params)));
-  //   }
-  
-  //   return data;
-  // }
-  
-  // async update (id, data, params) {
-  //   return data;
-  // }
-  
-  // async patch (id, data, params) {
-  //   return data;
-  // }
-  
-  // async remove (id, params) {
-  //   return { id };
-  // }
-  
 
   async setup (app, params) {
 //     request(options).then(blob => {
@@ -52,20 +24,32 @@ class service {
 //       var configGroups =  yaml.safeLoad(content)
 //       distribute(app, configGroups)
 //     })
+     populateSunburst(app, dir)
    }
  }
 
- 
-async function populate (service, configSection) {
-  for (var entry of configSection) {
-     var existingEntry = await service.find({query:{name: entry.name}})
-     if (existingEntry.length === 0) {
-       service.create(entry)
-     } else {
-       service.update(existingEntry[0]._id, entry)
-     }
-   }
- }
+function distribute (app, configFile) {
+  var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
+  for (var section of relevantSections) {
+    var configSection = configFile[section]
+    var service = app.service(`/api/v1/${section}`)
+    populate(service, configSection)
+  }
+}
+
+
+async function populateSunburst (app, dir) {
+  var sunbursts = fs.readdirSync(dir)
+  var service = app.service('/api/v1/sunbursts')
+  for (var sunburst of sunbursts) {
+    fs.readFile(`${dir}/${sunburst}`, 'utf-8', (err, data) => {
+      if (err) console.log({read_file_err: err})
+      var json = JSON.parse(data)
+      service.create({name: sunburst, data: json})
+      console.log(`sunburst made for: ${sunburst}`)
+    })
+  }
+}
 
 
 module.exports = function (options) {
