@@ -18,7 +18,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 import React, { Component } from 'react';
-import { formatForSunburst } from '../lib/utils'
 import { connect } from 'react-redux'
 import { Sunburst, LabelSeries } from 'react-vis'
 
@@ -88,11 +87,12 @@ class BasicSunburst extends Component {
     
     
     componentDidMount() {
-      console.log(this.props.audits)
-      var funson = formatForSunburst(this.props.audits[2])
-      console.log({funson})
-      this.decoratedData = this.updateData(funson, false)
-      this.setState({data: this.decoratedData})
+      var sunburst = this.props.sunburst
+      if (Object.keys(sunburst).length !== 0) {
+        sunburst = sunburst.data.tree
+        this.decoratedData = this.updateData(sunburst, false)
+        this.setState({data: this.decoratedData})
+      }
     }
     /**
      * Recursively work backwards from highlighted node to find path of valid nodes
@@ -111,20 +111,22 @@ class BasicSunburst extends Component {
       )
     }
     updateData (data, keyPath) {
-      if (data.children) {
-        data.children.map(child => this.updateData(child,  keyPath))
-      }
-      // add a fill to all the uncolored cells
-      if (!data.color) {
-        data.style = { fill: 'lightgray' }
-      }
-      data.style = {
-        ...data.style,
-        fillOpacity: keyPath && !keyPath[data.name] ? 0.2 : 1
-        // if there's a keypath AND that keypath has a data.name, then 0.2
-      }
+      if (Object.keys(data).length !== 0) {
+        if (data.children) {
+          data.children.map(child => this.updateData(child,  keyPath))
+        }
+        // add a fill to all the uncolored cells
+        if (!data.color) {
+          data.style = { fill: 'lightgray' }
+        }
+        data.style = {
+          ...data.style,
+          fillOpacity: keyPath && !keyPath[data.name] ? 0.2 : 1
+          // if there's a keypath AND that keypath has a data.name, then 0.2
+        }
     
-      return data
+        return data
+      }
     }
     render() {
       const {clicked, data, finalValue, pathValue} = this.state

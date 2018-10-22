@@ -296,6 +296,8 @@ def generate_coverage_report(openapi_spec, audit_log):
     report = {}
     # report['results'] = get_count_results(count_tree)
     report['sunburst'] = sunburst
+    # import ipdb; ipdb.set_trace(context=60)
+    # report['tree'] = sunburst
     # report['unknown_urls'] = unknown_urls
     # report['unknown_url_methods'] = unknown_url_methods
     # generate some simple statistics
