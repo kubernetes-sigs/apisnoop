@@ -16,6 +16,9 @@
 
    At the same time, there was a good amount of work done by the team to get to the current site, and that work should be preserved as much as possible.  The goal of this refactor, then, is to re-make the original site to then build incredible things beyond and above it.
 http://uber.github.io/react-vis/documentation/other-charts/sunburst-diagram
+** Setting It up On Your own
+*** Setup Backend
+*** Setup Client
 * Architecture
 The site will be made to have a distinct front-end and backend, with the front-end able to be ported over to any other backend.
 The front-end will consist of multiple components that wait to be told what data to display, instead of being written as part of the component.  In this way, if we want to make changes to our 'SIG Tag Bubble', we can just find the component named that and make changes there, instead of trying to find/replace the code within the file.
@@ -110,117 +113,116 @@ Services refer to the different paths of our api, and the various jobs and manip
 - [[*Sunburst][Sunburst]] :: Data formatted to work with our sunbursts.
 *** Config
     This is the service used to ping github for our config file, and then populate the various dashboards from there.
-**** Setting up config service.
-     :PROPERTIES:
-     :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
-     :END:
-***** Basic Layout
- So we create a new class for the service and construct it with the options we give it.  In this case, the options relate to the request to our github api that we want to send.  Then, we have a number of commented out methods followed by our setup method.  The setup method requests the configyaml from github, loads it into json, and then distributes each group using our distribute function (described in more detail below).
- #+NAME: config.class.js
- #+BEGIN_SRC js
-   /* eslint-disable no-unused-vars */
-   const request = require('request-promise')
-   const yaml = require('js-yaml')
-   const fs = require('fs')
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
+    :END:
+**** Basic Layout
+So we create a new class for the service and construct it with the options we give it.  In this case, the options relate to the request to our github api that we want to send.  Then, we have a number of commented out methods followed by our setup method.  The setup method requests the configyaml from github, loads it into json, and then distributes each group using our distribute function (described in more detail below).
+#+NAME: config.class.js
+#+BEGIN_SRC js
+  /* eslint-disable no-unused-vars */
+  const request = require('request-promise')
+  const yaml = require('js-yaml')
+  const fs = require('fs')
 
-   var options = {
-     url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
-     headers: {
-       'User-Agent': 'request'
-     }
-   }
-   //location of sunburst jsons
-   var dir = './jsons/sunbursts'
+  var options = {
+    url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
+    headers: {
+      'User-Agent': 'request'
+    }
+  }
+  //location of sunburst jsons
+  var dir = './jsons/sunbursts'
 
-   class service {
-     constructor (options) {
-       this.options = options || {};
-     }
-
-     async setup (app, params) {
-   //     request(options).then(blob => {
-   //       blob = JSON.parse(blob)
-   //       var content = Buffer.from(blob.content, 'base64').toString()
-   //       var configGroups =  yaml.safeLoad(content)
-   //       distribute(app, configGroups)
-   //     })
-        populateSunburst(app, dir)
-      }
+  class service {
+    constructor (options) {
+      this.options = options || {};
     }
 
-   <<Distribute Config Groups To Individual Services>>
-   <<Populate Entries For Each Config.yaml Service>>
-   <<Define populateSunburst>>
-
-   module.exports = function (options) {
-     return new service(options);
-   };
-
-   module.exports.service = service;
- #+END_SRC
-
- #+RESULTS: config.class.js
-***** Distribute Config Groups To Invidiual Services
-
- Our config file is given a number of groups, and half of them we don't care about.  We want to just create api services for these.
- Each of these will need to have a service named like so: 'api/v1/service_name', this is done using the feathers cli (feathers generate service)
- #+NAME: Distribute Config Groups To Individual Services
- #+BEGIN_SRC js :tangle no
-   function distribute (app, configFile) {
-     var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
-     for (var section of relevantSections) {
-       var configSection = configFile[section]
-       var service = app.service(`/api/v1/${section}`)
-       populate(service, configSection)
+    async setup (app, params) {
+       request(options).then(blob => {
+         blob = JSON.parse(blob)
+         var content = Buffer.from(blob.content, 'base64').toString()
+         var configGroups =  yaml.safeLoad(content)
+         distribute(app, configGroups)
+       })
+       populateSunburst(app, dir)
      }
    }
 
- #+END_SRC
+  <<Distribute Config Groups To Individual Services>>
+  <<Populate Entries For Each Config.yaml Service>>
+  <<Define populateSunburst>>
 
-***** Populate Entries For Each Service
-      Here we check the current db for the entry, using its name.  If it doesn't exist, we make it.  If it does, we should update it.
-      first we have to check whether there's anything that exists.  So we do a service.find() and if there are no results, we create the entry.  If there are results, we check if they match our query.
+  module.exports = function (options) {
+    return new service(options);
+  };
 
-     This is kind of a gross function (or a straight up gross function) I don't l ike nested if/else statements.  I feel there is a better way to handle this.
-     I am also having a problem where it is only creating a single entry every single time for each one.  like...it knows
+  module.exports.service = service;
+#+END_SRC
 
-    Once I do have this, then i'll be able to restart the server, it'll make a db if needed, if not it will check the db for the existing entry, and then it will add or updae the entry....
+#+RESULTS: config.class.js
+**** Distribute Config Groups To Invidiual Services
 
-    For some reason right now, it is only adding the last one--but enough times that I know it's going through each one.  Do I need to await some respone on a thing?
-      #+NAME: Populate Entries For Each Service
-      #+BEGIN_SRC js :tangle no
-        async function populate (service, configSection) {
-          for (var entry of configSection) {
-             var existingEntry = await service.find({query:{name: entry.name}})
-             if (existingEntry.length === 0) {
-               service.create(entry)
-             } else {
-               service.update(existingEntry[0]._id, entry)
-             }
-           }
-         }
+Our config file is given a number of groups, and half of them we don't care about.  We want to just create api services for these.
+Each of these will need to have a service named like so: 'api/v1/service_name', this is done using the feathers cli (feathers generate service)
+#+NAME: Distribute Config Groups To Individual Services
+#+BEGIN_SRC js :tangle no
+  function distribute (app, configFile) {
+    var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
+    for (var section of relevantSections) {
+      var configSection = configFile[section]
+      var service = app.service(`/api/v1/${section}`)
+      populate(service, configSection)
+    }
+  }
 
-      #+END_SRC
+#+END_SRC
 
-***** Define populateSunburst
-      #+NAME: Define populateSunburst
-      #+BEGIN_SRC js :tangle no
-        async function populateSunburst (app, dir) {
-          var sunbursts = fs.readdirSync(dir)
-          var service = app.service('/api/v1/sunbursts')
-          for (var sunburst of sunbursts) {
-            fs.readFile(`${dir}/${sunburst}`, 'utf-8', (err, data) => {
-              if (err) console.log({read_file_err: err})
-              var json = JSON.parse(data)
-              service.create({name: sunburst, data: json})
-              console.log(`sunburst made for: ${sunburst}`)
-            })
+**** Populate Entries For Each Service
+     Here we check the current db for the entry, using its name.  If it doesn't exist, we make it.  If it does, we should update it.
+     first we have to check whether there's anything that exists.  So we do a service.find() and if there are no results, we create the entry.  If there are results, we check if they match our query.
+
+    This is kind of a gross function (or a straight up gross function) I don't l ike nested if/else statements.  I feel there is a better way to handle this.
+    I am also having a problem where it is only creating a single entry every single time for each one.  like...it knows
+
+   Once I do have this, then i'll be able to restart the server, it'll make a db if needed, if not it will check the db for the existing entry, and then it will add or updae the entry....
+
+   For some reason right now, it is only adding the last one--but enough times that I know it's going through each one.  Do I need to await some respone on a thing?
+     #+NAME: Populate Entries For Each Service
+     #+BEGIN_SRC js :tangle no
+       async function populate (service, configSection) {
+         for (var entry of configSection) {
+            var existingEntry = await service.find({query:{name: entry.name}})
+            if (existingEntry.length === 0) {
+              service.create(entry)
+            } else {
+              service.update(existingEntry[0]._id, entry)
+            }
           }
         }
 
-      #+END_SRC
+     #+END_SRC
 
-      we read each file from our sunburst directory, which will give us a big string that we have to convert to JSON to do an ything useful with.  We then create that entry using the JSON now as its data.  The creation will be passed along to our [[*cleanSunburst][cleanSunburst]] hook, where we pass over each interior object and make sure k8s.io.fun becomes k8s_io_fun
+**** Define populateSunburst
+     #+NAME: Define populateSunburst
+     #+BEGIN_SRC js :tangle no
+       async function populateSunburst (app, dir) {
+         var sunbursts = fs.readdirSync(dir)
+         var service = app.service('/api/v1/sunbursts')
+         for (var sunburst of sunbursts) {
+           fs.readFile(`${dir}/${sunburst}`, 'utf-8', (err, data) => {
+             if (err) console.log({read_file_err: err})
+             var json = JSON.parse(data)
+             service.create({name: sunburst, data: json})
+             console.log(`sunburst made for: ${sunburst}`)
+           })
+         }
+       }
+
+     #+END_SRC
+
+     we read each file from our sunburst directory, which will give us a big string that we have to convert to JSON to do an ything useful with.  We then create that entry using the JSON now as its data.  The creation will be passed along to our [[*cleanSunburst][cleanSunburst]] hook, where we pass over each interior object and make sure k8s.io.fun becomes k8s_io_fun
 
 *** Release
 **** Setting up Release service.
@@ -403,10 +405,8 @@ Services refer to the different paths of our api, and the various jobs and manip
       Then, we can set this clenaed up data as the new context data and pass the context along.
       If we wanted to, we could then run our buildJsonHierarchy on the data, making a new section called 'formatted' and then we'd just call upon that. This way, we aren't doing the building of the data in our front-end.  the front-end just displays the right stuff we give it.
 ***** buildJsonHierarchy
-      :PROPERTIES:
-      :header-args: :noweb yes :tangle ./backend/src/hooks/build-json-hierarchy.js
-      :END:
-      This was based off the original hierarchy, but now using our new data structure.
+
+      The data coming into this hook looks like so:
       #+NAME: sunburst object structure
       #+BEGIN_SRC json :tangle no
         {starburst: {
@@ -439,7 +439,10 @@ Services refer to the different paths of our api, and the various jobs and manip
           }
         }
       #+END_SRC
-
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/build-json-hierarchy.js
+      :END:
+      This was based off the original hierarchy, but now using our new data structure.
       #+NAME: buildJsonHierarchy
       #+BEGIN_SRC js
         // Use this hook to manipulate incoming or outgoing data.
@@ -918,7 +921,7 @@ It's a huge file, so we are going to need to
 ***** other one?
       :PROPERTIES:
       :END:
-      * Client
+* Client
   :PROPERTIES:
   :header-args: :dir ./client
   :END:
