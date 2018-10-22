@@ -360,46 +360,201 @@ Services refer to the different paths of our api, and the various jobs and manip
           })
         }
       #+END_SRC
-    context is each entry added to the service.  Context.data is the body of the entry that we provide (everything else is additional context about a thang.)  We are providing a name for each entry, pulled from its json file and all the json as the ~data~ field.
+      context is each entry added to the service.  Context.data is the body of the entry that we provide (everything else is additional context about a thang.)  We are providing a name for each entry, pulled from its json file and all the json as the ~data~ field.
 
-The data looks like so:
-===
-{starburst: {
-  alpha: {
-    settings {...},
-    rbacauthorization {...},
-    storage	{…},
-    batch	{…},
-    admissionregistration	{…},
-    scheduling	{…},
-    auditregistration	{…}
-  },
-  beta: {
-    settings {...},
-    rbacauthorization {...},
-    storage	{…},
-    batch	{…},
-    admissionregistration	{…},
-    scheduling	{…},
-    auditregistration	{…}
-  },
-  stable: {
-    settings {...},
-    rbacauthorization {...},
-    storage	{…},
-    batch	{…},
-    admissionregistration	{…},
-    scheduling	{…},
-    auditregistration	{…}
-  }
-}
-===
-Each subkey within alpha,beta,stable is a path of the api (and within each is a method like get push delete etc).  The path includes periods which we need to turn into underscores.
+      The data looks like so:
+      #+NAME: sunburst object structure
+      #+BEGIN_SRC json :tangle no
+        {starburst: {
+          alpha: {
+            settings {...},
+            rbacauthorization {...},
+            storage	{…},
+            batch	{…},
+            admissionregistration	{…},
+            scheduling	{…},
+            auditregistration	{…}
+          },
+          beta: {
+            settings {...},
+            rbacauthorization {...},
+            storage	{…},
+            batch	{…},
+            admissionregistration	{…},
+            scheduling	{…},
+            auditregistration	{…}
+          },
+          stable: {
+            settings {...},
+            rbacauthorization {...},
+            storage	{…},
+            batch	{…},
+            admissionregistration	{…},
+            scheduling	{…},
+            auditregistration	{…}
+          }
+        }
+      #+END_SRC
 
-There is likely a quicker way to do this, but for now I set up two functions, one that iterates and changes each key within the object by passing that key to another function, which converts the keys' `.` to `_`.
+      Each subkey within alpha,beta,stable is a path of the api (and within each is a method like get push delete etc).  The path includes periods which we need to turn into underscores.
 
-Then, we can set this clenaed up data as the new context data and pass the context along.
-If we wanted to, we could then run our buildJsonHierarchy on the data, making a new section called 'formatted' and then we'd just call upon that. This way, we aren't doing the building of the data in our front-end.  the front-end just displays the right stuff we give it.
+      There is likely a quicker way to do this, but for now I set up two functions, one that iterates and changes each key within the object by passing that key to another function, which converts the keys' `.` to `_`.
+
+      Then, we can set this clenaed up data as the new context data and pass the context along.
+      If we wanted to, we could then run our buildJsonHierarchy on the data, making a new section called 'formatted' and then we'd just call upon that. This way, we aren't doing the building of the data in our front-end.  the front-end just displays the right stuff we give it.
+***** buildJsonHierarchy
+      :PROPERTIES:
+      :header-args: :noweb yes :tangle ./backend/src/hooks/build-json-hierarchy.js
+      :END:
+      This was based off the original hierarchy, but now using our new data structure.
+      #+NAME: sunburst object structure
+      #+BEGIN_SRC json :tangle no
+        {starburst: {
+          alpha: {
+            settings {...},
+            rbacauthorization {...},
+            storage	{…},
+            batch	{…},
+            admissionregistration	{…},
+            scheduling	{…},
+            auditregistration	{…}
+          },
+          beta: {
+            settings {...},
+            rbacauthorization {...},
+            storage	{…},
+            batch	{…},
+            admissionregistration	{…},
+            scheduling	{…},
+            auditregistration	{…}
+          },
+          stable: {
+            settings {...},
+            rbacauthorization {...},
+            storage	{…},
+            batch	{…},
+            admissionregistration	{…},
+            scheduling	{…},
+            auditregistration	{…}
+          }
+        }
+      #+END_SRC
+
+      #+NAME: buildJsonHierarchy
+      #+BEGIN_SRC js
+        // Use this hook to manipulate incoming or outgoing data.
+        // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
+
+        // eslint-disable-next-line no-unused-vars
+        module.exports = function (options = {}) {
+          return async context => {
+            context.data.formatted = 'hi'
+            console.log({hierarchy: context.data.formatted})
+            return context;
+          };
+
+          function formatForSunburst (audit) {
+            console.log({audit})
+            var json = buildHierarchy(audit.data)
+            return json
+          }
+
+
+          function buildHierarchy(csv) {
+            var root = createNode('root')
+            var parentNode;
+            var levelNode;
+            var categoryNode;
+            for (var i = 0; i < csv.length; i++) {
+              var level = csv[i]['level']
+              var category = csv[i]['category']
+              var method_url = csv[i]['method + url']
+              var size = +csv[i]['count'];
+              if (isNaN(size)) { // e.g. if this is a header row
+                continue;
+              }
+
+              var node = findChild(root, level)
+              if (node == null) {
+                node = createNode(level, {
+                  'color': 'level.' + level
+                })
+                root['children'].push(node)
+              }
+              parentNode = levelNode = node
+
+              node = findChild(parentNode, category)
+              if (node == null) {
+                node = createNode(category,  {
+                  'color': 'category.' + category
+                })
+                parentNode['children'].push(node)
+              }
+              parentNode = categoryNode = node
+
+              node = findChild(parentNode, method_url)
+              if (node == null) {
+                if (method_url === 'unused') {
+                  method_url = 'untested'
+                  var attrs = {'color': 'category.unused'}
+                  categoryNode.untested += size
+                  levelNode.untested += size
+                  root.untested += size
+                } else {
+                  attrs = {'color': 'category.' + category}
+                  categoryNode.tested += size
+                  levelNode.tested += size
+                  root.tested += size
+                }
+                categoryNode.total += size
+                levelNode.total += size
+                root.total += size
+                attrs.url = method_url
+                node = createEndNode(method_url, attrs)
+                parentNode['children'].push(node)
+              }
+              node['size'] = size
+            }
+            return root;
+          }
+
+          function findChild(parentNode, nodeName) {
+            var children = parentNode.children;
+            for (var k = 0; k < children.length; k++) {
+              if (children[k]["name"] === nodeName) {
+                return children[k];
+              }
+            }
+            return null
+          }
+
+          function createNode(name, attrs) {
+            var node = {
+              "name": name,
+              "children": [],
+              'tested': 0,
+              'untested': 0,
+              'total': 0,
+            };
+            if (attrs) {
+              node = Object.assign(node, attrs)
+            }
+            return node
+          }
+
+          function createEndNode(name, attrs) {
+            var node = {
+              "name": name,
+            };
+            if (attrs) {
+              node = Object.assign(node, attrs)
+            }
+            return node
+          }
+
+        };
+
+      #+END_SRC
 
 *** Dashboards
   accessible at /api/v1/dashboards
