@@ -1,5 +1,3 @@
-// this is a utilties folder
-
 export function formatForSunburst (audit) {
   console.log({audit})
     var json = buildHierarchy(audit.data)

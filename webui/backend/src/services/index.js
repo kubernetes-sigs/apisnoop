@@ -10,6 +10,7 @@ const results = require('./results/results.service.js');
 const tests = require('./tests/tests.service.js');
 const release = require('./release/release.service.js');
 const unknownMethods = require('./unknown_methods/unknown_methods.service.js');
+const sunbursts = require('./sunbursts/sunbursts.service.js');
 // eslint-disable-next-line no-unused-vars
 module.exports = function (app) {
   app.configure(config);
@@ -24,4 +25,5 @@ module.exports = function (app) {
   app.configure(tests);
   app.configure(release);
   app.configure(unknownMethods);
+  app.configure(sunbursts);
 };
