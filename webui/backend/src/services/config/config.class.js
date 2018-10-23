@@ -1,70 +1,40 @@
 /* eslint-disable no-unused-vars */
-const request = require('request-promise')
-const yaml = require('js-yaml')
 const fs = require('fs')
+class Service {
+  constructor (options) {
+    this.options = options || {};
+  }
 
-// hi.
-var options = {
-    url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
-    headers: {
-        'User-Agent': 'request'
-    }
-}
-//location of sunburst jsons
-var dir = './jsons/sunbursts'
-
-class service {
-    constructor (options) {
-        this.options = options || {};
-    }
-
-    async setup (app, params) {
-        populateSunburst(app, dir)
-       // request(options).then(blob => {
-        //    blob = JSON.parse(blob)
-       //     var content = Buffer.from(blob.content, 'base64').toString()
-       //     var configGroups =  yaml.safeLoad(content)
-       //     distribute(app, configGroups)
-      //  })
-    }
+  async setup (app, params) {
+    populateReleases(app,'./data/processed-audits')
+  }
 }
 
-    function distribute (app, configFile) {
-        var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
-        for (var section of relevantSections) {
-            var configSection = configFile[section]
-            var service = app.service(`/api/v1/${section}`)
-            populate(service, configSection)
-        }
-    }
-    
-    
-    async function populateSunburst (app, dir) {
-        var sunbursts = fs.readdirSync(dir)
-        for (var sunburst of sunbursts) {
-            fs.readFile(`${dir}/${sunburst}`, 'utf-8', (err, data) => {
-                if (err) console.log({read_file_err: err})
-                addToSunburst(app, sunburst, data)
-            })
-        }
-    }
-    
-    async function addToSunburst (app, sunburst, data) {
-        var service = app.service('/api/v1/sunbursts')
-        var json = JSON.parse(data)
-        var existingEntry = await service.find({query:{name: sunburst}})
-        if (existingEntry.length === 0) {
-            service.create({name: sunburst, data: json})
-            console.log(`sunburst made for: ${sunburst}`)
-        } else {
-            service.update(existingEntry[0]._id, {name: sunburst, data: json})
-            console.log(`sunburst updated for: ${sunburst}`)
-        }
-    }
-    
+function populateReleases (app, dir)  {
+  var processedAudits = fs.readdirSync(dir)
+  for (var i = 0; i < processedAudits.length; i++) {
+    var fileName = processedAudits[i]
+    console.log({fileName})
+    var data = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
+    addEntryToService(app, fileName, data)
+  }
+}
+
+async function addEntryToService (app, fileName, data) {
+  var service = app.service('/api/v1/releases')
+  var name = fileName.replace('-processed-audit.json', '')
+  var json = JSON.parse(data)
+  var existingEntry = await service.find({query:{name}})
+  if (existingEntry.length === 0) {
+    service.create({name: name, data: json})
+  } else {
+    service.update(existingEntry[0]._id, {name: name, data: json})
+  }
+}
+
 
 module.exports = function (options) {
-    return new service(options);
+  return new Service(options);
 };
 
-module.exports.service = service;
+module.exports.Service = Service;
