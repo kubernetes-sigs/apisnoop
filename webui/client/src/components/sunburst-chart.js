@@ -25,12 +25,11 @@ const LABEL_STYLE = {
   fontSize: '20px',
   textAnchor: 'middle'
 }
-// Mapping of step names to colors.
 var colors = {
-  'level.alpha': '#e6194b',
-  'level.beta': '#0082c8',
-  'level.stable': '#3cb44b',
-  'category.unused': '#ffffff'
+  'alpha': '#e6194b',
+  'beta': '#0082c8',
+  'stable': '#3cb44b',
+  'unused': '#ffffff'
 }
 
 var categories = [
@@ -71,6 +70,7 @@ for (var catidx = 0; catidx < categories.length; catidx++) {
   colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
 }
 
+
 class BasicSunburst extends Component {
     constructor(props) {
       super(props)
@@ -84,12 +84,11 @@ class BasicSunburst extends Component {
       this.updateData = this.updateData.bind(this)
       this.getKeyPath = this.getKeyPath.bind(this)
     }
-    
-    
+
+
     componentDidMount() {
       var sunburst = this.props.sunburst
       if (Object.keys(sunburst).length !== 0) {
-        sunburst = sunburst.data.tree
         this.decoratedData = this.updateData(sunburst, false)
         this.setState({data: this.decoratedData})
       }
@@ -99,13 +98,12 @@ class BasicSunburst extends Component {
      * @param {Object} node - the current node being considered
      * @returns {Array} - an array of strings describing the key route to teh current node.
      */
-    
+
     getKeyPath (node) {
-      console.log({node})
       if (!node.parent) {
         return ['root']
       }
-    
+
       return [(node.data && node.data.name) || node.name].concat(
         this.getKeyPath(node.parent)
       )
@@ -114,17 +112,22 @@ class BasicSunburst extends Component {
       if (Object.keys(data).length !== 0) {
         if (data.children) {
           data.children.map(child => this.updateData(child,  keyPath))
+        })
         }
         // add a fill to all the uncolored cells
         if (!data.color) {
+          var color = colors[data.name]
+          if (!color) {
           data.style = { fill: 'lightgray' }
+          }
+          data.style = { fill: color}
         }
         data.style = {
           ...data.style,
           fillOpacity: keyPath && !keyPath[data.name] ? 0.2 : 1
           // if there's a keypath AND that keypath has a data.name, then 0.2
         }
-    
+
         return data
       }
     }
@@ -146,7 +149,6 @@ class BasicSunburst extends Component {
             if (clicked) {
               return
             }
-            console.log({hoverNode: node, dom})
             const path = getKeyPath(node).reverse()
             const pathAsMap = path.reduce((res, row) => {
               res[row] = true
@@ -174,8 +176,8 @@ class BasicSunburst extends Component {
           strokeWidth: '0.5'
         }}
         colorType="literal" // a style for react-vis. literal means 'literally the color palette given'
-        getSize={d => d.size + 1} // d refers to data, will need to be set differently for audit log
-        getColor={d => colors[d.color]}  // same
+        getSize={d => d.size} // d refers to data, will need to be set differently for audit log
+        getColor={d => d.color}  // same
         data={data} // Make sure you're actually providing data to the chart!
         height={900}
         width={1000}
@@ -194,7 +196,6 @@ class BasicSunburst extends Component {
 
 function mapStateToProps (state) {
   return {
-    flareData: state.D3FlareStore.data
   }
 }
 

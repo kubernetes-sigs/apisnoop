@@ -1,7 +1,6 @@
 import React from 'react'
 
 export default function BranchCard({statistic}) {
-  console.log({statistic})
   var stat = statistic.data
   var version = (name, version) => {
     return (

@@ -6,7 +6,6 @@ export default function BranchList ({statistics}) {
   var sortedStats = statistics.sort((a,b) => {
     return a - b
   })
-  console.log(sortedStats)
 
   const list = () => {
     return statistics.map(statistic => {

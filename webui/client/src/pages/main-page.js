@@ -1,28 +1,24 @@
 import React, { Component } from 'react'
 import { connect } from 'react-redux'
 
-import { fetchAudits } from '../actions/audits-actions'
-import { fetchStatistics } from '../actions/statistics-actions'
-import { fetchSunbursts } from '../actions/sunbursts-actions'
+import { fetchReleases } from '../actions/releases-actions.js'
 import SunburstSegment from '../components/sunburst-segment'
-import BranchList from '../components/branch-list'
+// import BranchList from '../components/branch-list'
 
 class MainPage extends Component {
   componentDidMount() {
-    this.props.fetchAudits()
-    this.props.fetchStatistics()
-    this.props.fetchSunbursts()
+    this.props.fetchReleases()
   }
 
   render(){
     return (
         <main id='main-splash' className='min-vh-100'>
-          {this.props.sunbursts.length !== 0 && <SunburstSegment version={this.props.sunbursts[0].name} sunburst={this.props.sunbursts[0]}/>}
+        {this.props.releases.length !== 0 && <SunburstSegment version={this.props.releases[0].name} sunburst={this.props.releases[0].data}/>}
         <div id='branch-statistics'>
-        <BranchList statistics={this.props.statistics} />
+        {/* <BranchList statistics={this.props.statistics} /> */}
         </div>
           <h1>This Page Will Have</h1>
-          <h2>Number of Sunbursts: {this.props.sunbursts.length}</h2>
+          <h2>Number of Sunbursts: {this.props.releases.length}</h2>
           <ul>
           <li>existing sunburst visualization</li>
           <li>tag cloud as taken from our audits</li>
@@ -36,9 +32,8 @@ class MainPage extends Component {
 
 function mapStateToProps (state) {
   return {
-    sunbursts: state.sunburstsStore.sunbursts,
-    statistics: state.statisticsStore.statistics
+    releases: state.releasesStore.releases
   }
 }
 
-export default connect(mapStateToProps, {fetchAudits, fetchSunbursts, fetchStatistics})(MainPage)
+export default connect(mapStateToProps, {fetchReleases})(MainPage)
