@@ -72,22 +72,18 @@ def generate_sunburst_tree(openapi_spec):
 
         for method_name in endpoint['methods'].keys():
             method = endpoint['methods'][method_name]
-            category = method['category']
             op = method['operationId']
+            category = method['category']
             path = endpoint['path']
+            op_method = "%s/%s" % (op, method_name)
 
             if category not in sunburst[level].keys():
                 sunburst[level][category] = {
                 }
 
-            if op not in sunburst[level][category].keys():
-                sunburst[level][category][op] = {
+            if op_method not in sunburst[level][category].keys():
+                sunburst[level][category][op_method] = {
                 }
-
-            sunburst[level][category][op][method_name] = {
-                # "counter": 0,
-            }
-
 
     root = {
         "name": "root",
@@ -96,22 +92,17 @@ def generate_sunburst_tree(openapi_spec):
     level_children = []
     for level, categories in sunburst.items():
         category_children = []
-        for category, paths in categories.items():
-            path_children = []
-            for path, methods in paths.items():
-                method_children = []
-                for method, method_info in methods.items():
-                    method_info["name"] = method
-                    method_info["color"] = "green"
-                    # method_info["color"] = "green"
-                    # method_info["size"] = "1"
-                    method_children.append(method_info)
-                path_children.append(
-                    {"name": path,
-                     "children": method_children})
+        for category, op_methods in categories.items():
+            op_method_children = []
+            for op_method, method_info in op_methods.items():
+                method_info["name"] = op_method
+                method_info["color"] = "green"
+                method_info["size"] = "1"
+                # method_info["color"] = "green"
+                op_method_children.append(method_info)
             category_children.append(
                 {"name": category,
-                 "children": path_children})
+                 "children": op_method_children})
         root['children'].append(
             {"name": level,
              "children": category_children})
@@ -449,6 +440,7 @@ def main():
 
     # load-coverage [filename] -- loads extract from google spreadsheet
     # load-audit [filename] [app] -- loads an audit log under the name of app
+    # process-audit [audit-filename] [k8s-branch] [output-jsonfile] -- processes an audit log
     # generate-report [output-filename] -- outputs the details to a file
 
     if len(sys.argv) < 2:
@@ -479,7 +471,6 @@ def main():
             usage_and_exit()
         branch_or_tag = sys.argv[3]
         openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
-        appname = sys.argv[4]
         openapi_spec = load_openapi_spec(openapi_uri)
         audit_log = load_audit_log(filename)
         report = generate_coverage_report(openapi_spec, audit_log)
