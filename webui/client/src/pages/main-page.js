@@ -13,7 +13,7 @@ class MainPage extends Component {
   render(){
     return (
         <main id='main-splash' className='min-vh-100'>
-        {this.props.releases.length !== 0 && <SunburstSegment version={this.props.releases[0].name} sunburst={this.props.releases[0].data}/>}
+        {this.props.releases.length !== 0 && <SunburstSegment version={this.props.releases[0].name} release={this.props.releases[0].data}/>}
         <div id='branch-statistics'>
         {/* <BranchList statistics={this.props.statistics} /> */}
         </div>
