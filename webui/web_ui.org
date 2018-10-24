@@ -165,7 +165,6 @@ We only have a single method here, which is setup.  We don't want this to be an 
          var processedAudits = fs.readdirSync(dir)
          for (var i = 0; i < processedAudits.length; i++) {
            var fileName = processedAudits[i]
-           console.log({fileName})
            var data = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
            addEntryToService(app, fileName, data)
          }
@@ -199,7 +198,6 @@ We only have a single method here, which is setup.  We don't want this to be an 
       module.exports = function (options = {}) {
         return async context => {
           var data = context.data.data
-          console.log({data: Object.keys(data), name: context.data.name})
           data = cleanUp(data)
           context.data = {name: context.data.name, data: data}
           return context;
@@ -499,20 +497,23 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
 
         import { fetchReleases } from '../actions/releases-actions.js'
         import SunburstSegment from '../components/sunburst-segment'
-        // import BranchList from '../components/branch-list'
 
         class MainPage extends Component {
+          constructor(props) {
+              super(props)
+              this.state = {
+                main_release_name: ''
+              }
+          }
           componentDidMount() {
             this.props.fetchReleases()
           }
 
           render(){
+            var mainRelease = this.props.main_release
             return (
                 <main id='main-splash' className='min-vh-100'>
-                {this.props.releases.length !== 0 && <SunburstSegment version={this.props.releases[0].name} release={this.props.releases[0].data}/>}
-                <div id='branch-statistics'>
-                {/* <BranchList statistics={this.props.statistics} /> */}
-                </div>
+                {this.props.releases.length !== 0 && <SunburstSegment version={mainRelease.name} release={mainRelease.data}/>}
                   <h1>This Page Will Have</h1>
                   <h2>Number of Sunbursts: {this.props.releases.length}</h2>
                   <ul>
@@ -528,12 +529,18 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
 
         function mapStateToProps (state) {
           return {
-            releases: state.releasesStore.releases
+            releases: state.releasesStore.releases,
+            names: state.releasesStore.names,
+            main_release: state.releasesStore.main_release,
+            userAgents: state.releasesStore.useragents
           }
         }
 
         export default connect(mapStateToProps, {fetchReleases})(MainPage)
       #+END_SRC
+
+      #+RESULTS:
+
 ** Components
 The various visual parts of the app.  For the most part, we want these to be as dumb as possible--they present the stuff they're given, and if they have to do any interactive stuff it remains contained to within itself.  Any other changes should be handled outside of the component through actionCreators our and reducer updating the global state of the app.  In other words, the components display the state as it is now, and they can trigger events which update the state, but they always simply display it as it is now.
 *** Header
@@ -595,37 +602,85 @@ The various visual parts of the app.  For the most part, we want these to be as 
      #+NAME: Sunburst Segment
      #+BEGIN_SRC js
        import React, { Component } from 'react'
-
        import SunburstChart from './sunburst-chart'
+       import { connect } from 'react-redux'
+
+       import FiltersList from './filters-list'
+       import ReleasesList from './releases-list'
 
        class SunburstSegment extends Component {
          constructor (props) {
            super(props)
-           this.state = {
-             agentFilter: 'e2e',
-             filteredSunburst: {},
-             sunburst: {}
-           }
          }
 
-         componentdidMount(){
+         componentDidMount(){
+           var uaKeys = Object.keys(this.props.main_release.data.useragents).map(key => {
+             return key.replace(/[\[]]/g,'').replace(/_/g,'.')
+           })
+
+           var ttKeys = Object.keys(this.props.main_release.data.test_tags).map(key => {
+             return key.replace(/[\[\]]/g,'').replace(/_/g,'.')
+           })
          }
 
        render() {
-         const sunburst = this.props.release.sunburst
+         var mainRelease = this.props.main_release
+         var userAgents = Object.keys(mainRelease.data.useragents)
+         var testTags = Object.keys(mainRelease.data.test_tags)
+         const sunburst = mainRelease.data.sunburst
+         const selectedAgents = this.props.selected_agents
+
+         var hasAgents = (release) => {
+           if (Object.keys(release).length > 0) {
+             var keys = Object.keys(release.data.useragents).filter(key => key !== '')
+             return keys.length > 0
+           }
+           return false
+         }
+         var ise2e = (selectedAgents) => {
+           var arrWithe2e = selectedAgents.filter(selected => {
+             return selected.includes('e2e_test')})
+           return arrWithe2e.length > 0
+         }
+
          const endpoints = this.props.release.endpoints
+         console.log({userAgents, selectedAgents, state_user_agents: mainRelease.data.useragents})
          return (
              <div id='sunburst-segment' className='bg_washed-red pa4'>
-             <h2>{this.props.version} Sunburst Graph</h2>
+             <h2>{this.props.version} Sunburst Graph (a visual chart)</h2>
              <SunburstChart
+               release={this.props.version}
                sunburst={sunburst}
-               endpoints={endpoints}/>
+               endpoints={endpoints}
+             />
+             <ReleasesList context='Releases' options={this.props.names} selected={[mainRelease.name]} />
+              {(hasAgents(mainRelease)) &&
+               <FiltersList
+                 context={'User Agents'}
+                 options={userAgents}
+                 selected={selectedAgents}
+               />}
+           {ise2e(selectedAgents) &&
+            <FiltersList
+            context={'Test Tags'}
+            options={testTags}
+            selected={selectedAgents}
+            />}
            </div>
          )
        }
        }
 
-       export default SunburstSegment
+       function mapStateToProps (state) {
+         return {
+           releases: state.releasesStore.releases,
+           names: state.releasesStore.names,
+           main_release: state.releasesStore.main_release,
+           selected_agents: state.releasesStore.selected_agents
+         }
+       }
+
+       export default connect(mapStateToProps)(SunburstSegment)
      #+END_SRC
 
      #+RESULTS: Sunburst Segment
@@ -670,7 +725,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
               const getKeyPath = this.getKeyPath
               return (
                   <div className='basic-sunburst-wrapper'>
-                  <<SB Click/Unclick Indicator>>
+                  <div className='basic-sunburst-example-path-name h2'>{pathValue}</div>
                   <Sunburst
                   className='basic-sunburst-example'
                   hideRootNode
@@ -691,7 +746,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
                   >
                   <<SB Display Center finalValue>>
                   </Sunburst>
-                  <div className='basic-sunburst-example-path-name'>{pathValue}</div>
+                  <<SB Click/Unclick Indicator>>
                   </div>
               )
             }
@@ -797,7 +852,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
           this.state = {
             pathValue: false,
             data: {},
-            finalValue: 'SUNBURST',
+            finalValue: 'Sunburst',
             clicked: false
           }
           this.decoratedData = {}
@@ -822,7 +877,10 @@ We have to do some kinda verbose binding of our functions.  The point of this is
         componentDidMount() {
           var sunburst = this.props.sunburst
             this.decoratedData = this.updateData(sunburst, false)
-            this.setState({data: this.decoratedData})
+            this.setState({
+              data: this.decoratedData,
+              finalValue: this.props.release
+            })
         }
       #+END_SRC
 
@@ -882,14 +940,9 @@ We have to do some kinda verbose binding of our functions.  The point of this is
            }
            data.style = {
              ...data.style,
-             fillOpacity: isActive(parent, data) ? 0.2 : 1
+             fillOpacity: isActive(parent, data) ? 1 : 0.2
            }
-         }
-         if (keyPath.length === 1) {
-           data.style = {
-             ...data.style,
-             fillOpacity: (keyPath) ? 0.2 : 1
-           }
+           return data
          }
          return data
        }
@@ -952,16 +1005,6 @@ we can use lodash for this, merging each sections details into one big parent se
             return
           }
           const path = getKeyPath(node).reverse()
-          path.shift()
-          // console.log({path, node})
-          const pathAsMap = path.reduce((res, row) => {
-            res[row] = true
-            return res
-          }, {})
-          // var details = this.getDetails(node)
-          // console.log({details})
-          // console.log({pathAsMap})
-          //debugger
           this.setState({
             finalValue: `${node.name}`,
             pathValue: path.join(' > '),
@@ -1012,6 +1055,179 @@ we can use lodash for this, merging each sections details into one big parent se
 
 ***** Refactoring
       - i removed animation from the sunburst and it improved its performance quite a bit.  What animation was it trying to do?  Look at react-vis docs.
+
+*** Filter List
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/components/filters-list.js
+    :END:
+    #+NAME: filters-list.js
+    #+BEGIN_SRC js
+      import React, { Component } from 'react'
+
+      class FiltersList extends Component {
+        constructor (props) {
+          super(props)
+          this.optionsList = this.optionsList.bind(this)
+        }
+
+        optionsList (options) {
+           var formattedNames = options.map(name => {
+             return name.replace(/[\[\]]/g,'').replace(/_/g,'.')
+           })
+          var selected = this.props.selected.map(selection => {
+            return selection.replace(/_/g,'.') //.replace(/^/,'[').replace(/$/,']')
+          })
+          return formattedNames.map(name => {
+            console.log({name, selected})
+            if (selected.includes(name)) {
+              return(
+                  <a className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink" href="#0" key={`filter_${name}`}>{name}</a>
+              )
+            } else {
+              return (
+                  <a className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib silver" href="#0" key={`filter_${name}`}>{name}</a>
+              )
+            }
+          })
+        }
+
+          render () {
+            console.log({filterProps: this.props})
+            return (
+                <div className="ph3 mt4">
+                <h1 className="f6 fw6 ttu tracked">{this.props.context}</h1>
+                {this.optionsList(this.props.options)}
+              </div>
+            )
+          }
+        }
+
+        export default FiltersList
+    #+END_SRC
+
+   Is expecting:
+- context :: a string that determines the header of the list
+- selected ::  an array of strings, for the options selected by default
+- options :: an array of options we will create buttons for.
+*** Releases List
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/components/releases-list.js
+    :END:
+    #+NAME: releases-list.js
+    #+BEGIN_SRC js
+      import React, { Component } from 'react'
+      import { connect } from 'react-redux'
+      import { chooseNewMain } from '../actions/releases-actions'
+
+      class ReleasesList extends Component {
+        constructor (props) {
+          super(props)
+          this.optionsList = this.optionsList.bind(this)
+          this.setNewMain = this.setNewMain.bind(this)
+        }
+        setNewMain (option) {
+          console.log({newMain: option})
+        }
+
+        optionsList (options) {
+          return options.map(option => {
+            if (this.props.selected.includes(option)) {
+              return(
+                  <a className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink" href="#0" onClick={()=> this.props.chooseNewMain(option)} key={`release_${option}`}>{option}</a>
+              )
+            } else {
+              return (
+                  <a className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib black" href="#0" onClick={()=> this.props.chooseNewMain(option)} key={`release_${option}`}>{option}</a>
+              )
+            }
+          })
+        }
+
+        render () {
+          return (
+              <div className="ph3 mt4">
+              <h1 className="f6 fw6 ttu tracked">{this.props.context}</h1>
+              {this.optionsList(this.props.options)}
+            </div>
+          )
+        }
+      }
+
+      function mapStateToProps (state) {
+        return {}
+      }
+      export default connect(mapStateToProps, {chooseNewMain})(ReleasesList)
+    #+END_SRC
+
+   Is expecting:
+- context :: a string that determines the header of the list
+- selected ::  an array of strings, for the options selected by default
+- options :: an array of options we will create buttons for.
+*** Dropdown
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/components/dropdown.js
+    :END:
+    reusable dropdown for releases or useragents.
+    Will get Two Props:
+    - context :: the text before the dropdown, giving context to why they are selecting.
+    - options  :: the array fed the e dropdown that it would map over.
+    #+NAME: Dropdown
+    #+BEGIN_SRC js
+      import React, { Component } from 'react'
+
+      class Dropdown extends Component {
+        constructor (props) {
+          super(props)
+          this.optionsList = this.optionsList.bind(this)
+          this.selectEnter = this.selectEnter.bind(this)
+        }
+
+        selectEnter (dom) {
+        }
+
+        optionsList = (options) => {
+          return options.map(option => {
+            return(
+                <li className='ph1 bb bb--dotted b--light-silver bg-white bt-0'>
+                <a href={option}
+              role='menuitem'
+              className='filter-choice w-100 db h2 flex items-center'
+                >
+                {option}
+              </a>
+                </li>
+            )
+          })
+        }
+
+
+        render () {
+            return (
+                <div className='pa4 f6'>
+                <a className="section">{this.props.context}</a>
+                <div id='datasets' className='h3 section w-40' >
+                <div id='selection-box' role='menubar' aria-haspopup='true'
+              className='relative f4 ph1 dib h2 black z-max flex items-center'>
+                <span id='select-title'
+              className='db tc'
+              onMouseEnter={(e) => this.selectEnter(e)}>
+                 {this.props.options[0]}</span>
+
+
+                <ul id='sel-option' role='menu' aria-hidden='true'
+                    className=' z-max absolute top2 w-100 pl0 ml0 list center mw6 ba b--dotted bt-0'>
+              </ul>
+                </div>
+                </div>
+                </div>
+            )
+        }
+      }
+
+      export default Dropdown
+    #+END_SRC
+
+    #+RESULTS: Dropdown
 
 *** Branch Statistics
 **** Introduction
@@ -1254,6 +1470,18 @@ we can use lodash for this, merging each sections details into one big parent se
           }
         }
       #+END_SRC
+**** Choose New Main Release
+      #+NAME: chooseNewMain
+      #+BEGIN_SRC js
+        export function chooseNewMain (name) {
+          return dispatch => {
+            dispatch({
+              type: 'NEW_MAIN_CHOSEN',
+              payload: name
+            })
+          }
+        }
+      #+END_SRC
 ** Reducers
 *** index.js
     :PROPERTIES:
@@ -1288,6 +1516,9 @@ we can use lodash for this, merging each sections details into one big parent se
 #+BEGIN_SRC js
   const defaultState = {
     releases: [],
+    main_release: {},
+    names: [],
+    selected_agents: [],
     loading: true,
     errors: {}
   }
@@ -1299,17 +1530,50 @@ we can use lodash for this, merging each sections details into one big parent se
      #+BEGIN_SRC js
        export default (state = defaultState, action = {}) => {
          switch (action.type) {
-           case 'FETCH_RELEASES_FULFILLED': {
-             return {
-               ...state,
-               releases: action.payload.data,
-               loading: false
+         case 'FETCH_RELEASES_FULFILLED': {
+           var masterRelease = action.payload.data.find(data => {
+             return data.name.toLowerCase().includes('master')
+           })
+           var selectedAgents = Object.keys(masterRelease.data.useragents).filter(key => {
+             if (key.match(/e2e/)) {
+               return key
              }
+           })
+           return {
+             ...state,
+             releases: action.payload.data,
+             names: action.payload.data.map(data => {
+               data = data.name
+               return data
+             }),
+             main_release: masterRelease,
+             selected_agents: selectedAgents,
+             loading: false
            }
-           default:
-             return state;
+         }
+         case 'NEW_MAIN_CHOSEN': {
+           var newMain = state.releases.find(release => {
+             return release.name === action.payload
+           })
+           var selectedAgents = Object.keys(newMain.data.useragents).filter(key => {
+             if (key.match(/e2e/)) {
+               return key
+             }
+           })
+           return {
+             ...state,
+             main_release: newMain,
+             selected_agents: selectedAgents
+           }
+         }
+         default:
+           return state;
          }
        }
+
+
+
+
 
      #+END_SRC
 * Process
