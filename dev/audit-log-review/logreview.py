@@ -90,7 +90,8 @@ def generate_sunburst_tree(openapi_spec):
         "children": []
     }
     level_children = []
-    for level, categories in sunburst.items():
+    for level in ['stable','beta','alpha']:
+        categories = sunburst[level]
         category_children = []
         for category, op_methods in categories.items():
             op_method_children = []
@@ -106,7 +107,6 @@ def generate_sunburst_tree(openapi_spec):
         root['children'].append(
             {"name": level,
              "children": category_children})
-    # import ipdb; ipdb.set_trace(context=60)
     return root
 
 def generate_count_tree(openapi_spec):
