@@ -9,3 +9,12 @@ const url = '/api/v1/releases'
       })
     }
   }
+
+export function chooseNewMain (name) {
+  return dispatch => {
+    dispatch({
+      type: 'NEW_MAIN_CHOSEN',
+      payload: name
+    })
+  }
+}
