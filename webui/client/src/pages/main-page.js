@@ -3,20 +3,23 @@ import { connect } from 'react-redux'
 
 import { fetchReleases } from '../actions/releases-actions.js'
 import SunburstSegment from '../components/sunburst-segment'
-// import BranchList from '../components/branch-list'
 
 class MainPage extends Component {
+  constructor(props) {
+      super(props)
+      this.state = {
+        main_release_name: ''
+      }
+  }
   componentDidMount() {
     this.props.fetchReleases()
   }
 
   render(){
+    var mainRelease = this.props.main_release
     return (
         <main id='main-splash' className='min-vh-100'>
-        {this.props.releases.length !== 0 && <SunburstSegment version={this.props.releases[0].name} release={this.props.releases[0].data}/>}
-        <div id='branch-statistics'>
-        {/* <BranchList statistics={this.props.statistics} /> */}
-        </div>
+        {this.props.releases.length !== 0 && <SunburstSegment version={mainRelease.name} release={mainRelease.data}/>}
           <h1>This Page Will Have</h1>
           <h2>Number of Sunbursts: {this.props.releases.length}</h2>
           <ul>
@@ -32,7 +35,10 @@ class MainPage extends Component {
 
 function mapStateToProps (state) {
   return {
-    releases: state.releasesStore.releases
+    releases: state.releasesStore.releases,
+    names: state.releasesStore.names,
+    main_release: state.releasesStore.main_release,
+    userAgents: state.releasesStore.useragents
   }
 }
 

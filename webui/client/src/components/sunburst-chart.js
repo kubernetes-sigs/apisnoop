@@ -78,7 +78,7 @@ class BasicSunburst extends Component {
       this.state = {
         pathValue: false,
         data: {},
-        finalValue: 'SUNBURST',
+        finalValue: 'Sunburst',
         clicked: false
       }
       this.decoratedData = {}
@@ -91,7 +91,10 @@ class BasicSunburst extends Component {
     componentDidMount() {
       var sunburst = this.props.sunburst
         this.decoratedData = this.updateData(sunburst, false)
-        this.setState({data: this.decoratedData})
+        this.setState({
+          data: this.decoratedData,
+          finalValue: this.props.release
+        })
     }
     /**
      * Recursively work backwards from highlighted node to find path of valid nodes
@@ -132,14 +135,9 @@ class BasicSunburst extends Component {
         }
         data.style = {
           ...data.style,
-          fillOpacity: isActive(parent, data) ? 0.2 : 1
+          fillOpacity: isActive(parent, data) ? 1 : 0.2
         }
-      }
-      if (keyPath.length === 1) {
-        data.style = {
-          ...data.style,
-          fillOpacity: (keyPath) ? 0.2 : 1
-        }
+        return data
       }
       return data
     }
@@ -162,9 +160,7 @@ class BasicSunburst extends Component {
       const getKeyPath = this.getKeyPath
       return (
           <div className='basic-sunburst-wrapper'>
-            <div>
-            {clicked ? 'click to unlock selection' : 'click to lock selection'}
-          </div>
+          <div className='basic-sunburst-example-path-name h2'>{pathValue}</div>
           <Sunburst
           className='basic-sunburst-example'
           hideRootNode
@@ -173,16 +169,6 @@ class BasicSunburst extends Component {
               return
             }
             const path = getKeyPath(node).reverse()
-            path.shift()
-            // console.log({path, node})
-            const pathAsMap = path.reduce((res, row) => {
-              res[row] = true
-              return res
-            }, {})
-            // var details = this.getDetails(node)
-            // console.log({details})
-            // console.log({pathAsMap})
-            //debugger
             this.setState({
               finalValue: `${node.name}`,
               pathValue: path.join(' > '),
@@ -217,7 +203,9 @@ class BasicSunburst extends Component {
               />
           )}
           </Sunburst>
-          <div className='basic-sunburst-example-path-name'>{pathValue}</div>
+            <div>
+            {clicked ? 'click to unlock selection' : 'click to lock selection'}
+          </div>
           </div>
       )
     }
