@@ -509,7 +509,7 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
           render(){
             return (
                 <main id='main-splash' className='min-vh-100'>
-                {this.props.releases.length !== 0 && <SunburstSegment version={this.props.releases[0].name} sunburst={this.props.releases[0].data}/>}
+                {this.props.releases.length !== 0 && <SunburstSegment version={this.props.releases[0].name} release={this.props.releases[0].data}/>}
                 <div id='branch-statistics'>
                 {/* <BranchList statistics={this.props.statistics} /> */}
                 </div>
@@ -612,11 +612,14 @@ The various visual parts of the app.  For the most part, we want these to be as 
          }
 
        render() {
-         const sunburst = this.props.sunburst.sunburst
+         const sunburst = this.props.release.sunburst
+         const endpoints = this.props.release.endpoints
          return (
              <div id='sunburst-segment' className='bg_washed-red pa4'>
              <h2>{this.props.version} Sunburst Graph</h2>
-             <SunburstChart sunburst={sunburst}/>
+             <SunburstChart
+               sunburst={sunburst}
+               endpoints={endpoints}/>
            </div>
          )
        }
@@ -643,6 +646,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
         import React, { Component } from 'react';
         import { connect } from 'react-redux'
         import { Sunburst, LabelSeries } from 'react-vis'
+        import * as _ from 'lodash'
       #+END_SRC
 ***** Code Layout
       #+NAME: Code Layout
@@ -658,6 +662,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
             <<SB Define componentDidMount>>
             <<Define getKeyPath>>
             <<Define updateData>>
+            <<Define getDetails>>
             render() {
               const {clicked, data, finalValue, pathValue} = this.state
               const updateData = this.updateData
@@ -667,22 +672,22 @@ The various visual parts of the app.  For the most part, we want these to be as 
                   <div className='basic-sunburst-wrapper'>
                   <<SB Click/Unclick Indicator>>
                   <Sunburst
-                className='basic-sunburst-example'
-                hideRootNode
+                  className='basic-sunburst-example'
+                  hideRootNode
                   <<SB onValueMouseOver>>
                   <<SB onValueMouseOut>>
                   onValueClick={()=> this.setState({clicked: !clicked})}
-                style={{
-                  stroke: '#ddd',
-                  strokeOpacity: 0.3,
-                  strokeWidth: '0.5'
-                }}
-                colorType="literal" // a style for react-vis. literal means 'literally the color palette given'
-                getSize={d => d.size} // d refers to data, will need to be set differently for audit log
-                getColor={d => d.color}  // same
-                data={data} // Make sure you're actually providing data to the chart!
-                height={900}
-                width={1000}
+                  style={{
+                    stroke: '#ddd',
+                    strokeOpacity: 0.3,
+                    strokeWidth: '0.5'
+                  }}
+                  colorType="literal" // a style for react-vis. literal means 'literally the color palette given'
+                  getSize={d => d.size} // d refers to data, will need to be set differently for audit log
+                  getColor={d => d.color}  // same
+                  data={data} // Make sure you're actually providing data to the chart!
+                  height={900}
+                  width={1000}
                   >
                   <<SB Display Center finalValue>>
                   </Sunburst>
@@ -796,6 +801,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
             clicked: false
           }
           this.decoratedData = {}
+          this.getDetails = this.getDetails.bind(this)
           this.updateData = this.updateData.bind(this)
           this.getKeyPath = this.getKeyPath.bind(this)
         }
@@ -825,55 +831,79 @@ We have to do some kinda verbose binding of our functions.  The point of this is
       This is a common pattern with react components.  Let the initial state be a fairly solid thing, that then gets set again by actions after its already been mounted.
 
 ***** Define getKeyPath
-      #+NAME: Define getKeyPath
-      #+BEGIN_SRC js :tangle no
-        /**
-         ,* Recursively work backwards from highlighted node to find path of valid nodes
-         ,* @param {Object} node - the current node being considered
-         ,* @returns {Array} - an array of strings describing the key route to teh current node.
-         ,*/
+        #+NAME: Define getKeyPath
+        #+BEGIN_SRC js :tangle no
+          /**
+           ,* Recursively work backwards from highlighted node to find path of valid nodes
+           ,* @param {Object} node - the current node being considered
+           ,* @returns {Array} - an array of strings describing the key route to teh current node.
+           ,*/
 
-        getKeyPath (node) {
-          if (!node.parent) {
-            return ['root']
+          getKeyPath (node) {
+            if (!node.parent) {
+              return ['root']
+            }
+
+            return [(node.data && node.data.name) || node.name].concat(
+              this.getKeyPath(node.parent)
+            )
           }
+        #+END_SRC
 
-          return [(node.data && node.data.name) || node.name].concat(
-            this.getKeyPath(node.parent)
-          )
-        }
-      #+END_SRC
+        This tree map is tracing the path of nodes through the JSON tree, like tracing the url path of a singular webpage within a website.  This is the function that defines this path.
 
-      This tree map is tracing the path of nodes through the JSON tree, like tracing the url path of a singular webpage within a website.  This is the function that defines this path.
+        IT does so recursively.  For each node it asks, 'do you have a parent?' if it doesn't we know it's root and we'll return 'root.'   If it does, we will return the node's name and its' data (or just its name if no data is available).  Then, we'll [[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/concat][concatenate]]  this array to whatever array is returned when we apply the same function to this node's parent.  So we'll end up with an array of strings, where each one is chained as a parent to the one before.
 
-      IT does so recursively.  For each node it asks, 'do you have a parent?' if it doesn't we know it's root and we'll return 'root.'   If it does, we will return the node's name and its' data (or just its name if no data is available).  Then, we'll [[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/concat][concatenate]]  this array to whatever array is returned when we apply the same function to this node's parent.  So we'll end up with an array of strings, where each one is chained as a parent to the one before.
-
-      This is explained well in the code example too, so we keeping it.
+        This is explained well in the code example too, so we keeping it.
 ***** Define updateData
      #+NAME: Define updateData
-      #+BEGIN_SRC js :tangle no
-       updateData (data, keyPath) {
-           if (data.children) {
-             data.children.map(child => this.updateData(child,  keyPath))
+     #+BEGIN_SRC js :tangle no
+       updateData (data, keyPath, parent=false) {
+         if (data.children) {
+           data.children.map(child => this.updateData(child,  keyPath, data))
+         }
+         // add a fill to all the uncolored cells
+         if (!data.color) {
+           var color = colors[data.name]
+           if (!color) {
+             data.style = { fill: 'lightgray' }
            }
-           // add a fill to all the uncolored cells
-           if (!data.color) {
-             var color = colors[data.name]
-             if (!color) {
-               data.style = { fill: 'lightgray' }
-             }
-             data.style = { fill: color}
+           data.style = { fill: color}
+         }
+         if (!keyPath) {
+           return data
+         }
+         if (parent && keyPath.length > 1) {
+           var lastTwoInPath = [keyPath[keyPath.length - 2], keyPath[keyPath.length - 1]]
+           var isActive = (parent, child) => {
+             var parentChild = [parent.name, child.name]
+             var diff = _.difference(parentChild, lastTwoInPath)
+             return diff.length === 0 || parent.length === 1
            }
            data.style = {
              ...data.style,
-             fillOpacity: keyPath && !keyPath[data.name] ? 0.2 : 1
-             // if there's a keypath AND that keypath has a data.name, then 0.2
+             fillOpacity: isActive(parent, data) ? 0.2 : 1
            }
-
-           return data
+         }
+         if (keyPath.length === 1) {
+           data.style = {
+             ...data.style,
+             fillOpacity: (keyPath) ? 0.2 : 1
+           }
+         }
+         return data
        }
       #+END_SRC
+      #+RESULTS: Define updateData
 
+===
+keypath = {
+  stable: true,
+  rbacAuthorization: true
+}
+
+path = ['stable', 'rbacAuthorization']
+===
        This takes care of when the graph is first loaded, and upon mouse hover events.  It essentially adds a fill color to each node if it's part of the path we current have our mouse on.
     It's another recursive one, applying the fill at the very bottom and moving up.
  from the sites definition:
@@ -882,6 +912,27 @@ We have to do some kinda verbose binding of our functions.  The point of this is
     @param {Object|Boolean} keyPath - a map of keys that are in the highlight path
        //if this is false then all nodes are marked as selected.//
     @returns {Object} Updated tree structure
+
+***** Define getDetails
+     #+NAME: Define getDetails
+     #+BEGIN_SRC js :tangle no
+       getDetails (node) {
+         var details = {}
+         if (node.children) {
+           var deets = _.forEach(node.children, (val, key, child) => this.getDetails(node))
+           _.merge(details, deets)
+         }
+         var halves = node.name.split('/')
+         var name = halves[0]
+         var method = halves[1]
+         _.merge(details, this.props.endpoints[name][method])
+         return details
+       }
+      #+END_SRC
+      This is to gather details about the section we are currently hovered upon.  If we are on an endpoint, we can take our details directly from the endpoints entry in api/v1/releases.endpoints.  If we are not on an endpoint, then our information would be a summary of all that hovered area's children.
+
+
+we can use lodash for this, merging each sections details into one big parent section and then returning that one to the details.
 
 ***** Click/Unclick Indicator
       #+NAME: SB Click/Unclick Indicator
@@ -901,14 +952,20 @@ We have to do some kinda verbose binding of our functions.  The point of this is
             return
           }
           const path = getKeyPath(node).reverse()
+          path.shift()
+          // console.log({path, node})
           const pathAsMap = path.reduce((res, row) => {
             res[row] = true
             return res
           }, {})
+          // var details = this.getDetails(node)
+          // console.log({details})
+          // console.log({pathAsMap})
+          //debugger
           this.setState({
             finalValue: `${node.name}`,
             pathValue: path.join(' > '),
-            data: updateData(decoratedData, pathAsMap)
+            data: updateData(decoratedData, path)
           })
         }}
       #+END_SRC
@@ -1510,4 +1567,9 @@ right: $right_session
 # Local Variables:
 # org-confirm-babel-evaluate: nil
 # End:
-* TODO have config.yaml pull from local file instead of from github repo
+* Tasks
+** TODO rearrange data so it starts with stable instead of alpha.  This will make current visualization be  oriented the same as existing vis.
+** NEXT change keypath logic so it only highlights if parent is on keypath.
+** TODO change color of default to be gray, and apply color only if tested.
+
+** TODO have config.yaml pull from local file instead of from github repo

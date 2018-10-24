@@ -20,6 +20,7 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux'
 import { Sunburst, LabelSeries } from 'react-vis'
+import * as _ from 'lodash'
 
 const LABEL_STYLE = {
   fontSize: '20px',
@@ -81,55 +82,78 @@ class BasicSunburst extends Component {
         clicked: false
       }
       this.decoratedData = {}
+      this.getDetails = this.getDetails.bind(this)
       this.updateData = this.updateData.bind(this)
       this.getKeyPath = this.getKeyPath.bind(this)
     }
-
-
+    
+    
     componentDidMount() {
       var sunburst = this.props.sunburst
-      if (Object.keys(sunburst).length !== 0) {
         this.decoratedData = this.updateData(sunburst, false)
         this.setState({data: this.decoratedData})
-      }
     }
     /**
      * Recursively work backwards from highlighted node to find path of valid nodes
      * @param {Object} node - the current node being considered
      * @returns {Array} - an array of strings describing the key route to teh current node.
      */
-
+    
     getKeyPath (node) {
       if (!node.parent) {
         return ['root']
       }
-
+    
       return [(node.data && node.data.name) || node.name].concat(
         this.getKeyPath(node.parent)
       )
     }
-    updateData (data, keyPath) {
-      if (Object.keys(data).length !== 0) {
-        if (data.children) {
-          data.children.map(child => this.updateData(child,  keyPath))
-        })
-        }
-        // add a fill to all the uncolored cells
-        if (!data.color) {
-          var color = colors[data.name]
-          if (!color) {
+    updateData (data, keyPath, parent=false) {
+      if (data.children) {
+        data.children.map(child => this.updateData(child,  keyPath, data))
+      }
+      // add a fill to all the uncolored cells
+      if (!data.color) {
+        var color = colors[data.name]
+        if (!color) {
           data.style = { fill: 'lightgray' }
-          }
-          data.style = { fill: color}
+        }
+        data.style = { fill: color}
+      }
+      if (!keyPath) {
+        return data
+      }
+      if (parent && keyPath.length > 1) {
+        var lastTwoInPath = [keyPath[keyPath.length - 2], keyPath[keyPath.length - 1]]
+        var isActive = (parent, child) => {
+          var parentChild = [parent.name, child.name]
+          var diff = _.difference(parentChild, lastTwoInPath)
+          return diff.length === 0 || parent.length === 1
         }
         data.style = {
           ...data.style,
-          fillOpacity: keyPath && !keyPath[data.name] ? 0.2 : 1
-          // if there's a keypath AND that keypath has a data.name, then 0.2
+          fillOpacity: isActive(parent, data) ? 0.2 : 1
         }
-
-        return data
       }
+      if (keyPath.length === 1) {
+        data.style = {
+          ...data.style,
+          fillOpacity: (keyPath) ? 0.2 : 1
+        }
+      }
+      return data
+    }
+    getDetails (node) {
+      var details = {}
+      if (node.children) {
+        var deets = _.forEach(node.children, (val, key, child) => this.getDetails(node))
+        _.merge(details, deets)
+      }
+      var halves = node.name.split('/')
+      var name = halves[0]
+      var method = halves[1]
+      _.merge(details, this.props.endpoints[name][method])
+      return details
     }
     render() {
       const {clicked, data, finalValue, pathValue} = this.state
@@ -142,22 +166,27 @@ class BasicSunburst extends Component {
             {clicked ? 'click to unlock selection' : 'click to lock selection'}
           </div>
           <Sunburst
-        animation
-        className='basic-sunburst-example'
-        hideRootNode
+          className='basic-sunburst-example'
+          hideRootNode
           onValueMouseOver={(node, dom) => {
             if (clicked) {
               return
             }
             const path = getKeyPath(node).reverse()
+            path.shift()
+            // console.log({path, node})
             const pathAsMap = path.reduce((res, row) => {
               res[row] = true
               return res
             }, {})
+            // var details = this.getDetails(node)
+            // console.log({details})
+            // console.log({pathAsMap})
+            //debugger
             this.setState({
-              finalValue: `tested: ${node.tested}`,
+              finalValue: `${node.name}`,
               pathValue: path.join(' > '),
-              data: updateData(decoratedData, pathAsMap)
+              data: updateData(decoratedData, path)
             })
           }}
           onValueMouseOut={()=>
@@ -170,17 +199,17 @@ class BasicSunburst extends Component {
               })
             }
           onValueClick={()=> this.setState({clicked: !clicked})}
-        style={{
-          stroke: '#ddd',
-          strokeOpacity: 0.3,
-          strokeWidth: '0.5'
-        }}
-        colorType="literal" // a style for react-vis. literal means 'literally the color palette given'
-        getSize={d => d.size} // d refers to data, will need to be set differently for audit log
-        getColor={d => d.color}  // same
-        data={data} // Make sure you're actually providing data to the chart!
-        height={900}
-        width={1000}
+          style={{
+            stroke: '#ddd',
+            strokeOpacity: 0.3,
+            strokeWidth: '0.5'
+          }}
+          colorType="literal" // a style for react-vis. literal means 'literally the color palette given'
+          getSize={d => d.size} // d refers to data, will need to be set differently for audit log
+          getColor={d => d.color}  // same
+          data={data} // Make sure you're actually providing data to the chart!
+          height={900}
+          width={1000}
           >
           {finalValue && (
               <LabelSeries

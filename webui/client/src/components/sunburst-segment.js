@@ -16,11 +16,14 @@ class SunburstSegment extends Component {
   }
 
 render() {
-  const sunburst = this.props.sunburst.sunburst
+  const sunburst = this.props.release.sunburst
+  const endpoints = this.props.release.endpoints
   return (
       <div id='sunburst-segment' className='bg_washed-red pa4'>
       <h2>{this.props.version} Sunburst Graph</h2>
-      <SunburstChart sunburst={sunburst}/>
+      <SunburstChart
+        sunburst={sunburst}
+        endpoints={endpoints}/>
     </div>
   )
 }
