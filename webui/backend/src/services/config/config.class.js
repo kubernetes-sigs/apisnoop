@@ -14,7 +14,6 @@ function populateReleases (app, dir)  {
   var processedAudits = fs.readdirSync(dir)
   for (var i = 0; i < processedAudits.length; i++) {
     var fileName = processedAudits[i]
-    console.log({fileName})
     var data = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
     addEntryToService(app, fileName, data)
   }
