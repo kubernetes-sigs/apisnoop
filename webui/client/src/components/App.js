@@ -3,8 +3,11 @@ import { connect } from 'react-redux'
 
 import { Route } from 'react-router-dom'
 
+import { fetchReleaseNames } from '../actions/releases'
+
 import Header from './header'
 import Footer from './footer'
+import ReleasesList from './releases-list.js'
 import MainPage from '../pages/main-page.js'
 
 class App extends Component {
@@ -20,6 +23,7 @@ class App extends Component {
     return (
       <div id='app'>
         <Header />
+        {this.props.release_names && <ReleasesList releases={this.props.release_names} selected='master' /> }
         {/* <Route exact path='/' component={MainPage} /> */}
         <Footer />
       </div>
@@ -33,4 +37,4 @@ function mapStateToProps (state) {
   }
 }
 
-export default connect(mapStateToProps, {feetchReleaseNames})(App)
+export default connect(mapStateToProps, {fetchReleaseNames})(App)

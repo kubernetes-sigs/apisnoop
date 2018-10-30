@@ -9,6 +9,12 @@ const defaultState = {
 
 export default (state = defaultState, action = {}) => {
   switch (action.type) {
+  case 'FETCH_RELEASE_NAMES_FULFILLED': {
+    return {
+      ...state,
+      release_names: action.payload.data
+    }
+  }
   case 'FETCH_RELEASES_FULFILLED': {
     var masterRelease = action.payload.data.find(data => {
       return data.name.toLowerCase().includes('master')

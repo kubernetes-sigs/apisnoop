@@ -1,7 +1,7 @@
 import React, { Component } from 'react'
 import { connect } from 'react-redux'
 
-import { fetchReleases, fetchReleaseNames } from '../actions/releases-actions.js'
+import { fetchReleases, fetchReleaseNames } from '../actions/releases.js'
 import SunburstSegment from '../components/sunburst-segment'
 
 class MainPage extends Component {
