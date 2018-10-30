@@ -1,7 +1,7 @@
 import React, { Component } from 'react'
 import { connect } from 'react-redux'
 
-import { fetchReleases } from '../actions/releases-actions.js'
+import { fetchReleases, fetchReleaseNames } from '../actions/releases-actions.js'
 import SunburstSegment from '../components/sunburst-segment'
 
 class MainPage extends Component {
@@ -12,22 +12,15 @@ class MainPage extends Component {
       }
   }
   componentDidMount() {
-    this.props.fetchReleases()
+    this.props.fetchReleaseNames()
   }
 
   render(){
     var mainRelease = this.props.main_release
     return (
         <main id='main-splash' className='min-vh-100'>
-        {this.props.releases.length !== 0 && <SunburstSegment version={mainRelease.name} release={mainRelease.data}/>}
-          <h1>This Page Will Have</h1>
-          <h2>Number of Sunbursts: {this.props.releases.length}</h2>
-          <ul>
-          <li>existing sunburst visualization</li>
-          <li>tag cloud as taken from our audits</li>
-          <li>information about sigs when a sig-tag is present.</li>
-          <li>A dropdown for the sunburst to filter by user-agent</li>
-          </ul>
+        {/* {this.props.releases.length !== 0 && <SunburstSegment version={mainRelease.name} release={mainRelease.data}/>}
+          <h2>Number of Sunbursts: {this.props.releases.length}</h2> */}
         </main>
     )
   }
@@ -42,4 +35,4 @@ function mapStateToProps (state) {
   }
 }
 
-export default connect(mapStateToProps, {fetchReleases})(MainPage)
+export default connect(mapStateToProps, {fetchReleases, fetchReleaseNames})(MainPage)

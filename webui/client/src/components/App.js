@@ -1,4 +1,5 @@
 import React, { Component } from 'react'
+import { connect } from 'react-redux'
 
 import { Route } from 'react-router-dom'
 
@@ -7,15 +8,29 @@ import Footer from './footer'
 import MainPage from '../pages/main-page.js'
 
 class App extends Component {
+  constructor (props) {
+    super(props)
+  }
+
+  componentDidMount(){
+    this.props.fetchReleaseNames()
+  }
+
   render(){
     return (
       <div id='app'>
         <Header />
-        <Route exact path='/' component={MainPage} />
+        {/* <Route exact path='/' component={MainPage} /> */}
         <Footer />
       </div>
     )
   }
 }
 
-export default App
+function mapStateToProps (state) {
+  return {
+  release_names: state.releasesStore.release_names
+  }
+}
+
+export default connect(mapStateToProps, {feetchReleaseNames})(App)

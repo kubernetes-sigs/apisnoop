@@ -1,14 +1,24 @@
 import { client } from './'
 
 const url = '/api/v1/releases'
-  export function fetchReleases () {
-    return dispatch => {
-      dispatch({
-        type: 'FETCH_RELEASES',
-        payload: client.get(url)
-      })
-    }
+
+export function fetchReleases () {
+  return dispatch => {
+    dispatch({
+      type: 'FETCH_RELEASES',
+      payload: client.get(url)
+    })
   }
+}
+
+export function fetchReleaseNames () {
+  return dispatch => {
+    dispatch({
+      type: 'FETCH_RELEASE_NAMES',
+      payload: client.get(`${url}?select[]=name`)
+    })
+  }
+}
 
 export function chooseNewMain (name) {
   return dispatch => {
