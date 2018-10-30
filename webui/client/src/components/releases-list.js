@@ -1,6 +1,5 @@
 import React, { Component } from 'react'
 import { NavLink } from 'react-router-dom'
-import { connect } from 'react-redux'
 
 class ReleasesList extends Component {
   constructor (props) {
@@ -17,7 +16,6 @@ class ReleasesList extends Component {
   }
 
   render () {
-    console.log({navReleases: this.props.releases})
     return (
         <div className="ph3 mt4">
         <h1 className="f6 fw6 ttu tracked">Releases</h1>

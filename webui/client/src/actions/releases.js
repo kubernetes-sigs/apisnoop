@@ -11,6 +11,15 @@ export function fetchReleases () {
   }
 }
 
+export function fetchRelease (releaseId) {
+  return dispatch => {
+    dispatch({
+      type: 'FETCH_RELEASE',
+      payload: client.get(`${url}?_id=${releaseId}`)
+    })
+  }
+}
+
 export function fetchReleaseNames () {
   return dispatch => {
     dispatch({

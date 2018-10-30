@@ -11,10 +11,6 @@ import ReleasesList from './releases-list.js'
 import MainPage from '../pages/main-page.js'
 
 class App extends Component {
-  constructor (props) {
-    super(props)
-  }
-
   componentDidMount(){
     this.props.fetchReleaseNames()
   }
@@ -24,7 +20,8 @@ class App extends Component {
       <div id='app'>
         <Header />
         {this.props.release_names && <ReleasesList releases={this.props.release_names} selected='master' /> }
-        {/* <Route exact path='/' component={MainPage} /> */}
+        <Route exact path='/' component={MainPage} />
+        <Route exact path='/:release' component={MainPage} />
         <Footer />
       </div>
     )

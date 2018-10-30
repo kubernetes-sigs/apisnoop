@@ -1,38 +1,45 @@
 import React, { Component } from 'react'
 import { connect } from 'react-redux'
 
-import { fetchReleases, fetchReleaseNames } from '../actions/releases.js'
+import { fetchRelease } from '../actions/releases.js'
 import SunburstSegment from '../components/sunburst-segment'
 
 class MainPage extends Component {
-  constructor(props) {
-      super(props)
-      this.state = {
-        main_release_name: ''
-      }
-  }
-  componentDidMount() {
-    this.props.fetchReleaseNames()
+  constructor (props) {
+    super(props)
+    this.findRelease = this.findRelease.bind(this)
   }
 
+  componentDidUpdate(prevProps) {
+    if (this.props.release_names !== prevProps.release_names) {
+      var release = this.findRelease(this.props.release_names, this.props.location.pathname)
+      this.props.fetchRelease(release._id)
+    }
+  }
+
+  findRelease (release_names, path) {
+    var pathName = path.replace(/\//,'')
+    return release_names.find(release => release.name === pathName)
+  }
+
+
   render(){
-    var mainRelease = this.props.main_release
+    var {active_release, loading} = this.props
     return (
         <main id='main-splash' className='min-vh-100'>
-        {/* {this.props.releases.length !== 0 && <SunburstSegment version={mainRelease.name} release={mainRelease.data}/>}
-          <h2>Number of Sunbursts: {this.props.releases.length}</h2> */}
-        </main>
+        <h1>You made it to the MainPage</h1>
+        {!loading && <SunburstSegment release={active_release.name} sunburst={active_release.sunburst} endpoints={active_release.endpoints}/>}
+      </main>
     )
   }
 }
 
 function mapStateToProps (state) {
   return {
-    releases: state.releasesStore.releases,
-    names: state.releasesStore.names,
-    main_release: state.releasesStore.main_release,
-    userAgents: state.releasesStore.useragents
+    release_names: state.releasesStore.release_names,
+    active_release: state.releasesStore.active_release,
+    loading: state.releasesStore.loading
   }
 }
 
-export default connect(mapStateToProps, {fetchReleases, fetchReleaseNames})(MainPage)
+export default connect(mapStateToProps, {fetchRelease})(MainPage)
