@@ -57,11 +57,22 @@ The frontend will be made with React, Redux, maybe Saga, and Tachyons, and Axios
 *** Why Redux?
    [[https://redux.js.org/][Redux]]  provides one global 'state' for the app, and makes React actually usable.  It will help us push the data appropriately to the right parts and keep things clean and efficient.
 
+    - [ ] Query endpoints by Release.
+*** Reselect
+   [[https://github.com/reduxjs/reselect][Reselect]]  allows us to massage the state into friendly props specific to components.  This helps us keep a philosophy that nothing in the state is repeated, and instead you have //all// state that you can then derive into different selectors based on what you need for the component.
+   #+NAME: install Reselect
+   #+BEGIN_SRC shell :dir ./client :results output list raw
+npm install reselect
+   #+END_SRC
+
+   #+RESULTS: install Reselect
+   - + reselect@4.0.0
+   - added 1 package, removed 15 packages and audited 21041 packages in 14.857s
+   - found 1 low severity vulnerability
+   - run `npm audit fix` to fix them, or `npm audit` for details
+
 *** AXIOS
    [[https://www.npmjs.com/package/axios][Axios]] is a simple tool for handling http requests across different servers.  We'll need this for the client to be portable, and able to call to multiple API's (our backend plus github for example).
-*** Why Saga?
-   [[https://redux-saga.js.org/][Saga]] helps us with api calls and redux.  Redux likes pure clean objects sent to the store right away.  API calls don't work like that, and so Saga does the call and then sends the results to Redux.  It's working as a side effect.
-
 *** Why Tachyons?
     Tachyons is a css framework for writing functional CSS.  It's a much different approach to CSS, but it's one that matches a unix philosophy and is super easy to spin things up and maintain them.  AS we make changes, we don't have to worry that some class hidden deep in some css file causes our whole site to look weird.  Instead, every class has a single purpose, and you add multiple classes to a site to add-upon and combine each of these classes functions (like piping commands together on the command line).  This makes all our components //reusable// too, as we only need to copy over the code and not any stylesheet attached to the code.
 ** BACKEND
@@ -548,49 +559,44 @@ I think this will end up that we use MainPage multiple times, feeding in props a
       #+BEGIN_SRC js
         import React, { Component } from 'react'
         import { connect } from 'react-redux'
+        import { createStructuredSelector } from 'reselect'
 
-        import { fetchRelease } from '../actions/releases.js'
+        import { fetchEndpoints } from '../actions/endpoints'
+        import { selectEndpointsById, selectEndpointsByReleaseAndNameAndMethod, selectSunburstByRelease, selectIsSunburstReady } from '../selectors'
+
         import SunburstSegment from '../components/sunburst-segment'
 
         class MainPage extends Component {
           constructor (props) {
             super(props)
-            this.findRelease = this.findRelease.bind(this)
           }
 
           componentDidUpdate(prevProps) {
-            if (this.props.release_names !== prevProps.release_names) {
-              var release = this.findRelease(this.props.release_names, this.props.location.pathname)
-              this.props.fetchRelease(release._id)
-            }
           }
-
-          findRelease (release_names, path) {
-            var pathName = path.replace(/\//,'')
-            return release_names.find(release => release.name === pathName)
-          }
-
 
           render(){
-            var {active_release, loading} = this.props
             return (
                 <main id='main-splash' className='min-vh-100'>
                 <h1>You made it to the MainPage</h1>
-                {!loading && <SunburstSegment release={active_release.name} sunburst={active_release.sunburst} endpoints={active_release.endpoints}/>}
+                <h2>You are doing a good job.</h2>
+              {this.props.isSunburstReady && <SunburstSegment
+                  sunburst={this.props.sunburstByRelease['sig-release-1.12']}
+                />
+              }
               </main>
             )
           }
         }
 
-        function mapStateToProps (state) {
-          return {
-            release_names: state.releasesStore.release_names,
-            active_release: state.releasesStore.active_release,
-            loading: state.releasesStore.loading
-          }
-        }
-
-        export default connect(mapStateToProps, {fetchRelease})(MainPage)
+        export default connect(
+          createStructuredSelector({
+            endpointsById: selectEndpointsById,
+            endpointsByReleaseAndNameAndMethod: selectEndpointsByReleaseAndNameAndMethod,
+            sunburstByRelease: selectSunburstByRelease,
+            isSunburstReady: selectIsSunburstReady
+          }),
+          {fetchEndpoints}
+        ) (MainPage)
       #+END_SRC
 
       #+RESULTS:
@@ -664,11 +670,9 @@ The various visual parts of the app.  For the most part, we want these to be as 
          var {endpoints, release, sunburst} = this.props
          return (
              <div id='sunburst-segment' className='bg_washed-red pa4'>
-             <h2>{release}</h2>
+             <h2>NAME OF RELEASE SHOULD GO HERE</h2>
              <SunburstChart
-               release={release}
                sunburst={sunburst}
-               endpoints={endpoints}
              />
            </div>
          )
@@ -849,7 +853,6 @@ The various visual parts of the app.  For the most part, we want these to be as 
             clicked: false
           }
           this.decoratedData = {}
-          this.getDetails = this.getDetails.bind(this)
           this.updateData = this.updateData.bind(this)
           this.getKeyPath = this.getKeyPath.bind(this)
         }
@@ -868,11 +871,10 @@ We have to do some kinda verbose binding of our functions.  The point of this is
       #+NAME: SB Define componentDidMount
       #+BEGIN_SRC js :tangle no
         componentDidMount() {
-          var sunburst = this.props.sunburst
-            this.decoratedData = this.updateData(sunburst, false)
+            this.decoratedData = this.updateData(this.props.sunburst, false)
             this.setState({
               data: this.decoratedData,
-              finalValue: this.props.release
+              finalValue: ''
             })
         }
       #+END_SRC
@@ -958,27 +960,6 @@ path = ['stable', 'rbacAuthorization']
     @param {Object|Boolean} keyPath - a map of keys that are in the highlight path
        //if this is false then all nodes are marked as selected.//
     @returns {Object} Updated tree structure
-
-***** Define getDetails
-     #+NAME: Define getDetails
-     #+BEGIN_SRC js :tangle no
-       getDetails (node) {
-         var details = {}
-         if (node.children) {
-           var deets = _.forEach(node.children, (val, key, child) => this.getDetails(node))
-           _.merge(details, deets)
-         }
-         var halves = node.name.split('/')
-         var name = halves[0]
-         var method = halves[1]
-         _.merge(details, this.props.endpoints[name][method])
-         return details
-       }
-      #+END_SRC
-      This is to gather details about the section we are currently hovered upon.  If we are on an endpoint, we can take our details directly from the endpoints entry in api/v1/releases.endpoints.  If we are not on an endpoint, then our information would be a summary of all that hovered area's children.
-
-
-we can use lodash for this, merging each sections details into one big parent section and then returning that one to the details.
 
 ***** Click/Unclick Indicator
       #+NAME: SB Click/Unclick Indicator
@@ -1418,7 +1399,8 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
 #+BEGIN_SRC js
   const initialState = {
     byId: {},
-    loading: false,
+    isLoading: false,
+    hasLoaded: false,
     errors: {}
   }
 #+END_SRC
@@ -1432,7 +1414,7 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
          case 'FETCH_ENDPOINTS_PENDING': {
            return {
              ...state,
-             loading: true
+             isLoading: true
            }
          }
          case 'FETCH_ENDPOINTS_FULFILLED': {
@@ -1442,18 +1424,14 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
                ...state.byId,
                ...keyBy(action.payload.data, '_id')
              },
-             loading: false
+             isLoading: false,
+             hasLoaded: true
            }
          }
          default:
            return state;
          }
        }
-
-
-
-
-
      #+END_SRC
 
      #+RESULTS: The Releases Reducer
@@ -1504,6 +1482,127 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
      #+END_SRC
 
      #+RESULTS: The Releases Reducer
+** Selectors
+*** index.js
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/selectors/index.js
+    :END:
+   #+NAME: Selectors index.js
+   #+BEGIN_SRC js
+     export * from './endpoints'
+     export * from './charts'
+
+   #+END_SRC
+*** Endpoints Selector
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/selectors/endpoints.js
+    :END:
+    #+NAME: Endpoints Selector
+    #+BEGIN_SRC js
+      import { createSelector } from 'reselect'
+      import { groupBy, keyBy, mapValues } from 'lodash'
+
+      export function selectEndpointsById (state) {
+        return state.endpoints.byId
+      }
+
+      export const selectEndpointsByReleaseAndNameAndMethod = createSelector(
+        selectEndpointsById,
+        (endpointsById) => {
+          var endpointsByRelease = groupBy(endpointsById, 'release')
+          return mapValues(endpointsByRelease, endpointsInRelease => {
+            var endpointsByName = groupBy(endpointsInRelease, 'name')
+            return mapValues(endpointsByName, endpointsInName => {
+              return keyBy(endpointsInName, 'method')
+            })
+          })
+        }
+      )
+
+      export const selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod = createSelector(
+        selectEndpointsById,
+        (endpointsById) => {
+          var endpointsByRelease = groupBy(endpointsById, 'release')
+          return mapValues(endpointsByRelease, endpointsInRelease => {
+            var endpointsByLevel = groupBy(endpointsInRelease, 'level')
+            return mapValues(endpointsByLevel, endpointsInLevel => {
+              var endpointsByCategory = groupBy(endpointsInLevel, 'category')
+              return mapValues(endpointsByCategory, endpointsInCategory => {
+                var endpointsByName = groupBy(endpointsInCategory, 'name')
+                return mapValues(endpointsByName, endpointsInName => {
+                  return keyBy(endpointsInName, 'method')
+                })
+              })
+            })
+          })
+        }
+      )
+
+      export const selectIsEndpointsReady = (state) => {
+        return state.endpoints.hasLoaded
+      }
+    #+END_SRC
+
+Endpoints are unique by Release, Name, and Method.
+
+*** Chart Selector
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/selectors/charts.js
+    :END:
+    #+NAME: Chart Selector
+    #+BEGIN_SRC js
+      import { createSelector } from 'reselect'
+      import { forEach, map, mapValues, reduce, values } from 'lodash'
+
+      import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod, selectIsEndpointsReady } from './endpoints'
+
+      export const selectSunburstByRelease = createSelector(
+        selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
+        (endpointsByReleaseAndLevelAndCategoryAndNameAndMethod) => {
+          return mapValues(endpointsByReleaseAndLevelAndCategoryAndNameAndMethod, (endpointsByLevelAndCategoryAndNameAndMethod, release) => {
+            return {
+              name: 'root',
+              children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
+                return {
+                  name: level,
+                  children: map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
+                    return {
+                      name: category,
+                      children: values(reduce(
+                        endpointsByNameAndMethod,
+                        (sofar, endpointsByMethod, name) => {
+                          forEach(endpointsByMethod, (endpoint, method) => {
+                            var { isTested } = endpoint
+                            var color = 'green'
+                            var path = isTested ? `${name}/${method}` : 'untested'
+                            var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
+                            sofar[path] = {
+                              color,
+                              size,
+                              name,
+                              method,
+                              isTested
+                            }
+                          })
+                          return sofar
+                        },
+                        {}
+                      ))
+                    }
+                  })
+                }
+              })
+            }
+          })
+        }
+      )
+
+      export const selectIsSunburstReady = selectIsEndpointsReady
+    #+END_SRC
+
+    #+RESULTS: Chart Selector
+
+Endpoints are unique by Release, Name, and Method.
 
 * Process
 ** Working with d3
@@ -1596,11 +1695,12 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
 ** Pairing With Mikey
 *** Background
     I went through a pairing Session with [[https://dinosaur.is][Mikey]], to help with the overall architecture and code logic of the webui
-*** [1/4] Tasks For Refactoring our Data and understanding of it.
+*** [2/5] Tasks For Refactoring our Data and understanding of it.
     - [X]  Convert JSON dump to New Flat Database
-    - [ ] Practice Converting flat database to Sunburst Data structure.
+    - [X] Hookup react/redux to query endpoints.
     - [ ] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
-    - [ ] Hookup react/redux to query endpoints by release.
+    - [ ] Practice Converting flat database to Sunburst Data structure.
+    - [ ] Query endpoints by Release.
 *** [0/4] Future Tasks
     - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that
     - [ ] Hover over Part of Sunburst shows relevant rays highlighted.

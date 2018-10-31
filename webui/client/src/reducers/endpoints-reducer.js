@@ -1,6 +1,7 @@
 const initialState = {
   byId: {},
-  loading: false,
+  isLoading: false,
+  hasLoaded: false,
   errors: {}
 }
 
@@ -10,7 +11,7 @@ export default (state = initialState, action = {}) => {
   case 'FETCH_ENDPOINTS_PENDING': {
     return {
       ...state,
-      loading: true
+      isLoading: true
     }
   }
   case 'FETCH_ENDPOINTS_FULFILLED': {
@@ -20,7 +21,8 @@ export default (state = initialState, action = {}) => {
         ...state.byId,
         ...keyBy(action.payload.data, '_id')
       },
-      loading: false
+      isLoading: false,
+      hasLoaded: true
     }
   }
   default:

@@ -82,7 +82,6 @@ class BasicSunburst extends Component {
         clicked: false
       }
       this.decoratedData = {}
-      this.getDetails = this.getDetails.bind(this)
       this.updateData = this.updateData.bind(this)
       this.getKeyPath = this.getKeyPath.bind(this)
     }
@@ -93,7 +92,7 @@ class BasicSunburst extends Component {
         this.decoratedData = this.updateData(sunburst, false)
         this.setState({
           data: this.decoratedData,
-          finalValue: this.props.release
+          finalValue: ''
         })
     }
     /**
@@ -141,18 +140,7 @@ class BasicSunburst extends Component {
       }
       return data
     }
-    getDetails (node) {
-      var details = {}
-      if (node.children) {
-        var deets = _.forEach(node.children, (val, key, child) => this.getDetails(node))
-        _.merge(details, deets)
-      }
-      var halves = node.name.split('/')
-      var name = halves[0]
-      var method = halves[1]
-      _.merge(details, this.props.endpoints[name][method])
-      return details
-    }
+    
     render() {
       const {clicked, data, finalValue, pathValue} = this.state
       const updateData = this.updateData

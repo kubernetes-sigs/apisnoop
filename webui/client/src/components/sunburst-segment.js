@@ -7,11 +7,9 @@ render() {
   var {endpoints, release, sunburst} = this.props
   return (
       <div id='sunburst-segment' className='bg_washed-red pa4'>
-      <h2>{release}</h2>
+      <h2>NAME OF RELEASE SHOULD GO HERE</h2>
       <SunburstChart
-        release={release}
         sunburst={sunburst}
-        endpoints={endpoints}
       />
     </div>
   )
