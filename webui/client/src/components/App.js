@@ -3,7 +3,8 @@ import { connect } from 'react-redux'
 
 import { Route } from 'react-router-dom'
 
-import { fetchReleaseNames } from '../actions/releases'
+import { fetchReleaseNames} from '../actions/releases'
+import { fetchEndpoints } from '../actions/endpoints'
 
 import Header from './header'
 import Footer from './footer'
@@ -13,6 +14,7 @@ import MainPage from '../pages/main-page.js'
 class App extends Component {
   componentDidMount(){
     this.props.fetchReleaseNames()
+    this.props.fetchEndpoints()
   }
 
   render(){
@@ -34,4 +36,4 @@ function mapStateToProps (state) {
   }
 }
 
-export default connect(mapStateToProps, {fetchReleaseNames})(App)
+export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints})(App)

@@ -133,6 +133,9 @@ We generate a service using feathers cli.  This creates a number of files for us
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
     :END:
+   The config is run whenever the server starts up, and takes JSON files placed in ~data/processed-audits~ and generates paths from the data held within.
+
+   We are in a midpoint now from the original style, where we created a single path with many nests, to a new FLAT style (that is generally more preferred, and more [[https://zen-of-python.info/][zen]]).  ~api/v1/endpoints~ is the beginning of this flat style.  Here, we generate new endpoints from all the different files, but each one has a release, method, and name.  Then, when we want to see only stuff for 1.12, we query our endpoint access for those with a release of 1.12 (instead of finding the 1.12 entry and navigating through its various nests to get the endpoints).
 **** Overall Layout
      #+NAME: config.class.js layout
      #+BEGIN_SRC js
@@ -478,10 +481,12 @@ We are doing this because we want to have navigation links for the different rel
  #+END_SRC
 
 We will grab our release names from the database and use that to build out our navigation links dynamically.
+
 #+NAME: import fetchReleaseNames
 #+BEGIN_SRC js
 
-  import { fetchReleaseNames } from '../actions/releases'
+  import { fetchReleaseNames} from '../actions/releases'
+  import { fetchEndpoints } from '../actions/endpoints'
 #+END_SRC
 
  Lastly, we bring in our different pages, which we can navigate between using a nice lil' tab and navlinks..
@@ -502,6 +507,7 @@ I think this will end up that we use MainPage multiple times, feeding in props a
       class App extends Component {
         componentDidMount(){
           this.props.fetchReleaseNames()
+          this.props.fetchEndpoints()
         }
 
         render(){
@@ -522,7 +528,7 @@ I think this will end up that we use MainPage multiple times, feeding in props a
         }
       }
 
-      export default connect(mapStateToProps, {fetchReleaseNames})(App)
+      export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints})(App)
     #+END_SRC
 
 ***** the Routes
@@ -1348,6 +1354,34 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
           }
         }
       #+END_SRC
+*** Endpoint Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/endpoints.js
+    :END:
+**** Requirements
+    #+NAME: Requirements
+    #+BEGIN_SRC js
+      import { client } from './'
+
+    #+END_SRC
+**** Our URL Variables
+     #+NAME: URL Variable
+     #+BEGIN_SRC js
+      const url = '/api/v1/endpoints'
+     #+END_SRC
+
+**** Fetching Endpoints
+      #+NAME: Fetch Endpoints
+      #+BEGIN_SRC js
+        export function fetchEndpoints () {
+          return dispatch => {
+            dispatch({
+              type: 'FETCH_ENDPOINTS',
+              payload: client.get(url)
+            })
+          }
+        }
+      #+END_SRC
 ** Reducers
 *** index.js
     :PROPERTIES:
@@ -1360,18 +1394,69 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
       import { combineReducers } from 'redux'
 
       import ReleasesReducer from './releases-reducer'
+      import EndpointsReducer from './endpoints-reducer'
     #+END_SRC
 
     #+NAME: Reducers
     #+BEGIN_SRC js
       const reducers = {
         releasesStore: ReleasesReducer,
+        endpoints: EndpointsReducer
       }
 
       const rootReducer = combineReducers(reducers)
 
       export default rootReducer
     #+END_SRC
+*** Endpoints Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/endpoints-reducer.js
+    :END:
+**** Initial State
+    We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with data from our server.  In either case, we are giving our components a structure for what they can expect to display, and then the data to display.
+#+NAME: Releases Initial State
+#+BEGIN_SRC js
+  const initialState = {
+    byId: {},
+    loading: false,
+    errors: {}
+  }
+#+END_SRC
+
+**** The Reducer
+     #+NAME: The Endpoints Reducer
+     #+BEGIN_SRC js
+       const { keyBy } = require('lodash')
+       export default (state = initialState, action = {}) => {
+         switch(action.type) {
+         case 'FETCH_ENDPOINTS_PENDING': {
+           return {
+             ...state,
+             loading: true
+           }
+         }
+         case 'FETCH_ENDPOINTS_FULFILLED': {
+           return {
+             ...state,
+             byId: {
+               ...state.byId,
+               ...keyBy(action.payload.data, '_id')
+             },
+             loading: false
+           }
+         }
+         default:
+           return state;
+         }
+       }
+
+
+
+
+
+     #+END_SRC
+
+     #+RESULTS: The Releases Reducer
 *** Releases Reducer
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/reducers/releases-reducer.js
@@ -1511,8 +1596,8 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
 ** Pairing With Mikey
 *** Background
     I went through a pairing Session with [[https://dinosaur.is][Mikey]], to help with the overall architecture and code logic of the webui
-*** [0/4] Tasks For Refactoring our Data and understanding of it.
-    - [ ]  Convert JSON dump to New Flat Database
+*** [1/4] Tasks For Refactoring our Data and understanding of it.
+    - [X]  Convert JSON dump to New Flat Database
     - [ ] Practice Converting flat database to Sunburst Data structure.
     - [ ] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
     - [ ] Hookup react/redux to query endpoints by release.
