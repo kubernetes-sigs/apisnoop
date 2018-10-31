@@ -1,10 +1,10 @@
 import React, { Component } from 'react'
 import { connect } from 'react-redux'
-
 import { Route } from 'react-router-dom'
 
 import { fetchReleaseNames} from '../actions/releases'
 import { fetchEndpoints } from '../actions/endpoints'
+import { changeActiveRoute } from '../actions/routes'
 
 import Header from './header'
 import Footer from './footer'
@@ -21,9 +21,14 @@ class App extends Component {
     return (
       <div id='app'>
         <Header />
-        {this.props.release_names && <ReleasesList releases={this.props.release_names} selected='master' /> }
-        <Route exact path='/' component={MainPage} />
-        <Route exact path='/:release' component={MainPage} />
+        {this.props.release_names &&
+         <ReleasesList
+           releases={this.props.release_names}
+           selected='master'
+           changeActiveRoute={this.props.changeActiveRoute}
+         /> }
+  <Route exact path='/' component={MainPage} />
+  <Route exact path='/:release' component={MainPage} />
         <Footer />
       </div>
     )
@@ -36,4 +41,4 @@ function mapStateToProps (state) {
   }
 }
 
-export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints})(App)
+export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute})(App)

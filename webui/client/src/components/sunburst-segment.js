@@ -3,17 +3,18 @@ import SunburstChart from './sunburst-chart'
 
 
 class SunburstSegment extends Component {
-render() {
-  var {endpoints, release, sunburst} = this.props
-  return (
-      <div id='sunburst-segment' className='bg_washed-red pa4'>
-      <h2>NAME OF RELEASE SHOULD GO HERE</h2>
-      <SunburstChart
-        sunburst={sunburst}
-      />
-    </div>
-  )
-}
+  render() {
+    var {sunburst, focusChart} = this.props
+    return (
+        <div id='sunburst-segment' className='bg_washed-red pa4'>
+        <h2>{this.props.release}</h2>
+        <SunburstChart
+          sunburst={sunburst}
+          focusChart={focusChart}
+        />
+        </div>
+    )
+  }
 }
 
 export default SunburstSegment

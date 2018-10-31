@@ -1,11 +1,10 @@
-const defaultState = {
+const initialState = {
   release_names: [],
   active_release: {},
   loading: true,
   errors: {}
 }
-
-export default (state = defaultState, action = {}) => {
+export default (state = initialState, action = {}) => {
   switch (action.type) {
   case 'FETCH_RELEASE_NAMES_FULFILLED': {
     return {

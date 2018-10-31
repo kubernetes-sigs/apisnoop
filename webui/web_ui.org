@@ -474,40 +474,31 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
 
     This is a 'single-page-app' which means: to the server, we are only showing a single html page, the index.html.  Within this page we have javascript code running that renders different views dynamically, based on what the site visitor wants to see.  We can give these views the format of a URL, so it appears like we are going to different pages within apisnoop (and so we can share specific urls to others), but it's all really a continually transforming bit of Javascript.
 ***** Requirements
- I'll dive a bit into the import/requirements section as it sets up a style you see in a lot of React apps.
-
- We'll start by bringing in React and its Component class-we inherit all the features of this class when we render our own components, which gives them all the power we may not see at first.  We also bring in connect, which will connect our react ui to the front-end's state; which lets us dynamically change what's displayed based on the data being fed it.
-
-We are doing this because we want to have navigation links for the different releases, that will show a sunburst graph per release.  We don't know what these release_names will be though, and so we'll fetch them from the db and dynamically build our navlinks from them.
    #+NAME: Import React
    #+BEGIN_SRC js
      import React, { Component } from 'react'
      import { connect } from 'react-redux'
+     import { Route } from 'react-router-dom'
+
+     import { fetchReleaseNames} from '../actions/releases'
+     import { fetchEndpoints } from '../actions/endpoints'
+     import { changeActiveRoute } from '../actions/routes'
+
+     import Header from './header'
+     import Footer from './footer'
+     import ReleasesList from './releases-list.js'
+     import MainPage from '../pages/main-page.js'
    #+END_SRC
+ We'll start by bringing in React and its Component class-we inherit all the features of this class when we render our own components, which gives them all the power we may not see at first.  We also bring in connect, which will connect our react ui to the front-end's state; which lets us dynamically change what's displayed based on the data being fed it.
+
+We are doing this because we want to have navigation links for the different releases, that will show a sunburst graph per release.  We don't know what these release_names will be though, and so we'll fetch them from the db and dynamically build our navlinks from them.
 
  Next, we'll bring in react's smart navigation.  These are what make the app appear to be multiple pages.
- #+NAME: import routing and navigation
- #+BEGIN_SRC js
-   import { Route } from 'react-router-dom'
- #+END_SRC
 
 We will grab our release names from the database and use that to build out our navigation links dynamically.
 
-#+NAME: import fetchReleaseNames
-#+BEGIN_SRC js
-
-  import { fetchReleaseNames} from '../actions/releases'
-  import { fetchEndpoints } from '../actions/endpoints'
-#+END_SRC
 
  Lastly, we bring in our different pages, which we can navigate between using a nice lil' tab and navlinks..
- #+NAME: import components
- #+BEGIN_SRC js
-   import Header from './header'
-   import Footer from './footer'
-   import ReleasesList from './releases-list.js'
-   import MainPage from '../pages/main-page.js'
- #+END_SRC
 
 I think this will end up that we use MainPage multiple times, feeding in props as url params.  So the main page will always show a sunburst graph, and a list of tests to click into, but what data is being fed that is based on the route we are going on.
 
@@ -525,8 +516,14 @@ I think this will end up that we use MainPage multiple times, feeding in props a
           return (
             <div id='app'>
               <Header />
-              {this.props.release_names && <ReleasesList releases={this.props.release_names} selected='master' /> }
-              <<Routes>>
+              {this.props.release_names &&
+               <ReleasesList
+                 releases={this.props.release_names}
+                 selected='master'
+                 changeActiveRoute={this.props.changeActiveRoute}
+               /> }
+        <Route exact path='/' component={MainPage} />
+        <Route exact path='/:release' component={MainPage} />
               <Footer />
             </div>
           )
@@ -539,16 +536,9 @@ I think this will end up that we use MainPage multiple times, feeding in props a
         }
       }
 
-      export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints})(App)
+      export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute})(App)
     #+END_SRC
 
-***** the Routes
-    The routes listen to the paths chosen by nav and routes to the correct component.  So the components don't show unless the url path matches their route.
-    #+NAME: Routes
-    #+BEGIN_SRC js :tangle no
-        <Route exact path='/' component={MainPage} />
-        <Route exact path='/:release' component={MainPage} />
-    #+END_SRC
 ** Pages
    We are following a convention where, if a component acts as its own route and holds many different components within it, then it's called a page.  Think of navigating between different pages in a site, and each one is made up of several diff. section.  It is the same here, just that we are navigating between JS dispalying different Page components.
 *** MainPage
@@ -562,27 +552,35 @@ I think this will end up that we use MainPage multiple times, feeding in props a
         import { createStructuredSelector } from 'reselect'
 
         import { fetchEndpoints } from '../actions/endpoints'
-        import { selectEndpointsById, selectEndpointsByReleaseAndNameAndMethod, selectSunburstByRelease, selectIsSunburstReady } from '../selectors'
+        import { focusChart } from '../actions/charts'
+        import {
+          selectActiveRoute,
+          selectEndpointsById,
+          selectEndpointsByReleaseAndNameAndMethod,
+          selectRouteChange,
+          selectIsSunburstReady,
+          selectSunburstByReleaseWithSortedLevel
+        } from '../selectors'
 
         import SunburstSegment from '../components/sunburst-segment'
 
         class MainPage extends Component {
-          constructor (props) {
-            super(props)
-          }
-
-          componentDidUpdate(prevProps) {
-          }
-
           render(){
+          const { activeRoute, routeChange, sunburstByRelease } = this.props
+          const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
+
             return (
                 <main id='main-splash' className='min-vh-100'>
-                <h1>You made it to the MainPage</h1>
                 <h2>You are doing a good job.</h2>
-              {this.props.isSunburstReady && <SunburstSegment
-                  sunburst={this.props.sunburstByRelease['sig-release-1.12']}
-                />
-              }
+                {this.props.isSunburstReady && <SunburstSegment
+                 sunburst={{
+                   data: routeChange ? sunburstByRelease.dataByRelease[activeRoute] : sunburstByRelease.dataByRelease[releaseBasedOnRoute],
+                   focusedLabel: this.props.sunburstByRelease.focusedLabel
+                 }}
+                 focusChart={this.props.focusChart}
+                 release= {activeRoute}
+                 />
+                }
               </main>
             )
           }
@@ -590,12 +588,15 @@ I think this will end up that we use MainPage multiple times, feeding in props a
 
         export default connect(
           createStructuredSelector({
+            activeRoute: selectActiveRoute,
             endpointsById: selectEndpointsById,
             endpointsByReleaseAndNameAndMethod: selectEndpointsByReleaseAndNameAndMethod,
-            sunburstByRelease: selectSunburstByRelease,
-            isSunburstReady: selectIsSunburstReady
+            isSunburstReady: selectIsSunburstReady,
+            routeChange: selectRouteChange,
+            sunburstByRelease: selectSunburstByReleaseWithSortedLevel,
+
           }),
-          {fetchEndpoints}
+          {fetchEndpoints, focusChart}
         ) (MainPage)
       #+END_SRC
 
@@ -666,369 +667,71 @@ The various visual parts of the app.  For the most part, we want these to be as 
 
 
        class SunburstSegment extends Component {
-       render() {
-         var {endpoints, release, sunburst} = this.props
-         return (
-             <div id='sunburst-segment' className='bg_washed-red pa4'>
-             <h2>NAME OF RELEASE SHOULD GO HERE</h2>
-             <SunburstChart
-               sunburst={sunburst}
-             />
-           </div>
-         )
-       }
+         render() {
+           var {sunburst, focusChart} = this.props
+           return (
+               <div id='sunburst-segment' className='bg_washed-red pa4'>
+               <h2>{this.props.release}</h2>
+               <SunburstChart
+                 sunburst={sunburst}
+                 focusChart={focusChart}
+               />
+               </div>
+           )
+         }
        }
 
        export default SunburstSegment
      #+END_SRC
-**** SunburstChart
+**** Sunburst Chart
      :PROPERTIES:
      :header-args: :noweb yes :tangle ./client/src/components/sunburst-chart.js
      :END:
-***** Introduction
-     We will be using react-vis' basic sunburst example as our guide for this, as it is the closest to what we want.  Our goal is to add in zoom animation and percentages in the center area, but for now let's just get this loading.
-
-    Use code layout to see how it all fits, then check out each thing in specifics in the headers below.
-***** Import Modules
-      The example uses extended discrete color range and label series, and both are referencing something with the files themselves.  I believe that we can just use labelseries since we are bringing in sunburst from react-vis, and the theme was just to help make the fill, which we can use with other colors instead.
-
-     We'll bring in the flareData and Sample Data to try switching between the two.
-      #+NAME: Import Modules
-      #+BEGIN_SRC js :tangle no
-        import React, { Component } from 'react';
-        import { connect } from 'react-redux'
-        import { Sunburst, LabelSeries } from 'react-vis'
-        import * as _ from 'lodash'
-      #+END_SRC
-***** Code Layout
-      #+NAME: Code Layout
-      #+BEGIN_SRC js
-        <<License>>
-        <<Import Modules>>
-
-        <<Set Styling for Label>>
-        <<Mapping Of Step Names To Colors>>
-
-        class BasicSunburst extends Component {
-            <<SB Setup Constructor>>
-            <<SB Define componentDidMount>>
-            <<Define getKeyPath>>
-            <<Define updateData>>
-            <<Define getDetails>>
-            render() {
-              const {clicked, data, finalValue, pathValue} = this.state
-              const updateData = this.updateData
-              const decoratedData = this.decoratedData
-              const getKeyPath = this.getKeyPath
-              return (
-                  <div className='basic-sunburst-wrapper'>
-                  <div className='basic-sunburst-example-path-name h2'>{pathValue}</div>
-                  <Sunburst
-                  className='basic-sunburst-example'
-                  hideRootNode
-                  <<SB onValueMouseOver>>
-                  <<SB onValueMouseOut>>
-                  onValueClick={()=> this.setState({clicked: !clicked})}
-                  style={{
-                    stroke: '#ddd',
-                    strokeOpacity: 0.3,
-                    strokeWidth: '0.5'
-                  }}
-                  colorType="literal" // a style for react-vis. literal means 'literally the color palette given'
-                  getSize={d => d.size} // d refers to data, will need to be set differently for audit log
-                  getColor={d => d.color}  // same
-                  data={data} // Make sure you're actually providing data to the chart!
-                  height={900}
-                  width={1000}
-                  >
-                  <<SB Display Center finalValue>>
-                  </Sunburst>
-                  <<SB Click/Unclick Indicator>>
-                  </div>
-              )
-            }
-        }
-
-        function mapStateToProps (state) {
-          return {
-          }
-        }
-
-        export default connect(mapStateToProps)(BasicSunburst)
-      #+END_SRC
-
-      #+RESULTS: Code Layout
-***** Mapping Of Step Names To Colors
-      #+NAME: Mapping Of Step Names To Colors
-      #+BEGIN_SRC js :tangle no
-        var colors = {
-          'alpha': '#e6194b',
-          'beta': '#0082c8',
-          'stable': '#3cb44b',
-          'unused': '#ffffff'
-        }
-
-        var categories = [
-          "admissionregistration",
-          "apiextensions",
-          "apiregistration",
-          "apis",
-          "apps",
-          "authentication",
-          "authorization",
-          "autoscaling",
-          "batch",
-          "certificates",
-          "core",
-          "events",
-          "extensions",
-          "logs",
-          "networking",
-          "policy",
-          "rbacAuthorization",
-          "scheduling",
-          "settings",
-          "storage",
-          "version"
-        ]
-
-        var more_colors = [
-          "#b71c1c", "#880E4F", "#4A148C", "#311B92", "#1A237E", "#0D47A1",
-          "#01579B", "#006064", "#004D40", "#1B5E20", "#33691E", "#827717",
-          "#F57F17", "#FF6F00", "#E65100", "#BF360C", "#f44336", "#E91E63",
-          "#9C27B0", "#673AB7", "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4",
-          "#009688", "#4CAF50", "#8BC34A", "#CDDC39", "#FFEB3B", "#FFC107",
-          "#FF9800", "#FF5722"
-        ]
-
-        for (var catidx = 0; catidx < categories.length; catidx++) {
-          var category = categories[catidx]
-          colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
-        }
-
-      #+END_SRC
-
-***** License
-      #+NAME: License
-      #+BEGIN_SRC js :tangle no
-        // Copyright (c) 2016 - 2017 Uber Technologies, Inc.
-        //
-        // Permission is hereby granted, free of charge, to any person obtaining a copy
-        // of this software and associated documentation files (the "Software"), to deal
-        // in the Software without restriction, including without limitation the rights
-        // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-        // copies of the Software, and to permit persons to whom the Software is
-        // furnished to do so, subject to the following conditions:
-        //
-        // The above copyright notice and this permission notice shall be included in
-        // all copies or substantial portions of the Software.
-        //
-        // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-        // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-        // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-        // AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-        // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-        // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-        // THE SOFTWARE.
-      #+END_SRC
-***** Set Styling For Label
-      This will be used for our LabelSeries later, defining how it should look.
-      #+NAME: Set Styling for Label
-      #+BEGIN_SRC js :tangle no
-        const LABEL_STYLE = {
-          fontSize: '20px',
-          textAnchor: 'middle'
-        }
-      #+END_SRC
-      It's written in the JSX style, so it's equal to a div having a 'style='font-size: 8px;', but in reactLand you can't just have the equal things be equal...we gotta do this camelCase stuff.
-***** Setup Constructor
-      #+NAME: SB Setup Constructor
-      #+BEGIN_SRC js :tangle no
-        constructor(props) {
-          super(props)
-          this.state = {
-            pathValue: false,
-            data: {},
-            finalValue: 'Sunburst',
-            clicked: false
-          }
-          this.decoratedData = {}
-          this.updateData = this.updateData.bind(this)
-          this.getKeyPath = this.getKeyPath.bind(this)
-        }
+     We are passing a single prop to this, sunburst, which was created by our selector.  It is divided in {name, children} with the organization of level > category > name + method.  For the name+method there is an additional thing.
 
 
-      #+END_SRC
+     #+NAME: sunburst-chart.js
+     #+BEGIN_SRC js
+       import React from 'react'
+       import { Sunburst } from 'react-vis'
+       import { get } from 'lodash'
 
-      The constructor sets up the component-specific state; which helps us contain all the function and data within the component  itself.  So we set up the state for the component with the following values:
-- pathValue :: When you hover over a node, shows the path you took to get to that node.  Will end up being the array created by getKeyPath joined together into a string.
-- data :: the data given to us by our store.  Right now it is flareData, but it will one day be a specific build.
-- finalValue :: the name of the node you are on, essentially.  For the path it took through the url's to get to this node.  So this could be our literal endpoints.
-- clicked :: true/false on whether we've clicked to lock our current node path.
+       export default function SunburstChart (props) {
+         const {sunburst, focusChart} = props
+  if (sunburst == null) return null
+         return(
+             <Sunburst
+               hideRootNode
+               colorType="literal"
+               data={sunburst.data}
+               height={500}
+               width={500}
+               onValueMouseOver={handleMouseOver}
+               onValueClick={handleClick}
+             />
+         )
 
-We have to do some kinda verbose binding of our functions.  The point of this is so we can have this function show multiple times throughout the page and not have the results leak out into other components, it prevents bugs and strange behavior, essentially.
-***** Define componentDidMount
-      #+NAME: SB Define componentDidMount
-      #+BEGIN_SRC js :tangle no
-        componentDidMount() {
-            this.decoratedData = this.updateData(this.props.sunburst, false)
-            this.setState({
-              data: this.decoratedData,
-              finalValue: ''
-            })
-        }
-      #+END_SRC
-
-      We don't want to hard-code the state of our component based on props, because then if the props change, the component itself doesn't.  Instead, we mount it on the page, and then update the state based on the props given.  This ensures that the component will always appear properly.  So here we are saying, "When the graph appears, take the props given to us by our state (the flareData) and decorate it.  Then, set the data in our state to this new decorated data.  The sunburst component renders whatever is in this.state.data, and so it will render now the json from our store.
-
-      This is a common pattern with react components.  Let the initial state be a fairly solid thing, that then gets set again by actions after its already been mounted.
-
-***** Define getKeyPath
-        #+NAME: Define getKeyPath
-        #+BEGIN_SRC js :tangle no
-          /**
-           ,* Recursively work backwards from highlighted node to find path of valid nodes
-           ,* @param {Object} node - the current node being considered
-           ,* @returns {Array} - an array of strings describing the key route to teh current node.
-           ,*/
-
-          getKeyPath (node) {
-            if (!node.parent) {
-              return ['root']
-            }
-
-            return [(node.data && node.data.name) || node.name].concat(
-              this.getKeyPath(node.parent)
-            )
-          }
-        #+END_SRC
-
-        This tree map is tracing the path of nodes through the JSON tree, like tracing the url path of a singular webpage within a website.  This is the function that defines this path.
-
-        IT does so recursively.  For each node it asks, 'do you have a parent?' if it doesn't we know it's root and we'll return 'root.'   If it does, we will return the node's name and its' data (or just its name if no data is available).  Then, we'll [[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/concat][concatenate]]  this array to whatever array is returned when we apply the same function to this node's parent.  So we'll end up with an array of strings, where each one is chained as a parent to the one before.
-
-        This is explained well in the code example too, so we keeping it.
-***** Define updateData
-     #+NAME: Define updateData
-     #+BEGIN_SRC js :tangle no
-       updateData (data, keyPath, parent=false) {
-         if (data.children) {
-           data.children.map(child => this.updateData(child,  keyPath, data))
+         function handleMouseOver (node, event) {
+           focusChart(getKeyPath(node))
          }
-         // add a fill to all the uncolored cells
-         if (!data.color) {
-           var color = colors[data.name]
-           if (!color) {
-             data.style = { fill: 'lightgray' }
+
+         function handleClick (node, event) {
+
+         }
+
+         function getKeyPath (node) {
+           if (!node.parent) {
+             return ['root'];
            }
-           data.style = { fill: color}
+
+           var nodeKey = get(node, 'data.name') || get(node, 'name')
+           var parentKeyPath = getKeyPath(node.parent)
+           return [...parentKeyPath, nodeKey]
          }
-         if (!keyPath) {
-           return data
-         }
-         if (parent && keyPath.length > 1) {
-           var lastTwoInPath = [keyPath[keyPath.length - 2], keyPath[keyPath.length - 1]]
-           var isActive = (parent, child) => {
-             var parentChild = [parent.name, child.name]
-             var diff = _.difference(parentChild, lastTwoInPath)
-             return diff.length === 0 || parent.length === 1
-           }
-           data.style = {
-             ...data.style,
-             fillOpacity: isActive(parent, data) ? 1 : 0.2
-           }
-           return data
-         }
-         return data
        }
-      #+END_SRC
-      #+RESULTS: Define updateData
+     #+END_SRC
 
-===
-keypath = {
-  stable: true,
-  rbacAuthorization: true
-}
-
-path = ['stable', 'rbacAuthorization']
-===
-       This takes care of when the graph is first loaded, and upon mouse hover events.  It essentially adds a fill color to each node if it's part of the path we current have our mouse on.
-    It's another recursive one, applying the fill at the very bottom and moving up.
- from the sites definition:
-    Recursivey modify data depending on whetehr or not each cell has been selected by the hover/hlighlight
-    @param {Object} data - the current node being considered
-    @param {Object|Boolean} keyPath - a map of keys that are in the highlight path
-       //if this is false then all nodes are marked as selected.//
-    @returns {Object} Updated tree structure
-
-***** Click/Unclick Indicator
-      #+NAME: SB Click/Unclick Indicator
-      #+BEGIN_SRC js :tangle no
-          <div>
-          {clicked ? 'click to unlock selection' : 'click to lock selection'}
-        </div>
-      #+END_SRC
-
-      This checks the component's state, if click is true, then let them know you can unlock selection.  otherwise, let them know they can click to lock.
-
-***** onValueMouseOver
-      #+NAME: SB onValueMouseOver
-      #+BEGIN_SRC js :tangle no
-        onValueMouseOver={(node, dom) => {
-          if (clicked) {
-            return
-          }
-          const path = getKeyPath(node).reverse()
-          this.setState({
-            finalValue: `${node.name}`,
-            pathValue: path.join(' > '),
-            data: updateData(decoratedData, path)
-          })
-        }}
-      #+END_SRC
-
-      This is a value that is part of the react-vis api.  From that doc, this is a function that accepts (arc node, domEvent) as arguments.  In other words, we'll know the exact node upon which the mouse is over, and all the values given from our browser about that node element.
-
-      We know that getKeyPath returns an array of strings, each subsequent one being the parent of the node string prior.  So here we set the path to being that array reversed, so it goes from root to smallest child.
-
-      pathAsMap, to be honest, I don't fully understand.  It's used to decorate the data, and the data colors up a cell based on each section of the map being true or false.  So It hink it's saying "if this cell is in the path, mark it as true, otherwise it be false".
-
-      Then, we set the state with these values.  finalValue is going to be the last node string in our path and pathValue is going to be the full path outlined like so: 'root > child1 > child2 > lastChild'
-
-      Everytime you set the state with a react Component the whole component rerenders.  We will have things later down that are meant to display the pathVAlue and finalValue...so since we are setting them in the state and rendering the component again it's going to continually update what these show.
-
-***** onValueMouseOut
- #+NAME: SB onValueMouseOut
- #+BEGIN_SRC js :tangle no
-   onValueMouseOut={()=>
-       clicked
-       ? () => {} // an empty function, essentially 'do nothing'
-       : this.setState({
-         pathValue: false,
-         finalValue: false,
-         data: updateData(decoratedData, false)
-       })
-     }
- #+END_SRC
-
- This is like onValueMouseOver, but handling when we leave the chart.  Clicking locks the arc's position--and so, if it's clicked we do nothing...we keep all the coloring and info as it is as it's locked in place.
-
- If clicked isn't set, and we've left the chart, then return everything back to nothing.  No finalVAlue, no path that we're on, and update the data so all cells are colored again.
-
-***** Display Center finalValue
-      #+NAME: SB Display Center finalValue
-      #+BEGIN_SRC js :tangle no
-        {finalValue && (
-            <LabelSeries
-          data={[{x: 0, y: 0, label: finalValue, style: LABEL_STYLE}]}
-            />
-        )}
-      #+END_SRC
-
-      LabelSeries is another component given to us by react-vis.  The data will want to know where the label will be placed, what it should be labelling, and what it should look like.  We are saying 'put it right in the center: x0/y0 and display the final node we are highlighting.'
-
-***** Refactoring
-      - i removed animation from the sunburst and it improved its performance quite a bit.  What animation was it trying to do?  Look at react-vis docs.
+     #+RESULTS: sunburst-chart.js
 
 *** Filter List
     :PROPERTIES:
@@ -1096,13 +799,21 @@ path = ['stable', 'rbacAuthorization']
         constructor (props) {
           super(props)
           this.optionsList = this.optionsList.bind(this)
+          this.handleClick = this.handleClick.bind(this)
         }
 
         optionsList (options) {
           return options.map(option => {
-              return(
-                  <NavLink className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink" exact to={option.name} key={`release_${option._id}`}>{option.name}</NavLink>
-              )
+            return(
+                <NavLink
+                  className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink"
+                  exact to={option.name}
+                  key={`release_${option._id}`}
+                  onClick={this.handleClick}
+                >
+                {option.name}
+              </NavLink>
+            )
           })
         }
 
@@ -1111,10 +822,16 @@ path = ['stable', 'rbacAuthorization']
               <div className="ph3 mt4">
               <h1 className="f6 fw6 ttu tracked">Releases</h1>
               {this.optionsList(this.props.releases)}
-            </div>
+              </div>
           )
         }
+
+        handleClick (e) {
+          console.log('hi from clicking!!', e.target.innerText)
+          this.props.changeActiveRoute(e.target.innerText)
+        }
       }
+
 
       export default ReleasesList
     #+END_SRC
@@ -1363,7 +1080,46 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
           }
         }
       #+END_SRC
+*** Charts Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/charts.js
+    :END:
+**** Focus Chart
+      #+NAME: Focusing Chart
+      #+BEGIN_SRC js
+        export function focusChart (keyPath) {
+          return {
+            type: 'FOCUS_CHART',
+            payload: keyPath
+          }
+        }
+      #+END_SRC
+*** Routes Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/routes.js
+    :END:
+**** Change Route
+      #+NAME: Focusing Chart
+      #+BEGIN_SRC js
+        export function changeActiveRoute (target) {
+          return {
+            type: 'CHANGE_ACTIVE_ROUTE',
+            payload: target
+          }
+        }
+      #+END_SRC
+    #+NAME: Routes Actions
 ** Reducers
+*** Introduction
+ - Reducers/Charts :: Help us manage how a chart is manipulated based on mouseover, click, mouseleave, and other things..
+ - Reducers/Endpoints :: Handles when we make a call to our endpoints API, changing the loading status upon pending, and delivering the endpoints (sorted by ID) to our store when the API request is fulfilled.
+ - Reducers/Releases :: Older reducer that will likely be phased out.
+ - Reducers/Routes :: listens to the  URL routes and updates state accordingly (so we can set the component based on current URL.
+
+For each reducer, we follow a similar pattern:  we'll set an initial state for what should be held in this store, and what types it's expecting (object, array, string, etc).  Then, we listen to various action dispatches and handle them through a switch operation.  Each action will come with some sorta payload (defined by the action creator in our actions folder).  The reducer just takes the payload and adds it to the store, which will update the state.
+
+The reducer is not manipulating the data in any way.  It takes the payload unaffected and adds it to the state the same way.  We then use our selectors to massage the data to work for whatever props we need.
+
 *** index.js
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/reducers/index.js
@@ -1374,40 +1130,64 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
     #+BEGIN_SRC js
       import { combineReducers } from 'redux'
 
-      import ReleasesReducer from './releases-reducer'
-      import EndpointsReducer from './endpoints-reducer'
+      import ReleasesReducer from './releases'
+      import EndpointsReducer from './endpoints'
+      import ChartsReducer from './charts'
+      import RoutesReducer from './routes'
     #+END_SRC
 
     #+NAME: Reducers
     #+BEGIN_SRC js
       const reducers = {
+        charts: ChartsReducer,
+        endpoints: EndpointsReducer,
         releasesStore: ReleasesReducer,
-        endpoints: EndpointsReducer
+        routes: RoutesReducer
       }
 
       const rootReducer = combineReducers(reducers)
 
       export default rootReducer
     #+END_SRC
+*** Charts Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/charts.js
+    :END:
+
+
+     #+NAME: The Charts Reducer
+     #+BEGIN_SRC js
+       const initialState = {
+         focusedKeyPath: []
+       }
+
+       export default (state = initialState, action = {}) => {
+         switch (action.type) {
+         case 'FOCUS_CHART':
+           return {
+             ...state,
+             focusedKeyPath: action.payload
+           }
+         default:
+           return state;
+         }
+       }
+     #+END_SRC
+
 *** Endpoints Reducer
     :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/reducers/endpoints-reducer.js
+    :header-args: :noweb yes :tangle ./client/src/reducers/endpoints.js
     :END:
-**** Initial State
-    We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with data from our server.  In either case, we are giving our components a structure for what they can expect to display, and then the data to display.
-#+NAME: Releases Initial State
-#+BEGIN_SRC js
-  const initialState = {
-    byId: {},
-    isLoading: false,
-    hasLoaded: false,
-    errors: {}
-  }
-#+END_SRC
 
-**** The Reducer
      #+NAME: The Endpoints Reducer
      #+BEGIN_SRC js
+       const initialState = {
+         byId: {},
+         isLoading: false,
+         hasLoaded: false,
+         errors: {}
+       }
+
        const { keyBy } = require('lodash')
        export default (state = initialState, action = {}) => {
          switch(action.type) {
@@ -1433,29 +1213,19 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
          }
        }
      #+END_SRC
-
-     #+RESULTS: The Releases Reducer
 *** Releases Reducer
     :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/reducers/releases-reducer.js
+    :header-args: :noweb yes :tangle ./client/src/reducers/releases.js
     :END:
-**** Initial State
-    We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with data from our server.  In either case, we are giving our components a structure for what they can expect to display, and then the data to display.
-#+NAME: Releases Initial State
-#+BEGIN_SRC js
-  const defaultState = {
-    release_names: [],
-    active_release: {},
-    loading: true,
-    errors: {}
-  }
-
-#+END_SRC
-
-**** The Reducer
      #+NAME: The Releases Reducer
      #+BEGIN_SRC js
-       export default (state = defaultState, action = {}) => {
+       const initialState = {
+         release_names: [],
+         active_release: {},
+         loading: true,
+         errors: {}
+       }
+       export default (state = initialState, action = {}) => {
          switch (action.type) {
          case 'FETCH_RELEASE_NAMES_FULFILLED': {
            return {
@@ -1474,14 +1244,34 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
            return state;
          }
        }
-
-
-
-
-
      #+END_SRC
 
-     #+RESULTS: The Releases Reducer
+*** Routes Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/routes.js
+    :END:
+
+    The goal is to listen to the location change and adjust the state accordingly.  We can then have our component always be showing the release related to the lastest route.
+
+     #+NAME: The Routes Reducer
+     #+BEGIN_SRC js
+       const initialState = {
+         activeRoute: '',
+         routeChange: false
+       }
+            export default (state = initialState, action = {}) => {
+              switch (action.type) {
+              case 'CHANGE_ACTIVE_ROUTE':
+                return {
+                  ...state,
+                  activeRoute: action.payload,
+                  routeChange: true
+                }
+              default:
+                return state;
+              }
+            }
+     #+END_SRC
 ** Selectors
 *** index.js
     :PROPERTIES:
@@ -1491,8 +1281,11 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
    #+BEGIN_SRC js
      export * from './endpoints'
      export * from './charts'
-
+     export * from './routes'
    #+END_SRC
+
+   #+RESULTS: Selectors index.js
+
 *** Endpoints Selector
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/selectors/endpoints.js
@@ -1552,36 +1345,36 @@ Endpoints are unique by Release, Name, and Method.
     #+NAME: Chart Selector
     #+BEGIN_SRC js
       import { createSelector } from 'reselect'
-      import { forEach, map, mapValues, reduce, values } from 'lodash'
+      import { forEach, map, mapValues, orderBy, reduce, values } from 'lodash'
 
       import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod, selectIsEndpointsReady } from './endpoints'
+
 
       export const selectSunburstByRelease = createSelector(
         selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
         (endpointsByReleaseAndLevelAndCategoryAndNameAndMethod) => {
-          return mapValues(endpointsByReleaseAndLevelAndCategoryAndNameAndMethod, (endpointsByLevelAndCategoryAndNameAndMethod, release) => {
+          var dataByRelease = mapValues(endpointsByReleaseAndLevelAndCategoryAndNameAndMethod, (endpointsByLevelAndCategoryAndNameAndMethod, release) => {
             return {
               name: 'root',
               children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
                 return {
                   name: level,
+                  color: colors[level],
                   children: map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
                     return {
                       name: category,
+                      color: colors[`category.${category}`],
                       children: values(reduce(
                         endpointsByNameAndMethod,
                         (sofar, endpointsByMethod, name) => {
                           forEach(endpointsByMethod, (endpoint, method) => {
                             var { isTested } = endpoint
-                            var color = 'green'
                             var path = isTested ? `${name}/${method}` : 'untested'
                             var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
                             sofar[path] = {
-                              color,
+                              name: name,
                               size,
-                              name,
-                              method,
-                              isTested
+                              color: isTested ? colors[`category.${category}`] : '#f4f4f4'
                             }
                           })
                           return sofar
@@ -1594,13 +1387,98 @@ Endpoints are unique by Release, Name, and Method.
               })
             }
           })
+
+          return {
+            dataByRelease,
+            focusLabel: 'hey' // ...
+          }
         }
       )
 
+
+      export const selectSunburstByReleaseWithSortedLevel = createSelector(
+        selectSunburstByRelease,
+        (endpointsByRelease) => {
+          var dataByRelease = endpointsByRelease.dataByRelease
+          var sortedDataByRelease = mapValues(dataByRelease, (release) => {
+            var levels = release.children
+            var sortedLevels = orderBy(levels, 'name', 'desc')
+            release.children = sortedLevels
+            return release
+          })
+          endpointsByRelease.dataByRelease = sortedDataByRelease
+          return endpointsByRelease
+        }
+      )
       export const selectIsSunburstReady = selectIsEndpointsReady
+
+      var colors = {
+        'alpha': '#e6194b',
+        'beta': '#0082c8',
+        'stable': '#3cb44b',
+        'unused': '#ffffff'
+      }
+
+      var categories = [
+        "admissionregistration",
+        "apiextensions",
+        "apiregistration",
+        "apis",
+        "apps",
+        "authentication",
+        "authorization",
+        "autoscaling",
+        "batch",
+        "certificates",
+        "core",
+        "events",
+        "extensions",
+        "logs",
+        "networking",
+        "policy",
+        "rbacAuthorization",
+        "scheduling",
+        "settings",
+        "storage",
+        "version"
+      ]
+
+      var more_colors = [
+        "#b71c1c", "#880E4F", "#4A148C", "#311B92", "#1A237E", "#0D47A1",
+        "#01579B", "#006064", "#004D40", "#1B5E20", "#33691E", "#827717",
+        "#F57F17", "#FF6F00", "#E65100", "#BF360C", "#f44336", "#E91E63",
+        "#9C27B0", "#673AB7", "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4",
+        "#009688", "#4CAF50", "#8BC34A", "#CDDC39", "#FFEB3B", "#FFC107",
+        "#FF9800", "#FF5722"
+      ]
+
+      for (var catidx = 0; catidx < categories.length; catidx++) {
+        var category = categories[catidx]
+        colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
+      }
     #+END_SRC
 
     #+RESULTS: Chart Selector
+
+Endpoints are unique by Release, Name, and Method.
+
+*** Routes Selector
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/selectors/routes.js
+    :END:
+    #+NAME: Routes Selector
+    #+BEGIN_SRC js
+      // import { createSelector } from 'reselect'
+
+      export function selectActiveRoute (state) {
+        return state.routes.activeRoute
+      }
+
+      export function selectRouteChange (state) {
+        return state.routes.routeChange
+      }
+    #+END_SRC
+
 
 Endpoints are unique by Release, Name, and Method.
 
@@ -1695,24 +1573,6 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
 ** Pairing With Mikey
 *** Background
     I went through a pairing Session with [[https://dinosaur.is][Mikey]], to help with the overall architecture and code logic of the webui
-*** [2/5] Tasks For Refactoring our Data and understanding of it.
-    - [X]  Convert JSON dump to New Flat Database
-    - [X] Hookup react/redux to query endpoints.
-    - [ ] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
-    - [ ] Practice Converting flat database to Sunburst Data structure.
-    - [ ] Query endpoints by Release.
-*** [0/4] Future Tasks
-    - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that
-    - [ ] Hover over Part of Sunburst shows relevant rays highlighted.
-    - [ ] Hover over Sunburst, see testing percentage update in center.
-    - [ ] Click on Useragent, sunburst zooms onto that subset of data.
-*** [0/5] Achievements To Unlock
-    - [ ] Mikey has a functional understanding of what we're trying to do.
-    - [ ] Sunburst Changes Based on Route
-    - [ ] Sunburst Matches Functionality of Previous Sunburst
-    - [ ] It loads faster
-    - [ ] It generally feels better
-
 * Footnotes
 ** Understand the config.yaml file and what it's pointing to.
 *** TestGrid
@@ -1917,6 +1777,29 @@ right: $right_session
 # org-confirm-babel-evaluate: nil
 # End:
 * Tasks
+** TODO [5/8] Tasks For Refactoring our Data and understanding of it.
+   - [X]  Convert JSON dump to New Flat Database
+   - [X] Hookup react/redux to query endpoints.
+   - [X] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
+   - [X] Practice Converting flat database to Sunburst Data structure.
+   - [X] Sort Level so it is Stable, Beta, Alpha
+   - [ ] re-hook up routing to route by release name
+   - [ ] Query endpoints by Release.
+   - [ ] pass down chart selector data to main page props, pass down focused key path to render label within sunburst
+** TODO [0/6] Future Tasks
+   - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that
+   - [ ] Hover over Part of Sunburst shows relevant rays highlighted.
+   - [ ] Hover over Sunburst, see testing percentage update in center.
+   - [ ] Click on Useragent, sunburst zooms onto that subset of data.
+   - [ ] Refactor Chart Selector.
+** TODO [2/5] Achievements To Unlock
+   - [X] Mikey has a functional understanding of what we're trying to do.
+   - [X] It generally feels better
+   - [ ] Sunburst Matches Functionality of Previous Sunburst
+   - [ ] Sunburst Changes Based on Route
+   - [ ] It loads faster
+** TODO [0/1] Questions
+   - [ ] Why does brining in the selectsunburstSorted selector affect the sunburst (when it is a new selector, not the previous one.
 ** NEXT Change front-end logic so it only pulls data from the necessary sunburst.
    Right now the we have an endpoint called /Releases, organized by Build name.  These correspond to the sunbursts.  We are pulling in the entire api, we should only do buildname.data.sunburst
 *** [0/5] Subtasks
@@ -1928,4 +1811,3 @@ right: $right_session
    We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
 
 ** TODO change keypath logic so it only highlights if parent is on keypath.
-** TODO change color of default to be gray, and apply color only if tested.

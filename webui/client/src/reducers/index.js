@@ -1,11 +1,15 @@
 import { combineReducers } from 'redux'
 
-import ReleasesReducer from './releases-reducer'
-import EndpointsReducer from './endpoints-reducer'
+import ReleasesReducer from './releases'
+import EndpointsReducer from './endpoints'
+import ChartsReducer from './charts'
+import RoutesReducer from './routes'
 
 const reducers = {
+  charts: ChartsReducer,
+  endpoints: EndpointsReducer,
   releasesStore: ReleasesReducer,
-  endpoints: EndpointsReducer
+  routes: RoutesReducer
 }
 
 const rootReducer = combineReducers(reducers)

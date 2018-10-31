@@ -3,27 +3,35 @@ import { connect } from 'react-redux'
 import { createStructuredSelector } from 'reselect'
 
 import { fetchEndpoints } from '../actions/endpoints'
-import { selectEndpointsById, selectEndpointsByReleaseAndNameAndMethod, selectSunburstByRelease, selectIsSunburstReady } from '../selectors'
+import { focusChart } from '../actions/charts'
+import {
+  selectActiveRoute,
+  selectEndpointsById,
+  selectEndpointsByReleaseAndNameAndMethod,
+  selectRouteChange,
+  selectIsSunburstReady,
+  selectSunburstByReleaseWithSortedLevel
+} from '../selectors'
 
 import SunburstSegment from '../components/sunburst-segment'
 
 class MainPage extends Component {
-  constructor (props) {
-    super(props)
-  }
-
-  componentDidUpdate(prevProps) {
-  }
-
   render(){
+  const { activeRoute, routeChange, sunburstByRelease } = this.props
+  const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
+
     return (
         <main id='main-splash' className='min-vh-100'>
-        <h1>You made it to the MainPage</h1>
         <h2>You are doing a good job.</h2>
-      {this.props.isSunburstReady && <SunburstSegment
-          sunburst={this.props.sunburstByRelease['sig-release-1.12']}
-        />
-      }
+        {this.props.isSunburstReady && <SunburstSegment
+         sunburst={{
+           data: routeChange ? sunburstByRelease.dataByRelease[activeRoute] : sunburstByRelease.dataByRelease[releaseBasedOnRoute],
+           focusedLabel: this.props.sunburstByRelease.focusedLabel
+         }}
+         focusChart={this.props.focusChart}
+         release= {activeRoute}
+         />
+        }
       </main>
     )
   }
@@ -31,10 +39,13 @@ class MainPage extends Component {
 
 export default connect(
   createStructuredSelector({
+    activeRoute: selectActiveRoute,
     endpointsById: selectEndpointsById,
     endpointsByReleaseAndNameAndMethod: selectEndpointsByReleaseAndNameAndMethod,
-    sunburstByRelease: selectSunburstByRelease,
-    isSunburstReady: selectIsSunburstReady
+    isSunburstReady: selectIsSunburstReady,
+    routeChange: selectRouteChange,
+    sunburstByRelease: selectSunburstByReleaseWithSortedLevel,
+
   }),
-  {fetchEndpoints}
+  {fetchEndpoints, focusChart}
 ) (MainPage)
