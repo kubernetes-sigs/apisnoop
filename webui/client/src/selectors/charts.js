@@ -4,6 +4,22 @@ import { forEach, map, mapValues, orderBy, reduce, values } from 'lodash'
 import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod, selectIsEndpointsReady } from './endpoints'
 
 
+export function selectInteriorLabel (state) {
+  return state.charts.interiorLabel
+}
+
+export function selectFocusPathAsArray (state) {
+  return state.charts.focusedKeyPath
+}
+
+export const selectFocusPathAsString = createSelector(
+  selectFocusPathAsArray,
+  (pathAsArray) => {
+    return pathAsArray.join().replace(/,/g,' / ')
+  }
+)
+
+
 export const selectSunburstByRelease = createSelector(
   selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
   (endpointsByReleaseAndLevelAndCategoryAndNameAndMethod) => {
@@ -44,7 +60,7 @@ export const selectSunburstByRelease = createSelector(
 
     return {
       dataByRelease,
-      focusLabel: 'hey' // ...
+      focusLabel: ''  //
     }
   }
 )

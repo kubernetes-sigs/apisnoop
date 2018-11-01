@@ -483,6 +483,7 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
      import { fetchReleaseNames} from '../actions/releases'
      import { fetchEndpoints } from '../actions/endpoints'
      import { changeActiveRoute } from '../actions/routes'
+     import { setInteriorLabel } from '../actions/charts'
 
      import Header from './header'
      import Footer from './footer'
@@ -521,6 +522,7 @@ I think this will end up that we use MainPage multiple times, feeding in props a
                  releases={this.props.release_names}
                  selected='master'
                  changeActiveRoute={this.props.changeActiveRoute}
+                 setInteriorLabel={this.props.setInteriorLabel}
                /> }
         <Route exact path='/' component={MainPage} />
         <Route exact path='/:release' component={MainPage} />
@@ -536,7 +538,7 @@ I think this will end up that we use MainPage multiple times, feeding in props a
         }
       }
 
-      export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute})(App)
+      export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute, setInteriorLabel })(App)
     #+END_SRC
 
 ** Pages
@@ -551,12 +553,13 @@ I think this will end up that we use MainPage multiple times, feeding in props a
         import { connect } from 'react-redux'
         import { createStructuredSelector } from 'reselect'
 
-        import { fetchEndpoints } from '../actions/endpoints'
-        import { focusChart } from '../actions/charts'
+        import { focusChart, setInteriorLabel, unfocusChart } from '../actions/charts'
         import {
           selectActiveRoute,
           selectEndpointsById,
           selectEndpointsByReleaseAndNameAndMethod,
+          selectFocusPathAsArray,
+          selectFocusPathAsString,
           selectRouteChange,
           selectIsSunburstReady,
           selectSunburstByReleaseWithSortedLevel
@@ -566,7 +569,14 @@ I think this will end up that we use MainPage multiple times, feeding in props a
 
         class MainPage extends Component {
           render(){
-          const { activeRoute, routeChange, sunburstByRelease } = this.props
+            const {
+              activeRoute,
+              focusPath,
+              focusPathAsString,
+              routeChange,
+              sunburstByRelease
+            } = this.props
+
           const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
 
             return (
@@ -578,7 +588,9 @@ I think this will end up that we use MainPage multiple times, feeding in props a
                    focusedLabel: this.props.sunburstByRelease.focusedLabel
                  }}
                  focusChart={this.props.focusChart}
+                 unfocusChart={this.props.unfocusChart}
                  release= {activeRoute}
+                 focusPathAsString={focusPathAsString}
                  />
                 }
               </main>
@@ -590,13 +602,14 @@ I think this will end up that we use MainPage multiple times, feeding in props a
           createStructuredSelector({
             activeRoute: selectActiveRoute,
             endpointsById: selectEndpointsById,
+            focusPath: selectFocusPathAsArray,
+            focusPathAsString: selectFocusPathAsString,
             endpointsByReleaseAndNameAndMethod: selectEndpointsByReleaseAndNameAndMethod,
             isSunburstReady: selectIsSunburstReady,
             routeChange: selectRouteChange,
-            sunburstByRelease: selectSunburstByReleaseWithSortedLevel,
-
+            sunburstByRelease: selectSunburstByReleaseWithSortedLevel
           }),
-          {fetchEndpoints, focusChart}
+          {focusChart, unfocusChart}
         ) (MainPage)
       #+END_SRC
 
@@ -668,13 +681,22 @@ The various visual parts of the app.  For the most part, we want these to be as 
 
        class SunburstSegment extends Component {
          render() {
-           var {sunburst, focusChart} = this.props
+           const {sunburst,
+                  focusChart,
+                  focusPathAsString,
+                  unfocusChart} = this.props
+
            return (
                <div id='sunburst-segment' className='bg_washed-red pa4'>
                <h2>{this.props.release}</h2>
+               {focusPathAsString.length > 0 ? <div>{focusPathAsString}</div>
+                      : <div>'Hover over Chart for Path'</div>
+             }
                <SunburstChart
                  sunburst={sunburst}
                  focusChart={focusChart}
+                 unfocusChart={unfocusChart}
+                 focusPathAsString={focusPathAsString}
                />
                </div>
            )
@@ -693,13 +715,36 @@ The various visual parts of the app.  For the most part, we want these to be as 
      #+NAME: sunburst-chart.js
      #+BEGIN_SRC js
        import React from 'react'
-       import { Sunburst } from 'react-vis'
+       import { Sunburst, LabelSeries } from 'react-vis'
        import { get } from 'lodash'
 
+
+       const LABEL_STYLE = {
+         PERCENTAGE: {
+           fontSize: '1.3em',
+           textAnchor: 'middle'
+         },
+         FRACTION: {
+           fontSize: '1.2em,',
+           textAnchor: 'middle'
+         },
+         PATH: {
+           fontSize: '1em',
+           textAnchor: 'middle'
+         }
+       }
+
        export default function SunburstChart (props) {
-         const {sunburst, focusChart} = props
-  if (sunburst == null) return null
+
+         const {
+           focusChart,
+           sunburst,
+           unfocusChart
+         } = props
+
+         if (sunburst == null) return null
          return(
+             <div className="sunburst-wrapper">
              <Sunburst
                hideRootNode
                colorType="literal"
@@ -707,12 +752,26 @@ The various visual parts of the app.  For the most part, we want these to be as 
                height={500}
                width={500}
                onValueMouseOver={handleMouseOver}
+               onValueMouseOut={handleMouseOut}
                onValueClick={handleClick}
-             />
+             >
+             <LabelSeries
+                data={[
+                  {x: 0, y: 20, label: 'good times', style: LABEL_STYLE.PERCENTAGE},
+                  {x: 0, y: 0, label: 'fun times', style: LABEL_STYLE.FRACTION},
+                  {x: 0, y: -20, label: 'sweet times', style: LABEL_STYLE.PATH}
+                ]}
+              />
+             </Sunburst>
+             </div>
          )
 
          function handleMouseOver (node, event) {
            focusChart(getKeyPath(node))
+         }
+
+         function handleMouseOut () {
+           unfocusChart()
          }
 
          function handleClick (node, event) {
@@ -829,6 +888,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
         handleClick (e) {
           console.log('hi from clicking!!', e.target.innerText)
           this.props.changeActiveRoute(e.target.innerText)
+          this.props.setInteriorLabel(e.target.innerText)
         }
       }
 
@@ -1094,6 +1154,25 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
           }
         }
       #+END_SRC
+**** Set Interior Label
+      #+NAME: Set Interior Label
+      #+BEGIN_SRC js
+        export function setInteriorLabel (keyPath) {
+          return {
+            type: 'SET_INTERIOR_LABEL',
+            payload: keyPath
+          }
+        }
+      #+END_SRC
+**** Unfocus Chart
+      #+NAME: Unfocus Chart
+      #+BEGIN_SRC js
+        export function unfocusChart() {
+          return {
+            type: 'UNFOCUS_CHART'
+          }
+        }
+      #+END_SRC
 *** Routes Actions
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/actions/routes.js
@@ -1158,6 +1237,7 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
      #+NAME: The Charts Reducer
      #+BEGIN_SRC js
        const initialState = {
+         interiorLabel: '',
          focusedKeyPath: []
        }
 
@@ -1167,6 +1247,16 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
            return {
              ...state,
              focusedKeyPath: action.payload
+           }
+         case 'SET_INTERIOR_LABEL':
+           return {
+             ...state,
+             interiorLabel: action.payload
+           }
+         case 'UNFOCUS_CHART':
+           return {
+             ...state,
+             focusedKeyPath: []
            }
          default:
            return state;
@@ -1350,6 +1440,22 @@ Endpoints are unique by Release, Name, and Method.
       import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod, selectIsEndpointsReady } from './endpoints'
 
 
+      export function selectInteriorLabel (state) {
+        return state.charts.interiorLabel
+      }
+
+      export function selectFocusPathAsArray (state) {
+        return state.charts.focusedKeyPath
+      }
+
+      export const selectFocusPathAsString = createSelector(
+        selectFocusPathAsArray,
+        (pathAsArray) => {
+          return pathAsArray.join().replace(/,/g,' / ')
+        }
+      )
+
+
       export const selectSunburstByRelease = createSelector(
         selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
         (endpointsByReleaseAndLevelAndCategoryAndNameAndMethod) => {
@@ -1390,7 +1496,7 @@ Endpoints are unique by Release, Name, and Method.
 
           return {
             dataByRelease,
-            focusLabel: 'hey' // ...
+            focusLabel: ''  //
           }
         }
       )

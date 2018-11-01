@@ -4,3 +4,16 @@ export function focusChart (keyPath) {
     payload: keyPath
   }
 }
+
+export function setInteriorLabel (keyPath) {
+  return {
+    type: 'SET_INTERIOR_LABEL',
+    payload: keyPath
+  }
+}
+
+export function unfocusChart() {
+  return {
+    type: 'UNFOCUS_CHART'
+  }
+}

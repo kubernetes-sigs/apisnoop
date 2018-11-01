@@ -1,37 +1,74 @@
 import React from 'react'
-     import { Sunburst } from 'react-vis'
-     import { get } from 'lodash'
+import { Sunburst, LabelSeries } from 'react-vis'
+import { get } from 'lodash'
 
-     export default function SunburstChart (props) {
-       const {sunburst, focusChart} = props
-if (sunburst == null) return null
-       return(
-           <Sunburst
-             hideRootNode
-             colorType="literal"
-             data={sunburst.data}
-             height={500}
-             width={500}
-             onValueMouseOver={handleMouseOver}
-             onValueClick={handleClick}
-           />
-       )
 
-       function handleMouseOver (node, event) {
-         focusChart(getKeyPath(node))
-       }
+const LABEL_STYLE = {
+  PERCENTAGE: {
+    fontSize: '1.3em',
+    textAnchor: 'middle'
+  },
+  FRACTION: {
+    fontSize: '1.2em,',
+    textAnchor: 'middle'
+  },
+  PATH: {
+    fontSize: '1em',
+    textAnchor: 'middle'
+  }
+}
 
-       function handleClick (node, event) {
+export default function SunburstChart (props) {
 
-       }
+  const {
+    focusChart,
+    sunburst,
+    unfocusChart
+  } = props
 
-       function getKeyPath (node) {
-         if (!node.parent) {
-           return ['root'];
-         }
+  if (sunburst == null) return null
+  return(
+      <div className="sunburst-wrapper">
+      <Sunburst
+        hideRootNode
+        colorType="literal"
+        data={sunburst.data}
+        height={500}
+        width={500}
+        onValueMouseOver={handleMouseOver}
+        onValueMouseOut={handleMouseOut}
+        onValueClick={handleClick}
+      >
+      <LabelSeries
+         data={[
+           {x: 0, y: 20, label: 'good times', style: LABEL_STYLE.PERCENTAGE},
+           {x: 0, y: 0, label: 'fun times', style: LABEL_STYLE.FRACTION},
+           {x: 0, y: -20, label: 'sweet times', style: LABEL_STYLE.PATH}
+         ]}
+       />
+      </Sunburst>
+      </div>
+  )
 
-         var nodeKey = get(node, 'data.name') || get(node, 'name')
-         var parentKeyPath = getKeyPath(node.parent)
-         return [...parentKeyPath, nodeKey]
-       }
-     }
+  function handleMouseOver (node, event) {
+    focusChart(getKeyPath(node))
+  }
+
+  function handleMouseOut () {
+    unfocusChart()
+  }
+
+  function handleClick (node, event) {
+
+  }
+
+  function getKeyPath (node) {
+    if (!node.parent) {
+      return ['root'];
+    }
+
+    var nodeKey = get(node, 'data.name') || get(node, 'name')
+    var parentKeyPath = getKeyPath(node.parent)
+    return [...parentKeyPath, nodeKey]
+  }
+}

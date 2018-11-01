@@ -5,6 +5,7 @@ import { Route } from 'react-router-dom'
 import { fetchReleaseNames} from '../actions/releases'
 import { fetchEndpoints } from '../actions/endpoints'
 import { changeActiveRoute } from '../actions/routes'
+import { setInteriorLabel } from '../actions/charts'
 
 import Header from './header'
 import Footer from './footer'
@@ -26,6 +27,7 @@ class App extends Component {
            releases={this.props.release_names}
            selected='master'
            changeActiveRoute={this.props.changeActiveRoute}
+           setInteriorLabel={this.props.setInteriorLabel}
          /> }
   <Route exact path='/' component={MainPage} />
   <Route exact path='/:release' component={MainPage} />
@@ -41,4 +43,4 @@ function mapStateToProps (state) {
   }
 }
 
-export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute})(App)
+export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute, setInteriorLabel })(App)

@@ -2,12 +2,13 @@ import React, { Component } from 'react'
 import { connect } from 'react-redux'
 import { createStructuredSelector } from 'reselect'
 
-import { fetchEndpoints } from '../actions/endpoints'
-import { focusChart } from '../actions/charts'
+import { focusChart, setInteriorLabel, unfocusChart } from '../actions/charts'
 import {
   selectActiveRoute,
   selectEndpointsById,
   selectEndpointsByReleaseAndNameAndMethod,
+  selectFocusPathAsArray,
+  selectFocusPathAsString,
   selectRouteChange,
   selectIsSunburstReady,
   selectSunburstByReleaseWithSortedLevel
@@ -17,7 +18,14 @@ import SunburstSegment from '../components/sunburst-segment'
 
 class MainPage extends Component {
   render(){
-  const { activeRoute, routeChange, sunburstByRelease } = this.props
+    const {
+      activeRoute,
+      focusPath,
+      focusPathAsString,
+      routeChange,
+      sunburstByRelease
+    } = this.props
+
   const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
 
     return (
@@ -29,7 +37,9 @@ class MainPage extends Component {
            focusedLabel: this.props.sunburstByRelease.focusedLabel
          }}
          focusChart={this.props.focusChart}
+         unfocusChart={this.props.unfocusChart}
          release= {activeRoute}
+         focusPathAsString={focusPathAsString}
          />
         }
       </main>
@@ -41,11 +51,12 @@ export default connect(
   createStructuredSelector({
     activeRoute: selectActiveRoute,
     endpointsById: selectEndpointsById,
+    focusPath: selectFocusPathAsArray,
+    focusPathAsString: selectFocusPathAsString,
     endpointsByReleaseAndNameAndMethod: selectEndpointsByReleaseAndNameAndMethod,
     isSunburstReady: selectIsSunburstReady,
     routeChange: selectRouteChange,
-    sunburstByRelease: selectSunburstByReleaseWithSortedLevel,
-
+    sunburstByRelease: selectSunburstByReleaseWithSortedLevel
   }),
-  {fetchEndpoints, focusChart}
+  {focusChart, unfocusChart}
 ) (MainPage)
