@@ -1,6 +1,6 @@
 import React from 'react'
 import { Sunburst, LabelSeries } from 'react-vis'
-import { get } from 'lodash'
+import { get, includes } from 'lodash'
 
 
 const LABEL_STYLE = {
@@ -22,6 +22,7 @@ export default function SunburstChart (props) {
 
   const {
     focusChart,
+    focusPath,
     sunburst,
     unfocusChart
   } = props
@@ -33,12 +34,15 @@ export default function SunburstChart (props) {
         hideRootNode
         colorType="literal"
         data={sunburst.data}
+        getColor={node => determineColor(node)}
         height={500}
         width={500}
         onValueMouseOver={handleMouseOver}
         onValueMouseOut={handleMouseOut}
         onValueClick={handleClick}
+
       >
+
       <LabelSeries
          data={[
            {x: 0, y: 20, label: 'good times', style: LABEL_STYLE.PERCENTAGE},
@@ -49,6 +53,17 @@ export default function SunburstChart (props) {
       </Sunburst>
       </div>
   )
+
+  function determineColor (node) {
+    if (focusPath.length > 0) {
+      if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
+        return node.color
+      } else {
+        return node.color + '19'
+      }
+    }
+    return node.color
+  }
 
   function handleMouseOver (node, event) {
     focusChart(getKeyPath(node))
@@ -66,7 +81,6 @@ export default function SunburstChart (props) {
     if (!node.parent) {
       return ['root'];
     }
-
     var nodeKey = get(node, 'data.name') || get(node, 'name')
     var parentKeyPath = getKeyPath(node.parent)
     return [...parentKeyPath, nodeKey]

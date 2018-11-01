@@ -33,12 +33,13 @@ class MainPage extends Component {
         <h2>You are doing a good job.</h2>
         {this.props.isSunburstReady && <SunburstSegment
          sunburst={{
-           data: routeChange ? sunburstByRelease.dataByRelease[activeRoute] : sunburstByRelease.dataByRelease[releaseBasedOnRoute],
-           focusedLabel: this.props.sunburstByRelease.focusedLabel
+           data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
+                             : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
          }}
          focusChart={this.props.focusChart}
          unfocusChart={this.props.unfocusChart}
          release= {activeRoute}
+         focusPath={focusPath}
          focusPathAsString={focusPathAsString}
          />
         }

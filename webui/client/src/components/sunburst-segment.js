@@ -6,6 +6,7 @@ class SunburstSegment extends Component {
   render() {
     const {sunburst,
            focusChart,
+           focusPath,
            focusPathAsString,
            unfocusChart} = this.props
 
@@ -19,6 +20,7 @@ class SunburstSegment extends Component {
           sunburst={sunburst}
           focusChart={focusChart}
           unfocusChart={unfocusChart}
+          focusPath={focusPath}
           focusPathAsString={focusPathAsString}
         />
         </div>
