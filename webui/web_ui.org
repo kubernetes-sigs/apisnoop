@@ -9,18 +9,42 @@
 #+PROPERTY: header-args:tmate :socket "/tmp/.zz-left.isocket"
 #+PROPERTY: header-args:tmate :session api:main
 
-
 * Introduction
-  This project is a proof of concept for making the web interface of modular and dynamic, by turning it into a React app.  Our current site can be found here:[[https://apisnoop.ii.coop][apisnoop.ii.coop]].  For the first go of this, we want our app to look nearly identical, with the same functionality:
-- visual display
-- Dropdown to choose between csv's
-- Ability to download the audit-log or csv.
-** Why Do this?
-   The current site is entirely hard-coded html. Whenever we want to make a change to the site (like adding a new dataset), it requires going into the html file, finding the right section, and adding a new static link.  Not only is this time-consuming, it's error-prone. It's also really hard to maintain.
+  This is a web-based visual interface to the data curation and manipulation we are doing as the APISnoop project.  The purpose is to display previously unseen connections between the testing coverage of kubernetes, and the people and communities these various parts of kubernetes matter to.
+** Reimagining how the web app is built.
+   At this point, the work here is a proof of concept refactoring of the orignal site, to make our structure more extensible and modular.  When new work is done with the dating processing, we want to be able to quickly visualize the results of this work for others.  The current site is static html, with each new section intentionally and manually hard-coded. Whenever we want to make a change to the site (like adding a new dataset), it requires going into the html file, finding the right section, and adding a new element.  We have to keep a mental map of every aspect of the site this new dataset should influence and update those accordingly.  Not only is this time-consuming, it's error-prone and hard to maintin.
 
-The site also bears the mark of different hands with different ideas moving quickly to get something 'working' but not pretty.  So the site is using multiple CSS frameworks plus custom CSS and multiple javascript helper utilities.  This also makes the site hard to reason about or design, as you don't know what things you can change and what things are required for the framework.
+   At the same time, there was a good amount of work done by the team to get to the current site, and that work should be preserved as much as possible.  The goal of this refactor, then, is to re-make the original site to then build incredible things beyond and above it.
+http://uber.github.io/react-vis/documentation/other-charts/sunburst-diagram
+** Setting It up On Your own
+*** Setup Backend
+ after cloning repository
+- cd apisnoop/backend
+- npm install
+- Make sure we have a jsons folder in apisnoop/backend with this tree structure:
+#+RESULTS: File Structure
+:RESULTS:
+.
+├── release
+└── sunbursts
 
-The current site was the most basic proof of concept. We want to build a whole bunch of things on top of this, including github authorization and site-visitor customizatioin, and the ability to really customize the view you are seeing.  So I want to start again with a foundation to the site that is easier to reason about, easier to maintain, and easier to extend.
+2 directories
+:END:
+#+NAME: File Structure
+#+BEGIN_SRC shell :dir ./backend/jsons :results output raw drawer
+tree -d
+#+END_SRC
+- Delete all .db's from src/data/
+- npm start
+- email zz@ii.coop with full error output and a coupon for soda.
+
+*** Setup Client
+    When backend server is on:
+    - cd apisnoop/client
+    - npm install
+    # - figure out how to point to subheadings
+    - go to [[Client/Actions/index.js]]   and change the client here to be whatever site you have this on (localhost or apisnoop)
+    - npm start
 
 * Architecture
 The site will be made to have a distinct front-end and backend, with the front-end able to be ported over to any other backend.
@@ -33,11 +57,22 @@ The frontend will be made with React, Redux, maybe Saga, and Tachyons, and Axios
 *** Why Redux?
    [[https://redux.js.org/][Redux]]  provides one global 'state' for the app, and makes React actually usable.  It will help us push the data appropriately to the right parts and keep things clean and efficient.
 
+    - [ ] Query endpoints by Release.
+*** Reselect
+   [[https://github.com/reduxjs/reselect][Reselect]]  allows us to massage the state into friendly props specific to components.  This helps us keep a philosophy that nothing in the state is repeated, and instead you have //all// state that you can then derive into different selectors based on what you need for the component.
+   #+NAME: install Reselect
+   #+BEGIN_SRC shell :dir ./client :results output list raw
+npm install reselect
+   #+END_SRC
+
+   #+RESULTS: install Reselect
+   - + reselect@4.0.0
+   - added 1 package, removed 15 packages and audited 21041 packages in 14.857s
+   - found 1 low severity vulnerability
+   - run `npm audit fix` to fix them, or `npm audit` for details
+
 *** AXIOS
    [[https://www.npmjs.com/package/axios][Axios]] is a simple tool for handling http requests across different servers.  We'll need this for the client to be portable, and able to call to multiple API's (our backend plus github for example).
-*** Why Saga?
-   [[https://redux-saga.js.org/][Saga]] helps us with api calls and redux.  Redux likes pure clean objects sent to the store right away.  API calls don't work like that, and so Saga does the call and then sends the results to Redux.  It's working as a side effect.
-
 *** Why Tachyons?
     Tachyons is a css framework for writing functional CSS.  It's a much different approach to CSS, but it's one that matches a unix philosophy and is super easy to spin things up and maintain them.  AS we make changes, we don't have to worry that some class hidden deep in some css file causes our whole site to look weird.  Instead, every class has a single purpose, and you add multiple classes to a site to add-upon and combine each of these classes functions (like piping commands together on the command line).  This makes all our components //reusable// too, as we only need to copy over the code and not any stylesheet attached to the code.
 ** BACKEND
@@ -92,469 +127,144 @@ The question I have, ultimately, is how much should be handled by the client and
 
 * Backend
 ** Setting up our API Initially
-**** Generating the backend app.
-     #+NAME: Generate Feathers App
-     #+BEGIN_SRC shell
-       mkdir backend && cd backend
-       feathers generate app
-     #+END_SRC
 **** Generating the Services
-     We'll need a config service, which will be custom.  It makes a request to our config.yaml file and then distributes its contents to our various other services.
- From there, we need a service named for each of the major groups:
- - dashboards
- - test_groups
- - dashboard_names
+     We will be using the processed data provided by the audit-log review to generate an api path for us to traverse.  Each build will have its own data, which will include the tags in it, the agents in it, and a sunburst path.
 ** Services
+   (**NOTE**: for each service, make sure paginate is turned off.  In the future I should do this automatically.)
+*** Introduction
+
+Services refer to the different paths of our api, and the various jobs and manipulation we do to the data being fed through these paths.  They act as gatekeeepers to our various db's, so we aren't doing a bunch of db queries from all over the code and potentially causing strange behavior and hard to track errors.  Throug these, we have a consistent and reliable way to ask for and give data to our server: talk to the relevant service and have them do the work for you.
+
+We generate a service using feathers cli.  This creates a number of files for us and makes sure the service is known to the entire backend.  Which is to say that there will be a number of file changes made when we make a new service, but the files within this section only refer to the core code we are writing.
+**** Service Definitions
+   We have two services now.
+ - Config :: Handles the initial setup (reading json files from disk and distributing the file to the proper Releases service, performing any cleanup as necessary).
+ - Releases ::  the heart of our data, has all the info we need by release and we use this for our presentational components in the front end..
 *** Config
-    This is the service used to ping github for our config file, and then populate the various dashboards from there.
-**** Setting up config service.
-     :PROPERTIES:
-     :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
-     :END:
-***** Basic Layout
- So we create a new class for the service and construct it with the options we give it.  In this case, the options relate to the request to our github api that we want to send.  Then, we have a number of commented out methods followed by our setup method.  The setup method requests the configyaml from github, loads it into json, and then distributes each group using our distribute function (described in more detail below).
- #+NAME: config.class.js
- #+BEGIN_SRC js
-   /* eslint-disable no-unused-vars */
-   const request = require('request-promise')
-   const yaml = require('js-yaml')
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
+    :END:
+   The config is run whenever the server starts up, and takes JSON files placed in ~data/processed-audits~ and generates paths from the data held within.
 
-   var options = {
-     url: 'https://api.github.com/repos/kubernetes/test-infra/git/blobs/66c3f57e899a92afc9f6fca20387220a65312915',
-     headers: {
-       'User-Agent': 'request'
-     }
-   }
+   We are in a midpoint now from the original style, where we created a single path with many nests, to a new FLAT style (that is generally more preferred, and more [[https://zen-of-python.info/][zen]]).  ~api/v1/endpoints~ is the beginning of this flat style.  Here, we generate new endpoints from all the different files, but each one has a release, method, and name.  Then, when we want to see only stuff for 1.12, we query our endpoint access for those with a release of 1.12 (instead of finding the 1.12 entry and navigating through its various nests to get the endpoints).
+**** Overall Layout
+     #+NAME: config.class.js layout
+     #+BEGIN_SRC js
+       /* eslint-disable no-unused-vars */
+       const fs = require('fs')
+       class Service {
+         constructor (options) {
+           this.options = options || {};
+         }
 
-   class service {
-     constructor (options) {
-       this.options = options || {};
-     }
-     <<commented out methods>>
+         async setup (app, params) {
+           populateReleases(app,'./data/processed-audits')
+         }
+       }
 
-     async setup (app, params) {
-       request(options).then(blob => {
-         blob = JSON.parse(blob)
-         var content = Buffer.from(blob.content, 'base64').toString()
-         var configGroups =  yaml.safeLoad(content)
-         distribute(app, configGroups)
-       })
-     }
-   }
+       <<Define populateReleases>>
 
-   <<Distribute Config Groups To Individual Services>>
-   <<Populate Entries For Each Service>>
+       module.exports = function (options) {
+         return new Service(options);
+       };
 
-   module.exports = function (options) {
-     return new service(options);
-   };
+       module.exports.Service = Service;
+    #+END_SRC
 
-   module.exports.service = service;
- #+END_SRC
+We only have a single method here, which is setup.  We don't want this to be an accessible path, we are just using it to run through commands when the server first starts up.  In this case, we run a command that looks in a directory for processed JSons and puts each file into its own entry in our releases api path.
+**** Define populateReleases
+     #+NAME: Define populateReleases
+     #+BEGIN_SRC js :tangle no
+       function populateReleases (app, dir)  {
+         var processedAudits = fs.readdirSync(dir)
+         for (var i = 0; i < processedAudits.length; i++) {
+           var fileName = processedAudits[i]
+           var releaseJson = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
+           var releaseData = JSON.parse(releaseJson)
+           addEntryToReleaseService(app, fileName, releaseData)
+           addEntryToEndpointService(app, fileName, releaseData)
+         }
+       }
 
- #+RESULTS: config.class.js
-***** Distribute Config Groups To Invidiual Services
+       async function addEntryToReleaseService (app, fileName, releaseData) {
+         var service = app.service('/api/v1/releases')
+         var name = fileName.replace('-processed-audit.json', '')
+         var existingEntry = await service.find({query:{name}})
+         if (existingEntry.length === 0) {
+           service.create({name: name, data: releaseData})
+         } else {
+           service.update(existingEntry[0]._id, {name: name, data: releaseData})
+         }
+       }
 
- Our config file is given a number of groups, and half of them we don't care about.  We want to just create api services for these.
- Each of these will need to have a service named like so: 'api/v1/service_name', this is done using the feathers cli (feathers generate service)
- #+NAME: Distribute Config Groups To Individual Services
- #+BEGIN_SRC js :tangle no
-   function distribute (app, configFile) {
-     var relevantSections = ['dashboards', 'test_groups', 'dashboard_groups']
-     for (var section of relevantSections) {
-       var configSection = configFile[section]
-       var service = app.service(`/api/v1/${section}`)
-       populate(service, configSection)
-     }
-   }
-
- #+END_SRC
-
-***** Populate Entries For Each Service
-      Here we check the current db for the entry, using its name.  If it doesn't exist, we make it.  If it does, we should update it.
-      first we have to check whether there's anything that exists.  So we do a service.find() and if there are no results, we create the entry.  If there are results, we check if they match our query.
-
-     This is kind of a gross function (or a straight up gross function) I don't l ike nested if/else statements.  I feel there is a better way to handle this.
-     I am also having a problem where it is only creating a single entry every single time for each one.  like...it knows
-
-    Once I do have this, then i'll be able to restart the server, it'll make a db if needed, if not it will check the db for the existing entry, and then it will add or updae the entry....
-
-    For some reason right now, it is only adding the last one--but enough times that I know it's going through each one.  Do I need to await some respone on a thing?
-      #+NAME: Populate Entries For Each Service
-      #+BEGIN_SRC js :tangle no
-        async function populate (service, configSection) {
-          for (var entry of configSection) {
-             var existingEntry = await service.find({query:{name: entry.name}})
+       async function addEntryToEndpointService (app, fileName, releaseData) {
+         var service = app.service('/api/v1/endpoints')
+         var release = fileName.replace('-processed-audit.json', '')
+         var endpointNames = Object.keys(releaseData.endpoints)
+         for (var endpointName of endpointNames) {
+           var endpointMethods = Object.keys(releaseData.endpoints[endpointName])
+           for (var endpointMethod of endpointMethods) {
+             var rawEndpoint = releaseData.endpoints[endpointName][endpointMethod]
+             var endpoint = {
+               name: endpointName,
+               method: endpointMethod,
+               release: release,
+               level: rawEndpoint.level,
+               path: rawEndpoint.path,
+               category: rawEndpoint.cat,
+               isTested: rawEndpoint.counter > 0
+             }
+             // An endpoint is unique by name, release, method.
+             var existingEntry = await service.find({
+               query:{
+                 name: endpoint.name,
+                 method: endpoint.method,
+                 release: endpoint.release
+               }
+             })
              if (existingEntry.length === 0) {
-               service.create(entry)
+               await service.create(endpoint)
              } else {
-               service.update(existingEntry[0]._id, entry)
+               await service.update(existingEntry[0]._id, endpoint)
              }
            }
          }
+       }
 
-      #+END_SRC
-***** Commented Out Methods
- #+NAME: commented out methods
- #+BEGIN_SRC js :tangle no
-     // async find (params) {
-     //   return [];
-     // }
+     #+END_SRC
 
-     // async get (id, params) {
-     //   return {
-     //     id, text: `a new message with id: ${id}!`
-     //   };
-     // }
-
-     // async create (data, params) {
-     //   if (array.isarray(data)) {
-     //     return promise.all(data.map(current => this.create(current, params)));
-     //   }
-
-     //   return data;
-     // }
-
-     // async update (id, data, params) {
-     //   return data;
-     // }
-
-     // async patch (id, data, params) {
-     //   return data;
-     // }
-
-     // async remove (id, params) {
-     //   return { id };
-     // }
-
- #+END_SRC
-     Since it's a custom one, it has no Model or built-in functionality.  What we'll want to do is create a 'setup' function fro it that pings github and returns the config.yaml.  Then, it'll distribute its contents to our different api's.
-
- We can alter the class of our config service, defining what every single type of method does.  The big one for us is the 'setup' method.  And, in fact, since this is just a sorta dashboard arranger, we could get rid of alot of the other methods.
-*** Dashboards
-  accessible at /api/v1/dashboards
-**** Hooks
-***** cleanupGcsDashboard
-      :PROPERTIES:
-      :header-args: :noweb yes :tangle ./backend/src/hooks/cleanup-gcs-dashboard.js
-      :END:
-      Interesting thing here with async functions.  I have to put the quick ones in (like addBranch) before I do the addGcsPrefix.  If I try to add branch //after// this, then dashboardTab becomes undefined, or rather it is a pending promise of sorts.  There is a style of chaining these together that I know will make me happy, I feel like I am on the edge of comfort and this likely means someone else figured out a solution to this problem I am having.
-      #+NAME: cleanup-gcs-dashboard.js
-      #+BEGIN_SRC js
-        // Use this hook to manipulate incoming or outgoing data.
-        // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
-
-        // eslint-disable-next-line no-unused-vars
-        module.exports = function (options = {}) {
-          return async context => {
-            if (context.data.name === 'conformance-gce') {
-              context = await elaborateUpon(context)
-            }
-            return context;
-          };
-          async function elaborateUpon (context) {
-            var dashboardTab = context.data.dashboard_tab
-            var test_groups = context.app.service('/api/v1/test_groups')
-            dashboardTab = addBranch(dashboardTab)
-            dashboardTab = await addGcsPrefix(dashboardTab, test_groups)
-            return context
-          }
-
-          async function addGcsPrefix (dashboards, test_groups) {
-            var promises = dashboards.map(async dashboard => {
-              var gcsPrefix = await grabGcsPrefix(dashboard, test_groups)
-              dashboard.gcs_prefix = gcsPrefix
-              return dashboard
-            })
-            const results = await Promise.all(promises)
-            return results
-          }
-
-          async function grabGcsPrefix (dashboard, test_groups) {
-            var tg = dashboard.test_group_name
-            var test_group = await test_groups.find({query: {name: tg}})
-            return test_group[0].gcs_prefix
-          }
-          function addBranch (dashboards) {
-            return dashboards.map(dashboard => {
-              var name = dashboard.name.toLowerCase()
-              if (name.includes('(dev)')) {
-                dashboard.branch = 'dev'
-              } else if (name.includes('release')) {
-                dashboard.branch = 'release'
-              } else {
-                dashboard.branch = 'none given'
-              }
-              return dashboard
-            })
-          }
-
-        };
-
-      #+END_SRC
-***** AddLatestBuild
-      :PROPERTIES:
-      :header-args: :noweb yes :tangle ./backend/src/hooks/add-latest-build.js
-      :END:
-      After the dashboard has been cleaned up, we check it's gcs_prefix and use that to find its latest build number.  This will require pinging that server and awaiting its response back.
-
-      When you generate a hook using feathers cli, it automatically makes it an asynchronous hook.  This means that the functions happen in sequence in our dashboards.hooks.js.  So because addLatestBuild comes after
-
-I started with a basic skeleton, and kinda like how i debugged this (or set it up as a thing to work on).  I wrote up the functions for the steps I'm trying to do, knowing each one would be asynchronous.  So here it's saying: if the thing coming in is for conformance, then add Builds for the Dashboards in its data before you return the context to the next thing (i.e. add it to the database).
-
-For adding builds, we want to define the dashboards and then say they are going to be transformed by addingtheLatest build.  This is an asynchronous map function that returns just some hard-coded text back.
-
-I console.log that text in my addLatestBuild section then, in my terminal running the program I have ~npm start | grep latestBuild~  .  So now I can just monitor that feed and make sure it shows what I think it should show.  If it does, I can then check out the dashboard on localhost to confirm that a latestBuild section has been added.
-
-So now, I have a console.log setup to help me quickly, and I can confirm that the basic structure of all of this (the logic or whateveR) works.  Now I just need to have the grabLatestBuild portion ping a server.
-    #+NAME add-latest-build.js rough
-    #+BEGIN_SRC js :tangle no
-      // Use this hook to manipulate incoming or outgoing data.
-      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
-
-      // eslint-disable-next-line no-unused-vars
-      const rp = require('request-promise')
-
-      module.exports = function (options = {}) {
-        return async context => {
-            if (context.data.name === 'conformance-gce') {
-              addBuildsForDashboards(context)
-            }
-          return context;
-        };
-
-        async function addBuildsForDashboards (context) {
-          var dashboards = context.data.dashboard_tab
-          dashboards = await addLatestBuild(dashboards)
-          return context
-        }
-
-        async function addLatestBuild (dashboards) {
-          var promises = dashboards.map(async dashboard => {
-            var latestBuild = await grabLatestBuild(dashboard)
-            dashboard.latestBuild = latestBuild
-            return dashboard
-          })
-          const results = await Promise.all(promises)
-          return results
-        }
-        async function grabLatestBuild (dashboard) {
-          var buildURL = `http://gcsweb.io/${dashboard.gcs_prefix}/latest-build.txt`
-
-          return `put build here for ${buildURL}`
-        }
-      };
-
-    #+END_SRC
-
-so here is the good stuff.
-    #+NAME add-latest-build.js
+     This will read the file and send the data to our releases service, but releaes will reject it by default because some of the fiels in the data have periods and our database does not like that.  So we add a hook to Releases that takes this data given to it and changes it's peirods to underscores before trying to add it to the database.  We generated the hook using feathers/cli, setting it to be before any create or update action...meaning it manipualtes the file BEFORE it is added to the db through CREATE or UPDATE
+*** Releases
+    The file that handles this service is boilerplate feathers, so we will use this section to write and discuss the hooks used as part of the releases service.
+**** cleanReleaseData
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./backend/src/hooks/clean-release-data.js
+     :END:
+    #+NAME clean-release-data.js
     #+BEGIN_SRC js
-      // Use this hook to manipulate incoming or outgoing data.
-      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
-
-      // eslint-disable-next-line no-unused-vars
-      const rp = require('request-promise')
-
-      module.exports = function (options = {}) {
-        return async context => {
-            if (context.data.name === 'conformance-gce') {
-              context = await addBuildsForDashboards(context)
-            }
-          return context;
-        };
-
-        async function addBuildsForDashboards (context) {
-          var dashboards = context.data.dashboard_tab
-          dashboards = await addLatestBuild(dashboards)
-          return context
-        }
-
-        async function addLatestBuild (dashboards) {
-          var promises = dashboards.map(async dashboard => {
-            var latestBuild = await grabLatestBuild(dashboard)
-            dashboard.latestBuild = latestBuild
-            return dashboard
-          })
-          const results = await Promise.all(promises)
-          return results
-        }
-        async function grabLatestBuild (dashboard) {
-          var url = `http://gcsweb.k8s.io/gcs/${dashboard.gcs_prefix}/latest-build.txt`
-          var latestBuild = await rp(url)
-          return latestBuild
-        }
-      };
-
-    #+END_SRC
-***** createAuditEntry
-      :PROPERTIES:
-      :header-args: :noweb yes :tangle ./backend/src/hooks/create-audit-entry.js
-      :END:
-      We'll be given a dashboard context that, if it has conformance-gce, should submit itself to the audits service with all the relevant deeetails.  We'll make this simpel right now, and handle the pinging of the server with the audits service.
-
-      I also have confusion about async stuff still, of course.  I had issues when passing along the data originally that the dashboards would suddenly lose alot of details.  It works when I made success asynchronous, even though it's nonsense.  Like, everything I do is a 'sideffect' of the success function.  This doesn't smell right. and should be refactored.
-
-      #+NAME: create-audit-entry.js
-      #+BEGIN_SRC js
-        // Use this hook to manipulate incoming or outgoing data.
-        // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
-
-        // eslint-disable-next-line no-unused-vars
-        module.exports = function (options = {}) {
-          return async context => {
-            if (context.data.name === 'conformance-gce') {
-                var dashboards = context.data.dashboard_tab.filter(dashboard => dashboard.branch.includes('dev'))
-                var success = await createAuditsFrom(context, dashboards)
-            }
-            return context;
-          };
-
-          async function createAuditsFrom (context, dashboards) {
-            var auditService = context.app.service('/api/v1/audits')
-            for (var dashboard of dashboards) {
-              var artifactsPath = `http://gcsweb.k8s.io/gcs/${dashboard.gcs_prefix}/${dashboard.latestBuild}/artifacts/`
-              var existingEntry = await auditService.find({query:{branch: dashboard.name}})
-              if (existingEntry.length === 0) {
-                auditService.create({
-                  branch: dashboard.name,
-                  build: dashboard.latestBuild,
-                  artifactsPath: artifactsPath
-                }).then(res => console.log(`entry made for ${res.branch}!`))
-              } else {
-                auditService.update(existingEntry[0]._id, {
-                  branch: dashboard.name,
-                  build: dashboard.latestBuild,
-                  artifactsPath: artifactsPath
-                }).then(res => console.log('entry updated! for ' + res.branch))
-              }
-            }
-            return 'good job'
-          }
-        }
-      #+END_SRC
-      #+RESULTS: create-audit-entry.js
-***** next
-*** Audits
-**** Hooks
-***** acquireAuditLog
-      :PROPERTIES:
-      :header-args: :noweb yes :tangle ./backend/src/hooks/acquire-audit-log.js
-      :END:
-      We are using rp and cheerio to ping the gcsweb url that has all the various info from each k8s branch.  Our relevant info is within their bootstrap e2e master section, and we want to just look at the audit-log we find within there.
-
-I checked the strucure of the file, and each link is held within a ~pure-u-2-5~ class.  Cheerio is like the node version of jquery, and so we can do nice jquery stuff like grab the hreft for the a link witin the pure class that contains the word 'audit'.
-
-    #+NAME: acquireAuditLog
-    #+BEGIN_SRC js
-      // Use this hook to manipulate incoming or outgoing data.
-      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
-
-      // eslint-disable-next-line no-unused-vars
-      const rp = require('request-promise')
-      const cheerio = require('cheerio')
-
-      module.exports = function (options = {}) {
-        return async context => {
-          var auditLogPage = context.data.artifactsPath + 'bootstrap-e2e-master/'
-          var auditLogArray = await crawlPage(auditLogPage)
-          context.data.auditLogArray = auditLogArray
-          return context;
-        };
-
-        function crawlPage (page)  {
-          var options = {
-            uri: page,
-            transform: (body) => cheerio.load(body)
-          }
-          return rp(options).then(($) => {
-            var links = $('.pure-u-2-5 a:first-of-type:contains(audit)').attr('href')
-            return links
-          })
-        }
-      }
-    #+END_SRC
-***** downloadAuditLog
-      :PROPERTIES:
-      :header-args: :noweb yes :tangle ./backend/src/hooks/download-audit-log.js
-      :END:
-****** General Notes
-       This will happen after acquire, so we know that we have auditLogArray.  We'll take this array's url, and use request promise to grab all the stuff located there and write it to file.
-
-       Since it's a big file, we'll wanna have a write stream, and perhaps upon success a ping saying '${branch} was successfully written.'
-
-       A way to test this is to download the audit log to the same directory with a diff name, and then compare the line count for both files.
-
-       We already have a data folder, that's holding our databases, and so I made a new folder called audit-logs within that file.  And I //think// we can just do a direct path to that from our hook.  So...i'ma try it now!
-****** Code
-    If you don't want to write all the logs to disk, then you can comment out writeToFile(branch, logPath)
-    #+NAME: download-audit-log.js
-    #+BEGIN_SRC js
-      // Use this hook to manipulate incoming or outgoing data.
-      // For more information on hooks see: http://docs.feathersjs.com/api/hooks.html
-
-      // eslint-disable-next-line no-unused-vars
-      const rp = require('request-promise')
-      const fs = require('fs')
       const _ = require('lodash')
 
       module.exports = function (options = {}) {
         return async context => {
-          var logPath = context.data.auditLogArray
-          var branch = context.data.branch
-          writeToFile(branch, logPath)
+          var data = context.data.data
+          data = cleanUp(data)
+          context.data = {name: context.data.name, data: data}
           return context;
         }
-        <<write to file>>
-        <<format by pattern>>
       }
 
-    #+END_SRC
-
-    If given the path to the file, I should be able to set up a write stream that writes all the contents.  I am a little unsure where everything would download (like the relative path), and so I'll do a simple stream that just takes the name given and writes it to a file named after that particular branch.
-
-    The branch will have a name like 'GCE, v1.12 (release)'. I'd like this to be a filename, but it should be closer to gce_v1-12-release_audit.log
-    I could do a bunch of string replacements, but I think lodash would be faster.
-    #+NAME: write to file
-    #+BEGIN_SRC js :tangle no
-      function writeToFile(branch, path) {
-        var regex = /(,|.| |\(|\))/g
-        var formattedPath = _.replace(branch, regex, formatByPattern)
-        var fileName = `${formattedPath}audit.log`
-        var writeStream = fs.createWriteStream(`./data/audit-logs/${fileName}`)
-        console.log(`Attempting to write file for: ${fileName}` + '\n' + 'from:' + '\n' + path + '\n' + '~*~*~*~*~*~*~~*~*')
-        rp(path)
-          .then(response => {
-            writeStream.write(response)
-            writeStream.end()
-            writeStream.on('finish', () => console.log(`file written: ./data/audit-logs/${fileName}!`))
-            writeStream.on('error', (err) => console.log(`error for ${fileName}: ${err}`))})
-          .catch(err => console.log('request promise error: ' + err))
-      }
-    #+END_SRC
-
-    #+NAME: format by pattern
-    #+BEGIN_SRC js :tangle no
-      function formatByPattern (str) {
-        switch (str) {
-          case ',':
-          case ')':
-            return '_'
-          case '(':
-          case '.':
-            return '-'
-          case ' ':
-            return ''
-          default:
-            return str
+      function cleanUp (obj) {
+        var cleanObj = {}
+        for (key in obj) {
+          if (_.isPlainObject(obj[key])) {
+            cleanObj[key.replace(/\./g,'_')] = cleanUp(obj[key])
+          } else {
+            cleanObj[key.replace(/\./g,'_')] = obj[key]
+          }
         }
+        return cleanObj
       }
     #+END_SRC
-
-    #+RESULTS: format by pattern
-    : undefined
-
-***** other one?
 
 * Client
   :PROPERTIES:
@@ -764,154 +474,148 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
 
     This is a 'single-page-app' which means: to the server, we are only showing a single html page, the index.html.  Within this page we have javascript code running that renders different views dynamically, based on what the site visitor wants to see.  We can give these views the format of a URL, so it appears like we are going to different pages within apisnoop (and so we can share specific urls to others), but it's all really a continually transforming bit of Javascript.
 ***** Requirements
- I'll dive a bit into the import/requirements section as it sets up a style you see in a lot of React apps.
-
- We'll start by bringing in React and its Component class-we inherit all the features of this class when we render our own components, which gives them all the power we may not see at first.
    #+NAME: Import React
    #+BEGIN_SRC js
      import React, { Component } from 'react'
+     import { connect } from 'react-redux'
+     import { Route } from 'react-router-dom'
+
+     import { fetchReleaseNames} from '../actions/releases'
+     import { fetchEndpoints } from '../actions/endpoints'
+     import { changeActiveRoute } from '../actions/routes'
+     import { setInteriorLabel } from '../actions/charts'
+
+     import Header from './header'
+     import Footer from './footer'
+     import ReleasesList from './releases-list.js'
+     import MainPage from '../pages/main-page.js'
    #+END_SRC
+ We'll start by bringing in React and its Component class-we inherit all the features of this class when we render our own components, which gives them all the power we may not see at first.  We also bring in connect, which will connect our react ui to the front-end's state; which lets us dynamically change what's displayed based on the data being fed it.
+
+We are doing this because we want to have navigation links for the different releases, that will show a sunburst graph per release.  We don't know what these release_names will be though, and so we'll fetch them from the db and dynamically build our navlinks from them.
 
  Next, we'll bring in react's smart navigation.  These are what make the app appear to be multiple pages.
- #+NAME: import routing and navigation
- #+BEGIN_SRC js
-   import { Route } from 'react-router-dom'
- #+END_SRC
+
+We will grab our release names from the database and use that to build out our navigation links dynamically.
+
 
  Lastly, we bring in our different pages, which we can navigate between using a nice lil' tab and navlinks..
- #+NAME: import components
- #+BEGIN_SRC js
-   import Header from './header'
-   import Footer from './footer'
-   import MainPage from '../pages/main-page.js'
- #+END_SRC
 
- #+RESULTS: import components
+I think this will end up that we use MainPage multiple times, feeding in props as url params.  So the main page will always show a sunburst graph, and a list of tests to click into, but what data is being fed that is based on the route we are going on.
 
 ***** The overall Layout
       The general shape of this template is here:
     #+NAME: App Layout
     #+BEGIN_SRC js
       class App extends Component {
+        componentDidMount(){
+          this.props.fetchReleaseNames()
+          this.props.fetchEndpoints()
+        }
+
         render(){
           return (
             <div id='app'>
               <Header />
-              <<Routes>>
+              {this.props.release_names &&
+               <ReleasesList
+                 releases={this.props.release_names}
+                 selected='master'
+                 changeActiveRoute={this.props.changeActiveRoute}
+                 setInteriorLabel={this.props.setInteriorLabel}
+               /> }
+        <Route exact path='/' component={MainPage} />
+        <Route exact path='/:release' component={MainPage} />
               <Footer />
             </div>
           )
         }
       }
 
-      export default App
+      function mapStateToProps (state) {
+        return {
+        release_names: state.releasesStore.release_names
+        }
+      }
+
+      export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute, setInteriorLabel })(App)
     #+END_SRC
 
-***** the Navlinks
-
-    the navlinks will be visual components that act like standard links;  and so ~exact to~ acts like href.
-
-    #+NAME: Nav Links
-    #+BEGIN_SRC js :tangle no
-      <div id='nav'>
-        <NavLink exact to='/'>Audits</NavLink>
-      </div>
-    #+END_SRC
-***** the Routes
-    The routes listen to the paths chosen by nav and routes to the correct component.  So the components don't show unless the url path matches their route.
-    #+NAME: Routes
-    #+BEGIN_SRC js :tangle no
-        <Route exact path='/' component={MainPage} />
-    #+END_SRC
 ** Pages
    We are following a convention where, if a component acts as its own route and holds many different components within it, then it's called a page.  Think of navigating between different pages in a site, and each one is made up of several diff. section.  It is the same here, just that we are navigating between JS dispalying different Page components.
-*** Test Groups Commits
-    :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/pages/tg-commits-page.js
-    :END:
-    This will hold all the names taken from conformance-gce dashboard_tab.name
-      #+BEGIN_SRC js
-        import React, { Component } from 'react'
-        import { connect } from 'react-redux'
-
-  //      import { fetchConfig } from '../actions/config-actions'
- //       import CommitList from '../components/commit-list'
-
-        class TGCommitPage extends Component {
-          componentDidMount() {
-//            this.props.fetchConfig()
-          }
-
-          filterByBranch (arr, branchStr) {
-            return arr.filter(item => {
-              return item.name.includes(branchStr)
-            })
-          }
-
-          render(){
-            return (
-                <div>
-                <h1>Commits for GCE Conformance</h1>
-                <h2>Dev</h2>
-                <CommitList commits={dev} test_groups={this.props.test_groups}/>
-                <h2>Release</h2>
-                <CommitList commits={release} test_groups={this.props.test_groups}/>
-                </div>
-            )
-          }
-        }
-
-        function mapStateToProps (state) {
-          return {
-            conformance: state.configStore.conformance,
-            test_groups: state.configStore.test_groups
-          }
-        }
-
-        export default connect(mapStateToProps, {fetchConfig})(TGCommitPage)
-      #+END_SRC
 *** MainPage
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/pages/main-page.js
     :END:
-    This will hold all the names taken from conformance-gce dashboard_tab.name
+    This page will hold the different areas for release--it's sunburst, and its list of test names.  We can add additional Segments here too, as our visualizations expand.
       #+BEGIN_SRC js
         import React, { Component } from 'react'
         import { connect } from 'react-redux'
+        import { createStructuredSelector } from 'reselect'
 
-        import { fetchAudits } from '../actions/audits-actions'
+        import { focusChart, setInteriorLabel, unfocusChart } from '../actions/charts'
+        import {
+          selectActiveRoute,
+          selectEndpointsById,
+          selectEndpointsByReleaseAndNameAndMethod,
+          selectFocusPathAsArray,
+          selectFocusPathAsString,
+          selectRouteChange,
+          selectIsSunburstReady,
+          selectSunburstByReleaseWithSortedLevel
+        } from '../selectors'
+
         import SunburstSegment from '../components/sunburst-segment'
 
         class MainPage extends Component {
-          componentDidMount() {
-            this.props.fetchAudits()
-          }
-
           render(){
+            const {
+              activeRoute,
+              focusPath,
+              focusPathAsString,
+              routeChange,
+              sunburstByRelease
+            } = this.props
+
+          const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
+
             return (
                 <main id='main-splash' className='min-vh-100'>
-                  <SunburstSegment version='First'/>
-                  <h1>This Page Will Have</h1>
-                  <h2>Number of Audits: {this.props.audits.length}</h2>
-                  <ul>
-                  <li>existing sunburst visualization</li>
-                  <li>tag cloud as taken from our audits</li>
-                  <li>information about sigs when a sig-tag is present.</li>
-                  <li>A dropdown for the sunburst to filter by user-agent</li>
-                  </ul>
-                </main>
+                <h2>You are doing a good job.</h2>
+                {this.props.isSunburstReady && <SunburstSegment
+                 sunburst={{
+                   data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
+                                     : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
+                 }}
+                 focusChart={this.props.focusChart}
+                 unfocusChart={this.props.unfocusChart}
+                 release= {activeRoute}
+                 focusPath={focusPath}
+                 focusPathAsString={focusPathAsString}
+                 />
+                }
+              </main>
             )
           }
         }
 
-        function mapStateToProps (state) {
-          return {
-            audits: state.auditsStore.audits
-          }
-        }
-
-        export default connect(mapStateToProps, {fetchAudits})(MainPage)
+        export default connect(
+          createStructuredSelector({
+            activeRoute: selectActiveRoute,
+            endpointsById: selectEndpointsById,
+            focusPath: selectFocusPathAsArray,
+            focusPathAsString: selectFocusPathAsString,
+            endpointsByReleaseAndNameAndMethod: selectEndpointsByReleaseAndNameAndMethod,
+            isSunburstReady: selectIsSunburstReady,
+            routeChange: selectRouteChange,
+            sunburstByRelease: selectSunburstByReleaseWithSortedLevel
+          }),
+          {focusChart, unfocusChart}
+        ) (MainPage)
       #+END_SRC
+
+      #+RESULTS:
+
 ** Components
 The various visual parts of the app.  For the most part, we want these to be as dumb as possible--they present the stuff they're given, and if they have to do any interactive stuff it remains contained to within itself.  Any other changes should be handled outside of the component through actionCreators our and reducer updating the global state of the app.  In other words, the components display the state as it is now, and they can trigger events which update the state, but they always simply display it as it is now.
 *** Header
@@ -965,254 +669,6 @@ The various visual parts of the app.  For the most part, we want these to be as 
     #+RESULTS: Header
 
 *** Sunburst
-**** SunburstChart
-     :PROPERTIES:
-     :header-args: :noweb yes :tangle ./client/src/components/sunburst-chart.js
-     :END:
-***** Introduction
-     We will be using react-vis' basic sunburst example as our guide for this, as it is the closest to what we want.  Our goal is to add in zoom animation and percentages in the center area, but for now let's just get this loading.
-     It comes with flare data as its first data set.  We also have this 'MyData' data set.  We can use both and try switching between the two with some sorta button.  This will help us see what it loosk like when yous witch between different jobs later on.
-***** License
-      #+NAME: License
-      #+BEGIN_SRC js
-     // Copyright (c) 2016 - 2017 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-      #+END_SRC
-***** Requirements
-      The example uses extended discrete color range and label series, and both are referencing something with the files themselves.  I believe that we can just use labelseries since we are bringing in sunburst from react-vis, and the theme was just to help make the fill, which we can use with other colors instead.
-
-     We'll bring in the flareData and Sample Data to try switching between the two.
-      #+NAME: Requirements
-      #+BEGIN_SRC js
-        import React, { Component } from 'react';
-        import { Sunburst, LabelSeries } from 'react-vis'
-        import flareData from '../sample-data/flareData.json'
-      #+END_SRC
-***** Label Style
-      This will be used for our LabelSeries later, defining how iit should look.
-      #+NAME: Label Style Definition
-      #+BEGIN_SRC js
-        const LABEL_STYLE = {
-          fontSize: '20px',
-          textAnchor: 'middle'
-        }
-      #+END_SRC
-      It's written in the JSX style, so it's equal to a div having a 'style='font-size: 8px;', but in reactLand you can't just have the equal things be equal...we gotta do this camelCase stuff.
-***** Get Key Path
-      This tree map is tracing the path of nodes through the JSON tree, like tracing the url path of a singular webpage within a website.  This is the function that defines this path.
-
-IT does so recursively.  For each node it asks, 'do you have a parent?' if it doesn't we know it's root and we'll return 'root.'   If it does, we will return the node's name and its' data (or just its name if no data is available).  Then, we'll [[https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/concat][concatenate]]  this array to whatever array is returned when we apply the same function to this node's parent.  So we'll end up with an array of strings, where each one is chained as a parent to the one before.
-
-This is explained well in the code example too, so we keeping it.
-#+NAME: Get Key Path
-#+BEGIN_SRC js
-  /**
-  ,* Recursively work backwards from highlighted node to find path of valid nodes
-  ,* @param {Object} node - the current node being considered
-  ,* @returns {Array} - an array of strings describing the key route to teh current node.
-  ,*/
-
-  function getKeyPath (node) {
-    if (!node.parent) {
-      return ['root']
-    }
-
-    return [(node.data && node.data.name) || node.name].concat(
-      getKeyPath(node.parent)
-    )
-  }
-#+END_SRC
-***** Update Data
-      This takes care of when the graph is first loaded, and upon mouse hover events.  It essentially adds a fill color to each node if it's part of the path we current have our mouse on.
-   It's another recursive one, applying the fill at the very bottom and moving up.
-
-   #+NAME: Update Data
-   #+BEGIN_SRC js
-     /**
-       ,* Recursivey modify data depending on whetehr or not each cell has been selected by the hover/hlighlight
-       ,* @param {Object} data - the current node being considered
-       ,* @param {Object|Boolean} keyPath - a map of keys that are in the highlight path
-       ,* if this is false then all nodes are marked as selected.
-       ,* @returns {Object} Updated tree structure
-       ,*/
-
-     function updateData (data, keyPath) {
-       if (data.children) {
-         data.children.map(child => updateData(child,  keyPath))
-       }
-       // add a fill to all the uncolored cells
-       if (!data.hex) {
-         data.style = { fill: 'aliceBlue' }
-       }
-       data.style = {
-         ...data.style,
-         fillOpacity: keyPath && !keyPath[data.name] ? 0.2 : 1
-         // if there's a keypath AND that keypath has a data.name, then 0.2
-       }
-
-       return data
-     }
-
-     // sets up initial coloring of chart.
-     const decoratedData = updateData(flareData, false)
-   #+END_SRC
-
-
-   I have a question around the data.hex and the data.name and such, and whether that's info given by the Sunburst component, or whether it's supposed to be present in the data from Flare.  I think it's the former, but it will be good to check.
-***** The Basic Component
-      I'll give the basic overview here, and then cover each special part in detail.
-****** Component Overview
-      #+NAME: Component Overview
-      #+BEGIN_SRC js
-        export default class BasicSunburst extends Component {
-          constructor(props) {
-            super(props)
-              <<SB Initial State>>
-          }
-
-
-          render() {
-            const {clicked, data, finalValue, pathValue} = this.state
-            return (
-                <div className='basic-sunburst-wrapper'>
-                <<SB Click/Unclick Indicator>>
-                <Sunburst
-              animation
-              className='basic-sunburst-example'
-              hideRootNode
-              // when you click on the chart, set clicked to the opposite of what it is currently.
-              <<SB onValueMouseOver>>
-              <<SB onValueMouseOut>>
-              onValueClick={()=> this.setState({clicked: !clicked})}
-              style={{
-                stroke: '#ddd',
-                strokeOpacity: 0.3,
-                strokeWidth: '0.5'
-              }}
-              // colorType is a style for react-vis. literal means 'literally the color palette given'
-              colorType="literal"
-              <<SB getColor and getSize>>
-              data={data}
-              height={600}
-              width={700}
-              >
-        <<SB Display Center finalValue>>
-        </Sunburst>
-                <div className='basic-sunburst-example-path-name'>{pathValue}</div>
-                </div>
-            )
-          }
-        }
-      #+END_SRC
-****** SB Initial State
-    #+NAME: SB Initial State
-    #+BEGIN_SRC js :tangle no
-      this.state = {
-        pathValue: false,
-        data: decoratedData,
-        finalValue: 'SUNBURST',
-        clicked: false
-      }
-    #+END_SRC
-    This state is specific to each component.
-    - data :: the json we are feeding, but with each cell colored in.
-    - pathValue :: when you mouse over a node, the path it took to get to that node.
-    - finalValue :: from above, the final value of the path that this node is in.
-    - clicked :: based on mouse events, whether a cell is clicked on or not.
-
-****** Click/Unclick Indicator
-       #+NAME: SB Click/Unclick Indicator
-       #+BEGIN_SRC js :tangle no
-           <div>
-           {clicked ? 'click to unlock selection' : 'click to lock selection'}
-         </div>
-       #+END_SRC
-       This checks the component's state, if click is true, then let them know you can unlock selection.  otherwise, let them know they can click to lock.
-
-****** onValueMouseOver
-       #+NAME: SB onValueMouseOver
-       #+BEGIN_SRC js :tangle no
-         onValueMouseOver={node => {
-           if (clicked) {
-             return
-           }
-           const path = getKeyPath(node).reverse()
-           const pathAsMap = path.reduce((res, row) => {
-             console.log({res,row})
-             console.log({resRow: res[row]})
-             res[row] = true
-             return res
-           }, {})
-           this.setState({
-             finalValue: path[path.length - 1],
-             pathValue: path.join(' > '),
-             data: updateData(decoratedData, pathAsMap)
-           })
-         }}
-       #+END_SRC
-       #+RESULTS:
-       This is a value that is part of the react-vis api.  From that doc, this is a function that accepts (arc node, domEvent) as arguments.  In other words, we'll know the exact node upon which the mouse is over, and all the values given from our browser about that node element.
-
-       We know that getKeyPath returns an array of strings, each subsequent one being the parent of the node string prior.  So here we set the path to being that array reversed, so it goes from root to smallest child.
-
-       pathAsMap, to be honest, I don't fully understand.  It's used to decorate the data, and the data colors up a cell based on each section of the map being true or false.  So It hink it's saying "if this cell is in the path, mark it as true, otherwise it be false".
-
-       Then, we set the state with these values.  finalValue is going to be the last node string in our path and pathValue is going to be the full path outlined like so: 'root > child1 > child2 > lastChild'
-
-       Everytime you set the state with a react Component the whole component rerenders.  We will have things later down that are meant to display the pathVAlue and finalValue...so since we are setting them in the state and rendering the component again it's going to continually update what these show.
-****** onValueMouseOut
-  #+NAME: SB onValueMouseOut
-  #+BEGIN_SRC js :tangle no
-    onValueMouseOut={()=>
-        clicked
-        ? () => {} // an empty function, essentially 'do nothing'
-        : this.setState({
-          pathValue: false,
-          finalValue: false,
-          data: updateData(decoratedData, false)
-        })
-      }
-  #+END_SRC
-  This is like onValueMouseOver, but handling when we leave the chart.  Clicking locks the arc's position--and so, if it's clicked we do nothing...we keep all the coloring and info as it is as it's locked in place.
-
-  If clicked isn't set, and we've left the chart, then return everything back to nothing.  No finalVAlue, no path that we're on, and update the data so all cells are colored again.
-****** getColor and getSize
-       #+NAME: SB getColor and getSize
-       #+BEGIN_SRC js :tangle no
-         getSize={d => d.value}
-         getColor={d => d.hex}
-       #+END_SRC
-       This is setting the color and size for each bit of data given to the sunburst.  In this particular example, the values are given within the data itself.  If you look at the flareDataset, each child has a hex and value.  But this could a lso be a function, so we could incorporate the same color and size thinking that happened in the original sunburst.
-
-****** Display Center finalValue
-       #+NAME: SB Display Center finalValue
-       #+BEGIN_SRC js :tangle no
-         {finalValue && (
-             <LabelSeries
-           data={[{x: 0, y: 0, label: finalValue, style: LABEL_STYLE}]}
-             />
-         )}
-       #+END_SRC
-
-       LabelSeries is another component given to us by react-vis.  The data will want to know where the label will be placed, what it should be labelling, and what it should look like.  We are saying 'put it right in the center: x0/y0 and display the final node we are highlighting.'
-
 **** Sunburst Segment
      :PROPERTIES:
      :header-args: :noweb yes :tangle ./client/src/components/sunburst-segment.js
@@ -1221,514 +677,249 @@ This is explained well in the code example too, so we keeping it.
      #+NAME: Sunburst Segment
      #+BEGIN_SRC js
        import React, { Component } from 'react'
-
        import SunburstChart from './sunburst-chart'
+
 
        class SunburstSegment extends Component {
          render() {
+           const {sunburst,
+                  focusChart,
+                  focusPath,
+                  focusPathAsString,
+                  unfocusChart} = this.props
+
            return (
                <div id='sunburst-segment' className='bg_washed-red pa4'>
-               <h2>{this.props.version} Sunburst Graph</h2>
-               <SunburstChart />
+               <h2>{this.props.release}</h2>
+               {focusPathAsString.length > 0 ? <div>{focusPathAsString}</div>
+                      : <div>'Hover over Chart for Path'</div>
+             }
+               <SunburstChart
+                 sunburst={sunburst}
+                 focusChart={focusChart}
+                 unfocusChart={unfocusChart}
+                 focusPath={focusPath}
+                 focusPathAsString={focusPathAsString}
+               />
                </div>
-          )
+           )
          }
        }
 
        export default SunburstSegment
      #+END_SRC
-
-     #+RESULTS: Sunburst Segment
-**** Example Data for Sunburst
-***** Basic Sample Data
+**** Sunburst Chart
      :PROPERTIES:
-     :header-args: :noweb yes :tangle ./client/src/sample-data/sampleData.json
+     :header-args: :noweb yes :tangle ./client/src/components/sunburst-chart.js
      :END:
-     #+NAME: Example Data
+     We are passing a single prop to this, sunburst, which was created by our selector.  It is divided in {name, children} with the organization of level > category > name + method.  For the name+method there is an additional thing.
+
+
+     #+NAME: sunburst-chart.js
      #+BEGIN_SRC js
-        {
-         "title": "analytics",
-         "color": "#12939A",
-         "children": [
-           {
-             "title": "cluster",
-             "children": [
-               {"title": "AgglomerativeCluster", "color": "#12939A", "size": 3938},
-               {"title": "CommunityStructure", "color": "#12939A", "size": 3812},
-               {"title": "HierarchicalCluster", "color": "#12939A", "size": 6714},
-               {"title": "MergeEdge", "color": "#12939A", "size": 743}
-             ]
-           },
-           {
-             "title": "graph",
-             "children": [
-               {"title": "BetweennessCentrality", "color": "#12939A", "size": 3534},
-               {"title": "LinkDistance", "color": "#12939A", "size": 5731},
-               {"title": "MaxFlowMinCut", "color": "#12939A", "size": 7840},
-               {"title": "ShortestPaths", "color": "#12939A", "size": 5914},
-               {"title": "SpanningTree", "color": "#12939A", "size": 3416}
-             ]
-           },
-           {
-             "title": "optimization",
-             "children": [
-               {"title": "AspectRatioBanker", "color": "#12939A", "size": 7074}
-             ]
+       import React from 'react'
+       import { Sunburst, LabelSeries } from 'react-vis'
+       import { get, includes } from 'lodash'
+
+
+       const LABEL_STYLE = {
+         PERCENTAGE: {
+           fontSize: '1.3em',
+           textAnchor: 'middle'
+         },
+         FRACTION: {
+           fontSize: '1.2em,',
+           textAnchor: 'middle'
+         },
+         PATH: {
+           fontSize: '1em',
+           textAnchor: 'middle'
+         }
+       }
+
+       export default function SunburstChart (props) {
+
+         const {
+           focusChart,
+           focusPath,
+           sunburst,
+           unfocusChart
+         } = props
+
+         if (sunburst == null) return null
+         return(
+             <div className="sunburst-wrapper">
+             <Sunburst
+               hideRootNode
+               colorType="literal"
+               data={sunburst.data}
+               getColor={node => determineColor(node)}
+               height={500}
+               width={500}
+               onValueMouseOver={handleMouseOver}
+               onValueMouseOut={handleMouseOut}
+               onValueClick={handleClick}
+
+             >
+
+             <LabelSeries
+                data={[
+                  {x: 0, y: 20, label: 'good times', style: LABEL_STYLE.PERCENTAGE},
+                  {x: 0, y: 0, label: 'fun times', style: LABEL_STYLE.FRACTION},
+                  {x: 0, y: -20, label: 'sweet times', style: LABEL_STYLE.PATH}
+                ]}
+              />
+             </Sunburst>
+             </div>
+         )
+
+         function determineColor (node) {
+           if (focusPath.length > 0) {
+             if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
+               return node.color
+             } else {
+               return node.color + '19'
+             }
            }
-         ]
+           return node.color
+         }
+
+         function handleMouseOver (node, event) {
+           focusChart(getKeyPath(node))
+         }
+
+         function handleMouseOut () {
+           unfocusChart()
+         }
+
+         function handleClick (node, event) {
+
+         }
+
+         function getKeyPath (node) {
+           if (!node.parent) {
+             return ['root'];
+           }
+           var nodeKey = get(node, 'data.name') || get(node, 'name')
+           var parentKeyPath = getKeyPath(node.parent)
+           return [...parentKeyPath, nodeKey]
+         }
        }
      #+END_SRC
-***** D3 Flare Data Visualization
-      :PROPERTIES:
-      :header-args: :noweb yes :tangle ./client/src/sample-data/flareData.json
-      :END:
-      so I can make sure our chart look's like react-vis'
-      #+NAME: flareData
-      #+BEGIN_SRC js
-        {
-          "children": [
-            {
-              "name": "analytics",
-              "hex": "#12939A",
-              "children": [
-                {
-                  "name": "cluster",
-                  "children": [
-                    {"name": "AgglomerativeCluster", "hex": "#12939A", "value": 3938},
-                    {"name": "CommunityStructure", "hex": "#12939A", "value": 3812},
-                    {"name": "HierarchicalCluster", "hex": "#12939A", "value": 6714},
-                    {"name": "MergeEdge", "hex": "#12939A", "value": 743}
-                  ]
-                },
-                {
-                  "name": "graph",
-                  "children": [
-                    {"name": "BetweennessCentrality", "hex": "#12939A", "value": 3534},
-                    {"name": "LinkDistance", "hex": "#12939A", "value": 5731},
-                    {"name": "MaxFlowMinCut", "hex": "#12939A", "value": 7840},
-                    {"name": "ShortestPaths", "hex": "#12939A", "value": 5914},
-                    {"name": "SpanningTree", "hex": "#12939A", "value": 3416}
-                  ]
-                },
-                {
-                  "name": "optimization",
-                  "children": [
-                    {"name": "AspectRatioBanker", "hex": "#12939A", "value": 7074}
-                  ]
-                }
-              ]
-            },
-            {
-              "name": "animate",
-              "children": [
-                {"name": "Easing", "hex": "#12939A", "value": 17010},
-                {"name": "FunctionSequence", "hex": "#12939A", "value": 5842},
-                {
-                  "name": "interpolate",
-                  "children": [
-                    {"name": "ArrayInterpolator", "hex": "#12939A", "value": 1983},
-                    {"name": "hexInterpolator", "hex": "#12939A", "value": 2047},
-                    {"name": "DateInterpolator", "hex": "#12939A", "value": 1375},
-                    {"name": "Interpolator", "hex": "#12939A", "value": 8746},
-                    {"name": "MatrixInterpolator", "hex": "#12939A", "value": 2202},
-                    {"name": "NumberInterpolator", "hex": "#12939A", "value": 1382},
-                    {"name": "ObjectInterpolator", "hex": "#12939A", "value": 1629},
-                    {"name": "PointInterpolator", "hex": "#12939A", "value": 1675},
-                    {"name": "RectangleInterpolator", "hex": "#12939A", "value": 2042}
-                  ]
-                },
-                {"name": "ISchedulable", "hex": "#12939A", "value": 1041},
-                {"name": "Parallel", "hex": "#12939A", "value": 5176},
-                {"name": "Pause", "hex": "#12939A", "value": 449},
-                {"name": "Scheduler", "hex": "#12939A", "value": 5593},
-                {"name": "Sequence", "hex": "#12939A", "value": 5534},
-                {"name": "Transition", "hex": "#12939A", "value": 9201},
-                {"name": "Transitioner", "hex": "#12939A", "value": 19975},
-                {"name": "TransitionEvent", "hex": "#12939A", "value": 1116},
-                {"name": "Neonate", "hex": "#12939A", "value": 6006}
-              ]
-            },
-            {
-              "name": "data",
-              "children": [
-                {
-                  "name": "converters",
-                  "children": [
-                    {"name": "Converters", "hex": "#12939A", "value": 721},
-                    {"name": "DelimitedTextConverter", "hex": "#12939A", "value": 4294},
-                    {"name": "GraphMLConverter", "hex": "#12939A", "value": 9800},
-                    {"name": "IDataConverter", "hex": "#12939A", "value": 1314},
-                    {"name": "JSONConverter", "hex": "#12939A", "value": 2220}
-                  ]
-                },
-                {"name": "DataField", "hex": "#12939A", "value": 1759},
-                {"name": "DataSchema", "hex": "#12939A", "value": 2165},
-                {"name": "DataSet", "hex": "#12939A", "value": 586},
-                {"name": "DataSource", "hex": "#12939A", "value": 3331},
-                {"name": "DataTable", "hex": "#12939A", "value": 772},
-                {"name": "DataUtil", "hex": "#12939A", "value": 3322}
-              ]
-            },
-            {
-              "name": "display",
-              "children": [
-                {"name": "DirtySprite", "hex": "#12939A", "value": 8833},
-                {"name": "LineSprite", "hex": "#12939A", "value": 1732},
-                {"name": "RectSprite", "hex": "#12939A", "value": 3623},
-                {"name": "TextSprite", "hex": "#12939A", "value": 10066}
-              ]
-            },
-            {
-              "name": "flex",
-              "children": [
-                {"name": "FlareVis", "hex": "#12939A", "value": 4116}
-              ]
-            },
-            {
-              "name": "physics",
-              "children": [
-                {"name": "DragForce", "hex": "#12939A", "value": 1082},
-                {"name": "GravityForce", "hex": "#12939A", "value": 1336},
-                {"name": "IForce", "hex": "#12939A", "value": 319},
-                {"name": "NBodyForce", "hex": "#12939A", "value": 10498},
-                {"name": "Particle", "hex": "#12939A", "value": 2822},
-                {"name": "Simulation", "hex": "#12939A", "value": 9983},
-                {"name": "Spring", "hex": "#12939A", "value": 2213},
-                {"name": "SpringForce", "hex": "#12939A", "value": 1681}
-              ]
-            },
-            {
-              "name": "query",
-              "children": [
-                {"name": "AggregateExpression", "hex": "#12939A", "value": 1616},
-                {"name": "And", "hex": "#12939A", "value": 1027},
-                {"name": "Arithmetic", "hex": "#12939A", "value": 3891},
-                {"name": "Average", "hex": "#12939A", "value": 891},
-                {"name": "BinaryExpression", "hex": "#12939A", "value": 2893},
-                {"name": "Comparison", "hex": "#12939A", "value": 5103},
-                {"name": "CompositeExpression", "hex": "#12939A", "value": 3677},
-                {"name": "Count", "hex": "#12939A", "value": 781},
-                {"name": "DateUtil", "hex": "#12939A", "value": 4141},
-                {"name": "Distinct", "hex": "#12939A", "value": 933},
-                {"name": "Expression", "hex": "#12939A", "value": 5130},
-                {"name": "ExpressionIterator", "hex": "#12939A", "value": 3617},
-                {"name": "Fn", "hex": "#12939A", "value": 3240},
-                {"name": "If", "hex": "#12939A", "value": 2732},
-                {"name": "IsA", "hex": "#12939A", "value": 2039},
-                {"name": "Literal", "hex": "#12939A", "value": 1214},
-                {"name": "Match", "hex": "#12939A", "value": 3748},
-                {"name": "Maximum", "hex": "#12939A", "value": 843},
-                {
-                  "name": "methods",
-                  "children": [
-                    {"name": "add", "hex": "#12939A", "value": 593},
-                    {"name": "and", "hex": "#12939A", "value": 330},
-                    {"name": "average", "hex": "#12939A", "value": 287},
-                    {"name": "count", "hex": "#12939A", "value": 277},
-                    {"name": "distinct", "hex": "#12939A", "value": 292},
-                    {"name": "div", "hex": "#12939A", "value": 595},
-                    {"name": "eq", "hex": "#12939A", "value": 594},
-                    {"name": "fn", "hex": "#12939A", "value": 460},
-                    {"name": "gt", "hex": "#12939A", "value": 603},
-                    {"name": "gte", "hex": "#12939A", "value": 625},
-                    {"name": "iff", "hex": "#12939A", "value": 748},
-                    {"name": "isa", "hex": "#12939A", "value": 461},
-                    {"name": "lt", "hex": "#12939A", "value": 597},
-                    {"name": "lte", "hex": "#12939A", "value": 619},
-                    {"name": "max", "hex": "#12939A", "value": 283},
-                    {"name": "min", "hex": "#12939A", "value": 283},
-                    {"name": "mod", "hex": "#12939A", "value": 591},
-                    {"name": "mul", "hex": "#12939A", "value": 603},
-                    {"name": "neq", "hex": "#12939A", "value": 599},
-                    {"name": "not", "hex": "#12939A", "value": 386},
-                    {"name": "or", "hex": "#12939A", "value": 323},
-                    {"name": "orderby", "hex": "#12939A", "value": 307},
-                    {"name": "range", "hex": "#12939A", "value": 772},
-                    {"name": "select", "hex": "#12939A", "value": 296},
-                    {"name": "stddev", "hex": "#12939A", "value": 363},
-                    {"name": "sub", "hex": "#12939A", "value": 600},
-                    {"name": "sum", "hex": "#12939A", "value": 280},
-                    {"name": "update", "hex": "#12939A", "value": 307},
-                    {"name": "variance", "hex": "#12939A", "value": 335},
-                    {"name": "where", "hex": "#12939A", "value": 299},
-                    {"name": "xor", "hex": "#12939A", "value": 354},
-                    {"name": "_", "hex": "#12939A", "value": 264}
-                  ]
-                },
-                {"name": "Minimum", "hex": "#12939A", "value": 843},
-                {"name": "Not", "hex": "#12939A", "value": 1554},
-                {"name": "Or", "hex": "#12939A", "value": 970},
-                {"name": "Query", "hex": "#12939A", "value": 13896},
-                {"name": "Range", "hex": "#12939A", "value": 1594},
-                {"name": "StringUtil", "hex": "#12939A", "value": 4130},
-                {"name": "Sum", "hex": "#12939A", "value": 791},
-                {"name": "Variable", "hex": "#12939A", "value": 1124},
-                {"name": "Variance", "hex": "#12939A", "value": 1876},
-                {"name": "Xor", "hex": "#12939A", "value": 1101}
-              ]
-            },
-            {
-              "name": "scale",
-              "children": [
-                {"name": "IScaleMap", "hex": "#FF9833", "value": 2105},
-                {"name": "LinearScale", "hex": "#FF9833", "value": 1316},
-                {"name": "LogScale", "hex": "#FF9833", "value": 3151},
-                {"name": "OrdinalScale", "hex": "#FF9833", "value": 3770},
-                {"name": "QuantileScale", "hex": "#1A3177", "value": 2435},
-                {"name": "QuantitativeScale", "hex": "#FF9833", "value": 4839},
-                {"name": "RootScale", "hex": "#FF9833", "value": 1756},
-                {"name": "Scale", "hex": "#FF9833", "value": 4268},
-                {"name": "ScaleType", "hex": "#FF9833", "value": 1821},
-                {"name": "TimeScale", "hex": "#FF9833", "value": 5833}
-              ]
-            },
-            {
-              "name": "util",
-              "children": [
-                {"name": "Arrays", "hex": "#12939A", "value": 8258},
-                {"name": "hexs", "hex": "#12939A", "value": 10001},
-                {"name": "Dates", "hex": "#12939A", "value": 8217},
-                {"name": "Displays", "hex": "#12939A", "value": 12555},
-                {"name": "Filter", "hex": "#12939A", "value": 2324},
-                {"name": "Geometry", "hex": "#12939A", "value": 10993},
-                {
-                  "name": "heap",
-                  "children": [
-                    {"name": "FibonacciHeap", "hex": "#12939A", "value": 9354},
-                    {"name": "HeapNode", "hex": "#12939A", "value": 1233}
-                  ]
-                },
-                {"name": "IEvaluable", "hex": "#12939A", "value": 335},
-                {"name": "IPredicate", "hex": "#12939A", "value": 383},
-                {"name": "IValueProxy", "hex": "#12939A", "value": 874},
-                {
-                  "name": "math",
-                  "children": [
-                    {"name": "DenseMatrix", "hex": "#12939A", "value": 3165},
-                    {"name": "IMatrix", "hex": "#12939A", "value": 2815},
-                    {"name": "SparseMatrix", "hex": "#12939A", "value": 3366}
-                  ]
-                },
-                {"name": "Maths", "hex": "#12939A", "value": 17705},
-                {"name": "Orientation", "hex": "#12939A", "value": 1486},
-                {
-                  "name": "palette",
-                  "children": [
-                    {"name": "hexPalette", "hex": "#12939A", "value": 6367},
-                    {"name": "Palette", "hex": "#12939A", "value": 1229},
-                    {"name": "ShapePalette", "hex": "#12939A", "value": 2059},
-                    {"name": "valuePalette", "hex": "#12939A", "value": 2291}
-                  ]
-                },
-                {"name": "Property", "hex": "#12939A", "value": 5559},
-                {"name": "Shapes", "hex": "#12939A", "value": 19118},
-                {"name": "Sort", "hex": "#12939A", "value": 6887},
-                {"name": "Stats", "hex": "#12939A", "value": 6557},
-                {"name": "Strings", "hex": "#12939A", "value": 22026}
-              ]
-            },
-            {
-              "name": "vis",
-              "children": [
-                {
-                  "name": "axis",
-                  "children": [
-                    {"name": "Axes", "hex": "#12939A", "value": 1302},
-                    {"name": "Axis", "hex": "#12939A", "value": 24593},
-                    {"name": "AxisGridLine", "hex": "#12939A", "value": 652},
-                    {"name": "AxisLabel", "hex": "#12939A", "value": 636},
-                    {"name": "CartesianAxes", "hex": "#12939A", "value": 6703}
-                  ]
-                },
-                {
-                  "name": "controls",
-                  "children": [
-                    {"name": "AnchorControl", "hex": "#12939A", "value": 2138},
-                    {"name": "ClickControl", "hex": "#12939A", "value": 3824},
-                    {"name": "Control", "hex": "#12939A", "value": 1353},
-                    {"name": "ControlList", "hex": "#12939A", "value": 4665},
-                    {"name": "DragControl", "hex": "#12939A", "value": 2649},
-                    {"name": "ExpandControl", "hex": "#12939A", "value": 2832},
-                    {"name": "HoverControl", "hex": "#12939A", "value": 4896},
-                    {"name": "IControl", "hex": "#12939A", "value": 763},
-                    {"name": "PanZoomControl", "hex": "#12939A", "value": 5222},
-                    {"name": "SelectionControl", "hex": "#12939A", "value": 7862},
-                    {"name": "TooltipControl", "hex": "#12939A", "value": 8435}
-                  ]
-                },
-                {
-                  "name": "data",
-                  "children": [
-                    {"name": "Data", "hex": "#12939A", "value": 20544},
-                    {"name": "DataList", "hex": "#12939A", "value": 19788},
-                    {"name": "DataSprite", "hex": "#12939A", "value": 10349},
-                    {"name": "EdgeSprite", "hex": "#12939A", "value": 3301},
-                    {"name": "NodeSprite", "hex": "#12939A", "value": 19382},
-                    {
-                      "name": "render",
-                      "children": [
-                        {"name": "ArrowType", "hex": "#12939A", "value": 698},
-                        {"name": "EdgeRenderer", "hex": "#12939A", "value": 5569},
-                        {"name": "IRenderer", "hex": "#12939A", "value": 353},
-                        {"name": "ShapeRenderer", "hex": "#12939A", "value": 2247}
-                      ]
-                    },
-                    {"name": "ScaleBinding", "hex": "#12939A", "value": 11275},
-                    {"name": "Tree", "hex": "#12939A", "value": 7147},
-                    {"name": "TreeBuilder", "hex": "#12939A", "value": 9930}
-                  ]
-                },
-                {
-                  "name": "events",
-                  "children": [
-                    {"name": "DataEvent", "hex": "#12939A", "value": 2313},
-                    {"name": "SelectionEvent", "hex": "#12939A", "value": 1880},
-                    {"name": "TooltipEvent", "hex": "#12939A", "value": 1701},
-                    {"name": "VisualizationEvent", "hex": "#12939A", "value": 1117}
-                  ]
-                },
-                {
-                  "name": "legend",
-                  "children": [
-                    {"name": "Legend", "hex": "#12939A", "value": 20859},
-                    {"name": "LegendItem", "hex": "#12939A", "value": 4614},
-                    {"name": "LegendRange", "hex": "#12939A", "value": 10530}
-                  ]
-                },
-                {
-                  "name": "operator",
-                  "children": [
-                    {
-                      "name": "distortion",
-                      "children": [
-                        {"name": "BifocalDistortion", "hex": "#12939A", "value": 4461},
-                        {"name": "Distortion", "hex": "#12939A", "value": 6314},
-                        {"name": "FisheyeDistortion", "hex": "#12939A", "value": 3444}
-                      ]
-                    },
-                    {
-                      "name": "encoder",
-                      "children": [
-                        {"name": "hexEncoder", "hex": "#12939A", "value": 3179},
-                        {"name": "Encoder", "hex": "#12939A", "value": 4060},
-                        {"name": "PropertyEncoder", "hex": "#12939A", "value": 4138},
-                        {"name": "ShapeEncoder", "hex": "#12939A", "value": 1690},
-                        {"name": "valueEncoder", "hex": "#12939A", "value": 1830}
-                      ]
-                    },
-                    {
-                      "name": "filter",
-                      "children": [
-                        {"name": "FisheyeTreeFilter", "hex": "#12939A", "value": 5219},
-                        {"name": "GraphDistanceFilter", "hex": "#12939A", "value": 3165},
-                        {"name": "VisibilityFilter", "hex": "#12939A", "value": 3509}
-                      ]
-                    },
-                    {"name": "IOperator", "hex": "#12939A", "value": 1286},
-                    {
-                      "name": "label",
-                      "children": [
-                        {"name": "Labeler", "hex": "#12939A", "value": 9956},
-                        {"name": "RadialLabeler", "hex": "#12939A", "value": 3899},
-                        {"name": "StackedAreaLabeler", "hex": "#12939A", "value": 3202}
-                      ]
-                    },
-                    {
-                      "name": "layout",
-                      "children": [
-                        {"name": "AxisLayout", "hex": "#12939A", "value": 6725},
-                        {"name": "BundledEdgeRouter", "hex": "#12939A", "value": 3727},
-                        {"name": "CircleLayout", "hex": "#12939A", "value": 9317},
-                        {"name": "CirclePackingLayout", "hex": "#12939A", "value": 12003},
-                        {"name": "DendrogramLayout", "hex": "#12939A", "value": 4853},
-                        {"name": "ForceDirectedLayout", "hex": "#12939A", "value": 8411},
-                        {"name": "IcicleTreeLayout", "hex": "#12939A", "value": 4864},
-                        {"name": "IndentedTreeLayout", "hex": "#12939A", "value": 3174},
-                        {"name": "Layout", "hex": "#12939A", "value": 7881},
-                        {"name": "NodeLinkTreeLayout", "hex": "#12939A", "value": 12870},
-                        {"name": "PieLayout", "hex": "#12939A", "value": 2728},
-                        {"name": "RadialTreeLayout", "hex": "#12939A", "value": 12348},
-                        {"name": "RandomLayout", "hex": "#12939A", "value": 870},
-                        {"name": "StackedAreaLayout", "hex": "#12939A", "value": 9121},
-                        {"name": "TreeMapLayout", "hex": "#12939A", "value": 9191}
-                      ]
-                    },
-                    {"name": "Operator", "hex": "#12939A", "value": 2490},
-                    {"name": "OperatorList", "hex": "#12939A", "value": 5248},
-                    {"name": "OperatorSequence", "hex": "#12939A", "value": 4190},
-                    {"name": "OperatorSwitch", "hex": "#12939A", "value": 2581},
-                    {"name": "SortOperator", "hex": "#12939A", "value": 2023}
-                  ]
-                },
-                {"name": "Visualization", "hex": "#12939A", "value": 16540}
-              ]
-            }
-          ]
-        }
-      #+END_SRC
 
-** Lib
-*** Utilities
+     #+RESULTS: sunburst-chart.js
+
+*** Filter List
     :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/lib/utils.js
+    :header-args: :noweb yes :tangle ./client/src/components/filters-list.js
     :END:
+    #+NAME: filters-list.js
     #+BEGIN_SRC js
-   import * as d3 from 'd3';
+      import React, { Component } from 'react'
 
-function formatNumberTooltip(x) {
-  return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-export function formatNameTooltip(d) {
-  const name = d.data.name;
-  return `${name}<br> (${formatNumberTooltip(d.value)})`;
-}
-export function computeTextRotation(d, x) {
-  if (d.depth !== 0) {
-    return ((x((d.x0 + d.x1) / 2) - (Math.PI / 2)) / Math.PI) * 180;
-  }
-  return 0;
-}
-export function wrap() {
-  const self = d3.select(this);
-  let textLength = self.node().getComputedTextLength();
-  let text = self.text();
-  while (textLength > (20) && text.length > 0) {
-    text = text.slice(0, -1);
-    self.text(`${text}...`);
-    textLength = self.node().getComputedTextLength();
-  }
-}
-export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
-  const self = context;
-  text.transition().attr('opacity', 0);
-  SVG.transition()
-    .duration(750)
-    .tween('scale', () => {
-      const xd = d3.interpolate(x.domain(), [d.x0, d.x1]);
-      const yd = d3.interpolate(y.domain(), [d.y0, 1]);
-      const yr = d3.interpolate(y.range(), [d.y0 ? 20 : 0, RADIUS]);
-      return function (t) { x.domain(xd(t)); y.domain(yd(t)).range(yr(t)); };
-    })
-    .selectAll('path')
-    .attrTween('d', select => function () { return ARC(select); })
-    .on('end', function (e) {
-      if (e.x0 > d.x0 && e.x0 < d.x1 && e.depth <= 3) {
-        const arcText = d3.select(this.parentNode).select('text');
-        arcText.transition().duration(750)
-            .attr('opacity', 1)
-            .attr('class', 'visible')
-            .attr('transform', () => `rotate(${computeTextRotation(e, x)})`)
-            .attr('x', select => y(select.y0))
-            .text(select => self.props.label ? select.data.name : '') // eslint-disable-line no-confusing-arrow
-            .each(wrap);
-      }
-    })
-    .selectAll('path')
-    .attrTween('d', tweenedData => function () { return ARC(tweenedData); });
-  self.props.onSelect(d);
-}
+      class FiltersList extends Component {
+        constructor (props) {
+          super(props)
+          this.optionsList = this.optionsList.bind(this)
+        }
 
+        optionsList (options) {
+           var formattedNames = options.map(name => {
+             return name.replace(/[\[\]]/g,'').replace(/_/g,'.')
+           })
+          var selected = this.props.selected.map(selection => {
+            return selection.replace(/_/g,'.') //.replace(/^/,'[').replace(/$/,']')
+          })
+          return formattedNames.map(name => {
+            console.log({name, selected})
+            if (selected.includes(name)) {
+              return(
+                  <a className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink" href="#0" key={`filter_${name}`}>{name}</a>
+              )
+            } else {
+              return (
+                  <a className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib silver" href="#0" key={`filter_${name}`}>{name}</a>
+              )
+            }
+          })
+        }
+
+          render () {
+            console.log({filterProps: this.props})
+            return (
+                <div className="ph3 mt4">
+                <h1 className="f6 fw6 ttu tracked">{this.props.context}</h1>
+                {this.optionsList(this.props.options)}
+              </div>
+            )
+          }
+        }
+
+        export default FiltersList
     #+END_SRC
+
+   Is expecting:
+- context :: a string that determines the header of the list
+- selected ::  an array of strings, for the options selected by default
+- options :: an array of options we will create buttons for.
+*** Releases List
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/components/releases-list.js
+    :END:
+    #+NAME: releases-list.js
+    #+BEGIN_SRC js
+      import React, { Component } from 'react'
+      import { NavLink } from 'react-router-dom'
+
+      class ReleasesList extends Component {
+        constructor (props) {
+          super(props)
+          this.optionsList = this.optionsList.bind(this)
+          this.handleClick = this.handleClick.bind(this)
+        }
+
+        optionsList (options) {
+          return options.map(option => {
+            return(
+                <NavLink
+                  className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink"
+                  exact to={option.name}
+                  key={`release_${option._id}`}
+                  onClick={this.handleClick}
+                >
+                {option.name}
+              </NavLink>
+            )
+          })
+        }
+
+        render () {
+          return (
+              <div className="ph3 mt4">
+              <h1 className="f6 fw6 ttu tracked">Releases</h1>
+              {this.optionsList(this.props.releases)}
+              </div>
+          )
+        }
+
+        handleClick (e) {
+          console.log('hi from clicking!!', e.target.innerText)
+          this.props.changeActiveRoute(e.target.innerText)
+          this.props.setInteriorLabel(e.target.innerText)
+        }
+      }
+
+
+      export default ReleasesList
+    #+END_SRC
+
+    #+RESULTS: releases-list.js
+
+   Is expecting:
+- context :: a string that determines the header of the list
+- selected ::  an array of strings, for the options selected by default
+- options :: an array of options we will create buttons
+** Lib
 *** Service workers
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/lib/service-workers.js
@@ -1853,88 +1044,178 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
     We'll use the index page of the actions to set up our axios client.  axios handles our fetch requests, since we'll be fetching from another server and not from a data file within this app.  Axios is an http request client that uses promises (a new javascript convention for handling asynchronous calls).[[https://www.npmjs.com/package/axios][ Axios page on NPM]]
 
     We'll want to configure a client app for axios, that sets the host we are trying to connect to and the type of information we are expecting to get.  Since we are working with a feathers api, then we know we just need to grab JSON.
+    #+NAME: axios_config
     #+BEGIN_SRC js
       import axios from 'axios'
 
       export const client = axios.create({
-        baseURL: "http://apisnoop.cncf.io:3030",
+        baseURL: "http://localhost:3030",
         headers: {
           "Content-Type": "application/json"
         }
       })
     #+END_SRC
+
+    #+RESULTS: axios_config
+
    These work with redux to deliver our store an object that has a 'type' and a payload.  So the type tells our store reducers what to do with it, and the payload is the data that is being added to the global state.
 
-*** Config Actions
+*** Releases Actions
     :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/actions/config-actions.js
+    :header-args: :noweb yes :tangle ./client/src/actions/releases.js
     :END:
 **** Requirements
-    We are going to ping our feathers database to grab our contacts.  We've set up an axios client (in index.js) to handle these types of requests, so we'll bring it in, and use the client to grab data.
     #+NAME: Requirements
     #+BEGIN_SRC js
       import { client } from './'
 
-      const url = '/config'
-
     #+END_SRC
-**** Fetching Config
-      The dispatch is being used so our redux stores can hear an action took place.  So we are sending out a broadcast(dispatch) that says 'FETCH CONFIG HAPPENED!' and we're bringing with it a payload.  Redux will hear this action, and assign the payload to the correct part of the app's state.
-      #+NAME: config-actions.js
-      #+BEGIN_SRC js
+**** Our URL Variables
+     #+NAME: URL Variable
+     #+BEGIN_SRC js
+      const url = '/api/v1/releases'
+     #+END_SRC
 
-        export function fetchConfig () {
+**** Fetching Releases
+      #+NAME: Fetch Releases
+      #+BEGIN_SRC js
+        export function fetchReleases () {
           return dispatch => {
             dispatch({
-              type: 'FETCH_CONFIG',
+              type: 'FETCH_RELEASES',
               payload: client.get(url)
             })
           }
         }
       #+END_SRC
+**** Fetching Release
+      #+NAME: Fetch Release
+      #+BEGIN_SRC js
+        export function fetchRelease (releaseId) {
+          return dispatch => {
+            dispatch({
+              type: 'FETCH_RELEASE',
+              payload: client.get(`${url}?_id=${releaseId}`)
+            })
+          }
+        }
+      #+END_SRC
+**** Fetch Release Names
+     This gives us the url's to fed our release list, so on the main page you can choose between 1.11 and 1.12 and so on.
+     What I want to do is a client.get but only ask for the sunburst data back.
 
-  When this is pinged it'll create a few new type of actions:
-    + 'FETCH_CONFIG_PENDING'
-    + 'FETCH_CONFIG_FULFILLED'
-    + 'FETCH_CONFIG_REJECTED'
+Feathers lets us do some nice REST style querying, choosing which elements we are selecting from the db.  For the release_names we just want the names and the _id for each entry, so we add those to our select route.  Now we can use the _id in a find request when someone clicks on a particular route.
+     #+NAME: fetchReleaseNames
+     #+BEGIN_SRC js
+        export function fetchReleaseNames () {
+          return dispatch => {
+            dispatch({
+              type: 'FETCH_RELEASE_NAMES',
+              payload: client.get('/api/v1/releases?$select[]=name&$select[]=_id')
+            })
+          }
+        }
 
-  This is done automatically, and so we don't need to create action creators for these various actions, we just need to tell our reducer to listen to the 'FETCH_CONFIG_FULFILLED' action and handle the payload appropriately.
-**** Fetch Particular Dashboard
-**** Fetch Particular Testgroup
-*** Audits Actions
+     #+END_SRC
+**** Choose New Main Release
+      #+NAME: chooseNewMain
+      #+BEGIN_SRC js
+        export function chooseNewMain (name) {
+          return dispatch => {
+            dispatch({
+              type: 'NEW_MAIN_CHOSEN',
+              payload: name
+            })
+          }
+        }
+      #+END_SRC
+*** Endpoint Actions
     :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/actions/audits-actions.js
+    :header-args: :noweb yes :tangle ./client/src/actions/endpoints.js
     :END:
 **** Requirements
-    We are going to ping our feathers database to grab our contacts.  We've set up an axios client (in index.js) to handle these types of requests, so we'll bring it in, and use the client to grab data.
     #+NAME: Requirements
     #+BEGIN_SRC js
       import { client } from './'
-      const url = '/api/v1/audits'
 
     #+END_SRC
-**** Fetching Audits
-      The dispatch is being used so our redux stores can hear an action took place.  So we are sending out a broadcast(dispatch) that says 'FETCH AUDITS HAPPENED!' and we're bringing with it a payload.  Redux will hear this action, and assign the payload to the correct part of the app's state.
-      #+NAME: audits-actions.js
-      #+BEGIN_SRC js
+**** Our URL Variables
+     #+NAME: URL Variable
+     #+BEGIN_SRC js
+      const url = '/api/v1/endpoints'
+     #+END_SRC
 
-        export function fetchAudits () {
+**** Fetching Endpoints
+      #+NAME: Fetch Endpoints
+      #+BEGIN_SRC js
+        export function fetchEndpoints () {
           return dispatch => {
             dispatch({
-              type: 'FETCH_AUDITS',
+              type: 'FETCH_ENDPOINTS',
               payload: client.get(url)
             })
           }
         }
       #+END_SRC
-
-  When this is pinged it'll create a few new type of actions:
-    + 'FETCH_AUDITS_PENDING'
-    + 'FETCH_AUDITS_FULFILLED'
-    + 'FETCH_AUDITS_REJECTED'
-
-  This is done automatically, and so we don't need to create action creators for these various actions, we just need to tell our reducer to listen to the 'FETCH_AUDITS_FULFILLED' action and handle the payload appropriately.
+*** Charts Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/charts.js
+    :END:
+**** Focus Chart
+      #+NAME: Focusing Chart
+      #+BEGIN_SRC js
+        export function focusChart (keyPath) {
+          return {
+            type: 'FOCUS_CHART',
+            payload: keyPath
+          }
+        }
+      #+END_SRC
+**** Set Interior Label
+      #+NAME: Set Interior Label
+      #+BEGIN_SRC js
+        export function setInteriorLabel (keyPath) {
+          return {
+            type: 'SET_INTERIOR_LABEL',
+            payload: keyPath
+          }
+        }
+      #+END_SRC
+**** Unfocus Chart
+      #+NAME: Unfocus Chart
+      #+BEGIN_SRC js
+        export function unfocusChart() {
+          return {
+            type: 'UNFOCUS_CHART'
+          }
+        }
+      #+END_SRC
+*** Routes Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/actions/routes.js
+    :END:
+**** Change Route
+      #+NAME: Focusing Chart
+      #+BEGIN_SRC js
+        export function changeActiveRoute (target) {
+          return {
+            type: 'CHANGE_ACTIVE_ROUTE',
+            payload: target
+          }
+        }
+      #+END_SRC
+    #+NAME: Routes Actions
 ** Reducers
+*** Introduction
+ - Reducers/Charts :: Help us manage how a chart is manipulated based on mouseover, click, mouseleave, and other things..
+ - Reducers/Endpoints :: Handles when we make a call to our endpoints API, changing the loading status upon pending, and delivering the endpoints (sorted by ID) to our store when the API request is fulfilled.
+ - Reducers/Releases :: Older reducer that will likely be phased out.
+ - Reducers/Routes :: listens to the  URL routes and updates state accordingly (so we can set the component based on current URL.
+
+For each reducer, we follow a similar pattern:  we'll set an initial state for what should be held in this store, and what types it's expecting (object, array, string, etc).  Then, we listen to various action dispatches and handle them through a switch operation.  Each action will come with some sorta payload (defined by the action creator in our actions folder).  The reducer just takes the payload and adds it to the store, which will update the state.
+
+The reducer is not manipulating the data in any way.  It takes the payload unaffected and adds it to the state the same way.  We then use our selectors to massage the data to work for whatever props we need.
+
 *** index.js
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/reducers/index.js
@@ -1945,54 +1226,384 @@ export function handleClick(SVG, RADIUS, ARC, x, y, d, text, context) {
     #+BEGIN_SRC js
       import { combineReducers } from 'redux'
 
-      import AuditsReducer from './audits-reducer'
+      import ReleasesReducer from './releases'
+      import EndpointsReducer from './endpoints'
+      import ChartsReducer from './charts'
+      import RoutesReducer from './routes'
     #+END_SRC
 
     #+NAME: Reducers
     #+BEGIN_SRC js
       const reducers = {
-        auditsStore: AuditsReducer
+        charts: ChartsReducer,
+        endpoints: EndpointsReducer,
+        releasesStore: ReleasesReducer,
+        routes: RoutesReducer
       }
 
       const rootReducer = combineReducers(reducers)
 
       export default rootReducer
     #+END_SRC
-*** Audits Reducer
+*** Charts Reducer
     :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/reducers/audits-reducer.js
+    :header-args: :noweb yes :tangle ./client/src/reducers/charts.js
     :END:
-**** Initial State
-    We'll first create the initial state for our contact, so we don't get a null error before we have any data.  It'll either be an empty object, or an object filled with data from our server.  In either case, we are giving our components a structure for what they can expect to display, and then the data to display.
-#+NAME: Audits Initial State
-#+BEGIN_SRC js
-  const defaultState = {
-    audits: [],
-    loading: true,
-    errors: {}
-  }
 
-#+END_SRC
 
-**** The Reducer
-     #+NAME: The Audits Reducer
+     #+NAME: The Charts Reducer
      #+BEGIN_SRC js
-       export default (state = defaultState, action = {}) => {
-         switch (action.type) {
-           case 'FETCH_AUDITS_FULFILLED': {
-             var config = action.payload.data
-             console.log(config)
-             return {
-               ...state,
-               audits: action.payload.data
-             }
-           }
-           default:
-             return state;
-         }
+       const initialState = {
+         interiorLabel: '',
+         focusedKeyPath: []
        }
 
+       export default (state = initialState, action = {}) => {
+         switch (action.type) {
+         case 'FOCUS_CHART':
+           return {
+             ...state,
+             focusedKeyPath: action.payload
+           }
+         case 'SET_INTERIOR_LABEL':
+           return {
+             ...state,
+             interiorLabel: action.payload
+           }
+         case 'UNFOCUS_CHART':
+           return {
+             ...state,
+             focusedKeyPath: []
+           }
+         default:
+           return state;
+         }
+       }
      #+END_SRC
+
+*** Endpoints Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/endpoints.js
+    :END:
+
+     #+NAME: The Endpoints Reducer
+     #+BEGIN_SRC js
+       const initialState = {
+         byId: {},
+         isLoading: false,
+         hasLoaded: false,
+         errors: {}
+       }
+
+       const { keyBy } = require('lodash')
+       export default (state = initialState, action = {}) => {
+         switch(action.type) {
+         case 'FETCH_ENDPOINTS_PENDING': {
+           return {
+             ...state,
+             isLoading: true
+           }
+         }
+         case 'FETCH_ENDPOINTS_FULFILLED': {
+           return {
+             ...state,
+             byId: {
+               ...state.byId,
+               ...keyBy(action.payload.data, '_id')
+             },
+             isLoading: false,
+             hasLoaded: true
+           }
+         }
+         default:
+           return state;
+         }
+       }
+     #+END_SRC
+*** Releases Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/releases.js
+    :END:
+     #+NAME: The Releases Reducer
+     #+BEGIN_SRC js
+       const initialState = {
+         release_names: [],
+         active_release: {},
+         loading: true,
+         errors: {}
+       }
+       export default (state = initialState, action = {}) => {
+         switch (action.type) {
+         case 'FETCH_RELEASE_NAMES_FULFILLED': {
+           return {
+             ...state,
+             release_names: action.payload.data
+           }
+         }
+         case 'FETCH_RELEASE_FULFILLED': {
+           return {
+             ...state,
+             active_release: {name: action.payload.data[0].name, ...action.payload.data[0].data},
+             loading: false
+           }
+         }
+         default:
+           return state;
+         }
+       }
+     #+END_SRC
+
+*** Routes Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/reducers/routes.js
+    :END:
+
+    The goal is to listen to the location change and adjust the state accordingly.  We can then have our component always be showing the release related to the lastest route.
+
+     #+NAME: The Routes Reducer
+     #+BEGIN_SRC js
+       const initialState = {
+         activeRoute: '',
+         routeChange: false
+       }
+            export default (state = initialState, action = {}) => {
+              switch (action.type) {
+              case 'CHANGE_ACTIVE_ROUTE':
+                return {
+                  ...state,
+                  activeRoute: action.payload,
+                  routeChange: true
+                }
+              default:
+                return state;
+              }
+            }
+     #+END_SRC
+** Selectors
+*** index.js
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/selectors/index.js
+    :END:
+   #+NAME: Selectors index.js
+   #+BEGIN_SRC js
+     export * from './endpoints'
+     export * from './charts'
+     export * from './routes'
+   #+END_SRC
+
+   #+RESULTS: Selectors index.js
+
+*** Endpoints Selector
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/selectors/endpoints.js
+    :END:
+    #+NAME: Endpoints Selector
+    #+BEGIN_SRC js
+      import { createSelector } from 'reselect'
+      import { groupBy, keyBy, mapValues } from 'lodash'
+
+      export function selectEndpointsById (state) {
+        return state.endpoints.byId
+      }
+
+      export const selectEndpointsByReleaseAndNameAndMethod = createSelector(
+        selectEndpointsById,
+        (endpointsById) => {
+          var endpointsByRelease = groupBy(endpointsById, 'release')
+          return mapValues(endpointsByRelease, endpointsInRelease => {
+            var endpointsByName = groupBy(endpointsInRelease, 'name')
+            return mapValues(endpointsByName, endpointsInName => {
+              return keyBy(endpointsInName, 'method')
+            })
+          })
+        }
+      )
+
+      export const selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod = createSelector(
+        selectEndpointsById,
+        (endpointsById) => {
+          var endpointsByRelease = groupBy(endpointsById, 'release')
+          return mapValues(endpointsByRelease, endpointsInRelease => {
+            var endpointsByLevel = groupBy(endpointsInRelease, 'level')
+            return mapValues(endpointsByLevel, endpointsInLevel => {
+              var endpointsByCategory = groupBy(endpointsInLevel, 'category')
+              return mapValues(endpointsByCategory, endpointsInCategory => {
+                var endpointsByName = groupBy(endpointsInCategory, 'name')
+                return mapValues(endpointsByName, endpointsInName => {
+                  return keyBy(endpointsInName, 'method')
+                })
+              })
+            })
+          })
+        }
+      )
+
+      export const selectIsEndpointsReady = (state) => {
+        return state.endpoints.hasLoaded
+      }
+    #+END_SRC
+
+Endpoints are unique by Release, Name, and Method.
+
+*** Chart Selector
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/selectors/charts.js
+    :END:
+    #+NAME: Chart Selector
+    #+BEGIN_SRC js
+      import { createSelector } from 'reselect'
+      import { forEach, map, mapValues, orderBy, reduce, values } from 'lodash'
+
+      import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod, selectIsEndpointsReady } from './endpoints'
+
+
+      export function selectInteriorLabel (state) {
+        return state.charts.interiorLabel
+      }
+
+      export function selectFocusPathAsArray (state) {
+        return state.charts.focusedKeyPath
+      }
+
+      export const selectFocusPathAsString = createSelector(
+        selectFocusPathAsArray,
+        (pathAsArray) => {
+          return pathAsArray.join().replace(/,/g,' / ')
+        }
+      )
+
+
+      export const selectSunburstByRelease = createSelector(
+        selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
+        (endpointsByReleaseAndLevelAndCategoryAndNameAndMethod) => {
+          var dataByRelease = mapValues(endpointsByReleaseAndLevelAndCategoryAndNameAndMethod, (endpointsByLevelAndCategoryAndNameAndMethod, release) => {
+            return {
+              name: 'root',
+              children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
+                return {
+                  name: level,
+                  color: colors[level],
+                  children: map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
+                    return {
+                      name: category,
+                      color: colors[`category.${category}`],
+                      children: values(reduce(
+                        endpointsByNameAndMethod,
+                        (sofar, endpointsByMethod, name) => {
+                          forEach(endpointsByMethod, (endpoint, method) => {
+                            var { isTested } = endpoint
+                            var path = isTested ? `${name}/${method}` : 'untested'
+                            var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
+                            sofar[path] = {
+                              name: name,
+                              size,
+                              color: isTested ? colors[`category.${category}`] : '#f4f4f4'
+                            }
+                          })
+                          return sofar
+                        },
+                        {}
+                      ))
+                    }
+                  })
+                }
+              })
+            }
+          })
+
+          return {
+            dataByRelease,
+            focusLabel: ''  //
+          }
+        }
+      )
+
+
+      export const selectSunburstByReleaseWithSortedLevel = createSelector(
+        selectSunburstByRelease,
+        (endpointsByRelease) => {
+          var dataByRelease = endpointsByRelease.dataByRelease
+          var sortedDataByRelease = mapValues(dataByRelease, (release) => {
+            var levels = release.children
+            var sortedLevels = orderBy(levels, 'name', 'desc')
+            release.children = sortedLevels
+            return release
+          })
+          endpointsByRelease.dataByRelease = sortedDataByRelease
+          return endpointsByRelease
+        }
+      )
+      export const selectIsSunburstReady = selectIsEndpointsReady
+
+      var colors = {
+        'alpha': '#e6194b',
+        'beta': '#0082c8',
+        'stable': '#3cb44b',
+        'unused': '#ffffff'
+      }
+
+      var categories = [
+        "admissionregistration",
+        "apiextensions",
+        "apiregistration",
+        "apis",
+        "apps",
+        "authentication",
+        "authorization",
+        "autoscaling",
+        "batch",
+        "certificates",
+        "core",
+        "events",
+        "extensions",
+        "logs",
+        "networking",
+        "policy",
+        "rbacAuthorization",
+        "scheduling",
+        "settings",
+        "storage",
+        "version"
+      ]
+
+      var more_colors = [
+        "#b71c1c", "#880E4F", "#4A148C", "#311B92", "#1A237E", "#0D47A1",
+        "#01579B", "#006064", "#004D40", "#1B5E20", "#33691E", "#827717",
+        "#F57F17", "#FF6F00", "#E65100", "#BF360C", "#f44336", "#E91E63",
+        "#9C27B0", "#673AB7", "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4",
+        "#009688", "#4CAF50", "#8BC34A", "#CDDC39", "#FFEB3B", "#FFC107",
+        "#FF9800", "#FF5722"
+      ]
+
+      for (var catidx = 0; catidx < categories.length; catidx++) {
+        var category = categories[catidx]
+        colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
+      }
+    #+END_SRC
+
+    #+RESULTS: Chart Selector
+
+Endpoints are unique by Release, Name, and Method.
+
+*** Routes Selector
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/selectors/routes.js
+    :END:
+    #+NAME: Routes Selector
+    #+BEGIN_SRC js
+      // import { createSelector } from 'reselect'
+
+      export function selectActiveRoute (state) {
+        return state.routes.activeRoute
+      }
+
+      export function selectRouteChange (state) {
+        return state.routes.routeChange
+      }
+    #+END_SRC
+
+
+Endpoints are unique by Release, Name, and Method.
 
 * Process
 ** Working with d3
@@ -2046,6 +1657,45 @@ If this is the purpose of apisnoop then let's do it.  If it's too much overkill 
 - if you chooose a tag, the user-agent dropdown reduces to just tests run by that tag.
 - If you click on a sig tag, pull its general info from kubernetes/community/sigs.yaml
 - when you hover over an endpoint, show a list of tests that also hit that endpoint. and nubmer of times that test hits that endpoint.
+** Aaron Feedback
+- useful troubleshooting tool:
+  - adding test names to user agents to verify a test was testing what we thought it was.
+  - filter audit logs by user-agent and then see 'when this test case is run, here are the endpoints it accesses chronologically".
+    - This is separate from number of times hit.  that is useful in aggregate, this is something different.
+  - pulling in an audit log of timestamp/verb/uri
+- Feature of pointing to the specific line in the source for each test, to pull its definition, would be a good //Next// step.
+  - This is something we can do with whakapapa, but it's not something we have now.
+- Discovery front: Filtering more endpoints from APIsnoop's definition of coverage.
+  - If beta endpoints always get hit because an api server is doing discovery, then that's cool but nothing we can ever prevent conformance tests from doing and we shouldn't care about it from a test coverage perspective.
+  - How do we signify that this is the kinda hit that's happening for an endpoint?
+  - We have a good start with filtering to just e2e, but even our e2etests are hitting those endpoints.  There are some endpoints where, logically they don't need to get tested or anything like that.
+  - Get to a point whwere we can manually specify, or have a blacklist of apiendpoints that we aren't factoring into our coverage viz.
+  - One way to do this is to filter out the endpoints that are hit by nearly all of the tests.  This is a good indicator that the endpoint is for initialization or something like that, and not actually a part of this test's function.
+- Unique Endpoints hit by a test: this is something that isn't covered by our sunburst or katherine's viz.  Pick a test, and then see the endpoints that are //only// hit by this test.
+  - which endpoints hit are unique, versus which ones are common across all test cases.  This would let us know which test cases are doing good stuff and which endpoints are essentially meaningless.
+  - you could have a center endpoint change to the perspective of that test, and then that test would only show the endpoints that it hits.....but that may not be that useful.  We dont' wanna see All the endpoints, we wanna see which ones are //special// for this test.
+  - Hierarchy vizes aren't that useful.
+  - I just wanna find a way to slice and dice data with raw queries and see where that leads us...and take some of the more useful queries and generate reports from that.  This sounds like a new approach for apisnoop.
+
+Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people like aaron?  is it a kubernetes end user?  If it's aaraon, he is saying he knows how to write certain queries, but he would rather have this  already done and then he can do further exploration.
+'For an endpoint that's only hit three times, what are the tests that are hitting this endpoint.  And then we could follow up with what the tests are doing from an api perspective.  'Okay, now let me see the full api stream from this test."
+ - auotmate this, or provide shiny reports for this.  This isn't the end user coming up with the interesting things, this is us coming up with interesting things that we are letting the end user come to their own conclusions on.
+ - We eventually want to show api coverage going up over time across different builds. o
+ - We might be able to format things in such a way to have a test dashboard that shows individual api endpoints and #'s: how many times they been hit, something like that.
+ - Is code coverage a different thing?  when talking about it being a command line tool that generates reports from it...or is that just what the group is trying to do.  the benefit of the command line tool is that you can automate it running for every build. We could then just have a page that displays these reports even maybe.
+ - We want to share shinies at kubeconf china.
+ - Get visualization up to good place that replaces existing visualization.
+ - Showing all the api accesses per user-agent or test as a different Dashboard to have.
+ - Take care of you for whatever demos you need for apisnoop.
+ - It would be worth it to show we're providing value to cncf as a whole, but right now it's good to just be able to have Aaron say that the work we're doing makes it easier for conformance to do the things they want to do.
+ - Let's not work on things that don't end up providing value, over-delivering when he really just wants somethings maller and specific.  He's happy to have some reports that don't need to be that shiny, but maybe a little bit interactive.  and these reports would be:
+   - If I click on a user agent, I can see the in-order access of all the api endpoints.
+   - To get some kind of report that shows me what kind of endpoints don't matter (every test hits them) and which ones are interesting (cos only a few endpoints hit them) and what are those tests?
+     - this may lead to a point where we try to make a whitelist of endpoints in our coverage, but let's not cross that bridge yet.
+   - For wednesday deadline...this isn't a hard deadline, we can touch base on Tuesday/Monday and see where we at.
+** Pairing With Mikey
+*** Background
+    I went through a pairing Session with [[https://dinosaur.is][Mikey]], to help with the overall architecture and code logic of the webui
 * Footnotes
 ** Understand the config.yaml file and what it's pointing to.
 *** TestGrid
@@ -2246,30 +1896,41 @@ right: $right_session
   :header-args:tmate: :session "zz-right"
   :END:
 
-
-* APISNoop TASKS
-** Overall Priorities
-   Ordered by priority.
-**** IN-PROGRESS Fully Understand the Tech Stack in which our modular apisnoop is built
-**** TODO Integrate our existing D3 visualization into that stack.
-**** TODO Add user agent filtering to our sunburst.
-** Config yaml into api
-*** TODO Have server ping github based on time, not based on client request, and return our config.yaml file.
-    :LOGBOOK:
-    - State "DONE-AND-SHARED" from "TODO"       [2018-10-16 Tue 11:16]
-    :END:
-** Overall
-*** TODO figure out the best way to handle errors with feathers, to not get 'unhandled promise rejection'
-    I just had to spend too long debugging a problem that was due to a variable called the wrong name somewhere else.  but the only error was 'promised rejected at meta'.  I found the function that did it (a service.update call), but when I added a catch nothing happened.  I'd like to get ina  habit of just putting in catches for everything, but would like to know the proper way to do this.
-
-*** TODO add loading screen at beginning, maybe with the apisnoop magnifying glass?
-* Glossary
-- gcr :: google container registry
-- gce ::
-- kubekins ::
-- kubectl ::
--  ::
-
 # Local Variables:
 # org-confirm-babel-evaluate: nil
 # End:
+* Tasks
+** TODO [6/8] Tasks For Refactoring our Data and understanding of it.
+   - [X]  Convert JSON dump to New Flat Database
+   - [X] Hookup react/redux to query endpoints.
+   - [X] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
+   - [X] Practice Converting flat database to Sunburst Data structure.
+   - [X] Sort Level so it is Stable, Beta, Alpha
+   - [X] pass down chart selector data to main page props, pass down focused key path to render label within sunburst
+   - [ ] re-hook up routing to route by release name
+   - [ ] Query endpoints by Release.
+** TODO [0/6] Future Tasks
+   - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that
+   - [ ] Hover over Part of Sunburst shows relevant rays highlighted.
+   - [ ] Hover over Sunburst, see testing percentage update in center.
+   - [ ] Click on Useragent, sunburst zooms onto that subset of data.
+   - [ ] Refactor Chart Selector.
+** TODO [2/5] Achievements To Unlock
+   - [X] Mikey has a functional understanding of what we're trying to do.
+   - [X] It generally feels better
+   - [ ] Sunburst Matches Functionality of Previous Sunburst
+   - [ ] Sunburst Changes Based on Route
+   - [ ] It loads faster
+** TODO [0/1] Questions
+   - [ ] Why does brining in the selectsunburstSorted selector affect the sunburst (when it is a new selector, not the previous one.
+** NEXT Change front-end logic so it only pulls data from the necessary sunburst.
+   Right now the we have an endpoint called /Releases, organized by Build name.  These correspond to the sunbursts.  We are pulling in the entire api, we should only do buildname.data.sunburst
+*** [0/5] Subtasks
+    - [ ] Remove excess noise from front-end for right now--the filters essentially.
+    - [ ] Add URL path to each Release you click
+    - [ ] Add fetchSunburst action to sunburst segment component, and pass it along the url params.
+    - [ ] Query the api database based on the params and return just the sunburst data.`
+** TODO Add logic to API to filter endpoints to only those touched by e2e.
+   We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
+
+** TODO change keypath logic so it only highlights if parent is on keypath.
