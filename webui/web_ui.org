@@ -438,8 +438,10 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
      import React, { Component } from 'react'
      import { connect } from 'react-redux'
      import { Route } from 'react-router-dom'
+     import { createStructuredSelector } from 'reselect'
 
-     import { fetchReleaseNames} from '../actions/releases'
+
+     import { selectReleaseNamesFromEndpoints, selectIsEndpointsReady } from '../selectors'
      import { fetchEndpoints } from '../actions/endpoints'
      import { changeActiveRoute } from '../actions/routes'
 
@@ -467,19 +469,20 @@ I think this will end up that we use MainPage multiple times, feeding in props a
     #+BEGIN_SRC js
       class App extends Component {
         componentDidMount(){
-          this.props.fetchReleaseNames()
           this.props.fetchEndpoints()
         }
 
         render(){
+          const {releaseNames, endpointsReady, changeActiveRoute } = this.props
+
           return (
             <div id='app'>
               <Header />
-              {this.props.release_names &&
+              {endpointsReady &&
                <ReleasesList
-                 releases={this.props.release_names}
+                 releases={releaseNames}
                  selected='master'
-                 changeActiveRoute={this.props.changeActiveRoute}
+                 changeActiveRoute={changeActiveRoute}
                /> }
         <Route exact path='/' component={MainPage} />
         <Route exact path='/:release' component={MainPage} />
@@ -489,13 +492,13 @@ I think this will end up that we use MainPage multiple times, feeding in props a
         }
       }
 
-      function mapStateToProps (state) {
-        return {
-        release_names: state.releasesStore.release_names
-        }
-      }
-
-      export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute})(App)
+      export default connect(
+        createStructuredSelector({
+          releaseNames: selectReleaseNamesFromEndpoints,
+          endpointsReady: selectIsEndpointsReady
+        }),
+        {fetchEndpoints,
+         changeActiveRoute})(App)
     #+END_SRC
 
 ** Pages
@@ -516,6 +519,7 @@ I think this will end up that we use MainPage multiple times, feeding in props a
            selectEndpointsWithTestCoverage,
            selectFocusPathAsArray,
            selectFocusPathAsString,
+           selectInteriorLabel,
            selectReleaseNamesFromEndpoints,
            selectRouteChange,
            selectIsSunburstReady,
@@ -568,14 +572,14 @@ I think this will end up that we use MainPage multiple times, feeding in props a
              focusPath: selectFocusPathAsArray,
              focusPathAsString: selectFocusPathAsString,
              isSunburstReady: selectIsSunburstReady,
+             interiorLabel: selectInteriorLabel,
              releaseNames: selectReleaseNamesFromEndpoints,
              routeChange: selectRouteChange,
-             sunburstByRelease: selectSunburstByReleaseWithSortedLevel,
+             sunburstByRelease: selectSunburstByReleaseWithSortedLevel
            }),
            {focusChart,
             unfocusChart
-            }
-         ) (MainPage)
+            })(MainPage)
        #+END_SRC
 
        #+RESULTS:
@@ -847,11 +851,11 @@ The various visual parts of the app.  For the most part, we want these to be as 
             return(
                 <NavLink
                   className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink"
-                  exact to={option.name}
-                  key={`release_${option._id}`}
+                  exact to={option}
+                  key={`release_${option}`}
                   onClick={this.handleClick}
                 >
-                {option.name}
+                {option}
               </NavLink>
             )
           })
@@ -867,7 +871,6 @@ The various visual parts of the app.  For the most part, we want these to be as 
         }
 
         handleClick (e) {
-          console.log('hi from clicking!!', e.target.innerText)
           this.props.changeActiveRoute(e.target.innerText)
         }
       }
@@ -1329,7 +1332,7 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
      #+NAME: The Routes Reducer
      #+BEGIN_SRC js
        const initialState = {
-         activeRoute: '',
+         activeRoute: 'sig-release-master',
          routeChange: false
        }
             export default (state = initialState, action = {}) => {
@@ -1447,15 +1450,15 @@ Endpoints are unique by Release, Name, and Method.
     :END:
     #+NAME: Chart Selector
     #+BEGIN_SRC js
-      import { createSelector } from 'reselect'
+      import { createSelector, createStructuredSelector } from 'reselect'
+
       import { forEach, map, mapValues, orderBy, reduce, values } from 'lodash'
 
-      import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod, selectIsEndpointsReady } from './endpoints'
+      import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
+               selectEndpointsWithTestCoverage,
+               selectIsEndpointsReady } from './endpoints'
 
-
-      export function selectInteriorLabel (state) {
-        return state.charts.interiorLabel
-      }
+      import { selectActiveRoute } from './routes'
 
       export function selectFocusPathAsArray (state) {
         return state.charts.focusedKeyPath
@@ -1467,6 +1470,35 @@ Endpoints are unique by Release, Name, and Method.
           return pathAsArray.join().replace(/,/g,' / ')
         }
       )
+
+      export const selectInteriorLabelComponents = createStructuredSelector({
+        focusPath: selectFocusPathAsArray,
+        isEndpointsReady: selectIsEndpointsReady,
+        endpoints: selectEndpointsWithTestCoverage,
+        releaseFromRoute: selectActiveRoute
+        }
+      )
+
+      export const selectInteriorLabel = createSelector(
+        selectInteriorLabelComponents,
+        (components) => {
+          const { focusPath, endpoints, isEndpointsReady, releaseFromRoute } = components
+          if (isEndpointsReady) {
+            if (!focusPath.length) {
+            return endpoints[releaseFromRoute]['coverage']
+            } else{
+              var endpoint = [`endpoints[releaseFromeRoute]`]
+              for (var i = 0; i < focusPath.length; i++) {
+                endpoint.push(`[${focusPath[i]}]`)
+              }
+              endpoint.push("['coverage']")
+              return endpoint.join('')
+            }
+          }
+          return focusPath
+        }
+      )
+
 
 
       export const selectSunburstByRelease = createSelector(
@@ -1587,7 +1619,7 @@ Endpoints are unique by Release, Name, and Method.
     :END:
     #+NAME: Routes Selector
     #+BEGIN_SRC js
-      // import { createSelector } from 'reselect'
+      // import { creaeSelector } from 'reselect'
 
       export function selectActiveRoute (state) {
         return state.routes.activeRoute
@@ -1838,7 +1870,7 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
 # org-confirm-babel-evaluate: nil
 # End:
 * Tasks
-** TODO [7/11] Tasks For Refactoring our Data and understanding of it.
+** TODO [7/12] Tasks For Refactoring our Data and understanding of it.
    - [X]  Convert JSON dump to New Flat Database
    - [X] Hookup react/redux to query endpoints.
    - [X] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
@@ -1852,6 +1884,7 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
      - If nothing is set, then we are going to want to know the coverage by release.  So the first step, then, would be: 'Without Focus Path selectInteriorLabel = endpoints[release][coverage]' with focus path it would be endpoints[release][fp1][fp2][coverage]...i guess based on the full apth length (it could be up to 3, level, category, endpoint).
 
    - [ ] Change endpoint path so it displays UNTESTED for the whole untested block (currently displaying random endpoint name).
+   - [ ] Fix routing so activeRoute isn't hard-coded.
    - [ ] re-hook up routing to route by release name
    - [X] Query endpoints by Release.
    - [ ] remove dependency on releaseStore reducer.

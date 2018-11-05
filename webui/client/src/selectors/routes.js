@@ -1,4 +1,4 @@
-// import { createSelector } from 'reselect'
+// import { creaeSelector } from 'reselect'
 
 export function selectActiveRoute (state) {
   return state.routes.activeRoute

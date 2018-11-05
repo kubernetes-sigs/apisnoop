@@ -8,6 +8,7 @@ import {
   selectEndpointsWithTestCoverage,
   selectFocusPathAsArray,
   selectFocusPathAsString,
+  selectInteriorLabel,
   selectReleaseNamesFromEndpoints,
   selectRouteChange,
   selectIsSunburstReady,
@@ -60,11 +61,11 @@ export default connect(
     focusPath: selectFocusPathAsArray,
     focusPathAsString: selectFocusPathAsString,
     isSunburstReady: selectIsSunburstReady,
+    interiorLabel: selectInteriorLabel,
     releaseNames: selectReleaseNamesFromEndpoints,
     routeChange: selectRouteChange,
-    sunburstByRelease: selectSunburstByReleaseWithSortedLevel,
+    sunburstByRelease: selectSunburstByReleaseWithSortedLevel
   }),
   {focusChart,
    unfocusChart
-   }
-) (MainPage)
+   })(MainPage)

@@ -1,12 +1,12 @@
-import { createSelector } from 'reselect'
+import { createSelector, createStructuredSelector } from 'reselect'
+
 import { forEach, map, mapValues, orderBy, reduce, values } from 'lodash'
 
-import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod, selectIsEndpointsReady } from './endpoints'
+import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
+         selectEndpointsWithTestCoverage,
+         selectIsEndpointsReady } from './endpoints'
 
-
-export function selectInteriorLabel (state) {
-  return state.charts.interiorLabel
-}
+import { selectActiveRoute } from './routes'
 
 export function selectFocusPathAsArray (state) {
   return state.charts.focusedKeyPath
@@ -18,6 +18,35 @@ export const selectFocusPathAsString = createSelector(
     return pathAsArray.join().replace(/,/g,' / ')
   }
 )
+
+export const selectInteriorLabelComponents = createStructuredSelector({
+  focusPath: selectFocusPathAsArray,
+  isEndpointsReady: selectIsEndpointsReady,
+  endpoints: selectEndpointsWithTestCoverage,
+  releaseFromRoute: selectActiveRoute
+  }
+)
+
+export const selectInteriorLabel = createSelector(
+  selectInteriorLabelComponents,
+  (components) => {
+    const { focusPath, endpoints, isEndpointsReady, releaseFromRoute } = components
+    if (isEndpointsReady) {
+      if (!focusPath.length) {
+      return endpoints[releaseFromRoute]['coverage']
+      } else{
+        var endpoint = [`endpoints[releaseFromeRoute]`]
+        for (var i = 0; i < focusPath.length; i++) {
+          endpoint.push(`[${focusPath[i]}]`)
+        }
+        endpoint.push("['coverage']")
+        return endpoint.join('')
+      }
+    }
+    return focusPath
+  }
+)
+
 
 
 export const selectSunburstByRelease = createSelector(
