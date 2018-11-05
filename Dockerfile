@@ -18,6 +18,7 @@ WORKDIR ${HOME}
 RUN apt-get install wget curl gnupg -y --allow-unauthenticated
 RUN wget -q http://londo.ganneff.de/apt.key  -O- | apt-key add -
 RUN echo "deb http://londo.ganneff.de stable main" > /etc/apt/sources.list.d/emacs.list
+RUN apt-get update -y
 RUN apt install git \
         emacs-snapshot \
         emacs-snapshot-el \
