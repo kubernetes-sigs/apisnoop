@@ -8,6 +8,8 @@ ARG NB_USER
 ARG NB_UID
 ENV USER ${NB_USER}
 ENV HOME /home/${NB_USER}
+RUN wget -q http://londo.ganneff.de/apt.key  -O- | sudo apt-key add -
+RUN echo "deb http://londo.ganneff.de stable main" > /etc/apt/sources.list.d/emacs.list
 RUN apt-get update -y
 RUN apt-get upgrade -y
 RUN adduser --disabled-password \
@@ -15,7 +17,11 @@ RUN adduser --disabled-password \
     --uid ${NB_UID} \
     ${NB_USER}
 WORKDIR ${HOME}
-RUN apt-get install vim -y --allow-unauthenticated
+RUN apt install git \
+        emacs-snapshot \
+        emacs-snapshot-el \
+        vim \
+        -y --allow-unauthenticated
 COPY webui webui
 COPY dev/audit-log-review audit
 COPY postBuild /postBuild
