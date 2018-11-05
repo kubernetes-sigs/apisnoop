@@ -59,7 +59,13 @@ export const selectEndpointsWithTestCoverage = createSelector(
           var endpointsByName = groupBy(endpointsInCategory, 'name')
           var coverage = calculateCoverage(endpointsInCategory)
           return Object.assign({}, {coverage}, mapValues(endpointsByName, endpointsInName => {
-            return keyBy(endpointsInName, 'method')
+            var coverage = {
+              tested: 'hardCode',
+              total: 'Hard code fix',
+              percentage: 'do not keep',
+              ratio: 'dog dog dog'
+            }
+            return Object.assign({}, {coverage}, keyBy(endpointsInName, 'method'))
           }))
         }))
       }))

@@ -1,6 +1,6 @@
 import { createSelector, createStructuredSelector } from 'reselect'
 
-import { forEach, map, mapValues, orderBy, reduce, values } from 'lodash'
+import { forEach, get, map, mapValues, orderBy, without, reduce, values } from 'lodash'
 
 import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
          selectEndpointsWithTestCoverage,
@@ -35,15 +35,11 @@ export const selectInteriorLabel = createSelector(
       if (!focusPath.length) {
       return endpoints[releaseFromRoute]['coverage']
       } else{
-        var endpoint = [`endpoints[releaseFromeRoute]`]
-        for (var i = 0; i < focusPath.length; i++) {
-          endpoint.push(`[${focusPath[i]}]`)
-        }
-        endpoint.push("['coverage']")
-        return endpoint.join('')
-      }
+        var path = (without(focusPath, 'root'))
+        var endpoint = get(endpoints[releaseFromRoute], path)
+        return endpoint.coverage
     }
-    return focusPath
+    }
   }
 )
 

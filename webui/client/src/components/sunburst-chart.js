@@ -22,6 +22,7 @@ export default function SunburstChart (props) {
   const {
     focusChart,
     focusPath,
+    interiorLabel,
     sunburst,
     unfocusChart
   } = props
@@ -44,9 +45,9 @@ export default function SunburstChart (props) {
 
       <LabelSeries
          data={[
-           {x: 0, y: 20, label: 'good times', style: LABEL_STYLE.PERCENTAGE},
-           {x: 0, y: 0, label: 'fun times', style: LABEL_STYLE.FRACTION},
-           {x: 0, y: -20, label: 'sweet times', style: LABEL_STYLE.PATH}
+           {x: 0, y: 20, label: interiorLabel.percentage, style: LABEL_STYLE.PERCENTAGE},
+           {x: 0, y: 0, label: interiorLabel.ratio, style: LABEL_STYLE.FRACTION},
+           {x: 0, y: -20, label: 'total tested', style: LABEL_STYLE.PATH}
          ]}
        />
       </Sunburst>

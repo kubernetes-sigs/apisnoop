@@ -24,6 +24,7 @@ class MainPage extends Component {
       endpointsWithTestCoverage,
       focusPath,
       focusPathAsString,
+      interiorLabel,
       routeChange,
       sunburstByRelease
     } = this.props
@@ -47,6 +48,7 @@ class MainPage extends Component {
          release= {activeRoute}
          focusPath={focusPath}
          focusPathAsString={focusPathAsString}
+         interiorLabel={interiorLabel}
          />
         }
       </main>

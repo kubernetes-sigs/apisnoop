@@ -8,6 +8,7 @@ class SunburstSegment extends Component {
            focusChart,
            focusPath,
            focusPathAsString,
+           interiorLabel,
            sunburst,
            unfocusChart} = this.props
 
@@ -23,6 +24,7 @@ class SunburstSegment extends Component {
           focusChart={focusChart}
           focusPath={focusPath}
           focusPathAsString={focusPathAsString}
+          interiorLabel={interiorLabel}
           unfocusChart={unfocusChart}
         />
         </div>
