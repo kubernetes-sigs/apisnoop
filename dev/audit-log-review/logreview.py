@@ -8,15 +8,15 @@ import json
 import sqlite3
 import csv
 
-from urlparse import urlparse
+from urllib.parse import urlparse
 from collections import defaultdict
 from pprint import pprint
 
 
-from lib.webserver import start_webserver
-from lib.models import *
+#from lib.webserver import start_webserver
+#from lib.models import *
 from lib.parsers import *
-from lib import exports
+#from lib import exports
 
 
 def create_folders():
