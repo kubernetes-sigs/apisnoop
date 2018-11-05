@@ -15,7 +15,7 @@ RUN adduser --disabled-password \
     --uid ${NB_UID} \
     ${NB_USER}
 WORKDIR ${HOME}
-RUN apt install wget curl -y --allow-unauthenticated
+RUN apt-get install wget curl gnupg -y --allow-unauthenticated
 RUN wget -q http://londo.ganneff.de/apt.key  -O- | apt-key add -
 RUN echo "deb http://londo.ganneff.de stable main" > /etc/apt/sources.list.d/emacs.list
 RUN apt install git \
