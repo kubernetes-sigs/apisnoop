@@ -36,4 +36,6 @@ RUN git clone https://github.com/benma/go-dlv.el ~/.emacs.d/private/local/go-dlv
 COPY webui webui
 COPY dev/audit-log-review audit
 COPY postBuild /postBuild
+COPY *pynb /
+RUN chown -R $NB_USER.$NB_USER audit webui *pynb
 RUN /postBuild
