@@ -8,7 +8,7 @@ import requests
 
 import hashlib
 
-from urlparse import urlparse
+from urllib.parse import urlparse
 from collections import defaultdict
 
 __all__ = ['load_openapi_spec', 'load_audit_log', 'load_coverage_csv']
