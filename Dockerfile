@@ -8,8 +8,6 @@ ARG NB_USER
 ARG NB_UID
 ENV USER ${NB_USER}
 ENV HOME /home/${NB_USER}
-RUN wget -q http://londo.ganneff.de/apt.key  -O- | sudo apt-key add -
-RUN echo "deb http://londo.ganneff.de stable main" > /etc/apt/sources.list.d/emacs.list
 RUN apt-get update -y
 RUN apt-get upgrade -y
 RUN adduser --disabled-password \
@@ -17,6 +15,9 @@ RUN adduser --disabled-password \
     --uid ${NB_UID} \
     ${NB_USER}
 WORKDIR ${HOME}
+RUN apt install wget curl -y --allow-unauthenticated
+RUN wget -q http://londo.ganneff.de/apt.key  -O- | apt-key add -
+RUN echo "deb http://londo.ganneff.de stable main" > /etc/apt/sources.list.d/emacs.list
 RUN apt install git \
         emacs-snapshot \
         emacs-snapshot-el \
