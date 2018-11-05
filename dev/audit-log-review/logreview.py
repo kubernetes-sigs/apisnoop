@@ -267,6 +267,7 @@ def generate_coverage_report(openapi_spec, audit_log):
     # test_tree = {'tests': {}, 'tags': []}
     tests = {}
     test_tags = {}
+    test_sequences = {}
     useragents = {}
     unknown_urls = {}
     unknown_url_methods = {}
@@ -326,6 +327,9 @@ def generate_coverage_report(openapi_spec, audit_log):
                 test_name = useragent.split(test_name_start)[1]
                 if test_name not in tests.keys():
                     tests[test_name] = {}
+                if test_name not in test_sequences.keys():
+                    test_sequences[test_name] = []
+                test_sequences[test_name].append([event['timestamp'],level,category,method,op])
                 if op not in tests[test_name].keys():
                     tests[test_name][op] = {}
                 if method not in tests[test_name][op].keys():
@@ -377,6 +381,7 @@ def generate_coverage_report(openapi_spec, audit_log):
     report['endpoints'] = endpoints
     report['tests'] = tests
     report['test_tags'] = test_tags
+    report['test_sequesces'] = test_sequences
     report['useragents'] = useragents
     report['unknown_urls'] = unknown_urls
     report['unknown_url_methods'] = unknown_url_methods
