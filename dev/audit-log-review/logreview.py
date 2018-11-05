@@ -8,7 +8,7 @@ import json
 import sqlite3
 import csv
 
-from urllib.parse import urlparse
+from urlparse import urlparse
 from collections import defaultdict
 from pprint import pprint
 
