@@ -5,7 +5,6 @@ import { createStructuredSelector } from 'reselect'
 import { focusChart, unfocusChart } from '../actions/charts'
 import {
   selectActiveRoute,
-  selectEndpointsWithTestCoverage,
   selectFocusPathAsArray,
   selectFocusPathAsString,
   selectInteriorLabel,
@@ -21,7 +20,6 @@ class MainPage extends Component {
   render(){
     const {
       activeRoute,
-      endpointsWithTestCoverage,
       focusPath,
       focusPathAsString,
       interiorLabel,
@@ -39,10 +37,6 @@ class MainPage extends Component {
            data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
              : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
          }}
-         endpoints={ routeChange ?
-                     endpointsWithTestCoverage[activeRoute] :
-                     endpointsWithTestCoverage[releaseBasedOnRoute]
-                   }
          focusChart={this.props.focusChart}
          unfocusChart={this.props.unfocusChart}
          release= {activeRoute}
@@ -59,7 +53,6 @@ class MainPage extends Component {
 export default connect(
   createStructuredSelector({
     activeRoute: selectActiveRoute,
-    endpointsWithTestCoverage: selectEndpointsWithTestCoverage,
     focusPath: selectFocusPathAsArray,
     focusPathAsString: selectFocusPathAsString,
     isSunburstReady: selectIsSunburstReady,
