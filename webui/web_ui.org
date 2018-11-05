@@ -86,45 +86,6 @@ npm install reselect
 ***** [[https://blog.feathersjs.com/][medium page]]
 ***** [[http://slack.feathersjs.com/][slack channel]]
 
-** Our Current Flow
-   I would like to document the current setup, to make sure I can reason about it.
-
-  We will have a site listed anywhere, for now it's localhost so we'll call it LH.
-
-  We want to know which commits(?) of kubernetes should have conformance tests made for them, this is handled in a config.yaml file in kubernetes test-infra folder on github.
-
- The log of their tests is found in the artifacts of the latest build of the test found in gcsweb.k8s.io.  We need to know the exact url to ping for gcs to return any proper info for us.
-
-
-And so we grab the config info from github and parse its contents looking for commits that we are intersted in (like all gce-conformance commits).  Then, we take a look at the test_group_name for each commit and use that info to parse the config file again.  Each test group name has a GCS_Prefix, which gives us the url path we can ping with gcsweb.io
-
-So let's say there's a commit called 'commmit1.2'.  This commit has a test_group_name of 'foo_test'.  That test_group has a prefix of '/jenkins/tests/log/foo_test'.  This means we can go to gcsweb.io/gcs/jenkins/tests/log/foo_test and get more information about this particular test group.
-
-That information is a bit of an overload though.  It has folders for all the builds along with a text file that contains a number that is the latest build.  so in foo_test we'd see a bunch of folders named "100, 101, 102, 103" plus "latest-build.txt".  Clicking on latest-build.txt gives us something like: '103', which we know means we should look in folder 103 for all the relevant stuff.
-
-The txt file, though just a number, isn't stored on gcsweb.io.  It's actually stored at 'storage.googleapis.com'.  So trying to grab gcsweb.io/$GCS_PREFIX/latest-build.txt will give us a redirect.  If we grab that number, following the path of that latest build folder leads us to a url of something like:
-http://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/foo_test-1-12/187/artifacts/bootstrap-e2e-master/
-
-there's also different bootstrap folders beyond master for many of these.
-
-Then, inside //this// folder would be some audit-logs.  These logs are what we are REALLLY looking for, as they have the data we want to visualize.
-
-
-This means, though, that when we start up the app we need to ping github and with the converted response from that ping gcsweb.k8s.io and with the response from that site ping gcsweb again but at a specific url, looking for a specific type of file and with the response of that get a big buffer of text that we try to convert into json so that we can feed it into our components.
-
-
-I feel like this is a tremendous amount to put onto a webpage upon first loading, and that there's a number of errors that could come up.  How much of this can be done by our server so it's at the ready when the page loads up.
-
-For example: I can't imagine the config.yaml file updates /aaaalll/ that much.  If we have something that is current to the latest day, or even yesterday, would that be okay?  And if that's okay, is there a way we could pull the yaml file and add it to our database so we'd have something like:
-- ourserver.com/dashboards
-- ourserver.com/test_groups
-- ourserver.com/commits
-and each of these we could ping instead to get the info we want?  Then we aren't doing real-time conversion of a blob into a string into yaml into json---it's just ready for us.
-
-In the same way, is there anyway we can parse our own api and grab the audit logs we need, and have them converted into json for us to parse.  So the web page loads, pings our server, finds the audit logs, and renders them.....That might be redundancy though, since they //are// already available on a server at gcsweb.  It just takes us some loops to figure out where.
-
-The question I have, ultimately, is how much should be handled by the client and how much should be pre-requested/filtered/converted by the server before the client latches on---and whether there's a simpler way to do what we're trying to do.
-
 * Backend
 ** Setting up our API Initially
 **** Generating the Services
@@ -272,47 +233,45 @@ We only have a single method here, which is setup.  We don't want this to be an 
   :END:
   The client will be all the files that bundle up into a bundle.js file that is called on our index.html page.  In other words, the FRONTEND
 ** Running the Client
- In the web ui folder:
-===
-cd client
-npm install
-npm start
-===
-Then navigate to localhost:3000, if it isn't already opened for you.
+  In the web ui folder:
+ ===
+ cd client
+ npm install
+ npm start
+ ===
+ Then navigate to localhost:3000, if it isn't already opened for you.
 ** File Structure
 
-   Our client is set up as so...
-   #+NAME: Our Directory Structure
-   #+BEGIN_SRC shell :dir ./client :results output verbatim drawer replace
-  tree  -I 'node_modules' -d
-   #+END_SRC
+    Our client is set up as so...
+    #+NAME: Our Directory Structure
+    #+BEGIN_SRC shell :dir ./client :results output verbatim drawer replace
+   tree  -I 'node_modules' -d
+    #+END_SRC
 
-   #+RESULTS: Our Directory Structure
-   :RESULTS:
-   .
-   ├── build
-   │   └── static
-   │       └── js
-   ├── public
-   └── src
-       ├── actions
-       ├── components
-       ├── css
-       ├── pages
-       ├── reducers
-       └── sagas
+    #+RESULTS: Our Directory Structure
+    :RESULTS:
+    .
+    ├── public
+    └── src
+        ├── actions
+        ├── components
+        ├── css
+        ├── lib
+        ├── pages
+        ├── reducers
+        └── selectors
 
-   11 directories
-   :END:
+    9 directories
+    :END:
 
-   The core work is done in the src folder. Public holds our stylesheets and assets, and build holds everything when we set it up for production.
+    The core work is done in the src folder. Public holds our stylesheets and assets, and build holds everything when we set it up for production.
 
-Within our Src, file:
-- Actions manage calls to the app's state, requesting new data.
-- Components are modular parts of our UI, like dropdown boxes and navbars and such.
-- Pages are collections of components that display based on the route of the site and the actions of the user.  They are similar to html pages.
-- reducers listens to actions and the payload of data they contain and reducer that data into a single state tree for the app.  This is the data being called upon in the components.
-- Sagas are not being used yet.
+ Within our Src, file:
+ - Actions manage calls to the app's state, requesting new data.
+ - Components are modular parts of our UI, like dropdown boxes and navbars and such.
+ - Pages are collections of components that display based on the route of the site and the actions of the user.  They are similar to html pages.
+ - reducers listens to actions and the payload of data they contain and reducer that data into a single state tree for the app.  This is the data being called upon in the components.
+ - Sagas are not being used yet.
 ** Setup
 *** Creation
 **** initial react app
@@ -483,7 +442,6 @@ Here we define the wrapped up chunk of code that will be mounted to the 'root' i
      import { fetchReleaseNames} from '../actions/releases'
      import { fetchEndpoints } from '../actions/endpoints'
      import { changeActiveRoute } from '../actions/routes'
-     import { setInteriorLabel } from '../actions/charts'
 
      import Header from './header'
      import Footer from './footer'
@@ -522,7 +480,6 @@ I think this will end up that we use MainPage multiple times, feeding in props a
                  releases={this.props.release_names}
                  selected='master'
                  changeActiveRoute={this.props.changeActiveRoute}
-                 setInteriorLabel={this.props.setInteriorLabel}
                /> }
         <Route exact path='/' component={MainPage} />
         <Route exact path='/:release' component={MainPage} />
@@ -538,83 +495,90 @@ I think this will end up that we use MainPage multiple times, feeding in props a
         }
       }
 
-      export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute, setInteriorLabel })(App)
+      export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute})(App)
     #+END_SRC
 
 ** Pages
-   We are following a convention where, if a component acts as its own route and holds many different components within it, then it's called a page.  Think of navigating between different pages in a site, and each one is made up of several diff. section.  It is the same here, just that we are navigating between JS dispalying different Page components.
-*** MainPage
-    :PROPERTIES:
-    :header-args: :noweb yes :tangle ./client/src/pages/main-page.js
-    :END:
-    This page will hold the different areas for release--it's sunburst, and its list of test names.  We can add additional Segments here too, as our visualizations expand.
-      #+BEGIN_SRC js
-        import React, { Component } from 'react'
-        import { connect } from 'react-redux'
-        import { createStructuredSelector } from 'reselect'
+    We are following a convention where, if a component acts as its own route and holds many different components within it, then it's called a page.  Think of navigating between different pages in a site, and each one is made up of several diff. section.  It is the same here, just that we are navigating between JS dispalying different Page components.
+**** MainPage
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./client/src/pages/main-page.js
+     :END:
+     This page will hold the different areas for release--it's sunburst, and its list of test names.  We can add additional Segments here too, as our visualizations expand.
+       #+BEGIN_SRC js
+         import React, { Component } from 'react'
+         import { connect } from 'react-redux'
+         import { createStructuredSelector } from 'reselect'
 
-        import { focusChart, setInteriorLabel, unfocusChart } from '../actions/charts'
-        import {
-          selectActiveRoute,
-          selectEndpointsById,
-          selectEndpointsByReleaseAndNameAndMethod,
-          selectFocusPathAsArray,
-          selectFocusPathAsString,
-          selectRouteChange,
-          selectIsSunburstReady,
-          selectSunburstByReleaseWithSortedLevel
-        } from '../selectors'
+         import { focusChart, unfocusChart } from '../actions/charts'
+         import {
+           selectActiveRoute,
+           selectEndpointsWithTestCoverage,
+           selectFocusPathAsArray,
+           selectFocusPathAsString,
+           selectReleaseNamesFromEndpoints,
+           selectRouteChange,
+           selectIsSunburstReady,
+           selectSunburstByReleaseWithSortedLevel
+         } from '../selectors'
 
-        import SunburstSegment from '../components/sunburst-segment'
+         import SunburstSegment from '../components/sunburst-segment'
 
-        class MainPage extends Component {
-          render(){
-            const {
-              activeRoute,
-              focusPath,
-              focusPathAsString,
-              routeChange,
-              sunburstByRelease
-            } = this.props
+         class MainPage extends Component {
+           render(){
+             const {
+               activeRoute,
+               endpointsWithTestCoverage,
+               focusPath,
+               focusPathAsString,
+               routeChange,
+               sunburstByRelease
+             } = this.props
 
-          const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
+             const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
 
-            return (
-                <main id='main-splash' className='min-vh-100'>
-                <h2>You are doing a good job.</h2>
-                {this.props.isSunburstReady && <SunburstSegment
-                 sunburst={{
-                   data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
-                                     : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
-                 }}
-                 focusChart={this.props.focusChart}
-                 unfocusChart={this.props.unfocusChart}
-                 release= {activeRoute}
-                 focusPath={focusPath}
-                 focusPathAsString={focusPathAsString}
-                 />
-                }
-              </main>
-            )
-          }
-        }
+             return (
+                 <main id='main-splash' className='min-vh-100'>
+                 <h2>You are doing a good job.</h2>
+                 {this.props.isSunburstReady && <SunburstSegment
+                  sunburst={{
+                    data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
+                      : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
+                  }}
+                  endpoints={ routeChange ?
+                              endpointsWithTestCoverage[activeRoute] :
+                              endpointsWithTestCoverage[releaseBasedOnRoute]
+                            }
+                  focusChart={this.props.focusChart}
+                  unfocusChart={this.props.unfocusChart}
+                  release= {activeRoute}
+                  focusPath={focusPath}
+                  focusPathAsString={focusPathAsString}
+                  />
+                 }
+               </main>
+             )
+           }
+         }
 
-        export default connect(
-          createStructuredSelector({
-            activeRoute: selectActiveRoute,
-            endpointsById: selectEndpointsById,
-            focusPath: selectFocusPathAsArray,
-            focusPathAsString: selectFocusPathAsString,
-            endpointsByReleaseAndNameAndMethod: selectEndpointsByReleaseAndNameAndMethod,
-            isSunburstReady: selectIsSunburstReady,
-            routeChange: selectRouteChange,
-            sunburstByRelease: selectSunburstByReleaseWithSortedLevel
-          }),
-          {focusChart, unfocusChart}
-        ) (MainPage)
-      #+END_SRC
+         export default connect(
+           createStructuredSelector({
+             activeRoute: selectActiveRoute,
+             endpointsWithTestCoverage: selectEndpointsWithTestCoverage,
+             focusPath: selectFocusPathAsArray,
+             focusPathAsString: selectFocusPathAsString,
+             isSunburstReady: selectIsSunburstReady,
+             releaseNames: selectReleaseNamesFromEndpoints,
+             routeChange: selectRouteChange,
+             sunburstByRelease: selectSunburstByReleaseWithSortedLevel,
+           }),
+           {focusChart,
+            unfocusChart
+            }
+         ) (MainPage)
+       #+END_SRC
 
-      #+RESULTS:
+       #+RESULTS:
 
 ** Components
 The various visual parts of the app.  For the most part, we want these to be as dumb as possible--they present the stuff they're given, and if they have to do any interactive stuff it remains contained to within itself.  Any other changes should be handled outside of the component through actionCreators our and reducer updating the global state of the app.  In other words, the components display the state as it is now, and they can trigger events which update the state, but they always simply display it as it is now.
@@ -682,10 +646,11 @@ The various visual parts of the app.  For the most part, we want these to be as 
 
        class SunburstSegment extends Component {
          render() {
-           const {sunburst,
+           const {endpoints,
                   focusChart,
                   focusPath,
                   focusPathAsString,
+                  sunburst,
                   unfocusChart} = this.props
 
            return (
@@ -696,10 +661,11 @@ The various visual parts of the app.  For the most part, we want these to be as 
              }
                <SunburstChart
                  sunburst={sunburst}
+                 endpoints={endpoints}
                  focusChart={focusChart}
-                 unfocusChart={unfocusChart}
                  focusPath={focusPath}
                  focusPathAsString={focusPathAsString}
+                 unfocusChart={unfocusChart}
                />
                </div>
            )
@@ -720,7 +686,6 @@ The various visual parts of the app.  For the most part, we want these to be as 
        import React from 'react'
        import { Sunburst, LabelSeries } from 'react-vis'
        import { get, includes } from 'lodash'
-
 
        const LABEL_STYLE = {
          PERCENTAGE: {
@@ -792,8 +757,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
            unfocusChart()
          }
 
-         function handleClick (node, event) {
-
+         function handleClick (node) {
          }
 
          function getKeyPath (node) {
@@ -905,7 +869,6 @@ The various visual parts of the app.  For the most part, we want these to be as 
         handleClick (e) {
           console.log('hi from clicking!!', e.target.innerText)
           this.props.changeActiveRoute(e.target.innerText)
-          this.props.setInteriorLabel(e.target.innerText)
         }
       }
 
@@ -1034,6 +997,25 @@ The various visual parts of the app.  For the most part, we want these to be as 
         }
       }
 
+    #+END_SRC
+*** Utils
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./client/src/lib/utils.js
+    :END:
+    #+NAME: Utils
+    #+BEGIN_SRC js
+      export function calculateCoverage (endpoints) {
+        var total = endpoints.length
+        var tested = endpoints.filter(endpoint => endpoint.isTested).length
+        var percentage = (100 * tested /total).toPrecision(3)
+
+        return {
+          tested,
+          total,
+          percentage: `${percentage}%`,
+          ratio: `${tested}/${total}`
+        }
+      }
     #+END_SRC
 
 ** Actions
@@ -1166,17 +1148,7 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
       #+BEGIN_SRC js
         export function focusChart (keyPath) {
           return {
-            type: 'FOCUS_CHART',
-            payload: keyPath
-          }
-        }
-      #+END_SRC
-**** Set Interior Label
-      #+NAME: Set Interior Label
-      #+BEGIN_SRC js
-        export function setInteriorLabel (keyPath) {
-          return {
-            type: 'SET_INTERIOR_LABEL',
+            type: 'CHART_FOCUSED',
             payload: keyPath
           }
         }
@@ -1186,7 +1158,7 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
       #+BEGIN_SRC js
         export function unfocusChart() {
           return {
-            type: 'UNFOCUS_CHART'
+            type: 'CHART_UNFOCUSED'
           }
         }
       #+END_SRC
@@ -1199,7 +1171,7 @@ Feathers lets us do some nice REST style querying, choosing which elements we ar
       #+BEGIN_SRC js
         export function changeActiveRoute (target) {
           return {
-            type: 'CHANGE_ACTIVE_ROUTE',
+            type: 'ACTIVE_ROUTE_CHANGED',
             payload: target
           }
         }
@@ -1254,23 +1226,17 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
      #+NAME: The Charts Reducer
      #+BEGIN_SRC js
        const initialState = {
-         interiorLabel: '',
          focusedKeyPath: []
        }
 
        export default (state = initialState, action = {}) => {
          switch (action.type) {
-         case 'FOCUS_CHART':
+         case 'CHART_FOCUSED':
            return {
              ...state,
              focusedKeyPath: action.payload
            }
-         case 'SET_INTERIOR_LABEL':
-           return {
-             ...state,
-             interiorLabel: action.payload
-           }
-         case 'UNFOCUS_CHART':
+         case 'CHART_UNFOCUSED':
            return {
              ...state,
              focusedKeyPath: []
@@ -1368,7 +1334,7 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
        }
             export default (state = initialState, action = {}) => {
               switch (action.type) {
-              case 'CHANGE_ACTIVE_ROUTE':
+              case 'ACTIVE_ROUTE_CHANGED':
                 return {
                   ...state,
                   activeRoute: action.payload,
@@ -1401,6 +1367,7 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
     #+BEGIN_SRC js
       import { createSelector } from 'reselect'
       import { groupBy, keyBy, mapValues } from 'lodash'
+      import { calculateCoverage } from '../lib/utils.js'
 
       export function selectEndpointsById (state) {
         return state.endpoints.byId
@@ -1419,6 +1386,13 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
         }
       )
 
+      export const selectReleaseNamesFromEndpoints = createSelector(
+        selectEndpointsByReleaseAndNameAndMethod,
+        (endpointsByReleaseAndNameAndMethod) => {
+          return Object.keys(endpointsByReleaseAndNameAndMethod)
+        }
+      )
+
       export const selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod = createSelector(
         selectEndpointsById,
         (endpointsById) => {
@@ -1434,6 +1408,28 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
                 })
               })
             })
+          })
+        }
+      )
+
+      export const selectEndpointsWithTestCoverage = createSelector(
+        selectEndpointsById,
+        (endpointsById) => {
+          var endpointsByRelease = groupBy(endpointsById, 'release')
+          return mapValues(endpointsByRelease, endpointsInRelease => {
+            var coverage = calculateCoverage(endpointsInRelease)
+            var endpointsByLevel = groupBy(endpointsInRelease, 'level')
+            return Object.assign({},{coverage}, mapValues(endpointsByLevel, endpointsInLevel => {
+              var endpointsByCategory = groupBy(endpointsInLevel, 'category')
+              var coverage = calculateCoverage(endpointsInLevel)
+              return Object.assign({}, {coverage}, mapValues(endpointsByCategory, endpointsInCategory => {
+                var endpointsByName = groupBy(endpointsInCategory, 'name')
+                var coverage = calculateCoverage(endpointsInCategory)
+                return Object.assign({}, {coverage}, mapValues(endpointsByName, endpointsInName => {
+                  return keyBy(endpointsInName, 'method')
+                }))
+              }))
+            }))
           })
         }
       )
@@ -1512,8 +1508,7 @@ Endpoints are unique by Release, Name, and Method.
           })
 
           return {
-            dataByRelease,
-            focusLabel: ''  //
+            dataByRelease
           }
         }
       )
@@ -1533,6 +1528,7 @@ Endpoints are unique by Release, Name, and Method.
           return endpointsByRelease
         }
       )
+
       export const selectIsSunburstReady = selectIsEndpointsReady
 
       var colors = {
@@ -1606,149 +1602,7 @@ Endpoints are unique by Release, Name, and Method.
 Endpoints are unique by Release, Name, and Method.
 
 * Process
-** Working with d3
-*** Introduction
-   d3 is the data visualization library that was used to make our original sunburst.  The way it works is to mount itself to the dom, and then appends new elements to the dom based on the data it was given. If that data changes, it transforms the elements as needed.
-
-   The way react works is it attaches itself to the dom, then creates a //shadow dom// that it is continually listening to, adding and removing elements in this dom as needed based on the data(the state) it was given.
-
-   In other words, they work in largely the same way, and both wanna attach themselves to the dom and manipulate it.  This...isn't good.  We want to have /1/ thing making shadow doms and calls on the website, and so it is a bit tricky to get react and d3 working together.
-
-The upside is that a number of people have tackled this challenge and created different react/d3 libraries for how the two can work together.  The downside is that I'm not sure yet which is the best to do.
-
-Put simply, it is not easy to take our existing sunburst code and just paste it into our new app.  We are going to need to transform it in some way based on the guidance of the library we are using.
-
-So the question is why we are putting ourselves into this trouble?
-*** WHY WE ARE PUTTING OURSELVES INTO THIS TROUBLE
-    My assumption with all of this is that when people hear 'apisnoop', they are thinking of the site in which you can see the data visualziations.  And so the webapp is important for the project and will be expanded.  React would be great for this in the long run.
-
-Similarly, I am expecting that we are going to have more types of visualizations than just the sunburst--and that even the sunburst may change.  So we are going to want to have an understanding for a language in which we can make a //bunch// of visualizations. d3 is great for this.
-
-If we do it right, we can have reusable components too that other teams could use for their own k8s projects, and that we could use ourselves.  For example--displaying two sunburst charts side by side would be much easier in react/d3 then what i ws trying to do before (appending both to the same id on a standard html document.)  This requires that I move through some d3 tutorials though.
-
-At the end of this, though, we will have a backend server that is easy to setup and can ping different url's (github repos or testgrid artifacts) and grab their data.  Then, we can manipulate that data in whatever way we want but also pass it along to our frontend.  This front-end can then have different options and tags setto really dive in and explore.
-
-If this is the purpose of apisnoop then let's do it.  If it's too much overkill though, then I can try a simpler solution.
-*** Possible Process to get going
-**** Setup a simple d3 visualization to understand the process
-**** pipe data into this simple visualization through our redux state.
-**** Pore over the original code again (the original blog post) to see how to best convert it
-**** Change the sunburst's origin point from a CSV file to JSON
-**** Change the sunbursts origin point from JSON to our redux store.
-*** Second Process
-**** Setup different pages for different d3-react libraries that already have ubilt components.
-**** explore piping our data into the one we like.
-**** Use testgrid conformance data and make simple visualizations to it.
-     We are wanting to keep the data retrieval tied into the visualizing, so we dont' end up with a pretty graph that can't be used for what we have.  So we can grab the testgrid stuff now and see what we can do with it.
-
-
-**** Use that going forward.
-*** Possible Libraries to use
-**** Victory
-     https://formidable.com/open-source/victory/
-**** Britecharts react
-     https://eventbrite.github.io/britecharts-react/
-**** Recharts
-     http://recharts.org/en-US/
-** Plan for Demo
-- show our sunburst
-- show a cloud of all tags.
-- show a dropdown for user-agent
-- if you chooose a tag, the user-agent dropdown reduces to just tests run by that tag.
-- If you click on a sig tag, pull its general info from kubernetes/community/sigs.yaml
-- when you hover over an endpoint, show a list of tests that also hit that endpoint. and nubmer of times that test hits that endpoint.
-** Aaron Feedback
-- useful troubleshooting tool:
-  - adding test names to user agents to verify a test was testing what we thought it was.
-  - filter audit logs by user-agent and then see 'when this test case is run, here are the endpoints it accesses chronologically".
-    - This is separate from number of times hit.  that is useful in aggregate, this is something different.
-  - pulling in an audit log of timestamp/verb/uri
-- Feature of pointing to the specific line in the source for each test, to pull its definition, would be a good //Next// step.
-  - This is something we can do with whakapapa, but it's not something we have now.
-- Discovery front: Filtering more endpoints from APIsnoop's definition of coverage.
-  - If beta endpoints always get hit because an api server is doing discovery, then that's cool but nothing we can ever prevent conformance tests from doing and we shouldn't care about it from a test coverage perspective.
-  - How do we signify that this is the kinda hit that's happening for an endpoint?
-  - We have a good start with filtering to just e2e, but even our e2etests are hitting those endpoints.  There are some endpoints where, logically they don't need to get tested or anything like that.
-  - Get to a point whwere we can manually specify, or have a blacklist of apiendpoints that we aren't factoring into our coverage viz.
-  - One way to do this is to filter out the endpoints that are hit by nearly all of the tests.  This is a good indicator that the endpoint is for initialization or something like that, and not actually a part of this test's function.
-- Unique Endpoints hit by a test: this is something that isn't covered by our sunburst or katherine's viz.  Pick a test, and then see the endpoints that are //only// hit by this test.
-  - which endpoints hit are unique, versus which ones are common across all test cases.  This would let us know which test cases are doing good stuff and which endpoints are essentially meaningless.
-  - you could have a center endpoint change to the perspective of that test, and then that test would only show the endpoints that it hits.....but that may not be that useful.  We dont' wanna see All the endpoints, we wanna see which ones are //special// for this test.
-  - Hierarchy vizes aren't that useful.
-  - I just wanna find a way to slice and dice data with raw queries and see where that leads us...and take some of the more useful queries and generate reports from that.  This sounds like a new approach for apisnoop.
-
-Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people like aaron?  is it a kubernetes end user?  If it's aaraon, he is saying he knows how to write certain queries, but he would rather have this  already done and then he can do further exploration.
-'For an endpoint that's only hit three times, what are the tests that are hitting this endpoint.  And then we could follow up with what the tests are doing from an api perspective.  'Okay, now let me see the full api stream from this test."
- - auotmate this, or provide shiny reports for this.  This isn't the end user coming up with the interesting things, this is us coming up with interesting things that we are letting the end user come to their own conclusions on.
- - We eventually want to show api coverage going up over time across different builds. o
- - We might be able to format things in such a way to have a test dashboard that shows individual api endpoints and #'s: how many times they been hit, something like that.
- - Is code coverage a different thing?  when talking about it being a command line tool that generates reports from it...or is that just what the group is trying to do.  the benefit of the command line tool is that you can automate it running for every build. We could then just have a page that displays these reports even maybe.
- - We want to share shinies at kubeconf china.
- - Get visualization up to good place that replaces existing visualization.
- - Showing all the api accesses per user-agent or test as a different Dashboard to have.
- - Take care of you for whatever demos you need for apisnoop.
- - It would be worth it to show we're providing value to cncf as a whole, but right now it's good to just be able to have Aaron say that the work we're doing makes it easier for conformance to do the things they want to do.
- - Let's not work on things that don't end up providing value, over-delivering when he really just wants somethings maller and specific.  He's happy to have some reports that don't need to be that shiny, but maybe a little bit interactive.  and these reports would be:
-   - If I click on a user agent, I can see the in-order access of all the api endpoints.
-   - To get some kind of report that shows me what kind of endpoints don't matter (every test hits them) and which ones are interesting (cos only a few endpoints hit them) and what are those tests?
-     - this may lead to a point where we try to make a whitelist of endpoints in our coverage, but let's not cross that bridge yet.
-   - For wednesday deadline...this isn't a hard deadline, we can touch base on Tuesday/Monday and see where we at.
-** Pairing With Mikey
-*** Background
-    I went through a pairing Session with [[https://dinosaur.is][Mikey]], to help with the overall architecture and code logic of the webui
 * Footnotes
-** Understand the config.yaml file and what it's pointing to.
-*** TestGrid
-    Our testgrid is located at: https://k8s-testgrid.appspot.com/
-
- https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml#L3028
- Dashboard Config for conformance-all: https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml#L3231
- Production instance of conformance-all: https://k8s-testgrid.appspot.com/conformance-all
-
- GCE https://k8s-testgrid.appspot.com/conformance-all#GCE,%20master%20(dev)
-
- JOBS for GCE 1.12-dev https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12
- Historical artifa8cts, including latest:
- https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12
- The specific latest build:
- https://k8s-gubernator.appspot.com/build/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/
- Grab SOMETHING from the artifact folder for this job:
- http://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/
- The audit log: https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log
-*** Navigating the config.yaml
-    Starting at , here is how to relate the url view with the info on
-    <<
-**** [[file:config_yamls/config.yaml::dashboard_groups:][dashboard_groups:]]
-
-    These top level dashboard groups are what populate the top level of [[https://k8s-testgrid.appspot.com][k8s-testgrid.appspot.com]]
-***** [[file:config_yamls/config.yaml::dashboards:][dashboards:]]
-****** [[file:config_yamls/config.yaml::test_groups:][test_groups:]]
-
-**** Example [[file:config_yamls/config.yaml::-%20name:%20conformance-gce][For dashboard: conformance-gce]]
-  if you were to look at
-  dashboards.name['conformance-gce'].dashboard_tab, that ties to the summary tab you see at [[https://k8s-testgrid.appspot.com/conformance-gce][k8s-testgrid.appspot.com/conformance-gce]]
-**** Test groups
-     k8s
-    Every testgroup name you find at:
-   ~dashboards.name['conformance-gce'].dashboard_tab.name~
-   has a section called 'test_group_name', and each test group name has its gcs_prefix (GCS standing for 'Google Cloud Services')
-
-   For example, the test group name 'ci-kubernetes-gce-conformance-stable-1-12' has a gcs prefix of 'kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-stable-1-12'.
-
-   The json path for this testgroup gcs prefix would be:
-   test_groups.name['ci-kubernetes-gce-conformance-stable-1-12'].gcs_prefix
-
-   which takes you here: [[file:config_yamls/config.yaml::gcs_prefix:%20kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-stable-1-12][gce-conformance-latest-1-12 gcs_prefix]]
-
-   We could then...point that to a url where we'd grab the artifacts?
-   like:
-  http://gcsweb.k8s.io/gcs/$GCS_PREFIX
-
-  we want to grab the latest text build, which is found at
-  http://gcsweb.k8s.io/gcs/$GCS_PREFIX/latest-build.txt
-   The goal now is to try to get as much done on the server, instead of trying to do it upon page requests in the client.  So what we would like is to have a server with an api that the client can ping that would give back the data needed based on the branch.  So I could do a request in the client for gce-conformance branch 1.12(dev), and that'd tie to some easy to reason about api path (/branches/1.12-dev), and this gives us the name of the latest build and the data taken from kube-servers api log.
-
-So ultimately we want to be bringing down the gigs of data for the audit-logs and converted into something that can be rendered into a graph.
 ** Resources
 *** d3
 **** [[https://medium.com/@Elijah_Meeks/interactive-applications-with-react-d3-f76f7b3ebc71][interactive applications with react-d3]]
@@ -1756,8 +1610,9 @@ So ultimately we want to be bringing down the gigs of data for the audit-logs an
 **** [[https://www.smashingmagazine.com/2018/02/react-d3-ecosystem/][Bringing Together react, d3, and their ecosystem]]
 **** [[http://www.adeveloperdiary.com/react-js/integrate-react-and-d3/][How to Integrate React and d3 the right way]]
 **** [[https://bost.ocks.org/mike/join/][Thinking with Joins]]
+*** react/redux
+    - [[https://read.reduxbook.com][Human Redux, by Henrik Joreteg]]
 
-** Process
 ** isocket
 *** Connecting the left pair / isocket
 
@@ -1889,6 +1744,89 @@ left: $left_session
 right: $right_session
 "
 #+END_SRC
+** Working with d3
+*** Introduction
+   d3 is the data visualization library that was used to make our original sunburst.  The way it works is to mount itself to the dom, and then appends new elements to the dom based on the data it was given. If that data changes, it transforms the elements as needed.
+
+   The way react works is it attaches itself to the dom, then creates a //shadow dom// that it is continually listening to, adding and removing elements in this dom as needed based on the data(the state) it was given.
+
+   In other words, they work in largely the same way, and both wanna attach themselves to the dom and manipulate it.  This...isn't good.  We want to have /1/ thing making shadow doms and calls on the website, and so it is a bit tricky to get react and d3 working together.
+
+The upside is that a number of people have tackled this challenge and created different react/d3 libraries for how the two can work together.  The downside is that I'm not sure yet which is the best to do.
+
+Put simply, it is not easy to take our existing sunburst code and just paste it into our new app.  We are going to need to transform it in some way based on the guidance of the library we are using.
+
+So the question is why we are putting ourselves into this trouble?
+*** WHY WE ARE PUTTING OURSELVES INTO THIS TROUBLE
+    My assumption with all of this is that when people hear 'apisnoop', they are thinking of the site in which you can see the data visualziations.  And so the webapp is important for the project and will be expanded.  React would be great for this in the long run.
+
+Similarly, I am expecting that we are going to have more types of visualizations than just the sunburst--and that even the sunburst may change.  So we are going to want to have an understanding for a language in which we can make a //bunch// of visualizations. d3 is great for this.
+
+If we do it right, we can have reusable components too that other teams could use for their own k8s projects, and that we could use ourselves.  For example--displaying two sunburst charts side by side would be much easier in react/d3 then what i ws trying to do before (appending both to the same id on a standard html document.)  This requires that I move through some d3 tutorials though.
+
+At the end of this, though, we will have a backend server that is easy to setup and can ping different url's (github repos or testgrid artifacts) and grab their data.  Then, we can manipulate that data in whatever way we want but also pass it along to our frontend.  This front-end can then have different options and tags setto really dive in and explore.
+
+If this is the purpose of apisnoop then let's do it.  If it's too much overkill though, then I can try a simpler solution.
+*** Possible Process to get going
+**** Setup a simple d3 visualization to understand the process
+**** pipe data into this simple visualization through our redux state.
+**** Pore over the original code again (the original blog post) to see how to best convert it
+**** Change the sunburst's origin point from a CSV file to JSON
+**** Change the sunbursts origin point from JSON to our redux store.
+*** Second Process
+**** Setup different pages for different d3-react libraries that already have ubilt components.
+**** explore piping our data into the one we like.
+**** Use testgrid conformance data and make simple visualizations to it.
+     We are wanting to keep the data retrieval tied into the visualizing, so we dont' end up with a pretty graph that can't be used for what we have.  So we can grab the testgrid stuff now and see what we can do with it.
+
+
+**** Use that going forward.
+*** Possible Libraries to use
+**** Victory
+     https://formidable.com/open-source/victory/
+**** Britecharts react
+     https://eventbrite.github.io/britecharts-react/
+**** Recharts
+     http://recharts.org/en-US/
+** Aaron Feedback
+- useful troubleshooting tool:
+  - adding test names to user agents to verify a test was testing what we thought it was.
+  - filter audit logs by user-agent and then see 'when this test case is run, here are the endpoints it accesses chronologically".
+    - This is separate from number of times hit.  that is useful in aggregate, this is something different.
+  - pulling in an audit log of timestamp/verb/uri
+- Feature of pointing to the specific line in the source for each test, to pull its definition, would be a good //Next// step.
+  - This is something we can do with whakapapa, but it's not something we have now.
+- Discovery front: Filtering more endpoints from APIsnoop's definition of coverage.
+  - If beta endpoints always get hit because an api server is doing discovery, then that's cool but nothing we can ever prevent conformance tests from doing and we shouldn't care about it from a test coverage perspective.
+  - How do we signify that this is the kinda hit that's happening for an endpoint?
+  - We have a good start with filtering to just e2e, but even our e2etests are hitting those endpoints.  There are some endpoints where, logically they don't need to get tested or anything like that.
+  - Get to a point whwere we can manually specify, or have a blacklist of apiendpoints that we aren't factoring into our coverage viz.
+  - One way to do this is to filter out the endpoints that are hit by nearly all of the tests.  This is a good indicator that the endpoint is for initialization or something like that, and not actually a part of this test's function.
+- Unique Endpoints hit by a test: this is something that isn't covered by our sunburst or katherine's viz.  Pick a test, and then see the endpoints that are //only// hit by this test.
+  - which endpoints hit are unique, versus which ones are common across all test cases.  This would let us know which test cases are doing good stuff and which endpoints are essentially meaningless.
+  - you could have a center endpoint change to the perspective of that test, and then that test would only show the endpoints that it hits.....but that may not be that useful.  We dont' wanna see All the endpoints, we wanna see which ones are //special// for this test.
+  - Hierarchy vizes aren't that useful.
+  - I just wanna find a way to slice and dice data with raw queries and see where that leads us...and take some of the more useful queries and generate reports from that.  This sounds like a new approach for apisnoop.
+
+Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people like aaron?  is it a kubernetes end user?  If it's aaraon, he is saying he knows how to write certain queries, but he would rather have this  already done and then he can do further exploration.
+'For an endpoint that's only hit three times, what are the tests that are hitting this endpoint.  And then we could follow up with what the tests are doing from an api perspective.  'Okay, now let me see the full api stream from this test."
+ - auotmate this, or provide shiny reports for this.  This isn't the end user coming up with the interesting things, this is us coming up with interesting things that we are letting the end user come to their own conclusions on.
+ - We eventually want to show api coverage going up over time across different builds. o
+ - We might be able to format things in such a way to have a test dashboard that shows individual api endpoints and #'s: how many times they been hit, something like that.
+ - Is code coverage a different thing?  when talking about it being a command line tool that generates reports from it...or is that just what the group is trying to do.  the benefit of the command line tool is that you can automate it running for every build. We could then just have a page that displays these reports even maybe.
+ - We want to share shinies at kubeconf china.
+ - Get visualization up to good place that replaces existing visualization.
+ - Showing all the api accesses per user-agent or test as a different Dashboard to have.
+ - Take care of you for whatever demos you need for apisnoop.
+ - It would be worth it to show we're providing value to cncf as a whole, but right now it's good to just be able to have Aaron say that the work we're doing makes it easier for conformance to do the things they want to do.
+ - Let's not work on things that don't end up providing value, over-delivering when he really just wants somethings maller and specific.  He's happy to have some reports that don't need to be that shiny, but maybe a little bit interactive.  and these reports would be:
+   - If I click on a user agent, I can see the in-order access of all the api endpoints.
+   - To get some kind of report that shows me what kind of endpoints don't matter (every test hits them) and which ones are interesting (cos only a few endpoints hit them) and what are those tests?
+     - this may lead to a point where we try to make a whitelist of endpoints in our coverage, but let's not cross that bridge yet.
+   - For wednesday deadline...this isn't a hard deadline, we can touch base on Tuesday/Monday and see where we at.
+** Pairing With Mikey
+*** Background
+    I went through a pairing Session with [[https://dinosaur.is][Mikey]], to help with the overall architecture and code logic of the webui
 * Experiment
   :PROPERTIES:
   :header-args: :dir (concat (file-name-directory buffer-file-name) "client")
@@ -1900,37 +1838,50 @@ right: $right_session
 # org-confirm-babel-evaluate: nil
 # End:
 * Tasks
-** TODO [6/8] Tasks For Refactoring our Data and understanding of it.
+** TODO [7/11] Tasks For Refactoring our Data and understanding of it.
    - [X]  Convert JSON dump to New Flat Database
    - [X] Hookup react/redux to query endpoints.
    - [X] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
    - [X] Practice Converting flat database to Sunburst Data structure.
    - [X] Sort Level so it is Stable, Beta, Alpha
    - [X] pass down chart selector data to main page props, pass down focused key path to render label within sunburst
+   - [ ] Add Percentage Calculation to center label.
+     - I think I would want to do a data transformation, that counts the isTested for each of the child nodes, and piles that into an equation in the parent node.
+     - How much of the existing work can I use with this?
+     - STRATEGY: we've added the coverage to our endpoints information.  So we could now have a 'coverage' selector that listens to the full path array and finds the coverage information in the endpoints for it.  We don't need to do any extra action, we just need to work off our existing stuff.
+     - If nothing is set, then we are going to want to know the coverage by release.  So the first step, then, would be: 'Without Focus Path selectInteriorLabel = endpoints[release][coverage]' with focus path it would be endpoints[release][fp1][fp2][coverage]...i guess based on the full apth length (it could be up to 3, level, category, endpoint).
+
+   - [ ] Change endpoint path so it displays UNTESTED for the whole untested block (currently displaying random endpoint name).
    - [ ] re-hook up routing to route by release name
-   - [ ] Query endpoints by Release.
-** TODO [0/6] Future Tasks
-   - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that
-   - [ ] Hover over Part of Sunburst shows relevant rays highlighted.
+   - [X] Query endpoints by Release.
+   - [ ] remove dependency on releaseStore reducer.
+** TODO [1/8] Future Tasks
+   - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
+   - [X] Hover over Part of Sunburst shows relevant rays highlighted.
    - [ ] Hover over Sunburst, see testing percentage update in center.
    - [ ] Click on Useragent, sunburst zooms onto that subset of data.
-   - [ ] Refactor Chart Selector.
-** TODO [2/5] Achievements To Unlock
+   - [ ] Refactor Chart Selector to not be heavily nested..
+   - [ ] Move colors calculation out of sunburst selector into its own thing.
+   - [ ] Separate sunburst selector thangs from chart interaction thangs (maybe?  may be premature optimization).
+   - [ ] Remove unused props from app.js
+** TODO [4/5] Achievements To Unlock
    - [X] Mikey has a functional understanding of what we're trying to do.
    - [X] It generally feels better
    - [ ] Sunburst Matches Functionality of Previous Sunburst
-   - [ ] Sunburst Changes Based on Route
-   - [ ] It loads faster
-** TODO [0/1] Questions
-   - [ ] Why does brining in the selectsunburstSorted selector affect the sunburst (when it is a new selector, not the previous one.
-** NEXT Change front-end logic so it only pulls data from the necessary sunburst.
+   - [X] Sunburst Changes Based on Route
+   - [X] It loads faster
+** TODO Add logic to API to filter endpoints to only those touched by e2e.
+   We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
+
+** DONE Change front-end logic so it only pulls data from the necessary sunburst.
+   CLOSED: [2018-11-04 Sun 22:29]
    Right now the we have an endpoint called /Releases, organized by Build name.  These correspond to the sunbursts.  We are pulling in the entire api, we should only do buildname.data.sunburst
 *** [0/5] Subtasks
     - [ ] Remove excess noise from front-end for right now--the filters essentially.
     - [ ] Add URL path to each Release you click
     - [ ] Add fetchSunburst action to sunburst segment component, and pass it along the url params.
     - [ ] Query the api database based on the params and return just the sunburst data.`
-** TODO Add logic to API to filter endpoints to only those touched by e2e.
-   We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
-
-** TODO change keypath logic so it only highlights if parent is on keypath.
+** DONE change keypath logic so it only highlights if parent is on keypath.
+   CLOSED: [2018-11-04 Sun 22:30]
+** TODO [0/1] Questions
+   - [ ] Why does brining in the selectsunburstSorted selector affect the sunburst (when it is a new selector, not the previous one.

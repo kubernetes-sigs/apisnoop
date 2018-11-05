@@ -59,8 +59,7 @@ export const selectSunburstByRelease = createSelector(
     })
 
     return {
-      dataByRelease,
-      focusLabel: ''  //
+      dataByRelease
     }
   }
 )
@@ -80,6 +79,7 @@ export const selectSunburstByReleaseWithSortedLevel = createSelector(
     return endpointsByRelease
   }
 )
+
 export const selectIsSunburstReady = selectIsEndpointsReady
 
 var colors = {

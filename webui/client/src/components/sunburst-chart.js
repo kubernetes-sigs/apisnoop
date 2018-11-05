@@ -2,7 +2,6 @@ import React from 'react'
 import { Sunburst, LabelSeries } from 'react-vis'
 import { get, includes } from 'lodash'
 
-
 const LABEL_STYLE = {
   PERCENTAGE: {
     fontSize: '1.3em',
@@ -73,8 +72,7 @@ export default function SunburstChart (props) {
     unfocusChart()
   }
 
-  function handleClick (node, event) {
-
+  function handleClick (node) {
   }
 
   function getKeyPath (node) {

@@ -35,7 +35,6 @@ class ReleasesList extends Component {
   handleClick (e) {
     console.log('hi from clicking!!', e.target.innerText)
     this.props.changeActiveRoute(e.target.innerText)
-    this.props.setInteriorLabel(e.target.innerText)
   }
 }
 

@@ -4,10 +4,11 @@ import SunburstChart from './sunburst-chart'
 
 class SunburstSegment extends Component {
   render() {
-    const {sunburst,
+    const {endpoints,
            focusChart,
            focusPath,
            focusPathAsString,
+           sunburst,
            unfocusChart} = this.props
 
     return (
@@ -18,10 +19,11 @@ class SunburstSegment extends Component {
       }
         <SunburstChart
           sunburst={sunburst}
+          endpoints={endpoints}
           focusChart={focusChart}
-          unfocusChart={unfocusChart}
           focusPath={focusPath}
           focusPathAsString={focusPathAsString}
+          unfocusChart={unfocusChart}
         />
         </div>
     )

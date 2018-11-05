@@ -2,13 +2,13 @@ import React, { Component } from 'react'
 import { connect } from 'react-redux'
 import { createStructuredSelector } from 'reselect'
 
-import { focusChart, setInteriorLabel, unfocusChart } from '../actions/charts'
+import { focusChart, unfocusChart } from '../actions/charts'
 import {
   selectActiveRoute,
-  selectEndpointsById,
-  selectEndpointsByReleaseAndNameAndMethod,
+  selectEndpointsWithTestCoverage,
   selectFocusPathAsArray,
   selectFocusPathAsString,
+  selectReleaseNamesFromEndpoints,
   selectRouteChange,
   selectIsSunburstReady,
   selectSunburstByReleaseWithSortedLevel
@@ -20,13 +20,14 @@ class MainPage extends Component {
   render(){
     const {
       activeRoute,
+      endpointsWithTestCoverage,
       focusPath,
       focusPathAsString,
       routeChange,
       sunburstByRelease
     } = this.props
 
-  const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
+    const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
 
     return (
         <main id='main-splash' className='min-vh-100'>
@@ -34,8 +35,12 @@ class MainPage extends Component {
         {this.props.isSunburstReady && <SunburstSegment
          sunburst={{
            data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
-                             : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
+             : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
          }}
+         endpoints={ routeChange ?
+                     endpointsWithTestCoverage[activeRoute] :
+                     endpointsWithTestCoverage[releaseBasedOnRoute]
+                   }
          focusChart={this.props.focusChart}
          unfocusChart={this.props.unfocusChart}
          release= {activeRoute}
@@ -51,13 +56,15 @@ class MainPage extends Component {
 export default connect(
   createStructuredSelector({
     activeRoute: selectActiveRoute,
-    endpointsById: selectEndpointsById,
+    endpointsWithTestCoverage: selectEndpointsWithTestCoverage,
     focusPath: selectFocusPathAsArray,
     focusPathAsString: selectFocusPathAsString,
-    endpointsByReleaseAndNameAndMethod: selectEndpointsByReleaseAndNameAndMethod,
     isSunburstReady: selectIsSunburstReady,
+    releaseNames: selectReleaseNamesFromEndpoints,
     routeChange: selectRouteChange,
-    sunburstByRelease: selectSunburstByReleaseWithSortedLevel
+    sunburstByRelease: selectSunburstByReleaseWithSortedLevel,
   }),
-  {focusChart, unfocusChart}
+  {focusChart,
+   unfocusChart
+   }
 ) (MainPage)

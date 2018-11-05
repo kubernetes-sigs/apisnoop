@@ -4,7 +4,7 @@ const initialState = {
 }
      export default (state = initialState, action = {}) => {
        switch (action.type) {
-       case 'CHANGE_ACTIVE_ROUTE':
+       case 'ACTIVE_ROUTE_CHANGED':
          return {
            ...state,
            activeRoute: action.payload,
