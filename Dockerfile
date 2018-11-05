@@ -8,12 +8,14 @@ ARG NB_USER
 ARG NB_UID
 ENV USER ${NB_USER}
 ENV HOME /home/${NB_USER}
-
+RUN apt-get update -y
+RUN apt-get upgrade -y
 RUN adduser --disabled-password \
     --gecos "Default user" \
     --uid ${NB_UID} \
     ${NB_USER}
 WORKDIR ${HOME}
+RUN apt-get install vim -y --allow-unauthenticated
 COPY webui webui
 COPY dev/audit-log-review audit
 COPY postBuild /postBuild
