@@ -17,33 +17,47 @@ def do_import(path, openapi_spec):
     # that we never use (especially including those, or we'd always have 100%
     # coverage).
 
+    print 'Loading endpoints parsed from openapi spec into database...'
     for endpoint in spec['paths'].values():
         path = endpoint['path']
-        print(endpoint)
         for method, metadata in endpoint['methods'].items():
-            print(path, method)
+            print 'Loading endpoint %s %s' % (method, path)
             endpoints[path, method] = Endpoint(method=method, url=path, level=endpoint.get('level'),
                                                category=metadata['category'])
 
+    print 'Matching events parsed from audit log with openapi endpoints stored in database...'
     hits = {}
     for event in log:
         endpoint = find_openapi_entry(spec, event)
         if endpoint is None:
-            print("Missing endpoint...")
+            print 'No openapi endpoint found for event: %s %s' % (event['method'], event['requestURI'])
             continue
-        path = endpoint['path']
-        method = event['method']
+        try:
+            path = endpoint['path']
+            method = event['method']
+        except Exception as e:
+            print("Even more surprising result!", endpoint, event)
 
-        if(path, method) not in endpoints:
-            print("Surprising result!", path, method)
+        if (path, method) not in endpoints:
+            print 'Ignoring event for unknown endpoint: %s %s' % (method, path)
             continue
+        #else:
+        #   print 'Found endpoint: %s %s for event: %s %s' % (method, path, event['method'], event['requestURI'])
 
-        ua = event.get('userAgent', 'unknown').split(' ', 1)[0]
-        t = (path, method, ua)
-        if t in hits:
-            hits[t].count += 1
-        else:
-            hits[t] = EndpointHit(endpoint=endpoints[path, method], user_agent=ua, count=1)
+        user_agent = event.get('userAgent', 'unknown')
+        # kubernetes e2e.test incluse test case name in its user agent
+        # TODO(spiffxp): this throws off the total number of hits because now
+        #                we're counting twice for e2e.test and the test case
+        #                name
+        uas = [user_agent.split(' ', 1)[0]]
+        if "e2e.test" in user_agent and "--" in user_agent:
+            uas.append(user_agent.split("--")[1].strip())
+        for ua in uas:
+            t = (path, method, ua)
+            if t in hits:
+                hits[t].count += 1
+            else:
+                hits[t] = EndpointHit(endpoint=endpoints[path, method], user_agent=ua, count=1)
     commit()
 
 def usage_and_exit():
