@@ -32,7 +32,6 @@ USER ${NB_USER}
 RUN git clone https://github.com/ii/spacemacs.git $HOME/.emacs.d && ln -s ~/.emacs.d/private/local/.spacemacs $HOME/.spacemacs
 RUN git clone https://github.com/ii/ob-tmate ~/.emacs.d/private/local/ob-tmate.el/
 RUN git clone https://github.com/benma/go-dlv.el ~/.emacs.d/private/local/go-dlv.el/
-RUN git clone  $HOME/.emacs.d && ln -s ~/.emacs.d/private/local/.spacemacs $HOME/.spacemacs
 COPY webui webui
 COPY dev/audit-log-review audit
 COPY postBuild /postBuild
