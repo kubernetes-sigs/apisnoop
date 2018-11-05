@@ -30,13 +30,13 @@ RUN apt install git \
 RUN echo "alias emc='emacsclient -t '" > /etc/profile.d/emc-alias.sh
 RUN curl -L https://github.com/tmate-io/tmate/releases/download/2.2.1/tmate-2.2.1-static-linux-amd64.tar.gz \
   | tar  -f - -C /usr/local/bin -xvz --strip-components=1
+COPY processAudits /
+RUN /processAudits
 COPY webui webui
 COPY dev/audit-log-review audit
-COPY postBuild /postBuild
 COPY index.ipynb index.ipynb
-RUN chown -R $NB_USER.$NB_USER audit webui *pynb
+RUN chown -R $NB_USER.$NB_USER audit webui *pynb data
 USER ${NB_USER}
 RUN git clone https://github.com/ii/spacemacs.git $HOME/.emacs.d && ln -s ~/.emacs.d/private/local/.spacemacs $HOME/.spacemacs
 RUN git clone https://github.com/ii/ob-tmate ~/.emacs.d/private/local/ob-tmate.el/
 RUN git clone https://github.com/benma/go-dlv.el ~/.emacs.d/private/local/go-dlv.el/
-RUN /postBuild
