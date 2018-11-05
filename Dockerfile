@@ -16,3 +16,5 @@ RUN adduser --disabled-password \
 WORKDIR ${HOME}
 COPY webui webui
 COPY dev/audit-log-review audit
+COPY postBuild /postBuild
+RUN /postBuild
