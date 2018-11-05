@@ -1,12 +1,12 @@
-import { createSelector } from 'reselect'
-import { forEach, map, mapValues, orderBy, reduce, values } from 'lodash'
+import { createSelector, createStructuredSelector } from 'reselect'
 
-import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod, selectIsEndpointsReady } from './endpoints'
+import { forEach, get, map, mapValues, orderBy, without, reduce, values } from 'lodash'
 
+import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
+         selectEndpointsWithTestCoverage,
+         selectIsEndpointsReady } from './endpoints'
 
-export function selectInteriorLabel (state) {
-  return state.charts.interiorLabel
-}
+import { selectActiveRoute } from './routes'
 
 export function selectFocusPathAsArray (state) {
   return state.charts.focusedKeyPath
@@ -18,6 +18,31 @@ export const selectFocusPathAsString = createSelector(
     return pathAsArray.join().replace(/,/g,' / ')
   }
 )
+
+export const selectInteriorLabelComponents = createStructuredSelector({
+  focusPath: selectFocusPathAsArray,
+  isEndpointsReady: selectIsEndpointsReady,
+  endpoints: selectEndpointsWithTestCoverage,
+  releaseFromRoute: selectActiveRoute
+  }
+)
+
+export const selectInteriorLabel = createSelector(
+  selectInteriorLabelComponents,
+  (components) => {
+    const { focusPath, endpoints, isEndpointsReady, releaseFromRoute } = components
+    if (isEndpointsReady) {
+      if (!focusPath.length) {
+      return endpoints[releaseFromRoute]['coverage']
+      } else{
+        var path = (without(focusPath, 'root'))
+        var endpoint = get(endpoints[releaseFromRoute], path)
+        return endpoint.coverage
+    }
+    }
+  }
+)
+
 
 
 export const selectSunburstByRelease = createSelector(
@@ -59,8 +84,7 @@ export const selectSunburstByRelease = createSelector(
     })
 
     return {
-      dataByRelease,
-      focusLabel: ''  //
+      dataByRelease
     }
   }
 )
@@ -80,6 +104,7 @@ export const selectSunburstByReleaseWithSortedLevel = createSelector(
     return endpointsByRelease
   }
 )
+
 export const selectIsSunburstReady = selectIsEndpointsReady
 
 var colors = {

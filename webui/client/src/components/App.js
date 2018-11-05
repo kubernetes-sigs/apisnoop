@@ -1,11 +1,12 @@
 import React, { Component } from 'react'
 import { connect } from 'react-redux'
 import { Route } from 'react-router-dom'
+import { createStructuredSelector } from 'reselect'
 
-import { fetchReleaseNames} from '../actions/releases'
+
+import { selectReleaseNamesFromEndpoints, selectIsEndpointsReady } from '../selectors'
 import { fetchEndpoints } from '../actions/endpoints'
 import { changeActiveRoute } from '../actions/routes'
-import { setInteriorLabel } from '../actions/charts'
 
 import Header from './header'
 import Footer from './footer'
@@ -14,20 +15,20 @@ import MainPage from '../pages/main-page.js'
 
 class App extends Component {
   componentDidMount(){
-    this.props.fetchReleaseNames()
     this.props.fetchEndpoints()
   }
 
   render(){
+    const {releaseNames, endpointsReady, changeActiveRoute } = this.props
+
     return (
       <div id='app'>
         <Header />
-        {this.props.release_names &&
+        {endpointsReady &&
          <ReleasesList
-           releases={this.props.release_names}
+           releases={releaseNames}
            selected='master'
-           changeActiveRoute={this.props.changeActiveRoute}
-           setInteriorLabel={this.props.setInteriorLabel}
+           changeActiveRoute={changeActiveRoute}
          /> }
   <Route exact path='/' component={MainPage} />
   <Route exact path='/:release' component={MainPage} />
@@ -37,10 +38,10 @@ class App extends Component {
   }
 }
 
-function mapStateToProps (state) {
-  return {
-  release_names: state.releasesStore.release_names
-  }
-}
-
-export default connect(mapStateToProps, {fetchReleaseNames, fetchEndpoints, changeActiveRoute, setInteriorLabel })(App)
+export default connect(
+  createStructuredSelector({
+    releaseNames: selectReleaseNamesFromEndpoints,
+    endpointsReady: selectIsEndpointsReady
+  }),
+  {fetchEndpoints,
+   changeActiveRoute})(App)

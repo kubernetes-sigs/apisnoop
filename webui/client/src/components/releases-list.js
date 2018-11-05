@@ -13,11 +13,11 @@ class ReleasesList extends Component {
       return(
           <NavLink
             className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink"
-            exact to={option.name}
-            key={`release_${option._id}`}
+            exact to={option}
+            key={`release_${option}`}
             onClick={this.handleClick}
           >
-          {option.name}
+          {option}
         </NavLink>
       )
     })
@@ -33,9 +33,7 @@ class ReleasesList extends Component {
   }
 
   handleClick (e) {
-    console.log('hi from clicking!!', e.target.innerText)
     this.props.changeActiveRoute(e.target.innerText)
-    this.props.setInteriorLabel(e.target.innerText)
   }
 }
 

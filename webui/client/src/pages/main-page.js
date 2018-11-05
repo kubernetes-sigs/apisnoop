@@ -2,13 +2,13 @@ import React, { Component } from 'react'
 import { connect } from 'react-redux'
 import { createStructuredSelector } from 'reselect'
 
-import { focusChart, setInteriorLabel, unfocusChart } from '../actions/charts'
+import { focusChart, unfocusChart } from '../actions/charts'
 import {
   selectActiveRoute,
-  selectEndpointsById,
-  selectEndpointsByReleaseAndNameAndMethod,
   selectFocusPathAsArray,
   selectFocusPathAsString,
+  selectInteriorLabel,
+  selectReleaseNamesFromEndpoints,
   selectRouteChange,
   selectIsSunburstReady,
   selectSunburstByReleaseWithSortedLevel
@@ -22,11 +22,12 @@ class MainPage extends Component {
       activeRoute,
       focusPath,
       focusPathAsString,
+      interiorLabel,
       routeChange,
       sunburstByRelease
     } = this.props
 
-  const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
+    const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
 
     return (
         <main id='main-splash' className='min-vh-100'>
@@ -34,13 +35,14 @@ class MainPage extends Component {
         {this.props.isSunburstReady && <SunburstSegment
          sunburst={{
            data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
-                             : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
+             : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
          }}
          focusChart={this.props.focusChart}
          unfocusChart={this.props.unfocusChart}
          release= {activeRoute}
          focusPath={focusPath}
          focusPathAsString={focusPathAsString}
+         interiorLabel={interiorLabel}
          />
         }
       </main>
@@ -51,13 +53,14 @@ class MainPage extends Component {
 export default connect(
   createStructuredSelector({
     activeRoute: selectActiveRoute,
-    endpointsById: selectEndpointsById,
     focusPath: selectFocusPathAsArray,
     focusPathAsString: selectFocusPathAsString,
-    endpointsByReleaseAndNameAndMethod: selectEndpointsByReleaseAndNameAndMethod,
     isSunburstReady: selectIsSunburstReady,
+    interiorLabel: selectInteriorLabel,
+    releaseNames: selectReleaseNamesFromEndpoints,
     routeChange: selectRouteChange,
     sunburstByRelease: selectSunburstByReleaseWithSortedLevel
   }),
-  {focusChart, unfocusChart}
-) (MainPage)
+  {focusChart,
+   unfocusChart
+   })(MainPage)

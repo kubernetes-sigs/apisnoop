@@ -1,10 +1,10 @@
 const initialState = {
-  activeRoute: '',
+  activeRoute: 'sig-release-master',
   routeChange: false
 }
      export default (state = initialState, action = {}) => {
        switch (action.type) {
-       case 'CHANGE_ACTIVE_ROUTE':
+       case 'ACTIVE_ROUTE_CHANGED':
          return {
            ...state,
            activeRoute: action.payload,

@@ -1,6 +1,6 @@
 export function changeActiveRoute (target) {
   return {
-    type: 'CHANGE_ACTIVE_ROUTE',
+    type: 'ACTIVE_ROUTE_CHANGED',
     payload: target
   }
 }

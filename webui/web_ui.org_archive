@@ -1763,3 +1763,122 @@ If clicked isn't set, and we've left the chart, then return everything back to n
   :ARCHIVE_CATEGORY: web_ui
   :ARCHIVE_TODO: DONE
   :END:
+
+* Our Current Flow
+  :PROPERTIES:
+  :ARCHIVE_TIME: 2018-11-04 Sun 22:01
+  :ARCHIVE_FILE: ~/Projects/ii/apisnoop/webui/web_ui.org
+  :ARCHIVE_OLPATH: Architecture
+  :ARCHIVE_CATEGORY: web_ui
+  :END:
+   I would like to document the current setup, to make sure I can reason about it.
+
+  We will have a site listed anywhere, for now it's localhost so we'll call it LH.
+
+  We want to know which commits(?) of kubernetes should have conformance tests made for them, this is handled in a config.yaml file in kubernetes test-infra folder on github.
+
+ The log of their tests is found in the artifacts of the latest build of the test found in gcsweb.k8s.io.  We need to know the exact url to ping for gcs to return any proper info for us.
+
+
+And so we grab the config info from github and parse its contents looking for commits that we are intersted in (like all gce-conformance commits).  Then, we take a look at the test_group_name for each commit and use that info to parse the config file again.  Each test group name has a GCS_Prefix, which gives us the url path we can ping with gcsweb.io
+
+So let's say there's a commit called 'commmit1.2'.  This commit has a test_group_name of 'foo_test'.  That test_group has a prefix of '/jenkins/tests/log/foo_test'.  This means we can go to gcsweb.io/gcs/jenkins/tests/log/foo_test and get more information about this particular test group.
+
+That information is a bit of an overload though.  It has folders for all the builds along with a text file that contains a number that is the latest build.  so in foo_test we'd see a bunch of folders named "100, 101, 102, 103" plus "latest-build.txt".  Clicking on latest-build.txt gives us something like: '103', which we know means we should look in folder 103 for all the relevant stuff.
+
+The txt file, though just a number, isn't stored on gcsweb.io.  It's actually stored at 'storage.googleapis.com'.  So trying to grab gcsweb.io/$GCS_PREFIX/latest-build.txt will give us a redirect.  If we grab that number, following the path of that latest build folder leads us to a url of something like:
+http://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/foo_test-1-12/187/artifacts/bootstrap-e2e-master/
+
+there's also different bootstrap folders beyond master for many of these.
+
+Then, inside //this// folder would be some audit-logs.  These logs are what we are REALLLY looking for, as they have the data we want to visualize.
+
+
+This means, though, that when we start up the app we need to ping github and with the converted response from that ping gcsweb.k8s.io and with the response from that site ping gcsweb again but at a specific url, looking for a specific type of file and with the response of that get a big buffer of text that we try to convert into json so that we can feed it into our components.
+
+
+I feel like this is a tremendous amount to put onto a webpage upon first loading, and that there's a number of errors that could come up.  How much of this can be done by our server so it's at the ready when the page loads up.
+
+For example: I can't imagine the config.yaml file updates /aaaalll/ that much.  If we have something that is current to the latest day, or even yesterday, would that be okay?  And if that's okay, is there a way we could pull the yaml file and add it to our database so we'd have something like:
+- ourserver.com/dashboards
+- ourserver.com/test_groups
+- ourserver.com/commits
+and each of these we could ping instead to get the info we want?  Then we aren't doing real-time conversion of a blob into a string into yaml into json---it's just ready for us.
+
+In the same way, is there anyway we can parse our own api and grab the audit logs we need, and have them converted into json for us to parse.  So the web page loads, pings our server, finds the audit logs, and renders them.....That might be redundancy though, since they //are// already available on a server at gcsweb.  It just takes us some loops to figure out where.
+
+The question I have, ultimately, is how much should be handled by the client and how much should be pre-requested/filtered/converted by the server before the client latches on---and whether there's a simpler way to do what we're trying to do.
+
+
+* Plan for Demo
+  :PROPERTIES:
+  :ARCHIVE_TIME: 2018-11-04 Sun 22:02
+  :ARCHIVE_FILE: ~/Projects/ii/apisnoop/webui/web_ui.org
+  :ARCHIVE_OLPATH: Footnotes
+  :ARCHIVE_CATEGORY: web_ui
+  :END:
+- show our sunburst
+- show a cloud of all tags.
+- show a dropdown for user-agent
+- if you chooose a tag, the user-agent dropdown reduces to just tests run by that tag.
+- If you click on a sig tag, pull its general info from kubernetes/community/sigs.yaml
+- when you hover over an endpoint, show a list of tests that also hit that endpoint. and nubmer of times that test hits that endpoint.
+
+* Understand the config.yaml file and what it's pointing to.
+  :PROPERTIES:
+  :ARCHIVE_TIME: 2018-11-04 Sun 22:02
+  :ARCHIVE_FILE: ~/Projects/ii/apisnoop/webui/web_ui.org
+  :ARCHIVE_OLPATH: Footnotes
+  :ARCHIVE_CATEGORY: web_ui
+  :END:
+** TestGrid
+   Our testgrid is located at: https://k8s-testgrid.appspot.com/
+
+https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml#L3028
+Dashboard Config for conformance-all: https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml#L3231
+Production instance of conformance-all: https://k8s-testgrid.appspot.com/conformance-all
+
+GCE https://k8s-testgrid.appspot.com/conformance-all#GCE,%20master%20(dev)
+
+JOBS for GCE 1.12-dev https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12
+Historical artifa8cts, including latest:
+https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12
+The specific latest build:
+https://k8s-gubernator.appspot.com/build/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/
+Grab SOMETHING from the artifact folder for this job:
+http://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/
+The audit log: https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest-1-12/168/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log
+** Navigating the config.yaml
+   Starting at , here is how to relate the url view with the info on
+   <<
+*** [[file:config_yamls/config.yaml::dashboard_groups:][dashboard_groups:]]
+
+   These top level dashboard groups are what populate the top level of [[https://k8s-testgrid.appspot.com][k8s-testgrid.appspot.com]]
+**** [[file:config_yamls/config.yaml::dashboards:][dashboards:]]
+***** [[file:config_yamls/config.yaml::test_groups:][test_groups:]]
+
+*** Example [[file:config_yamls/config.yaml::-%20name:%20conformance-gce][For dashboard: conformance-gce]]
+ if you were to look at
+ dashboards.name['conformance-gce'].dashboard_tab, that ties to the summary tab you see at [[https://k8s-testgrid.appspot.com/conformance-gce][k8s-testgrid.appspot.com/conformance-gce]]
+*** Test groups
+     k8s
+    Every testgroup name you find at:
+   ~dashboards.name['conformance-gce'].dashboard_tab.name~
+   has a section called 'test_group_name', and each test group name has its gcs_prefix (GCS standing for 'Google Cloud Services')
+
+   For example, the test group name 'ci-kubernetes-gce-conformance-stable-1-12' has a gcs prefix of 'kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-stable-1-12'.
+
+   The json path for this testgroup gcs prefix would be:
+   test_groups.name['ci-kubernetes-gce-conformance-stable-1-12'].gcs_prefix
+
+   which takes you here: [[file:config_yamls/config.yaml::gcs_prefix:%20kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-stable-1-12][gce-conformance-latest-1-12 gcs_prefix]]
+
+   We could then...point that to a url where we'd grab the artifacts?
+   like:
+  http://gcsweb.k8s.io/gcs/$GCS_PREFIX
+
+  we want to grab the latest text build, which is found at
+  http://gcsweb.k8s.io/gcs/$GCS_PREFIX/latest-build.txt
+   The goal now is to try to get as much done on the server, instead of trying to do it upon page requests in the client.  So what we would like is to have a server with an api that the client can ping that would give back the data needed based on the branch.  So I could do a request in the client for gce-conformance branch 1.12(dev), and that'd tie to some easy to reason about api path (/branches/1.12-dev), and this gives us the name of the latest build and the data taken from kube-servers api log.
+
+So ultimately we want to be bringing down the gigs of data for the audit-logs and converted into something that can be rendered into a graph.
