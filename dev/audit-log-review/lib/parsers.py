@@ -60,7 +60,7 @@ def compile_path_regex(path):
         path_regex += "/?$"
     else:
         path_regex += "$"
-    print 'Converted path: %s into path_regex: %s' % (path, path_regex)
+    print('Converted path: %s into path_regex: %s' % (path, path_regex))
     return path_regex
 
 
@@ -97,7 +97,7 @@ def load_openapi_spec(url):
             if method == "parameters":
                 continue
             if 'deprecated' in swagger_method.get('description', '').lower():
-                print 'Skipping deprecated endpoint %s %s' % (method, path)
+                print('Skipping deprecated endpoint %s %s' % (method, path))
                 continue
             produces = swagger_method.get('produces', [])
             can_watch = ('application/json;stream=watch' in produces or
