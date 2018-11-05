@@ -32,7 +32,7 @@ RUN curl -L https://github.com/tmate-io/tmate/releases/download/2.2.1/tmate-2.2.
 COPY webui webui
 COPY dev/audit-log-review audit
 COPY postBuild /postBuild
-COPY *pynb /
+COPY index.ipynb
 RUN chown -R $NB_USER.$NB_USER audit webui *pynb
 USER ${NB_USER}
 RUN git clone https://github.com/ii/spacemacs.git $HOME/.emacs.d && ln -s ~/.emacs.d/private/local/.spacemacs $HOME/.spacemacs
