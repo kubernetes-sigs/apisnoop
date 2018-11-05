@@ -1,4 +1,4 @@
-FROM python:3.7-slim
+FROM python:2.7.15-slim
 # install the notebook package
 RUN pip install --no-cache --upgrade pip && \
     pip install --no-cache notebook && \
