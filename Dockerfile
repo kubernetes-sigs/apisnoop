@@ -25,14 +25,13 @@ RUN apt install git \
         emacs-snapshot-el \
         vim \
         -y --allow-unauthenticated
+RUN echo "alias emc='emacsclient -t '" > /etc/profile.d/emc-alias.sh
 USER ${NB_USER}
 RUN git clone https://github.com/ii/spacemacs.git $HOME/.emacs.d && ln -s ~/.emacs.d/private/local/.spacemacs $HOME/.spacemacs
 RUN git clone https://github.com/ii/ob-tmate ~/.emacs.d/private/local/ob-tmate.el/
 RUN git clone https://github.com/benma/go-dlv.el ~/.emacs.d/private/local/go-dlv.el/
-RUN echo "alias emc='emacsclient -t '" > /etc/profile.d/emc-alias.sh
 RUN curl -L https://github.com/tmate-io/tmate/releases/download/2.2.1/tmate-2.2.1-static-linux-amd64.tar.gz \
   | tar  -f - -C /usr/local/bin -xvz --strip-components=1
-
 RUN git clone  $HOME/.emacs.d && ln -s ~/.emacs.d/private/local/.spacemacs $HOME/.spacemacs
 COPY webui webui
 COPY dev/audit-log-review audit
