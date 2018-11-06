@@ -22,7 +22,7 @@ from lib.parsers import *
 def create_folders():
     for name in ['cache', 'output']:
         if not os.path.exists(name):
-            os.mkdir(name)
+            os.makedirs(name)
 
 def generate_endpoints_tree(openapi_spec):
     # Base tests structure, without audit / test loaded
@@ -381,7 +381,7 @@ def generate_coverage_report(openapi_spec, audit_log):
     report['endpoints'] = endpoints
     report['tests'] = tests
     report['test_tags'] = test_tags
-    report['test_sequesces'] = test_sequences
+    report['test_sequences'] = test_sequences
     report['useragents'] = useragents
     report['unknown_urls'] = unknown_urls
     report['unknown_url_methods'] = unknown_url_methods
