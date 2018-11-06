@@ -52,8 +52,8 @@ def generate_endpoints_tree(openapi_spec):
                 # "deprecated": deprecated,
                 "counter": 0,
                 "agents": [],
-                "test_tags": []
-                # "tests": [],
+                "test_tags": [],
+                "tests": []
             }
 
     return endpoints
@@ -350,6 +350,8 @@ def generate_coverage_report(openapi_spec, audit_log):
                     test_tags[tag][op][method]["counter"] += 1
                     if tag not in endpoints[op][method]['test_tags']:
                         endpoints[op][method]['test_tags'].append(tag)
+                    if test_name not in endpoints[op][method]['tests']:
+                        endpoints[op][method]['tests'].append(test_name)
                     # if tag not in sb_method['test_tags']:
                     #     sb_method['test_tags'].append(tag)
 
