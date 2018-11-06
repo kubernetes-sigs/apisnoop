@@ -1,39 +1,38 @@
-FROM alpine:3.6
+FROM python:3.7-slim
+# install the notebook package
+RUN pip install --no-cache --upgrade pip && \
+    pip install --no-cache notebook
 
-ENV LANG=en_US.UTF-8
-
-COPY requirements.txt /tmp/requirements.txt
-
-# add our user first to make sure the ID get assigned consistently,
-# regardless of whatever dependencies get added
-RUN addgroup -S mitmproxy && adduser -S -G mitmproxy mitmproxy \
-    && apk add --no-cache \
-        su-exec \
-        git \
-        g++ \
-        libffi \
-        libffi-dev \
-        libstdc++ \
-        openssl \
-        openssl-dev \
-        python3 \
-        python3-dev \
-    && python3 -m ensurepip \
-    && LDFLAGS=-L/lib pip3 install -r /tmp/requirements.txt \
-    && apk del --purge \
-        git \
-        g++ \
-        libffi-dev \
-        openssl-dev \
-        python3-dev \
-    && rm /tmp/requirements.txt \
-    && rm -rf ~/.cache/pip
-
-VOLUME /home/mitmproxy/.mitmproxy
-
-COPY docker-entrypoint.sh /usr/local/bin/
-ENTRYPOINT ["docker-entrypoint.sh"]
-
-EXPOSE 8080 8081
-# chang to mitmweb
-CMD ["mitmweb"]
+# create user with a home directory
+ARG NB_USER
+ARG NB_UID
+ENV USER ${NB_USER}
+ENV HOME /home/${NB_USER}
+RUN apt-get update -y
+RUN apt-get upgrade -y
+RUN adduser --disabled-password \
+    --gecos "Default user" \
+    --uid ${NB_UID} \
+    --shell /bin/bash \
+    ${NB_USER}
+WORKDIR ${HOME}
+RUN apt-get install wget curl gnupg -y --allow-unauthenticated
+RUN wget -q http://londo.ganneff.de/apt.key  -O- | apt-key add -
+RUN echo "deb http://londo.ganneff.de stretch main" > /etc/apt/sources.list.d/emacs.list
+RUN apt-get update -y
+RUN apt install git \
+        emacs-snapshot \
+        emacs-snapshot-el \
+        vim \
+        -y --allow-unauthenticated
+RUN echo "alias emc='emacsclient -t '" > /etc/profile.d/emc-alias.sh
+RUN curl -L https://github.com/tmate-io/tmate/releases/download/2.2.1/tmate-2.2.1-static-linux-amd64.tar.gz \
+  | tar  -f - -C /usr/local/bin -xvz --strip-components=1
+USER ${NB_USER}
+RUN git clone https://github.com/ii/spacemacs.git $HOME/.emacs.d && ln -s ~/.emacs.d/private/local/.spacemacs $HOME/.spacemacs
+RUN git clone https://github.com/ii/ob-tmate ~/.emacs.d/private/local/ob-tmate.el/
+RUN git clone https://github.com/benma/go-dlv.el ~/.emacs.d/private/local/go-dlv.el/
+COPY webui webui
+COPY dev/audit-log-review audit
+COPY postBuild /postBuild
+RUN /postBuild
