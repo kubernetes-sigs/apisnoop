@@ -5,6 +5,18 @@ export function focusChart (keyPath) {
   }
 }
 
+export function doLockChart () {
+  return {
+    type: 'CHART_LOCKED'
+  }
+}
+
+export function doUnlockChart () {
+  return {
+    type: 'CHART_UNLOCKED'
+  }
+}
+
 export function unfocusChart() {
   return {
     type: 'CHART_UNFOCUSED'

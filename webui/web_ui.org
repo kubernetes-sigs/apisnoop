@@ -196,7 +196,7 @@ We only have a single method here, which is setup.  We don't want this to be an 
        }
 
        async function addEntryToTestService (app, fileName, releaseData) {
-         var service = app.service('/api/v1/tests')
+         var service = app.service('/api/v1/test_sequences')
          var release = fileName.replace('-processed-audit.json', '')
          var testNames = Object.keys(releaseData.test_sequences)
          for (var testName of testNames) {
@@ -545,12 +545,13 @@ I think this will end up that we use MainPage multiple times, feeding in props a
          import { connect } from 'react-redux'
          import { createStructuredSelector } from 'reselect'
 
-         import { focusChart, unfocusChart } from '../actions/charts'
+         import { focusChart, doLockChart, unfocusChart, doUnlockChart } from '../actions/charts'
          import { doChooseActiveTest } from '../actions/tests'
 
          import {
            selectActiveRoute,
            selectActiveTest,
+           selectChartLocked,
            selectEndpointsWithTestCoverage,
            selectFocusPathAsArray,
            selectFocusPathAsString,
@@ -571,6 +572,7 @@ I think this will end up that we use MainPage multiple times, feeding in props a
              const {
                activeRoute,
                activeTest,
+               chartLocked,
                doChooseActiveTest,
                focusChart,
                focusPath,
@@ -578,23 +580,29 @@ I think this will end up that we use MainPage multiple times, feeding in props a
                interiorLabel,
                isSunburstReady,
                isTestsReady,
+               lockChart,
                routeChange,
                sunburstByRelease,
-               testsByRelease
+               testsByRelease,
+               unfocusChart,
+               unlockChart
              } = this.props
 
              const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
 
              return (
                  <main id='main-splash' className='min-vh-100'>
-                 <h2>You are doing a good job.</h2>
+                 {/* <h2>You are doing a good job.</h2> */}
                  {isSunburstReady && <SunburstSegment
                   sunburst={{
                     data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
                       : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
                   }}
+                  chartLocked={chartLocked}
                   focusChart={focusChart}
-                  unfocusChart={this.props.unfocusChart}
+                  unfocusChart={unfocusChart}
+                  lockChart={lockChart}
+                  unlockChart={unlockChart}
                   release= {activeRoute}
                   focusPath={focusPath}
                   focusPathAsString={focusPathAsString}
@@ -618,6 +626,7 @@ I think this will end up that we use MainPage multiple times, feeding in props a
            createStructuredSelector({
              activeRoute: selectActiveRoute,
              activeTest: selectActiveTest,
+             chartLocked: selectChartLocked,
              endpoints: selectEndpointsWithTestCoverage,
              focusPath: selectFocusPathAsArray,
              focusPathAsString: selectFocusPathAsString,
@@ -631,7 +640,9 @@ I think this will end up that we use MainPage multiple times, feeding in props a
            }),
            {doChooseActiveTest,
             focusChart,
-            unfocusChart
+            lockChart: doLockChart,
+            unfocusChart,
+            unlockChart: doUnlockChart
             })(MainPage)
        #+END_SRC
 
@@ -703,30 +714,39 @@ The various visual parts of the app.  For the most part, we want these to be as 
 
        class SunburstSegment extends Component {
          render() {
-           const {endpoints,
+           const {chartLocked,
+                  endpoints,
                   focusChart,
                   focusPath,
                   focusPathAsString,
+                  lockChart,
                   interiorLabel,
+                  release,
                   sunburst,
-                  unfocusChart} = this.props
+                  unfocusChart,
+                  unlockChart} = this.props
 
            return (
                <div id='sunburst-segment' className='bg_washed-red pa4 flex'>
                <div id='sunburst'>
-               <h2>{this.props.release}</h2>
+               <h2>{release}</h2>
                {focusPathAsString.length > 0   ?
-                <div>{focusPathAsString}</div> :
-                <div>'Hover over Chart for Path'</div>
+                <div className='h2 pa1'>{focusPathAsString}</div> :
+                <div className='h2 pa1'>'Hover over Chart for Path'</div>
                }
+             {chartLocked ? <strong>Click to Unlock</strong> : <strong>Click to Lock</strong>}
+
                <SunburstChart
-             sunburst={sunburst}
-             endpoints={endpoints}
-             focusChart={focusChart}
-             focusPath={focusPath}
-             focusPathAsString={focusPathAsString}
-             interiorLabel={interiorLabel}
-             unfocusChart={unfocusChart}
+                 sunburst={sunburst}
+                 chartLocked={chartLocked}
+                 endpoints={endpoints}
+                 focusChart={focusChart}
+                 focusPath={focusPath}
+                 lockChart={lockChart}
+                 focusPathAsString={focusPathAsString}
+                 interiorLabel={interiorLabel}
+                 unfocusChart={unfocusChart}
+                 unlockChart={unlockChart}
                />
                </div>
                <div id='test-tags'>
@@ -741,8 +761,8 @@ The various visual parts of the app.  For the most part, we want these to be as 
 
            function displayTestTags (testTags) {
              return testTags.map(testTag => {
-               return (<li key={testTag} className='dib mr1 mb2' >
-                       <p className='f6 f5-ns b db pa2 link dim dark-gray ba b--black-20'>
+               return (<li key={testTag} className='dib mr1 mb1' >
+                       <p className='f6 f5-ns b db pa2 mt0 mb0 link dim dark-gray ba b--black-20'>
                        {testTag}
                        </p>
                        </li>)
@@ -788,11 +808,14 @@ The various visual parts of the app.  For the most part, we want these to be as 
        export default function SunburstChart (props) {
 
          const {
+           chartLocked,
            focusChart,
            focusPath,
            interiorLabel,
+           lockChart,
            sunburst,
-           unfocusChart
+           unfocusChart,
+           unlockChart
          } = props
 
          if (sunburst == null) return null
@@ -839,14 +862,23 @@ The various visual parts of the app.  For the most part, we want these to be as 
          }
 
          function handleMouseOver (node, event) {
-           focusChart(getKeyPath(node))
+           if (!chartLocked) {
+             focusChart(getKeyPath(node))
+           }
          }
 
          function handleMouseOut () {
-           unfocusChart()
+           if (!chartLocked) {
+             unfocusChart()
+           }
          }
 
          function handleClick (node) {
+           if (chartLocked){
+             unlockChart()
+           } else if (!chartLocked) {
+             lockChart()
+           }
          }
 
          function getKeyPath (node) {
@@ -1217,7 +1249,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
       import axios from 'axios'
 
       export const client = axios.create({
-        baseURL: "http://localhost:3030",
+        baseURL: "http://apisnoop.cncf.io:3030",
         headers: {
           "Content-Type": "application/json"
         }
@@ -1310,6 +1342,24 @@ The various visual parts of the app.  For the most part, we want these to be as 
           }
         }
       #+END_SRC
+**** Lock Chart
+      #+NAME: Locking Chart
+      #+BEGIN_SRC js
+        export function doLockChart () {
+          return {
+            type: 'CHART_LOCKED'
+          }
+        }
+      #+END_SRC
+**** Unlock Chart
+      #+NAME: Unlocking Chart
+      #+BEGIN_SRC js
+        export function doUnlockChart () {
+          return {
+            type: 'CHART_UNLOCKED'
+          }
+        }
+      #+END_SRC
 **** Unfocus Chart
       #+NAME: Unfocus Chart
       #+BEGIN_SRC js
@@ -1383,7 +1433,8 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
      #+NAME: The Charts Reducer
      #+BEGIN_SRC js
        const initialState = {
-         focusedKeyPath: []
+         focusedKeyPath: [],
+         chartLocked: false
        }
 
        export default (state = initialState, action = {}) => {
@@ -1397,6 +1448,16 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
            return {
              ...state,
              focusedKeyPath: []
+           }
+         case 'CHART_LOCKED':
+           return {
+             ...state,
+             chartLocked: true
+           }
+         case 'CHART_UNLOCKED':
+           return {
+             ...state,
+             chartLocked: false
            }
          default:
            return state;
@@ -1685,6 +1746,10 @@ Tests are unique by Release and Name.
 
       export function selectFocusPathAsArray (state) {
         return state.charts.focusedKeyPath
+      }
+
+      export function selectChartLocked (state) {
+        return state.charts.chartLocked
       }
 
       export const selectFocusPathAsString = createSelector(
@@ -2112,16 +2177,6 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
    - [ ] re-hook up routing to route by release name
    - [X] Query endpoints by Release.
    - [X] remove dependency on releaseStore reducer.
-** NEXT [4/6] Add Test Information To Webui
-   When I am looking at a release,  I can see both the sunburst and a list of tests that happen with this release, so that I have more context on what is actually happening with our test coverage.
-   When I click on a test, I can see a chronological list of the endpoints it accesses, so I can understand what this test is doing and if it is necessary.
-- [X] Add unique api endpoint for tests
-- [X] Bring the tests into our redux store when app first loads.
-- [X] Massage data to group by release, using same format as our endpoints
-- [X] list tests to side of sunburst
-- [ ] clicking on a test makes it the 'active_test', which updates state.
-- [ ] When there is an active_test, display its chronological list.  does not need to be styled fancy.
-
 ** TODO [3/11] Future Tasks
    - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
    - [X] Hover over Part of Sunburst shows relevant rays highlighted.
@@ -2135,16 +2190,21 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
    - [ ] Improve performance of page load, by only calling a test when needed.
    - [ ] Refactor tests so the entire object isn't being loaded in the client.  That feels way too heavy, and instead you should only load up the testInfo (all the api endpoints being accessed) when there is an active_test, and you display that only on that active test.
    - [ ] When you click on an endpoint, it adds to the URL so that you can share the URL and have be right on the hovered sunburst with the filtered tests and such.
-** TODO [6/10] Achievements To Unlock to match and surpass
+** TODO [8/11] Achievements To Unlock to match and surpass old webui
    - [X] Mikey has a functional understanding of what we're trying to do.
    - [X] It generally feels better
    - [X] Sunburst Changes Based on Route
    - [X] It loads faster
    - [X] When you click on a test, it lists the endpoints sequence.
    - [X] Add testTags to our endpoint api
-   - [ ] When you hover on an endpoint, it shows the test tags.
-   - [ ] When you view the endpoint sequence, it is single line with a timestamp of HH:MM:SS:ss and then the rest of the info.
+   - [X] When you hover on an endpoint, it shows the test tags.
+   - [X] When you click on an endpoint, it locks the chart in place.
+     - [X] Add 'clicked' as state in sunburstChart, following the same logic in the [[https://github.com/uber/react-vis/blob/master/showcase/sunbursts/basic-sunburst.js][react-vis tutorial]]
+     - [X] When you mouseOut, if clicked isn't true //then// send out the clearing of focusPath.  Otherwise, keep it.
    - [ ] When you click on an endpoint, it filters the list of tests to just the ones that touch that endpoint.
+     - [ ] Devise strategy: when you click on a node you have the focus path as an array, which would end with an endpoint (if we are on an endpoint, otherwise it'd show the category or level). We have tests who each have an endpoint listed within them.  Maybe we query our db at that point for tests?endpointsIncludeEndpointName, or something similar to that.  Then, we change the logic beneath to only show tests once an endpoint is clicked, and it's based on the tests we retrieve...
+     - [ ] Doublecheck our releases for tests, to see how it be structured:  it goes release.data.tests.count.endpoints.  These endpoints //look// to correspond with our endpoint names pretty nicely.  But I think this means we'll have to separate out the tests into their own endoint too. It'd be best if it was just called 'tests', but we already ahve that for test_sequence.  how hard is it to switch that over?
+   - [ ] When you view the endpoint sequence, it is single line with a timestamp of HH:MM:SS:ss and then the rest of the info.
    - [ ] Untested shows as untested, not as an endpoint.
 ** TODO Add logic to API to filter endpoints to only those touched by e2e.
    We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
@@ -2159,5 +2219,17 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
     - [ ] Query the api database based on the params and return just the sunburst data.`
 ** DONE change keypath logic so it only highlights if parent is on keypath.
    CLOSED: [2018-11-04 Sun 22:30]
+** DONE-AND-SHARED [6/6] Add Test Information To Webui
+   CLOSED: [2018-11-06 Tue 03:37]
+   - State "DONE-AND-SHARED" from "NEXT"       [2018-11-06 Tue 03:37]
+   When I am looking at a release,  I can see both the sunburst and a list of tests that happen with this release, so that I have more context on what is actually happening with our test coverage.
+   When I click on a test, I can see a chronological list of the endpoints it accesses, so I can understand what this test is doing and if it is necessary.
+- [X] Add unique api endpoint for tests
+- [X] Bring the tests into our redux store when app first loads.
+- [X] Massage data to group by release, using same format as our endpoints
+- [X] list tests to side of sunburst
+- [X] clicking on a test makes it the 'active_test', which updates state.
+- [X] When there is an active_test, display its chronological list.  does not need to be styled fancy.
+
 ** TODO [0/1] Questions
    - [ ] Why does brining in the selectsunburstSorted selector affect the sunburst (when it is a new selector, not the previous one.

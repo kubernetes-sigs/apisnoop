@@ -2,12 +2,13 @@ import React, { Component } from 'react'
 import { connect } from 'react-redux'
 import { createStructuredSelector } from 'reselect'
 
-import { focusChart, unfocusChart } from '../actions/charts'
+import { focusChart, doLockChart, unfocusChart, doUnlockChart } from '../actions/charts'
 import { doChooseActiveTest } from '../actions/tests'
 
 import {
   selectActiveRoute,
   selectActiveTest,
+  selectChartLocked,
   selectEndpointsWithTestCoverage,
   selectFocusPathAsArray,
   selectFocusPathAsString,
@@ -28,6 +29,7 @@ class MainPage extends Component {
     const {
       activeRoute,
       activeTest,
+      chartLocked,
       doChooseActiveTest,
       focusChart,
       focusPath,
@@ -35,23 +37,29 @@ class MainPage extends Component {
       interiorLabel,
       isSunburstReady,
       isTestsReady,
+      lockChart,
       routeChange,
       sunburstByRelease,
-      testsByRelease
+      testsByRelease,
+      unfocusChart,
+      unlockChart
     } = this.props
 
     const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
 
     return (
         <main id='main-splash' className='min-vh-100'>
-        <h2>You are doing a good job.</h2>
+        {/* <h2>You are doing a good job.</h2> */}
         {isSunburstReady && <SunburstSegment
          sunburst={{
            data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
              : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
          }}
+         chartLocked={chartLocked}
          focusChart={focusChart}
-         unfocusChart={this.props.unfocusChart}
+         unfocusChart={unfocusChart}
+         lockChart={lockChart}
+         unlockChart={unlockChart}
          release= {activeRoute}
          focusPath={focusPath}
          focusPathAsString={focusPathAsString}
@@ -75,6 +83,7 @@ export default connect(
   createStructuredSelector({
     activeRoute: selectActiveRoute,
     activeTest: selectActiveTest,
+    chartLocked: selectChartLocked,
     endpoints: selectEndpointsWithTestCoverage,
     focusPath: selectFocusPathAsArray,
     focusPathAsString: selectFocusPathAsString,
@@ -88,5 +97,7 @@ export default connect(
   }),
   {doChooseActiveTest,
    focusChart,
-   unfocusChart
+   lockChart: doLockChart,
+   unfocusChart,
+   unlockChart: doUnlockChart
    })(MainPage)

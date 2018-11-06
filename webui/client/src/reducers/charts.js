@@ -1,5 +1,6 @@
 const initialState = {
-  focusedKeyPath: []
+  focusedKeyPath: [],
+  chartLocked: false
 }
 
 export default (state = initialState, action = {}) => {
@@ -13,6 +14,16 @@ export default (state = initialState, action = {}) => {
     return {
       ...state,
       focusedKeyPath: []
+    }
+  case 'CHART_LOCKED':
+    return {
+      ...state,
+      chartLocked: true
+    }
+  case 'CHART_UNLOCKED':
+    return {
+      ...state,
+      chartLocked: false
     }
   default:
     return state;

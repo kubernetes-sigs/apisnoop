@@ -24,11 +24,14 @@ const LABEL_STYLE = {
 export default function SunburstChart (props) {
 
   const {
+    chartLocked,
     focusChart,
     focusPath,
     interiorLabel,
+    lockChart,
     sunburst,
-    unfocusChart
+    unfocusChart,
+    unlockChart
   } = props
 
   if (sunburst == null) return null
@@ -75,14 +78,23 @@ export default function SunburstChart (props) {
   }
 
   function handleMouseOver (node, event) {
-    focusChart(getKeyPath(node))
+    if (!chartLocked) {
+      focusChart(getKeyPath(node))
+    }
   }
 
   function handleMouseOut () {
-    unfocusChart()
+    if (!chartLocked) {
+      unfocusChart()
+    }
   }
 
   function handleClick (node) {
+    if (chartLocked){
+      unlockChart()
+    } else if (!chartLocked) {
+      lockChart()
+    }
   }
 
   function getKeyPath (node) {

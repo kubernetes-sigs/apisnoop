@@ -12,6 +12,10 @@ export function selectFocusPathAsArray (state) {
   return state.charts.focusedKeyPath
 }
 
+export function selectChartLocked (state) {
+  return state.charts.chartLocked
+}
+
 export const selectFocusPathAsString = createSelector(
   selectFocusPathAsArray,
   (pathAsArray) => {
