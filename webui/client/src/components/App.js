@@ -6,6 +6,7 @@ import { createStructuredSelector } from 'reselect'
 
 import { selectReleaseNamesFromEndpoints, selectIsEndpointsReady } from '../selectors'
 import { fetchEndpoints } from '../actions/endpoints'
+import { doFetchTests } from '../actions/tests'
 import { changeActiveRoute } from '../actions/routes'
 
 import Header from './header'
@@ -16,6 +17,7 @@ import MainPage from '../pages/main-page.js'
 class App extends Component {
   componentDidMount(){
     this.props.fetchEndpoints()
+    this.props.doFetchTests()
   }
 
   render(){
@@ -44,4 +46,5 @@ export default connect(
     endpointsReady: selectIsEndpointsReady
   }),
   {fetchEndpoints,
+   doFetchTests,
    changeActiveRoute})(App)
