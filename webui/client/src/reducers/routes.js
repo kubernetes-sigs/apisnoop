@@ -1,5 +1,5 @@
 const initialState = {
-  activeRoute: 'sig-release-master',
+  activeRoute: 'master',
   routeChange: false
 }
      export default (state = initialState, action = {}) => {

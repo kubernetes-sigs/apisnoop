@@ -86,176 +86,6 @@ npm install reselect
 ***** [[https://blog.feathersjs.com/][medium page]]
 ***** [[http://slack.feathersjs.com/][slack channel]]
 
-* Backend
-** Setting up our API Initially
-**** Generating the Services
-     We will be using the processed data provided by the audit-log review to generate an api path for us to traverse.  Each build will have its own data, which will include the tags in it, the agents in it, and a sunburst path.
-** Services
-   (**NOTE**: for each service, make sure paginate is turned off.  In the future I should do this automatically.)
-*** Introduction
-
-Services refer to the different paths of our api, and the various jobs and manipulation we do to the data being fed through these paths.  They act as gatekeeepers to our various db's, so we aren't doing a bunch of db queries from all over the code and potentially causing strange behavior and hard to track errors.  Throug these, we have a consistent and reliable way to ask for and give data to our server: talk to the relevant service and have them do the work for you.
-
-We generate a service using feathers cli.  This creates a number of files for us and makes sure the service is known to the entire backend.  Which is to say that there will be a number of file changes made when we make a new service, but the files within this section only refer to the core code we are writing.
-**** Service Definitions
-   We have two services now.
- - Config :: Handles the initial setup (reading json files from disk and distributing the file to the proper Releases service, performing any cleanup as necessary).
- - Releases ::  the heart of our data, has all the info we need by release and we use this for our presentational components in the front end..
-*** Config
-    :PROPERTIES:
-    :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
-    :END:
-   The config is run whenever the server starts up, and takes JSON files placed in ~data/processed-audits~ and generates paths from the data held within.
-
-   We are in a midpoint now from the original style, where we created a single path with many nests, to a new FLAT style (that is generally more preferred, and more [[https://zen-of-python.info/][zen]]).  ~api/v1/endpoints~ is the beginning of this flat style.  Here, we generate new endpoints from all the different files, but each one has a release, method, and name.  Then, when we want to see only stuff for 1.12, we query our endpoint access for those with a release of 1.12 (instead of finding the 1.12 entry and navigating through its various nests to get the endpoints).
-**** Overall Layout
-     #+NAME: config.class.js layout
-     #+BEGIN_SRC js
-       /* eslint-disable no-unused-vars */
-       const fs = require('fs')
-       class Service {
-         constructor (options) {
-           this.options = options || {};
-         }
-
-         async setup (app, params) {
-           populateReleases(app,'./data/processed-audits')
-         }
-       }
-
-       <<Define populateReleases>>
-
-       module.exports = function (options) {
-         return new Service(options);
-       };
-
-       module.exports.Service = Service;
-    #+END_SRC
-
-We only have a single method here, which is setup.  We don't want this to be an accessible path, we are just using it to run through commands when the server first starts up.  In this case, we run a command that looks in a directory for processed JSons and puts each file into its own entry in our releases api path.
-**** Define populateReleases
-     #+NAME: Define populateReleases
-     #+BEGIN_SRC js :tangle no
-       function populateReleases (app, dir)  {
-         var processedAudits = fs.readdirSync(dir)
-         for (var i = 0; i < processedAudits.length; i++) {
-           var fileName = processedAudits[i]
-           var releaseJson = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
-           var releaseData = JSON.parse(releaseJson)
-           addEntryToEndpointService(app, fileName, releaseData)
-           addEntryToTestService(app, fileName, releaseData)
-         }
-       }
-
-       // I think we will not need this soon.
-       async function addEntryToReleaseService (app, fileName, releaseData) {
-         var service = app.service('/api/v1/releases')
-         var name = fileName.replace('-processed-audit.json', '')
-         var existingEntry = await service.find({query:{name}})
-         if (existingEntry.length === 0) {
-           service.create({name: name, data: releaseData})
-         } else {
-           service.update(existingEntry[0]._id, {name: name, data: releaseData})
-         }
-       }
-
-       async function addEntryToEndpointService (app, fileName, releaseData) {
-         var service = app.service('/api/v1/endpoints')
-         var release = fileName.replace('-processed-audit.json', '')
-         var endpointNames = Object.keys(releaseData.endpoints)
-         for (var endpointName of endpointNames) {
-           var endpointMethods = Object.keys(releaseData.endpoints[endpointName])
-           for (var endpointMethod of endpointMethods) {
-             var rawEndpoint = releaseData.endpoints[endpointName][endpointMethod]
-             var endpoint = {
-               name: endpointName,
-               method: endpointMethod,
-               release: release,
-               level: rawEndpoint.level,
-               test_tags: rawEndpoint.test_tags,
-               description: rawEndpoint.desc,
-               path: rawEndpoint.path,
-               category: rawEndpoint.cat,
-               isTested: rawEndpoint.counter > 0
-             }
-             // An endpoint is unique by name, release, method.
-             var existingEntry = await service.find({
-               query:{
-                 name: endpoint.name,
-                 method: endpoint.method,
-                 release: endpoint.release
-               }
-             })
-             if (existingEntry.length === 0) {
-               await service.create(endpoint)
-             } else {
-               await service.update(existingEntry[0]._id, endpoint)
-             }
-           }
-         }
-       }
-
-       async function addEntryToTestService (app, fileName, releaseData) {
-         var service = app.service('/api/v1/test_sequences')
-         var release = fileName.replace('-processed-audit.json', '')
-         var testNames = Object.keys(releaseData.test_sequences)
-         for (var testName of testNames) {
-           var testSequence = releaseData.test_sequences[testName]
-           var test = {
-             name: testName,
-             sequence: testSequence,
-             release: release
-           }
-           // An test is unique by testName and Release.
-           var existingEntry = await service.find({
-             query:{
-               name: test.name,
-               release: test.release
-             }
-           })
-           if (existingEntry.length === 0) {
-             await service.create(test)
-           } else {
-             await service.update(existingEntry[0]._id, test)
-           }
-         }
-       }
-
-     #+END_SRC
-
-     This will read the file and send the data to our releases service, but releaes will reject it by default because some of the fiels in the data have periods and our database does not like that.  So we add a hook to Releases that takes this data given to it and changes it's peirods to underscores before trying to add it to the database.  We generated the hook using feathers/cli, setting it to be before any create or update action...meaning it manipualtes the file BEFORE it is added to the db through CREATE or UPDATE
-*** Releases
-    The file that handles this service is boilerplate feathers, so we will use this section to write and discuss the hooks used as part of the releases service.
-**** cleanReleaseData
-     :PROPERTIES:
-     :header-args: :noweb yes :tangle ./backend/src/hooks/clean-release-data.js
-     :END:
-    #+NAME clean-release-data.js
-    #+BEGIN_SRC js
-      const _ = require('lodash')
-
-      module.exports = function (options = {}) {
-        return async context => {
-          var data = context.data.data
-          data = cleanUp(data)
-          context.data = {name: context.data.name, data: data}
-          return context;
-        }
-      }
-
-      function cleanUp (obj) {
-        var cleanObj = {}
-        for (key in obj) {
-          if (_.isPlainObject(obj[key])) {
-            cleanObj[key.replace(/\./g,'_')] = cleanUp(obj[key])
-          } else {
-            cleanObj[key.replace(/\./g,'_')] = obj[key]
-          }
-        }
-        return cleanObj
-      }
-    #+END_SRC
-
 * Client
   :PROPERTIES:
   :header-args: :dir ./client
@@ -541,109 +371,114 @@ I think this will end up that we use MainPage multiple times, feeding in props a
      :END:
      This page will hold the different areas for release--it's sunburst, and its list of test names.  We can add additional Segments here too, as our visualizations expand.
        #+BEGIN_SRC js
-         import React, { Component } from 'react'
-         import { connect } from 'react-redux'
-         import { createStructuredSelector } from 'reselect'
+            import React, { Component } from 'react'
+            import { connect } from 'react-redux'
+            import { createStructuredSelector } from 'reselect'
 
-         import { focusChart, doLockChart, unfocusChart, doUnlockChart } from '../actions/charts'
-         import { doChooseActiveTest } from '../actions/tests'
+            import { focusChart, doLockChart, unfocusChart, doUnlockChart } from '../actions/charts'
+         import { doChooseActiveTest, doSetEndpointTests } from '../actions/tests'
 
-         import {
-           selectActiveRoute,
-           selectActiveTest,
-           selectChartLocked,
-           selectEndpointsWithTestCoverage,
-           selectFocusPathAsArray,
-           selectFocusPathAsString,
-           selectInteriorLabel,
-           selectReleaseNamesFromEndpoints,
-           selectRouteChange,
-           selectIsSunburstReady,
-           selectIsTestsReady,
-           selectSunburstByReleaseWithSortedLevel,
-           selectTestsByReleaseAndName
-         } from '../selectors'
+            import {
+              selectActiveRoute,
+              selectActiveTest,
+              selectChartLocked,
+              selectEndpointTests,
+              selectEndpointsWithTestCoverage,
+              selectFocusPathAsArray,
+              selectFocusPathAsString,
+              selectInteriorLabel,
+              selectReleaseNamesFromEndpoints,
+              selectRouteChange,
+              selectIsSunburstReady,
+              selectIsTestsReady,
+              selectSunburstByReleaseWithSortedLevel
+            } from '../selectors'
 
-         import SunburstSegment from '../components/sunburst-segment'
-         import TestsContainer from '../components/tests-container'
+            import SunburstSegment from '../components/sunburst-segment'
+            import TestsContainer from '../components/tests-container'
 
-         class MainPage extends Component {
-           render(){
-             const {
-               activeRoute,
-               activeTest,
-               chartLocked,
-               doChooseActiveTest,
+            class MainPage extends Component {
+              render(){
+                const {
+                  activeRoute,
+                  activeTest,
+                  chartLocked,
+                  doChooseActiveTest,
+                  endpoints,
+                  endpointTests,
+                  focusChart,
+                  focusPath,
+                  focusPathAsString,
+                  interiorLabel,
+                  isSunburstReady,
+                  isTestsReady,
+                  lockChart,
+                  routeChange,
+                  setEndpointTests,
+                  sunburstByRelease,
+                  unfocusChart,
+                  unlockChart
+                } = this.props
+
+                const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
+
+                return (
+                    <main id='main-splash' className='min-vh-100'>
+                    {/* <h2>You are doing a good job.</h2> */}
+                    {isSunburstReady && <SunburstSegment
+                     sunburst={{
+                       data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
+                         : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
+                     }}
+                     chartLocked={chartLocked}
+                     endpoints={endpoints[activeRoute]}
+                     focusChart={focusChart}
+                     unfocusChart={unfocusChart}
+                     lockChart={lockChart}
+                     unlockChart={unlockChart}
+                     setEndpointTests={setEndpointTests}
+                     release= {activeRoute}
+                     focusPath={focusPath}
+                     focusPathAsString={focusPathAsString}
+                     interiorLabel={interiorLabel}
+                     />
+                    }
+                  {(isTestsReady && endpointTests.length > 0) &&
+                   <div>
+                    <TestsContainer
+                      activeTest={activeTest}
+                      chooseActiveTest={doChooseActiveTest}
+                      endpointTests={endpointTests}
+                    />
+                   </div>}
+                  </main>
+                )
+              }
+            }
+
+            export default connect(
+              createStructuredSelector({
+                activeRoute: selectActiveRoute,
+                activeTest: selectActiveTest,
+                chartLocked: selectChartLocked,
+                endpoints: selectEndpointsWithTestCoverage,
+                endpointTests: selectEndpointTests,
+                focusPath: selectFocusPathAsArray,
+                focusPathAsString: selectFocusPathAsString,
+                isSunburstReady: selectIsSunburstReady,
+                isTestsReady: selectIsTestsReady,
+                interiorLabel: selectInteriorLabel,
+                releaseNames: selectReleaseNamesFromEndpoints,
+                routeChange: selectRouteChange,
+                sunburstByRelease: selectSunburstByReleaseWithSortedLevel
+              }),
+              {doChooseActiveTest,
                focusChart,
-               focusPath,
-               focusPathAsString,
-               interiorLabel,
-               isSunburstReady,
-               isTestsReady,
-               lockChart,
-               routeChange,
-               sunburstByRelease,
-               testsByRelease,
+               lockChart: doLockChart,
+               setEndpointTests: doSetEndpointTests,
                unfocusChart,
-               unlockChart
-             } = this.props
-
-             const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
-
-             return (
-                 <main id='main-splash' className='min-vh-100'>
-                 {/* <h2>You are doing a good job.</h2> */}
-                 {isSunburstReady && <SunburstSegment
-                  sunburst={{
-                    data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
-                      : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
-                  }}
-                  chartLocked={chartLocked}
-                  focusChart={focusChart}
-                  unfocusChart={unfocusChart}
-                  lockChart={lockChart}
-                  unlockChart={unlockChart}
-                  release= {activeRoute}
-                  focusPath={focusPath}
-                  focusPathAsString={focusPathAsString}
-                  interiorLabel={interiorLabel}
-                  />
-                 }
-               {(isTestsReady && testsByRelease[activeRoute]) &&
-                <div>
-                 <TestsContainer
-                   tests={testsByRelease[activeRoute]}
-                   activeTest={activeTest}
-                   chooseActiveTest={doChooseActiveTest}
-                 />
-                </div>}
-               </main>
-             )
-           }
-         }
-
-         export default connect(
-           createStructuredSelector({
-             activeRoute: selectActiveRoute,
-             activeTest: selectActiveTest,
-             chartLocked: selectChartLocked,
-             endpoints: selectEndpointsWithTestCoverage,
-             focusPath: selectFocusPathAsArray,
-             focusPathAsString: selectFocusPathAsString,
-             isSunburstReady: selectIsSunburstReady,
-             isTestsReady: selectIsTestsReady,
-             interiorLabel: selectInteriorLabel,
-             releaseNames: selectReleaseNamesFromEndpoints,
-             routeChange: selectRouteChange,
-             sunburstByRelease: selectSunburstByReleaseWithSortedLevel,
-             testsByRelease: selectTestsByReleaseAndName
-           }),
-           {doChooseActiveTest,
-            focusChart,
-            lockChart: doLockChart,
-            unfocusChart,
-            unlockChart: doUnlockChart
-            })(MainPage)
+               unlockChart: doUnlockChart
+               })(MainPage)
        #+END_SRC
 
        #+RESULTS:
@@ -722,6 +557,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
                   lockChart,
                   interiorLabel,
                   release,
+                  setEndpointTests,
                   sunburst,
                   unfocusChart,
                   unlockChart} = this.props
@@ -745,6 +581,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
                  lockChart={lockChart}
                  focusPathAsString={focusPathAsString}
                  interiorLabel={interiorLabel}
+                 setEndpointTests={setEndpointTests}
                  unfocusChart={unfocusChart}
                  unlockChart={unlockChart}
                />
@@ -762,7 +599,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
            function displayTestTags (testTags) {
              return testTags.map(testTag => {
                return (<li key={testTag} className='dib mr1 mb1' >
-                       <p className='f6 f5-ns b db pa2 mt0 mb0 link dim dark-gray ba b--black-20'>
+                       <p className='f7 f6-ns b db pa0'>
                        {testTag}
                        </p>
                        </li>)
@@ -784,7 +621,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
      #+BEGIN_SRC js
        import React from 'react'
        import { Sunburst, LabelSeries } from 'react-vis'
-       import { get, includes } from 'lodash'
+       import { forEach, get, includes, uniq, without } from 'lodash'
 
        const LABEL_STYLE = {
          PERCENTAGE: {
@@ -809,10 +646,12 @@ The various visual parts of the app.  For the most part, we want these to be as 
 
          const {
            chartLocked,
+           endpoints,
            focusChart,
            focusPath,
            interiorLabel,
            lockChart,
+           setEndpointTests,
            sunburst,
            unfocusChart,
            unlockChart
@@ -847,7 +686,7 @@ The various visual parts of the app.  For the most part, we want these to be as 
             ]}
             />}
            </Sunburst>
-           </div>
+             </div>
          )
 
          function determineColor (node) {
@@ -873,10 +712,14 @@ The various visual parts of the app.  For the most part, we want these to be as 
            }
          }
 
-         function handleClick (node) {
+         function handleClick () {
            if (chartLocked){
              unlockChart()
-           } else if (!chartLocked) {
+           } else if (!chartLocked && focusPath.length > 3) {
+             var endpointTests = getEndpointTests(focusPath)
+             setEndpointTests(endpointTests)
+             lockChart()
+           } else {
              lockChart()
            }
          }
@@ -888,6 +731,18 @@ The various visual parts of the app.  For the most part, we want these to be as 
            var nodeKey = get(node, 'data.name') || get(node, 'name')
            var parentKeyPath = getKeyPath(node.parent)
            return [...parentKeyPath, nodeKey]
+         }
+
+         function getEndpointTests (focusPath) {
+           var endpointTests = []
+           var pathSansRoot = without(focusPath, 'root')
+           var lockedEndpoint = get(endpoints, pathSansRoot)
+           forEach(lockedEndpoint, (method) => {
+             for (var test of method.tests) {
+               endpointTests.push(test)
+             }
+           })
+           return uniq(endpointTests)
          }
        }
      #+END_SRC
@@ -1008,40 +863,34 @@ The various visual parts of the app.  For the most part, we want these to be as 
      :header-args: :noweb yes :tangle ./client/src/components/tests-container.js
      :END:
    This would be a two pane container.  On one side is the list of tests and the other would be the api endpoints each tests hit.
-   We are sending our testsByRelease into it, which is filled with Objects, each name being a testName and then each of these being filled with a sequence of api's hit.  The sequence is an array of arrays, each array having 5 parts in it:
-- timestamp,
-- level,
-- category,
-- method
-- api endpoint
 
+We are only sending tests that are on the locked-on endpoint.  We are sending them as an array of names, and we'll then get more info from them based on our test_sequence (in our tests store).
 #+NAME: Tests Container
 #+BEGIN_SRC js
   import React from 'react'
   import EndpointHitList from './endpoint-hit-list'
 
-  export default function TestsContainer ({tests, activeTest, chooseActiveTest}) {
-    const testNames = Object.keys(tests)
+  export default function TestsContainer ({activeTest, chooseActiveTest, endpointTests}) {
 
     return (
-        <div id='test-container' class="cf">
+        <div id='test-container' className="cf">
         <div className="fl w-100 w-50-ns bg-near-white tc pa3 pa5-ns">
             <h2>Tests</h2>
-        <ul className='list pl0 measure center'>{listTests(testNames)}</ul>
+        <ul className='list ph3 ph5-ns pv4'>{listTests(endpointTests)}</ul>
           </div>
           <div className="fl w-100 w-50-ns bg-light-gray tc">
-        <EndpointHitList test={activeTest}/>
+        <EndpointHitList activeTest={activeTest}/>
           </div>
         </div>
     )
 
-    function listTests (testNames) {
-      return testNames.map(testName => {
-        var test = tests[testName]
-        return <li key={test.id}
+    function listTests (endpointTests) {
+      return endpointTests.map(test => {
+        var testKey = 'test_' + endpointTests.indexOf(test)
+        return <li key={testKey}
                  onClick={() =>handleClick(test)}
-                 className='lh-copy pv3 ba bl-0 bt-0 br-0 b--dotted b--black-30'
-               >{test.name}</li>
+        className='f6 f5-ns b db pa2 link dim dark-gray ba b--black-20'
+               >{test}</li>
       })
     }
 
@@ -1050,7 +899,6 @@ The various visual parts of the app.  For the most part, we want these to be as 
     }
   }
 #+END_SRC
-**** Tests List
 **** Endpoint Hit List
      :PROPERTIES:
      :header-args: :noweb yes :tangle ./client/src/components/endpoint-hit-list.js
@@ -1060,39 +908,31 @@ The various visual parts of the app.  For the most part, we want these to be as 
    #+BEGIN_SRC js
      import React from 'react'
      import { size } from 'lodash'
+     import dayjs from 'dayjs'
 
-     export default function EndpointHitList({test}) {
-
-       if(size(test) <= 0) {
-         return (
-             <div>
-             <h2>Click Test to see Endpoints Hit</h2>
-             </div>
-         )
-       }
+     export default function EndpointHitList({activeTest}) {
+       if (size(activeTest) <= 0) return null
 
        return (
-           <div>
-           <h2>Endpoints Hit</h2>
-           <p>For</p>
-           <h3>{test.name}</h3>
-           <ul>{listEndpoints(test.sequence)}</ul>
+           <div className='pa2'>
+           <h3>{activeTest.name}</h3>
+           <ul className='list'>{listEndpoints(activeTest.sequence)}</ul>
            </div>
        )
 
        function listEndpoints (sequence) {
          return sequence.map(data => {
            var step = {
-             timestamp: data[0],
+             timestamp: dayjs(data[0]).format('HH:mm:ss'),
              level: data[1],
              category: data[2],
              method: data[3],
              endpoint: data[4]
            }
+           var stepKey = `${sequence.indexOf(data)}_${step.timestamp}`
            return(
-               <li>
-               <strong>{step.timestamp}</strong>
-               <p>{step.level} / {step.category} / {step.method} / {step.endpoint} </p>
+               <li key={stepKey} className='tl'>
+               <p>{step.level} / {step.category} / {step.method} / {step.endpoint} <em>{step.timestamp}</em></p>
                </li>
            )
          })
@@ -1328,6 +1168,17 @@ The various visual parts of the app.  For the most part, we want these to be as 
        }
      #+END_SRC
 
+**** Set Endpoint Tests
+     #+NAME: Choose Active Test
+     #+BEGIN_SRC js
+       export function doSetEndpointTests (endpointTests) {
+         return {
+           type: 'ENDPOINT_TESTS_SET',
+           payload: endpointTests
+         }
+       }
+     #+END_SRC
+
 *** Charts Actions
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./client/src/actions/charts.js
@@ -1459,6 +1310,12 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
              ...state,
              chartLocked: false
            }
+         case 'ACTIVE_ROUTE_CHANGED': {
+           return {
+             ...state,
+             chartLocked: false
+           }
+         }
          default:
            return state;
          }
@@ -1516,6 +1373,7 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
        const initialState = {
          activeTest: {},
          byId: {},
+         endpointTests: [],
          errors: {},
          isLoading: false,
          hasLoaded: false
@@ -1540,16 +1398,30 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
              hasLoaded: true
            }
          }
+         case 'ENDPOINT_TESTS_SET': {
+           return {
+             ...state,
+             endpointTests: action.payload
+           }
+         }
          case 'NEW_ACTIVE_TEST_CHOSEN': {
            return {
              ...state,
              activeTest: action.payload
            }
          }
+         case 'CHART_UNLOCKED': {
+           return {
+             ...state,
+             activeTest: {},
+             endpointTests: []
+           }
+         }
          case 'ACTIVE_ROUTE_CHANGED': {
            return {
              ...state,
-             activeTest: {}
+             activeTest: {},
+             endpointTests: []
            }
          }
          default:
@@ -1567,7 +1439,7 @@ The reducer is not manipulating the data in any way.  It takes the payload unaff
      #+NAME: The Routes Reducer
      #+BEGIN_SRC js
        const initialState = {
-         activeRoute: 'sig-release-master',
+         activeRoute: 'master',
          routeChange: false
        }
             export default (state = initialState, action = {}) => {
@@ -1690,7 +1562,7 @@ Endpoints are unique by Release, Name, and Method.
     :END:
     #+NAME: Tests Selector
     #+BEGIN_SRC js
-      import { createSelector } from 'reselect'
+      import { createSelector, createStructuredSelector } from 'reselect'
       import { groupBy, keyBy, mapValues, size } from 'lodash'
 
       export function selectTestsById (state) {
@@ -1701,10 +1573,14 @@ Endpoints are unique by Release, Name, and Method.
         return state.tests.hasLoaded
       }
 
-      export const selectActiveTest = (state) => {
-        if( size(state.tests.activeTest) > 0) {
-          var activeId = state.tests.activeTest.id
-          return state.tests.byId[activeId]
+      export const selectEndpointTests = (state) => {
+        return state.tests.endpointTests
+      }
+
+      export const selectActiveTestRaw = (state) => {
+        return {
+          name: state.tests.activeTest,
+          route: state.routes.activeRoute,
         }
       }
 
@@ -1717,13 +1593,30 @@ Endpoints are unique by Release, Name, and Method.
             return mapValues(testsByName, testInName => {
               return {
                 name: testInName.name,
-                id: testInName._id
+                id: testInName._id,
+                sequence: testInName.sequence
               }
             })
           })
         }
       )
 
+      export const selectActiveTestComponents = createStructuredSelector({
+        activeTest: selectActiveTestRaw,
+        tests: selectTestsByReleaseAndName
+      })
+
+      export const selectActiveTest = createSelector(
+        selectActiveTestComponents,
+        (atc) => {
+          if (atc.activeTest.name.length > 0) {
+            var activeTest = atc.tests[atc.activeTest.route][atc.activeTest.name]
+            return activeTest
+          } else {
+            return atc.activeTest.name
+          }
+        }
+      )
     #+END_SRC
 
 Tests are unique by Release and Name.
@@ -2177,7 +2070,7 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
    - [ ] re-hook up routing to route by release name
    - [X] Query endpoints by Release.
    - [X] remove dependency on releaseStore reducer.
-** TODO [3/11] Future Tasks
+** TODO [3/12] Future Tasks
    - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
    - [X] Hover over Part of Sunburst shows relevant rays highlighted.
    - [X] Hover over Sunburst, see testing percentage update in center.
@@ -2190,7 +2083,8 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
    - [ ] Improve performance of page load, by only calling a test when needed.
    - [ ] Refactor tests so the entire object isn't being loaded in the client.  That feels way too heavy, and instead you should only load up the testInfo (all the api endpoints being accessed) when there is an active_test, and you display that only on that active test.
    - [ ] When you click on an endpoint, it adds to the URL so that you can share the URL and have be right on the hovered sunburst with the filtered tests and such.
-** TODO [8/11] Achievements To Unlock to match and surpass old webui
+** DONE [10/10] Achievements To Unlock to match and surpass old webui
+   CLOSED: [2018-11-06 Tue 13:49]
    - [X] Mikey has a functional understanding of what we're trying to do.
    - [X] It generally feels better
    - [X] Sunburst Changes Based on Route
@@ -2201,21 +2095,20 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
    - [X] When you click on an endpoint, it locks the chart in place.
      - [X] Add 'clicked' as state in sunburstChart, following the same logic in the [[https://github.com/uber/react-vis/blob/master/showcase/sunbursts/basic-sunburst.js][react-vis tutorial]]
      - [X] When you mouseOut, if clicked isn't true //then// send out the clearing of focusPath.  Otherwise, keep it.
-   - [ ] When you click on an endpoint, it filters the list of tests to just the ones that touch that endpoint.
-     - [ ] Devise strategy: when you click on a node you have the focus path as an array, which would end with an endpoint (if we are on an endpoint, otherwise it'd show the category or level). We have tests who each have an endpoint listed within them.  Maybe we query our db at that point for tests?endpointsIncludeEndpointName, or something similar to that.  Then, we change the logic beneath to only show tests once an endpoint is clicked, and it's based on the tests we retrieve...
-     - [ ] Doublecheck our releases for tests, to see how it be structured:  it goes release.data.tests.count.endpoints.  These endpoints //look// to correspond with our endpoint names pretty nicely.  But I think this means we'll have to separate out the tests into their own endoint too. It'd be best if it was just called 'tests', but we already ahve that for test_sequence.  how hard is it to switch that over?
-   - [ ] When you view the endpoint sequence, it is single line with a timestamp of HH:MM:SS:ss and then the rest of the info.
-   - [ ] Untested shows as untested, not as an endpoint.
+   - [X] When you click on an endpoint, it filters the list of tests to just the ones that touch that endpoint.
+     - [X] Devise strategy: when you click on a node you have the focus path as an array, which would end with an endpoint (if we are on an endpoint, otherwise it'd show the category or level). We have tests who each have an endpoint listed within them.  Maybe we query our db at that point for tests?endpointsIncludeEndpointName, or something similar to that.  Then, we change the logic beneath to only show tests once an endpoint is clicked, and it's based on the tests we retrieve...
+     - [X] Doublecheck our releases for tests, to see how it be structured:  it goes release.data.tests.count.endpoints.  These endpoints //look// to correspond with our endpoint names pretty nicely.  But I think this means we'll have to separate out the tests into their own endoint too. It'd be best if it was just called 'tests', but we already ahve that for test_sequence.  how hard is it to switch that over?
+   - [X] When you view the endpoint sequence, it is single line with a timestamp of HH:MM:SS:ss and then the rest of the info.
 ** TODO Add logic to API to filter endpoints to only those touched by e2e.
    We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
 
 ** DONE Change front-end logic so it only pulls data from the necessary sunburst.
    CLOSED: [2018-11-04 Sun 22:29]
    Right now the we have an endpoint called /Releases, organized by Build name.  These correspond to the sunbursts.  We are pulling in the entire api, we should only do buildname.data.sunburst
-*** [0/5] Subtasks
-    - [ ] Remove excess noise from front-end for right now--the filters essentially.
-    - [ ] Add URL path to each Release you click
-    - [ ] Add fetchSunburst action to sunburst segment component, and pass it along the url params.
+*** [3/4] Subtasks
+    - [X] Remove excess noise from front-end for right now--the filters essentially.
+    - [X] Add URL path to each Release you click
+    - [X] Add fetchSunburst action to sunburst segment component, and pass it along the url params.
     - [ ] Query the api database based on the params and return just the sunburst data.`
 ** DONE change keypath logic so it only highlights if parent is on keypath.
    CLOSED: [2018-11-04 Sun 22:30]

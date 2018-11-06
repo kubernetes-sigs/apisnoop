@@ -17,3 +17,10 @@ export function doChooseActiveTest (test) {
     payload: test
   }
 }
+
+export function doSetEndpointTests (endpointTests) {
+  return {
+    type: 'ENDPOINT_TESTS_SET',
+    payload: endpointTests
+  }
+}

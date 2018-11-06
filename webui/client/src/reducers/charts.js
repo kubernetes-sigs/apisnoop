@@ -25,6 +25,12 @@ export default (state = initialState, action = {}) => {
       ...state,
       chartLocked: false
     }
+  case 'ACTIVE_ROUTE_CHANGED': {
+    return {
+      ...state,
+      chartLocked: false
+    }
+  }
   default:
     return state;
   }

@@ -1,28 +1,27 @@
 import React from 'react'
 import EndpointHitList from './endpoint-hit-list'
 
-export default function TestsContainer ({tests, activeTest, chooseActiveTest}) {
-  const testNames = Object.keys(tests)
+export default function TestsContainer ({activeTest, chooseActiveTest, endpointTests}) {
 
   return (
-      <div id='test-container' class="cf">
+      <div id='test-container' className="cf">
       <div className="fl w-100 w-50-ns bg-near-white tc pa3 pa5-ns">
           <h2>Tests</h2>
-      <ul className='list pl0 measure center'>{listTests(testNames)}</ul>
+      <ul className='list ph3 ph5-ns pv4'>{listTests(endpointTests)}</ul>
         </div>
         <div className="fl w-100 w-50-ns bg-light-gray tc">
-      <EndpointHitList test={activeTest}/>
+      <EndpointHitList activeTest={activeTest}/>
         </div>
       </div>
   )
 
-  function listTests (testNames) {
-    return testNames.map(testName => {
-      var test = tests[testName]
-      return <li key={test.id}
+  function listTests (endpointTests) {
+    return endpointTests.map(test => {
+      var testKey = 'test_' + endpointTests.indexOf(test)
+      return <li key={testKey}
                onClick={() =>handleClick(test)}
-               className='lh-copy pv3 ba bl-0 bt-0 br-0 b--dotted b--black-30'
-             >{test.name}</li>
+      className='f6 f5-ns b db pa2 link dim dark-gray ba b--black-20'
+             >{test}</li>
     })
   }
 
