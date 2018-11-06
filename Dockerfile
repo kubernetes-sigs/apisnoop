@@ -39,4 +39,4 @@ COPY index.ipynb index.ipynb
 RUN chown -R $NB_USER.$NB_USER audit webui *pynb data
 USER ${NB_USER}
 COPY processAudits /
-# RUN /processAudits
+RUN /processAudits
