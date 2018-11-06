@@ -434,7 +434,7 @@ def usage_and_exit():
     print("    - Delete Kubernetes audit log for app from database.")
     print("  logreview.py export-data <exporter-name> <output-filename> <appname (optional)>")
     print("    - Export audit log information from database as CSV files.")
-    print("    - Available exporters: " + ", ".join(exports.list_exports()))
+    # print("    - Available exporters: " + ", ".join(exports.list_exports()))
     print("  logreview.py start-server")
     print("    - Start web server to display data visualisations.")
     exit(1)
