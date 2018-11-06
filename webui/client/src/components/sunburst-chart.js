@@ -14,6 +14,10 @@ const LABEL_STYLE = {
   PATH: {
     fontSize: '1em',
     textAnchor: 'middle'
+  },
+  DESCRIPTION: {
+    fontSize: '0.9em',
+    textAnchor: 'middle'
   }
 }
 
@@ -31,27 +35,32 @@ export default function SunburstChart (props) {
   return(
       <div className="sunburst-wrapper">
       <Sunburst
-        hideRootNode
-        colorType="literal"
-        data={sunburst.data}
-        getColor={node => determineColor(node)}
-        height={500}
-        width={500}
-        onValueMouseOver={handleMouseOver}
-        onValueMouseOut={handleMouseOut}
-        onValueClick={handleClick}
-
+    hideRootNode
+    colorType="literal"
+    data={sunburst.data}
+    getColor={node => determineColor(node)}
+    height={500}
+    width={500}
+    onValueMouseOver={handleMouseOver}
+    onValueMouseOut={handleMouseOut}
+    onValueClick={handleClick}
       >
-
-      <LabelSeries
-         data={[
-           {x: 0, y: 20, label: interiorLabel.percentage, style: LABEL_STYLE.PERCENTAGE},
-           {x: 0, y: 0, label: interiorLabel.ratio, style: LABEL_STYLE.FRACTION},
-           {x: 0, y: -20, label: 'total tested', style: LABEL_STYLE.PATH}
-         ]}
-       />
-      </Sunburst>
-      </div>
+      {(interiorLabel && interiorLabel.percentage) &&
+       <LabelSeries
+       data={[
+         {x: 0, y: 60, label: interiorLabel.percentage, style: LABEL_STYLE.PERCENTAGE},
+         {x: 0, y: 0, label: interiorLabel.ratio, style: LABEL_STYLE.FRACTION},
+         {x: 0, y: -20, label: 'total tested', style: LABEL_STYLE.PATH}
+       ]}
+       />}
+    {(interiorLabel && interiorLabel.description) &&
+     <LabelSeries
+     data={[
+       {x: 0, y: 0, label: interiorLabel.description, style: LABEL_STYLE.DESCRIPTION}
+     ]}
+     />}
+    </Sunburst>
+    </div>
   )
 
   function determineColor (node) {

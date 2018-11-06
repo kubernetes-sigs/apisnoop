@@ -24,26 +24,32 @@ export const selectInteriorLabelComponents = createStructuredSelector({
   isEndpointsReady: selectIsEndpointsReady,
   endpoints: selectEndpointsWithTestCoverage,
   releaseFromRoute: selectActiveRoute
-  }
-)
-
+}
+                                                                     )
+// TODO make this muuuuch better.  The nesting is gross, but it is because
+// I am trying to make up an coverage thing to have our interior label work.  The ultimate goal is to be able to hover over a node and see either it's coverage (if it has children) or it's test_tags (if it doesn't)
 export const selectInteriorLabel = createSelector(
   selectInteriorLabelComponents,
   (components) => {
     const { focusPath, endpoints, isEndpointsReady, releaseFromRoute } = components
     if (isEndpointsReady) {
       if (!focusPath.length) {
-      return endpoints[releaseFromRoute]['coverage']
-      } else{
+        return endpoints[releaseFromRoute]['coverage']
+      } else {
         var path = (without(focusPath, 'root'))
         var endpoint = get(endpoints[releaseFromRoute], path)
-        return endpoint.coverage
-    }
+        if (endpoint.coverage) {
+          return endpoint.coverage
+        } else {
+          var method = Object.keys(endpoint)[0]
+          return {description: endpoint[method]['description'],
+                  test_tags: endpoint[method]['test_tags']
+                 }
+        }
+      }
     }
   }
 )
-
-
 
 export const selectSunburstByRelease = createSelector(
   selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,

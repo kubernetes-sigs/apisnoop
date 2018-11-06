@@ -1,14 +1,14 @@
 import { combineReducers } from 'redux'
 
-import ReleasesReducer from './releases'
 import EndpointsReducer from './endpoints'
+import TestsReducer from './tests'
 import ChartsReducer from './charts'
 import RoutesReducer from './routes'
 
 const reducers = {
   charts: ChartsReducer,
   endpoints: EndpointsReducer,
-  releasesStore: ReleasesReducer,
+  tests: TestsReducer,
   routes: RoutesReducer
 }
 
