@@ -44,7 +44,7 @@ def main(folder):
             type = 'sig-release'
         outfile = folder + '/processed-audits/' + type + '_' + \
             semver + '_' + str(ts.date()) + ".json"
-        print "(python", "audit/logreview.py", "process-audit", auditfile, branch, outfile, ")&"
+        print("(python", "audit/logreview.py", "process-audit", auditfile, branch, outfile, ")&")
     print "wait $(jobs -p)"
 
 
