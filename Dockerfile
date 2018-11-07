@@ -42,5 +42,5 @@ RUN  python downloadArtifacts.py sources.yaml ./data
 RUN  chown -R $NB_USER.$NB_USER audit webui *.py *pynb data
 USER ${NB_USER}
 COPY processArtifacts.py processArtifacts.py
-RUN  python processArtifacts.py > processArtifacts.sh
-RUN  bash processArtifacts.sh data
+RUN  python processArtifacts.py data > processArtifacts.sh
+RUN  bash processArtifacts.sh
