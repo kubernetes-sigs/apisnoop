@@ -1882,3 +1882,182 @@ The audit log: https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kuberne
    The goal now is to try to get as much done on the server, instead of trying to do it upon page requests in the client.  So what we would like is to have a server with an api that the client can ping that would give back the data needed based on the branch.  So I could do a request in the client for gce-conformance branch 1.12(dev), and that'd tie to some easy to reason about api path (/branches/1.12-dev), and this gives us the name of the latest build and the data taken from kube-servers api log.
 
 So ultimately we want to be bringing down the gigs of data for the audit-logs and converted into something that can be rendered into a graph.
+
+* Backend
+  :PROPERTIES:
+  :ARCHIVE_TIME: 2018-11-06 Tue 09:21
+  :ARCHIVE_FILE: ~/apisnoop/webui/web_ui.org
+  :ARCHIVE_CATEGORY: web_ui
+  :END:
+** Setting up our API Initially
+**** Generating the Services
+     We will be using the processed data provided by the audit-log review to generate an api path for us to traverse.  Each build will have its own data, which will include the tags in it, the agents in it, and a sunburst path.
+** Services
+   (**NOTE**: for each service, make sure paginate is turned off.  In the future I should do this automatically.)
+*** Introduction
+
+Services refer to the different paths of our api, and the various jobs and manipulation we do to the data being fed through these paths.  They act as gatekeeepers to our various db's, so we aren't doing a bunch of db queries from all over the code and potentially causing strange behavior and hard to track errors.  Throug these, we have a consistent and reliable way to ask for and give data to our server: talk to the relevant service and have them do the work for you.
+
+We generate a service using feathers cli.  This creates a number of files for us and makes sure the service is known to the entire backend.  Which is to say that there will be a number of file changes made when we make a new service, but the files within this section only refer to the core code we are writing.
+**** Service Definitions
+   We have two services now.
+ - Config :: Handles the initial setup (reading json files from disk and distributing the file to the proper Releases service, performing any cleanup as necessary).
+ - Releases ::  the heart of our data, has all the info we need by release and we use this for our presentational components in the front end..
+*** Config
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./backend/src/services/config/config.class.js
+    :END:
+   The config is run whenever the server starts up, and takes JSON files placed in ~data/processed-audits~ and generates paths from the data held within.
+
+   We are in a midpoint now from the original style, where we created a single path with many nests, to a new FLAT style (that is generally more preferred, and more [[https://zen-of-python.info/][zen]]).  ~api/v1/endpoints~ is the beginning of this flat style.  Here, we generate new endpoints from all the different files, but each one has a release, method, and name.  Then, when we want to see only stuff for 1.12, we query our endpoint access for those with a release of 1.12 (instead of finding the 1.12 entry and navigating through its various nests to get the endpoints).
+**** Overall Layout
+     #+NAME: config.class.js layout
+     #+BEGIN_SRC js
+       /* eslint-disable no-unused-vars */
+       const fs = require('fs')
+       class Service {
+         constructor (options) {
+           this.options = options || {};
+         }
+
+         async setup (app, params) {
+           populateReleases(app,'../../data/processed-logs')
+         }
+       }
+
+       <<Define populateReleases>>
+
+       module.exports = function (options) {
+         return new Service(options);
+       };
+
+       module.exports.Service = Service;
+    #+END_SRC
+
+We only have a single method here, which is setup.  We don't want this to be an accessible path, we are just using it to run through commands when the server first starts up.  In this case, we run a command that looks in a directory for processed JSons and puts each file into its own entry in our releases api path.
+**** Define populateReleases
+     #+NAME: Define populateReleases
+     #+BEGIN_SRC js :tangle no
+       function populateReleases (app, dir)  {
+         var processedAudits = fs.readdirSync(dir)
+         for (var i = 0; i < processedAudits.length; i++) {
+           var fileName = processedAudits[i]
+           var releaseJson = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
+           var releaseData = JSON.parse(releaseJson)
+           addEntryToReleaseService(app, fileName, releaseData)
+           addEntryToEndpointService(app, fileName, releaseData)
+           addEntryToTestService(app, fileName, releaseData)
+         }
+       }
+
+       // I think we will not need this soon.
+       async function addEntryToReleaseService (app, fileName, releaseData) {
+         var service = app.service('/api/v1/releases')
+         var name = fileName.replace('.json', '')
+         var existingEntry = await service.find({query:{name}})
+         if (existingEntry.length === 0) {
+           service.create({name: name, data: releaseData})
+         } else {
+           service.update(existingEntry[0]._id, {name: name, data: releaseData})
+         }
+       }
+
+       async function addEntryToEndpointService (app, fileName, releaseData) {
+         var service = app.service('/api/v1/endpoints')
+         var release = fileName.replace('.json', '')
+         var endpointNames = Object.keys(releaseData.endpoints)
+         var tests = releaseData.tests
+         for (var endpointName of endpointNames) {
+           var endpointMethods = Object.keys(releaseData.endpoints[endpointName])
+
+           for (var endpointMethod of endpointMethods) {
+             var rawEndpoint = releaseData.endpoints[endpointName][endpointMethod]
+             var endpoint = {
+               name: endpointName,
+               method: endpointMethod,
+               release: release,
+               level: rawEndpoint.level,
+               test_tags: rawEndpoint.test_tags,
+               tests: rawEndpoint.tests,
+               description: rawEndpoint.desc,
+               path: rawEndpoint.path,
+               category: rawEndpoint.cat,
+               isTested: rawEndpoint.counter > 0
+             }
+             // An endpoint is unique by name, release, method.
+             var existingEntry = await service.find({
+               query:{
+                 name: endpoint.name,
+                 method: endpoint.method,
+                 release: endpoint.release
+               }
+             })
+             if (existingEntry.length === 0) {
+               await service.create(endpoint)
+             } else {
+               await service.update(existingEntry[0]._id, endpoint)
+             }
+           }
+         }
+       }
+
+       async function addEntryToTestService (app, fileName, releaseData) {
+         var service = app.service('/api/v1/tests')
+         var release = fileName.replace('.json', '')
+         var testNames = Object.keys(releaseData.test_sequences)
+         for (var testName of testNames) {
+           var testSequence = releaseData.test_sequences[testName]
+           var test = {
+             name: testName,
+             sequence: testSequence,
+             release: release
+           }
+           // An test is unique by testName and Release.
+           var existingEntry = await service.find({
+             query:{
+               name: test.name,
+               release: test.release
+             }
+           })
+           if (existingEntry.length === 0) {
+             await service.create(test)
+           } else {
+             await service.update(existingEntry[0]._id, test)
+           }
+         }
+       }
+
+     #+END_SRC
+
+     This will read the file and send the data to our releases service, but releaes will reject it by default because some of the fiels in the data have periods and our database does not like that.  So we add a hook to Releases that takes this data given to it and changes it's peirods to underscores before trying to add it to the database.  We generated the hook using feathers/cli, setting it to be before any create or update action...meaning it manipualtes the file BEFORE it is added to the db through CREATE or UPDATE
+*** Releases
+    The file that handles this service is boilerplate feathers, so we will use this section to write and discuss the hooks used as part of the releases service.
+**** cleanReleaseData
+     :PROPERTIES:
+     :header-args-dis: :noweb yes :tangle ./backend/src/hooks/clean-release-data.js
+     :END:
+    #+NAME clean-release-data.js
+    #+BEGIN_SRC js
+      const _ = require('lodash')
+
+      module.exports = function (options = {}) {
+        return async context => {
+          var data = context.data.data
+          data = cleanUp(data)
+          context.data = {name: context.data.name, data: data}
+          return context;
+        }
+      }
+
+      function cleanUp (obj) {
+        var cleanObj = {}
+        for (key in obj) {
+          if (_.isPlainObject(obj[key])) {
+            cleanObj[key.replace(/\./g,'_')] = cleanUp(obj[key])
+          } else {
+            cleanObj[key.replace(/\./g,'_')] = obj[key]
+          }
+        }
+        return cleanObj
+      }
+    #+END_SRC

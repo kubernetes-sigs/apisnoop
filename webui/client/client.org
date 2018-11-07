@@ -1,0 +1,2007 @@
+#+NAME: APISnoop WebUI Client
+#+AUTHOR: Zach Mandeville
+#+EMAIL: zz@ii.coop
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(i) | DONE(d) DONE-AND-SHARED(!)
+#+PROPERTY: header-args :dir (file-name-directory buffer-file-name)
+#+XPROPERTY: header-args:shell :results silent
+#+XPROPERTY: header-args:shell :exports code
+#+XPROPERTY: header-args:shell :wrap "SRC text"
+#+PROPERTY: header-args:tmate :socket "/tmp/.zz-left.isocket"
+#+PROPERTY: header-args:tmate :session api:main
+
+* Introduction
+  This is a web-based visual interface to the data curation and manipulation we are doing as the APISnoop project.  The purpose is to display previously unseen connections between the testing coverage of kubernetes, and the people and communities these various parts of kubernetes matter to.
+** Reimagining how the web app is built.
+   At this point, the work here is a proof of concept refactoring of the orignal site, to make our structure more extensible and modular.  When new work is done with the dating processing, we want to be able to quickly visualize the results of this work for others.  The current site is static html, with each new section intentionally and manually hard-coded. Whenever we want to make a change to the site (like adding a new dataset), it requires going into the html file, finding the right section, and adding a new element.  We have to keep a mental map of every aspect of the site this new dataset should influence and update those accordingly.  Not only is this time-consuming, it's error-prone and hard to maintin.
+
+   At the same time, there was a good amount of work done by the team to get to the current site, and that work should be preserved as much as possible.  The goal of this refactor, then, is to re-make the original site to then build incredible things beyond and above it.
+http://uber.github.io/react-vis/documentation/other-charts/sunburst-diagram
+** Setting It up On Your own
+*** Setup Backend
+ after cloning repository
+- cd apisnoop/backend
+- npm install
+- Make sure we have a jsons folder in apisnoop/backend with this tree structure:
+#+RESULTS: File Structure
+:RESULTS:
+.
+├── release
+└── sunbursts
+
+2 directories
+:END:
+#+NAME: File Structure
+#+BEGIN_SRC shell :dir ./backend/jsons :results output raw drawer
+tree -d
+#+END_SRC
+- Delete all .db's from src/data/
+- npm start
+- email zz@ii.coop with full error output and a coupon for soda.
+
+*** Setup Client
+    When backend server is on:
+    - cd apisnoop/client
+    - npm install
+    # - figure out how to point to subheadings
+    - go to [[Client/Actions/index.js]]   and change the client here to be whatever site you have this on (localhost or apisnoop)
+    - npm start
+
+** Running the Client
+  In the web ui folder:
+ ===
+ cd client
+ npm install
+ npm start
+ ===
+ Then navigate to localhost:3000, if it isn't already opened for you.
+* Architecture
+The frontend will be made with React, Redux, maybe Saga, and Tachyons, and Axios
+*** Why React?
+    [[https://reactjs.org/][React]] is the most well-known and supported front-end framework among my dev friends in Wellington, and is widely used and respected globally.  It was created originally by Facebook and then made open-source.  So it has a tremendous amount of support around it and good video tutorials for learning it.  I find it to be a bulky and kinda clumsy framework (which is why the first version of this used my personal fave Choo instead), but felt it was good to pick one that more people knew (and could help with).
+
+*** Why Redux?
+   [[https://redux.js.org/][Redux]]  provides one global 'state' for the app, and makes React actually usable.  It will help us push the data appropriately to the right parts and keep things clean and efficient.
+
+    - [ ] Query endpoints by Release.
+*** Reselect
+   [[https://github.com/reduxjs/reselect][Reselect]]  allows us to massage the state into friendly props specific to components.  This helps us keep a philosophy that nothing in the state is repeated, and instead you have //all// state that you can then derive into different selectors based on what you need for the component.
+   #+NAME: install Reselect
+   #+BEGIN_SRC shell :dir ./client :results output list raw
+npm install reselect
+   #+END_SRC
+
+   #+RESULTS: install Reselect
+   - + reselect@4.0.0
+   - added 1 package, removed 15 packages and audited 21041 packages in 14.857s
+   - found 1 low severity vulnerability
+   - run `npm audit fix` to fix them, or `npm audit` for details
+
+*** AXIOS
+   [[https://www.npmjs.com/package/axios][Axios]] is a simple tool for handling http requests across different servers.  We'll need this for the client to be portable, and able to call to multiple API's (our backend plus github for example).
+*** Why Tachyons?
+    Tachyons is a css framework for writing functional CSS.  It's a much different approach to CSS, but it's one that matches a unix philosophy and is super easy to spin things up and maintain them.  AS we make changes, we don't have to worry that some class hidden deep in some css file causes our whole site to look weird.  Instead, every class has a single purpose, and you add multiple classes to a site to add-upon and combine each of these classes functions (like piping commands together on the command line).  This makes all our components //reusable// too, as we only need to copy over the code and not any stylesheet attached to the code.
+* The Code
+** File Structure
+
+    Our client is set up as so...
+    #+NAME: Our Directory Structure
+    #+BEGIN_SRC shell :dir ./client :results output verbatim drawer replace
+   tree  -I 'node_modules' -d
+    #+END_SRC
+
+    #+RESULTS: Our Directory Structure
+    :RESULTS:
+    .
+    ├── public
+    └── src
+        ├── actions
+        ├── components
+        ├── css
+        ├── lib
+        ├── pages
+        ├── reducers
+        └── selectors
+
+    9 directories
+    :END:
+
+    The core work is done in the src folder. Public holds our stylesheets and assets, and build holds everything when we set it up for production.
+
+ Within our Src, file:
+ - Actions manage calls to the app's state, requesting new data.
+ - Components are modular parts of our UI, like dropdown boxes and navbars and such.
+ - Pages are collections of components that display based on the route of the site and the actions of the user.  They are similar to html pages.
+ - reducers listens to actions and the payload of data they contain and reducer that data into a single state tree for the app.  This is the data being called upon in the components.
+ - Sagas are not being used yet.
+** index.js
+   :PROPERTIES:
+   :header-args: :noweb yes :tangle ./src/index.js
+   :END:
+   The entry point of the app.  This is what gets mounted to our index.html page, and then leads us into the rest of the frontend.  So we want to make a nice package to mount that has our redux store and our react app bundled up together.
+   Additionally, we add some basic route navigation, so we are not having to use react's strange browser router.  We are only listening to the browser and redux.
+#+NAME: index.js
+#+BEGIN_SRC js
+  import React from 'react'
+  import ReactDOM from 'react-dom'
+  import { BrowserRouter } from 'react-router-dom'
+  import './index.css'
+
+  import {Provider} from 'react-redux'
+
+
+  import App from './components/App'
+  import {doUpdateUrl} from './actions/routing'
+  import store from './store.js'
+  import registerServiceWorker from './lib/service-workers'
+
+  ReactDOM.render(
+      <BrowserRouter>
+      <Provider store={store}>
+      <App />
+      </Provider>
+      </BrowserRouter>,
+    document.getElementById('root')
+  )
+  registerServiceWorker()
+
+#+END_SRC
+** Our App(app.js)
+   :PROPERTIES:
+   :header-args: :noweb yes :tangle ./src/components/App.js
+   :END:
+***** Introduction
+    The app component is often seen as the 'layout template' for the frontend.  Anything we want to be displayed at all times should go here (e.g. a header and navbar).  The app component will also handle the navigation between the different components, based on routes given.
+
+    This is a 'single-page-app' which means: to the server, we are only showing a single html page, the index.html.  Within this page we have javascript code running that renders different views dynamically, based on what the site visitor wants to see.  We can give these views the format of a URL, so it appears like we are going to different pages within apisnoop (and so we can share specific urls to others), but it's all really a continually transforming bit of Javascript.
+***** Requirements
+    #+NAME: Import React
+    #+BEGIN_SRC js
+      import React, { Component } from 'react'
+      import { connect } from 'react-redux'
+      import { Route } from 'react-router-dom'
+      import { createStructuredSelector } from 'reselect'
+
+
+      import { selectReleaseNamesFromEndpoints, selectIsEndpointsReady } from '../selectors'
+      import { fetchEndpoints } from '../actions/endpoints'
+      import { doFetchTests } from '../actions/tests'
+      import { changeActiveRoute } from '../actions/routing'
+
+      import Header from './header'
+      import Footer from './footer'
+      import ReleasesList from './releases-list.js'
+      import MainPage from '../pages/main-page.js'
+    #+END_SRC
+  We'll start by bringing in React and its Component class-we inherit all the features of this class when we render our own components, which gives them all the power we may not see at first.  We also bring in connect, which will connect our react ui to the front-end's state; which lets us dynamically change what's displayed based on the data being fed it.
+
+ We are doing this because we want to have navigation links for the different releases, that will show a sunburst graph per release.  We don't know what these release_names will be though, and so we'll fetch them from the db and dynamically build our navlinks from them.
+
+  Next, we'll bring in react's smart navigation.  These are what make the app appear to be multiple pages.
+
+ We will grab our release names from the database and use that to build out our navigation links dynamically.
+
+
+  Lastly, we bring in our different pages, which we can navigate between using a nice lil' tab and navlinks..
+
+ I think this will end up that we use MainPage multiple times, feeding in props as url params.  So the main page will always show a sunburst graph, and a list of tests to click into, but what data is being fed that is based on the route we are going on.
+
+***** The overall Layout
+      The general shape of this template is here:
+    #+NAME: App Layout
+    #+BEGIN_SRC js
+      class App extends Component {
+        componentDidMount(){
+          this.props.fetchEndpoints()
+          this.props.doFetchTests()
+        }
+
+        render(){
+          const {releaseNames, endpointsReady, changeActiveRoute } = this.props
+
+          return (
+            <div id='app'>
+              <Header />
+              {endpointsReady &&
+               <ReleasesList
+                 releases={releaseNames}
+                 selected='master'
+                 changeActiveRoute={changeActiveRoute}
+               /> }
+        <Route exact path='/' component={MainPage} />
+        <Route exact path='/:release' component={MainPage} />
+              <Footer />
+            </div>
+          )
+        }
+      }
+
+      export default connect(
+        createStructuredSelector({
+          releaseNames: selectReleaseNamesFromEndpoints,
+          endpointsReady: selectIsEndpointsReady
+        }),
+        {fetchEndpoints,
+         doFetchTests,
+         changeActiveRoute})(App)
+    #+END_SRC
+
+** Pages
+    We are following a convention where, if a component acts as its own route and holds many different components within it, then it's called a page.  Think of navigating between different pages in a site, and each one is made up of several diff. section.  It is the same here, just that we are navigating between JS dispalying different Page components.
+**** MainPage
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./src/pages/main-page.js
+     :END:
+     This page will hold the different areas for release--it's sunburst, and its list of test names.  We can add additional Segments here too, as our visualizations expand.
+       #+BEGIN_SRC js
+            import React, { Component } from 'react'
+            import { connect } from 'react-redux'
+            import { createStructuredSelector } from 'reselect'
+
+            import { focusChart, doLockChart, unfocusChart, doUnlockChart } from '../actions/charts'
+         import { doChooseActiveTest, doSetEndpointTests } from '../actions/tests'
+
+            import {
+              selectActiveRoute,
+              selectActiveTest,
+              selectChartLocked,
+              selectEndpointTests,
+              selectEndpointsWithTestCoverage,
+              selectFocusPathAsArray,
+              selectFocusPathAsString,
+              selectInteriorLabel,
+              selectReleaseNamesFromEndpoints,
+              selectRouteChange,
+              selectIsSunburstReady,
+              selectIsTestsReady,
+              selectSunburstByReleaseWithSortedLevel
+            } from '../selectors'
+
+            import SunburstSegment from '../components/sunburst-segment'
+            import TestsContainer from '../components/tests-container'
+
+            class MainPage extends Component {
+              render(){
+                const {
+                  activeRoute,
+                  activeTest,
+                  chartLocked,
+                  doChooseActiveTest,
+                  endpoints,
+                  endpointTests,
+                  focusChart,
+                  focusPath,
+                  focusPathAsString,
+                  interiorLabel,
+                  isSunburstReady,
+                  isTestsReady,
+                  lockChart,
+                  routeChange,
+                  setEndpointTests,
+                  sunburstByRelease,
+                  unfocusChart,
+                  unlockChart
+                } = this.props
+
+                const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
+
+                return (
+                    <main id='main-splash' className='min-vh-100'>
+                    {/* <h2>You are doing a good job.</h2> */}
+                    {isSunburstReady && <SunburstSegment
+                     sunburst={{
+                       data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
+                         : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
+                     }}
+                     chartLocked={chartLocked}
+                     endpoints={endpoints[activeRoute]}
+                     focusChart={focusChart}
+                     unfocusChart={unfocusChart}
+                     lockChart={lockChart}
+                     unlockChart={unlockChart}
+                     setEndpointTests={setEndpointTests}
+                     release= {activeRoute}
+                     focusPath={focusPath}
+                     focusPathAsString={focusPathAsString}
+                     interiorLabel={interiorLabel}
+                     />
+                    }
+                  {(isTestsReady && endpointTests.length > 0) &&
+                   <div>
+                    <TestsContainer
+                      activeTest={activeTest}
+                      chooseActiveTest={doChooseActiveTest}
+                      endpointTests={endpointTests}
+                    />
+                   </div>}
+                  </main>
+                )
+              }
+            }
+
+            export default connect(
+              createStructuredSelector({
+                activeRoute: selectActiveRoute,
+                activeTest: selectActiveTest,
+                chartLocked: selectChartLocked,
+                endpoints: selectEndpointsWithTestCoverage,
+                endpointTests: selectEndpointTests,
+                focusPath: selectFocusPathAsArray,
+                focusPathAsString: selectFocusPathAsString,
+                isSunburstReady: selectIsSunburstReady,
+                isTestsReady: selectIsTestsReady,
+                interiorLabel: selectInteriorLabel,
+                releaseNames: selectReleaseNamesFromEndpoints,
+                routeChange: selectRouteChange,
+                sunburstByRelease: selectSunburstByReleaseWithSortedLevel
+              }),
+              {doChooseActiveTest,
+               focusChart,
+               lockChart: doLockChart,
+               setEndpointTests: doSetEndpointTests,
+               unfocusChart,
+               unlockChart: doUnlockChart
+               })(MainPage)
+       #+END_SRC
+
+       #+RESULTS:
+
+** Components
+ The various visual parts of the app.  For the most part, we want these to be as dumb as possible--they present the stuff they're given, and if they have to do any interactive stuff it remains contained to within itself.  Any other changes should be handled outside of the component through actionCreators our and reducer updating the global state of the app.  In other words, the components display the state as it is now, and they can trigger events which update the state, but they always simply display it as it is now.
+*** Header
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/components/header.js
+    :END:
+    The classic APISnoop header, rendered in short and sweet tachyons
+    #+NAME: Header
+    #+BEGIN_SRC js
+      import React from 'react'
+
+      export default () => (
+          <header className='flex flex-row pt2 pb2 pl4 pr4 items-center justify-between bg-light-gray black shadow-3'>
+            <div id='logo' className= 'flex flex-wrap items-center'>
+            <img className='h2' src='./apisnoop_logo_v1.png' alt='logo for apisnoop, a magnifying glass with a sunburst graph inside.' />
+            <h1 className='ma0 f4 fw4 pl2 avenir'>APISnoop</h1>
+            </div>
+            <div id='source-code' className='flex items-center'>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+              <a href='https://github.com/cncf/apisnoop' title='github repo for apisnoop' className='link f7 pl1'>Source Code</a>
+            </div>
+          </header>
+      )
+    #+END_SRC
+
+    #+RESULTS: Header
+
+*** Footer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/components/footer.js
+    :END:
+    The classic APISnoop header, rendered in short and sweet tachyons
+    #+NAME: Header
+    #+BEGIN_SRC js
+      import React from 'react'
+
+      export default () => (
+          <footer className='flex flex-row pt2 pb2 pl4 pr4 items-center justify-between bg-black black shadow-3'>
+            <div id='logo' className= 'flex flex-wrap items-center'>
+            <img className='mw2' src='./apisnoop_logo_v1.png' alt='logo for apisnoop, a magnifying glass with a sunburst graph inside.' />
+            <h1 className='ma0 f4 fw4 pl2 avenir'>APISnoop</h1>
+            </div>
+            <div id='source-code' className='flex items-center'>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+              <a href='https://github.com/cncf/apisnoop' title='github repo for apisnoop' className='link f7 pl1'>Source Code</a>
+            </div>
+          </footer>
+      )
+    #+END_SRC
+
+    #+RESULTS: Header
+
+*** Sunburst
+**** Sunburst Segment
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./src/components/sunburst-segment.js
+     :END:
+     This is the section of the site dedicated to the sunburst, including any additional text we want to include or a nice header or anything like that.
+     #+NAME: Sunburst Segment
+     #+BEGIN_SRC js
+       import React, { Component } from 'react'
+       import SunburstChart from './sunburst-chart'
+
+
+       class SunburstSegment extends Component {
+         render() {
+           const {chartLocked,
+                  endpoints,
+                  focusChart,
+                  focusPath,
+                  focusPathAsString,
+                  lockChart,
+                  interiorLabel,
+                  release,
+                  setEndpointTests,
+                  sunburst,
+                  unfocusChart,
+                  unlockChart} = this.props
+
+           return (
+               <div id='sunburst-segment' className='bg_washed-red pa4 flex'>
+               <div id='sunburst'>
+               <h2>{release}</h2>
+               {focusPathAsString.length > 0   ?
+                <div className='h2 pa1'>{focusPathAsString}</div> :
+                <div className='h2 pa1'>'Hover over Chart for Path'</div>
+               }
+             {chartLocked ? <strong>Click to Unlock</strong> : <strong>Click to Lock</strong>}
+
+               <SunburstChart
+                 sunburst={sunburst}
+                 chartLocked={chartLocked}
+                 endpoints={endpoints}
+                 focusChart={focusChart}
+                 focusPath={focusPath}
+                 lockChart={lockChart}
+                 focusPathAsString={focusPathAsString}
+                 interiorLabel={interiorLabel}
+                 setEndpointTests={setEndpointTests}
+                 unfocusChart={unfocusChart}
+                 unlockChart={unlockChart}
+               />
+               </div>
+               <div id='test-tags'>
+               {(interiorLabel && interiorLabel.test_tags) &&
+                <ul className='list ph3 ph5-ns pv4'>
+                  {displayTestTags(interiorLabel.test_tags)}
+                </ul>
+               }
+               </div>
+             </div>
+           )
+
+           function displayTestTags (testTags) {
+             return testTags.map(testTag => {
+               return (<li key={testTag} className='dib mr1 mb1' >
+                       <p className='f7 f6-ns b db pa0'>
+                       {testTag}
+                       </p>
+                       </li>)
+             })
+           }
+         }
+       }
+
+       export default SunburstSegment
+     #+END_SRC
+**** Sunburst Chart
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./src/components/sunburst-chart.js
+     :END:
+     We are passing a single prop to this, sunburst, which was created by our selector.  It is divided in {name, children} with the organization of level > category > name + method.  For the name+method there is an additional thing.
+
+
+     #+NAME: sunburst-chart.js
+     #+BEGIN_SRC js
+       import React from 'react'
+       import { Sunburst, LabelSeries } from 'react-vis'
+       import { forEach, get, includes, uniq, without } from 'lodash'
+
+       const LABEL_STYLE = {
+         PERCENTAGE: {
+           fontSize: '1.3em',
+           textAnchor: 'middle'
+         },
+         FRACTION: {
+           fontSize: '1.2em,',
+           textAnchor: 'middle'
+         },
+         PATH: {
+           fontSize: '1em',
+           textAnchor: 'middle'
+         },
+         DESCRIPTION: {
+           fontSize: '0.9em',
+           textAnchor: 'middle'
+         }
+       }
+
+       export default function SunburstChart (props) {
+
+         const {
+           chartLocked,
+           endpoints,
+           focusChart,
+           focusPath,
+           interiorLabel,
+           lockChart,
+           setEndpointTests,
+           sunburst,
+           unfocusChart,
+           unlockChart
+         } = props
+
+         if (sunburst == null) return null
+         return(
+             <div className="sunburst-wrapper">
+             <Sunburst
+           hideRootNode
+           colorType="literal"
+           data={sunburst.data}
+           getColor={node => determineColor(node)}
+           height={500}
+           width={500}
+           onValueMouseOver={handleMouseOver}
+           onValueMouseOut={handleMouseOut}
+           onValueClick={handleClick}
+             >
+             {(interiorLabel && interiorLabel.percentage) &&
+              <LabelSeries
+              data={[
+                {x: 0, y: 60, label: interiorLabel.percentage, style: LABEL_STYLE.PERCENTAGE},
+                {x: 0, y: 0, label: interiorLabel.ratio, style: LABEL_STYLE.FRACTION},
+                {x: 0, y: -20, label: 'total tested', style: LABEL_STYLE.PATH}
+              ]}
+              />}
+           {(interiorLabel && interiorLabel.description) &&
+            <LabelSeries
+            data={[
+              {x: 0, y: 0, label: interiorLabel.description, style: LABEL_STYLE.DESCRIPTION}
+            ]}
+            />}
+           </Sunburst>
+             </div>
+         )
+
+         function determineColor (node) {
+           if (focusPath.length > 0) {
+             if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
+               return node.color
+             } else {
+               return node.color + '19'
+             }
+           }
+           return node.color
+         }
+
+         function handleMouseOver (node, event) {
+           if (!chartLocked) {
+             focusChart(getKeyPath(node))
+           }
+         }
+
+         function handleMouseOut () {
+           if (!chartLocked) {
+             unfocusChart()
+           }
+         }
+
+         function handleClick () {
+           if (chartLocked){
+             unlockChart()
+           } else if (!chartLocked && focusPath.length > 3) {
+             var endpointTests = getEndpointTests(focusPath)
+             setEndpointTests(endpointTests)
+             lockChart()
+           } else {
+             lockChart()
+           }
+         }
+
+         function getKeyPath (node) {
+           if (!node.parent) {
+             return ['root'];
+           }
+           var nodeKey = get(node, 'data.name') || get(node, 'name')
+           var parentKeyPath = getKeyPath(node.parent)
+           return [...parentKeyPath, nodeKey]
+         }
+
+         function getEndpointTests (focusPath) {
+           var endpointTests = []
+           var pathSansRoot = without(focusPath, 'root')
+           var lockedEndpoint = get(endpoints, pathSansRoot)
+           forEach(lockedEndpoint, (method) => {
+             for (var test of method.tests) {
+               endpointTests.push(test)
+             }
+           })
+           return uniq(endpointTests)
+         }
+       }
+     #+END_SRC
+
+     #+RESULTS: sunburst-chart.js
+
+*** Filter List
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/components/filters-list.js
+    :END:
+     #+NAME: filters-list.js
+     #+BEGIN_SRC js
+       import React, { Component } from 'react'
+
+       class FiltersList extends Component {
+         constructor (props) {
+           super(props)
+           this.optionsList = this.optionsList.bind(this)
+         }
+
+         optionsList (options) {
+            var formattedNames = options.map(name => {
+              return name.replace(/[\[\]]/g,'').replace(/_/g,'.')
+            })
+           var selected = this.props.selected.map(selection => {
+             return selection.replace(/_/g,'.') //.replace(/^/,'[').replace(/$/,']')
+           })
+           return formattedNames.map(name => {
+             console.log({name, selected})
+             if (selected.includes(name)) {
+               return(
+                   <a className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink" href="#0" key={`filter_${name}`}>{name}</a>
+               )
+             } else {
+               return (
+                   <a className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib silver" href="#0" key={`filter_${name}`}>{name}</a>
+               )
+             }
+           })
+         }
+
+           render () {
+             console.log({filterProps: this.props})
+             return (
+                 <div className="ph3 mt4">
+                 <h1 className="f6 fw6 ttu tracked">{this.props.context}</h1>
+                 {this.optionsList(this.props.options)}
+               </div>
+             )
+           }
+         }
+
+         export default FiltersList
+     #+END_SRC
+
+    Is expecting:
+ - context :: a string that determines the header of the list
+ - selected ::  an array of strings, for the options selected by default
+ - options :: an array of options we will create buttons for.
+*** Releases List
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/components/releases-list.js
+    :END:
+     #+NAME: releases-list.js
+     #+BEGIN_SRC js
+       import React, { Component } from 'react'
+       import { NavLink } from 'react-router-dom'
+
+       class ReleasesList extends Component {
+         constructor (props) {
+           super(props)
+           this.optionsList = this.optionsList.bind(this)
+           this.handleClick = this.handleClick.bind(this)
+         }
+
+         optionsList (options) {
+           return options.map(option => {
+             return(
+                 <NavLink
+                   className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink"
+                   exact to={option}
+                   key={`release_${option}`}
+                   onClick={this.handleClick}
+                 >
+                 {option}
+               </NavLink>
+             )
+           })
+         }
+
+         render () {
+           return (
+               <div className="ph3 mt4">
+               <h1 className="f6 fw6 ttu tracked">Releases</h1>
+               {this.optionsList(this.props.releases)}
+               </div>
+           )
+         }
+
+         handleClick (e) {
+           this.props.changeActiveRoute(e.target.innerText)
+         }
+       }
+
+
+       export default ReleasesList
+     #+END_SRC
+
+     #+RESULTS: releases-list.js
+
+    Is expecting:
+ - context :: a string that determines the header of the list
+ - selected ::  an array of strings, for the options selected by default
+ - options :: an array of options we will create buttons
+*** Tests
+**** Tests Container
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./src/components/tests-container.js
+     :END:
+    This would be a two pane container.  On one side is the list of tests and the other would be the api endpoints each tests hit.
+
+ We are only sending tests that are on the locked-on endpoint.  We are sending them as an array of names, and we'll then get more info from them based on our test_sequence (in our tests store).
+ #+NAME: Tests Container
+ #+BEGIN_SRC js
+   import React from 'react'
+   import EndpointHitList from './endpoint-hit-list'
+
+   export default function TestsContainer ({activeTest, chooseActiveTest, endpointTests}) {
+
+     return (
+         <div id='test-container' className="cf">
+         <div className="fl w-100 w-50-ns bg-near-white tc pa3 pa5-ns">
+             <h2>Tests</h2>
+         <ul className='list ph3 ph5-ns pv4'>{listTests(endpointTests)}</ul>
+           </div>
+           <div className="fl w-100 w-50-ns bg-light-gray tc">
+         <EndpointHitList activeTest={activeTest}/>
+           </div>
+         </div>
+     )
+
+     function listTests (endpointTests) {
+       return endpointTests.map(test => {
+         var testKey = 'test_' + endpointTests.indexOf(test)
+         return <li key={testKey}
+                  onClick={() =>handleClick(test)}
+         className='f6 f5-ns b db pa2 link dim dark-gray ba b--black-20'
+                >{test}</li>
+       })
+     }
+
+     function handleClick (test) {
+       chooseActiveTest(test)
+     }
+   }
+ #+END_SRC
+**** Endpoint Hit List
+     :PROPERTIES:
+     :header-args: :noweb yes :tangle ./src/components/endpoint-hit-list.js
+     :END:
+     Takes the activeTest selector, which includes the test Name, it's ID, and its sequence.
+   #+NAME: Endpoint Hit List
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { size } from 'lodash'
+     import dayjs from 'dayjs'
+
+     export default function EndpointHitList({activeTest}) {
+       if (size(activeTest) <= 0) return null
+
+       return (
+           <div className='pa2'>
+           <h3>{activeTest.name}</h3>
+           <ul className='list'>{listEndpoints(activeTest.sequence)}</ul>
+           </div>
+       )
+
+       function listEndpoints (sequence) {
+         return sequence.map(data => {
+           var step = {
+             timestamp: dayjs(data[0]).format('HH:mm:ss'),
+             level: data[1],
+             category: data[2],
+             method: data[3],
+             endpoint: data[4]
+           }
+           var stepKey = `${sequence.indexOf(data)}_${step.timestamp}`
+           return(
+               <li key={stepKey} className='tl'>
+               <p>{step.level} / {step.category} / {step.method} / {step.endpoint} <em>{step.timestamp}</em></p>
+               </li>
+           )
+         })
+       }
+     }
+   #+END_SRC
+
+** Lib
+*** Service workers
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/lib/service-workers.js
+    :END:
+    #+BEGIN_SRC js
+      // In production, we register a service worker to serve assets from local cache.
+
+      // This lets the app load faster on subsequent visits in production, and gives
+      // it offline capabilities. However, it also means that developers (and users)
+      // will only see deployed updates on the "N+1" visit to a page, since previously
+      // cached resources are updated in the background.
+
+      // To learn more about the benefits of this model, read https://goo.gl/KwvDNy.
+      // This link also includes instructions on opting out of this behavior.
+
+      const isLocalhost = Boolean(
+        window.location.hostname === 'localhost' ||
+          // [::1] is the IPv6 localhost address.
+        window.location.hostname === '[::1]' ||
+          // 127.0.0.1/8 is considered localhost for IPv4.
+        window.location.hostname.match(
+          /^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/
+        )
+      );
+
+      export default function register() {
+        if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
+          // The URL constructor is available in all browsers that support SW.
+          const publicUrl = new URL(process.env.PUBLIC_URL, window.location);
+          if (publicUrl.origin !== window.location.origin) {
+            // Our service worker won't work if PUBLIC_URL is on a different origin
+            // from what our page is served on. This might happen if a CDN is used to
+            // serve assets; see https://github.com/facebookincubator/create-react-app/issues/2374
+            return;
+          }
+
+          window.addEventListener('load', () => {
+            const swUrl = `${process.env.PUBLIC_URL}/service-worker.js`;
+
+            if (!isLocalhost) {
+              // Is not local host. Just register service worker
+              registerValidSW(swUrl);
+            } else {
+              // This is running on localhost. Lets check if a service worker still exists or not.
+              checkValidServiceWorker(swUrl);
+            }
+          });
+        }
+      }
+
+      function registerValidSW(swUrl) {
+        navigator.serviceWorker
+          .register(swUrl)
+          .then(registration => {
+            registration.onupdatefound = () => {
+              const installingWorker = registration.installing;
+              installingWorker.onstatechange = () => {
+                if (installingWorker.state === 'installed') {
+                  if (navigator.serviceWorker.controller) {
+                    // At this point, the old content will have been purged and
+                    // the fresh content will have been added to the cache.
+                    // It's the perfect time to display a "New content is
+                    // available; please refresh." message in your web app.
+                    console.log('New content is available; please refresh.');
+                  } else {
+                    // At this point, everything has been precached.
+                    // It's the perfect time to display a
+                    // "Content is cached for offline use." message.
+                    console.log('Content is cached for offline use.');
+                  }
+                }
+              };
+            };
+          })
+          .catch(error => {
+            console.error('Error during service worker registration:', error);
+          });
+      }
+
+      function checkValidServiceWorker(swUrl) {
+        // Check if the service worker can be found. If it can't reload the page.
+        fetch(swUrl)
+          .then(response => {
+            // Ensure service worker exists, and that we really are getting a JS file.
+            if (
+              response.status === 404 ||
+                response.headers.get('content-type').indexOf('javascript') === -1
+            ) {
+              // No service worker found. Probably a different app. Reload the page.
+              navigator.serviceWorker.ready.then(registration => {
+                registration.unregister().then(() => {
+                  window.location.reload();
+                });
+              });
+            } else {
+              // Service worker found. Proceed as normal.
+              registerValidSW(swUrl);
+            }
+          })
+          .catch(() => {
+            console.log(
+              'No internet connection found. App is running in offline mode.'
+            );
+          });
+      }
+
+      export function unregister() {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready.then(registration => {
+            registration.unregister();
+          });
+        }
+      }
+
+    #+END_SRC
+*** Utils
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/lib/utils.js
+    :END:
+    #+NAME: Utils
+    #+BEGIN_SRC js
+      export function calculateCoverage (endpoints) {
+        var total = endpoints.length
+        var tested = endpoints.filter(endpoint => endpoint.isTested).length
+        var percentage = (100 * tested /total).toPrecision(3)
+
+        return {
+          tested,
+          total,
+          percentage: `${percentage}%`,
+          ratio: `${tested}/${total}`
+        }
+      }
+    #+END_SRC
+
+** Actions
+*** index.js
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/actions/index.js
+    :END:
+    We'll use the index page of the actions to set up our axios client.  axios handles our fetch requests, since we'll be fetching from another server and not from a data file within this app.  Axios is an http request client that uses promises (a new javascript convention for handling asynchronous calls).[[https://www.npmjs.com/package/axios][ Axios page on NPM]]
+
+    We'll want to configure a client app for axios, that sets the host we are trying to connect to and the type of information we are expecting to get.  Since we are working with a feathers api, then we know we just need to grab JSON.
+    #+NAME: axios_config
+    #+BEGIN_SRC js
+      import axios from 'axios'
+
+      export const client = axios.create({
+        baseURL: "http://apisnoop.cncf.io:3030",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      })
+    #+END_SRC
+
+    #+RESULTS: axios_config
+
+   These work with redux to deliver our store an object that has a 'type' and a payload.  So the type tells our store reducers what to do with it, and the payload is the data that is being added to the global state.
+
+*** Endpoint Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/actions/endpoints.js
+    :END:
+**** Requirements
+    #+NAME: Requirements
+    #+BEGIN_SRC js
+      import { client } from './'
+
+    #+END_SRC
+**** Our URL Variables
+     #+NAME: URL Variable
+     #+BEGIN_SRC js
+      const url = '/api/v1/endpoints'
+     #+END_SRC
+
+**** Fetching Endpoints
+      #+NAME: Fetch Endpoints
+      #+BEGIN_SRC js
+        export function fetchEndpoints () {
+          return dispatch => {
+            dispatch({
+              type: 'FETCH_ENDPOINTS',
+              payload: client.get(url)
+            })
+          }
+        }
+      #+END_SRC
+*** Test Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/actions/tests.js
+    :END:
+**** Requirements
+    #+NAME: Requirements
+    #+BEGIN_SRC js
+      import { client } from './'
+
+    #+END_SRC
+**** Our URL Variables
+     #+NAME: URL Variable
+     #+BEGIN_SRC js
+      const url = '/api/v1/tests'
+     #+END_SRC
+
+**** Fetching Tests
+      #+NAME: Fetch Tests
+      #+BEGIN_SRC js
+        export function doFetchTests () {
+          return dispatch => {
+            dispatch({
+              type: 'FETCH_TESTS',
+              payload: client.get(url)
+            })
+          }
+        }
+      #+END_SRC
+
+**** Choose Active Test
+     #+NAME: Choose Active Test
+     #+BEGIN_SRC js
+       export function doChooseActiveTest (test) {
+         return {
+           type: 'NEW_ACTIVE_TEST_CHOSEN',
+           payload: test
+         }
+       }
+     #+END_SRC
+
+**** Set Endpoint Tests
+     #+NAME: Choose Active Test
+     #+BEGIN_SRC js
+       export function doSetEndpointTests (endpointTests) {
+         return {
+           type: 'ENDPOINT_TESTS_SET',
+           payload: endpointTests
+         }
+       }
+     #+END_SRC
+
+*** Charts Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/actions/charts.js
+    :END:
+**** Focus Chart
+      #+NAME: Focusing Chart
+      #+BEGIN_SRC js
+        export function focusChart (keyPath) {
+          return {
+            type: 'CHART_FOCUSED',
+            payload: keyPath
+          }
+        }
+      #+END_SRC
+**** Lock Chart
+      #+NAME: Locking Chart
+      #+BEGIN_SRC js
+        export function doLockChart () {
+          return {
+            type: 'CHART_LOCKED'
+          }
+        }
+      #+END_SRC
+**** Unlock Chart
+      #+NAME: Unlocking Chart
+      #+BEGIN_SRC js
+        export function doUnlockChart () {
+          return {
+            type: 'CHART_UNLOCKED'
+          }
+        }
+      #+END_SRC
+**** Unfocus Chart
+      #+NAME: Unfocus Chart
+      #+BEGIN_SRC js
+        export function unfocusChart() {
+          return {
+            type: 'CHART_UNFOCUSED'
+          }
+        }
+      #+END_SRC
+*** Routing Actions
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/actions/routing.js
+    :END:
+**** Change Active Route
+      #+NAME: changeActiveRoute
+      #+BEGIN_SRC js
+        export function changeActiveRoute (target) {
+          return {
+            type: 'ACTIVE_ROUTE_CHANGED',
+            payload: target
+          }
+        }
+      #+END_SRC
+**** Update URL
+      #+NAME: Update URL
+      #+BEGIN_SRC js
+        export function doUpdateUrl (pathname) {
+          return {
+            type: 'UPDATE_URL',
+            payload: pathname
+          }
+        }
+      #+END_SRC
+** Reducers
+*** Introduction
+  - Reducers/Charts :: Help us manage how a chart is manipulated based on mouseover, click, mouseleave, and other things..
+  - Reducers/Endpoints :: Handles when we make a call to our endpoints API, changing the loading status upon pending, and delivering the endpoints (sorted by ID) to our store when the API request is fulfilled.
+  - Reducers/Releases :: Older reducer that will likely be phased out.
+  - Reducers/Routing :: listens to the  URL routes and updates state accordingly (so we can set the component based on current URL.
+  - Reducers/Tests :: Corresponds to the test sequences, which are in /api/v1/tests.  This should maybe be updated to be clear (test_sequences instead of tests)
+
+ For each reducer, we follow a similar pattern:  we'll set an initial state for what should be held in this store, and what types it's expecting (object, array, string, etc).  Then, we listen to various action dispatches and handle them through a switch operation.  Each action will come with some sorta payload (defined by the action creator in our actions folder).  The reducer just takes the payload and adds it to the store, which will update the state.
+
+ The reducer is not manipulating the data in any way.  It takes the payload unaffected and adds it to the state the same way.  We then use our selectors to massage the data to work for whatever props we need.
+
+*** index.js
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/reducers/index.js
+    :END:
+    Here we combine all our different reducers into one big one.  This lets us think about the app in different, focused concerns that then get added to the larger application seamlessly.
+
+    #+NAME: Requirements
+    #+BEGIN_SRC js
+      import { combineReducers } from 'redux'
+
+      import EndpointsReducer from './endpoints'
+      import TestsReducer from './tests'
+      import ChartsReducer from './charts'
+      import RoutingReducer from './routing'
+    #+END_SRC
+
+    #+NAME: Reducers
+    #+BEGIN_SRC js
+      const reducers = {
+        charts: ChartsReducer,
+        endpoints: EndpointsReducer,
+        tests: TestsReducer,
+        routing: RoutingReducer
+      }
+
+      const rootReducer = combineReducers(reducers)
+
+      export default rootReducer
+    #+END_SRC
+*** Charts Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/reducers/charts.js
+    :END:
+
+
+     #+NAME: The Charts Reducer
+     #+BEGIN_SRC js
+       const initialState = {
+         focusedKeyPath: [],
+         chartLocked: false
+       }
+
+       export default (state = initialState, action = {}) => {
+         switch (action.type) {
+         case 'CHART_FOCUSED':
+           return {
+             ...state,
+             focusedKeyPath: action.payload
+           }
+         case 'CHART_UNFOCUSED':
+           return {
+             ...state,
+             focusedKeyPath: []
+           }
+         case 'CHART_LOCKED':
+           return {
+             ...state,
+             chartLocked: true
+           }
+         case 'CHART_UNLOCKED':
+           return {
+             ...state,
+             chartLocked: false
+           }
+         case 'ACTIVE_ROUTE_CHANGED': {
+           return {
+             ...state,
+             chartLocked: false
+           }
+         }
+         default:
+           return state;
+         }
+       }
+     #+END_SRC
+
+*** Endpoints Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/reducers/endpoints.js
+    :END:
+
+     #+NAME: The Endpoints Reducer
+     #+BEGIN_SRC js
+       const { keyBy } = require('lodash')
+       const initialState = {
+         byId: {},
+         isLoading: false,
+         hasLoaded: false,
+         errors: {}
+       }
+
+       export default (state = initialState, action = {}) => {
+         switch(action.type) {
+         case 'FETCH_ENDPOINTS_PENDING': {
+           return {
+             ...state,
+             isLoading: true
+           }
+         }
+         case 'FETCH_ENDPOINTS_FULFILLED': {
+           return {
+             ...state,
+             byId: {
+               ...state.byId,
+               ...keyBy(action.payload.data, '_id')
+             },
+             isLoading: false,
+             hasLoaded: true
+           }
+         }
+         default:
+           return state;
+         }
+       }
+     #+END_SRC
+*** Tests Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/reducers/tests.js
+    :END:
+
+     #+NAME: The Tests Reducer
+     #+BEGIN_SRC js
+       const { keyBy } = require('lodash')
+
+       const initialState = {
+         activeTest: {},
+         byId: {},
+         endpointTests: [],
+         errors: {},
+         isLoading: false,
+         hasLoaded: false
+       }
+
+       export default (state = initialState, action = {}) => {
+         switch(action.type) {
+         case 'FETCH_TESTS_PENDING': {
+           return {
+             ...state,
+             isLoading: true
+           }
+         }
+         case 'FETCH_TESTS_FULFILLED': {
+           return {
+             ...state,
+             byId: {
+               ...state.byId,
+               ...keyBy(action.payload.data, '_id')
+             },
+             isLoading: false,
+             hasLoaded: true
+           }
+         }
+         case 'ENDPOINT_TESTS_SET': {
+           return {
+             ...state,
+             endpointTests: action.payload
+           }
+         }
+         case 'NEW_ACTIVE_TEST_CHOSEN': {
+           return {
+             ...state,
+             activeTest: action.payload
+           }
+         }
+         case 'CHART_UNLOCKED': {
+           return {
+             ...state,
+             activeTest: {},
+             endpointTests: []
+           }
+         }
+         case 'ACTIVE_ROUTE_CHANGED': {
+           return {
+             ...state,
+             activeTest: {},
+             endpointTests: []
+           }
+         }
+         default:
+           return state;
+         }
+       }
+     #+END_SRC
+*** Routing Reducer
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/reducers/routing.js
+    :END:
+
+    The goal is to listen to the location change and adjust the state accordingly.  We can then have our component always be showing the release related to the lastest route.
+
+     #+NAME: The Routing Reducer
+     #+BEGIN_SRC js
+       const initialState = {
+         pathname: typeof window.location !== 'undefined' ? window.location.pathname : '/',
+         activeRoute: 'master',
+         routeChange: false
+       }
+       export default (state = initialState, action = {}) => {
+
+         if (action.type === 'ACTIVE_ROUTE_CHANGED') {
+           return {
+             ...state,
+             activeRoute: action.payload,
+             routeChange: true
+           }
+         }
+
+         if (action.type === 'UPDATE_URL') {
+           return {
+             ...state,
+             pathname: action.payload
+           }
+         }
+
+         return state;
+       }
+     #+END_SRC
+** Selectors
+*** index.js
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/selectors/index.js
+    :END:
+   #+NAME: Selectors index.js
+   #+BEGIN_SRC js
+     export * from './endpoints'
+     export * from './charts'
+     export * from './routing'
+     export * from './tests'
+   #+END_SRC
+
+   #+RESULTS: Selectors index.js
+
+*** Endpoints Selector
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/selectors/endpoints.js
+    :END:
+     #+NAME: Endpoints Selector
+     #+BEGIN_SRC js
+       import { createSelector } from 'reselect'
+       import { groupBy, keyBy, mapValues } from 'lodash'
+       import { calculateCoverage } from '../lib/utils.js'
+
+       export function selectEndpointsById (state) {
+         return state.endpoints.byId
+       }
+
+       export const selectEndpointsByReleaseAndNameAndMethod = createSelector(
+         selectEndpointsById,
+         (endpointsById) => {
+           var endpointsByRelease = groupBy(endpointsById, 'release')
+           return mapValues(endpointsByRelease, endpointsInRelease => {
+             var endpointsByName = groupBy(endpointsInRelease, 'name')
+             return mapValues(endpointsByName, endpointsInName => {
+               return keyBy(endpointsInName, 'method')
+             })
+           })
+         }
+       )
+
+       export const selectReleaseNamesFromEndpoints = createSelector(
+         selectEndpointsByReleaseAndNameAndMethod,
+         (endpointsByReleaseAndNameAndMethod) => {
+           return Object.keys(endpointsByReleaseAndNameAndMethod)
+         }
+       )
+
+       export const selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod = createSelector(
+         selectEndpointsById,
+         (endpointsById) => {
+           var endpointsByRelease = groupBy(endpointsById, 'release')
+           return mapValues(endpointsByRelease, endpointsInRelease => {
+             var endpointsByLevel = groupBy(endpointsInRelease, 'level')
+             return mapValues(endpointsByLevel, endpointsInLevel => {
+               var endpointsByCategory = groupBy(endpointsInLevel, 'category')
+               return mapValues(endpointsByCategory, endpointsInCategory => {
+                 var endpointsByName = groupBy(endpointsInCategory, 'name')
+                 return mapValues(endpointsByName, endpointsInName => {
+                   return keyBy(endpointsInName, 'method')
+                 })
+               })
+             })
+           })
+         }
+       )
+
+       export const selectEndpointsWithTestCoverage = createSelector(
+         selectEndpointsById,
+         (endpointsById) => {
+           var endpointsByRelease = groupBy(endpointsById, 'release')
+           return mapValues(endpointsByRelease, endpointsInRelease => {
+             var coverage = calculateCoverage(endpointsInRelease)
+             var endpointsByLevel = groupBy(endpointsInRelease, 'level')
+             return Object.assign({},{coverage}, mapValues(endpointsByLevel, endpointsInLevel => {
+               var endpointsByCategory = groupBy(endpointsInLevel, 'category')
+               var coverage = calculateCoverage(endpointsInLevel)
+               return Object.assign({}, {coverage}, mapValues(endpointsByCategory, endpointsInCategory => {
+                 var endpointsByName = groupBy(endpointsInCategory, 'name')
+                 var coverage = calculateCoverage(endpointsInCategory)
+                 return Object.assign({}, {coverage}, mapValues(endpointsByName, endpointsInName => {
+                   var methods = keyBy(endpointsInName, 'method')
+                   return mapValues(methods, method => {
+                     var coverage = method.test_tags
+                     return Object.assign({}, {coverage}, method)
+                   })
+                 }))
+               }))
+             }))
+           })
+         }
+       )
+
+       export const selectIsEndpointsReady = (state) => {
+         return state.endpoints.hasLoaded
+       }
+     #+END_SRC
+
+ Endpoints are unique by Release, Name, and Method.
+
+*** Tests Selector
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/selectors/tests.js
+    :END:
+     #+NAME: Tests Selector
+     #+BEGIN_SRC js
+       import { createSelector, createStructuredSelector } from 'reselect'
+       import { groupBy, keyBy, mapValues, size } from 'lodash'
+
+       export function selectTestsById (state) {
+         return state.tests.byId
+       }
+
+       export const selectIsTestsReady = (state) => {
+         return state.tests.hasLoaded
+       }
+
+       export const selectEndpointTests = (state) => {
+         return state.tests.endpointTests
+       }
+
+       export const selectActiveTestRaw = (state) => {
+         return {
+           name: state.tests.activeTest,
+           route: state.routing.activeRoute,
+         }
+       }
+
+       export const selectTestsByReleaseAndName = createSelector(
+         selectTestsById,
+         (testsById) => {
+           var testsByRelease = groupBy(testsById, 'release')
+           return mapValues(testsByRelease, testsInRelease => {
+             var testsByName = keyBy(testsInRelease, 'name')
+             return mapValues(testsByName, testInName => {
+               return {
+                 name: testInName.name,
+                 id: testInName._id,
+                 sequence: testInName.sequence
+               }
+             })
+           })
+         }
+       )
+
+       export const selectActiveTestComponents = createStructuredSelector({
+         activeTest: selectActiveTestRaw,
+         tests: selectTestsByReleaseAndName
+       })
+
+       export const selectActiveTest = createSelector(
+         selectActiveTestComponents,
+         (atc) => {
+           if (atc.activeTest.name.length > 0) {
+             var activeTest = atc.tests[atc.activeTest.route][atc.activeTest.name]
+             return activeTest
+           } else {
+             return atc.activeTest.name
+           }
+         }
+       )
+     #+END_SRC
+
+ Tests are unique by Release and Name.
+
+*** Chart Selector
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/selectors/charts.js
+    :END:
+     #+NAME: Chart Selector
+     #+BEGIN_SRC js
+       import { createSelector, createStructuredSelector } from 'reselect'
+
+       import { forEach, get, map, mapValues, orderBy, without, reduce, values } from 'lodash'
+
+       import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
+                selectEndpointsWithTestCoverage,
+                selectIsEndpointsReady } from './endpoints'
+
+       import { selectActiveRoute } from './routing'
+
+       export function selectFocusPathAsArray (state) {
+         return state.charts.focusedKeyPath
+       }
+
+       export function selectChartLocked (state) {
+         return state.charts.chartLocked
+       }
+
+       export const selectFocusPathAsString = createSelector(
+         selectFocusPathAsArray,
+         (pathAsArray) => {
+           return pathAsArray.join().replace(/,/g,' / ')
+         }
+       )
+
+       export const selectInteriorLabelComponents = createStructuredSelector({
+         focusPath: selectFocusPathAsArray,
+         isEndpointsReady: selectIsEndpointsReady,
+         endpoints: selectEndpointsWithTestCoverage,
+         releaseFromRoute: selectActiveRoute
+       }
+                                                                            )
+       // TODO make this muuuuch better.  The nesting is gross, but it is because
+       // I am trying to make up an coverage thing to have our interior label work.  The ultimate goal is to be able to hover over a node and see either it's coverage (if it has children) or it's test_tags (if it doesn't)
+       export const selectInteriorLabel = createSelector(
+         selectInteriorLabelComponents,
+         (components) => {
+           const { focusPath, endpoints, isEndpointsReady, releaseFromRoute } = components
+           if (isEndpointsReady) {
+             if (!focusPath.length) {
+               return endpoints[releaseFromRoute]['coverage']
+             } else {
+               var path = (without(focusPath, 'root'))
+               var endpoint = get(endpoints[releaseFromRoute], path)
+               if (endpoint.coverage) {
+                 return endpoint.coverage
+               } else {
+                 var method = Object.keys(endpoint)[0]
+                 return {description: endpoint[method]['description'],
+                         test_tags: endpoint[method]['test_tags']
+                        }
+               }
+             }
+           }
+         }
+       )
+
+       export const selectSunburstByRelease = createSelector(
+         selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
+         (endpointsByReleaseAndLevelAndCategoryAndNameAndMethod) => {
+           var dataByRelease = mapValues(endpointsByReleaseAndLevelAndCategoryAndNameAndMethod, (endpointsByLevelAndCategoryAndNameAndMethod, release) => {
+             return {
+               name: 'root',
+               children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
+                 return {
+                   name: level,
+                   color: colors[level],
+                   children: map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
+                     return {
+                       name: category,
+                       color: colors[`category.${category}`],
+                       children: values(reduce(
+                         endpointsByNameAndMethod,
+                         (sofar, endpointsByMethod, name) => {
+                           forEach(endpointsByMethod, (endpoint, method) => {
+                             var { isTested } = endpoint
+                             var path = isTested ? `${name}/${method}` : 'untested'
+                             var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
+                             sofar[path] = {
+                               name: name,
+                               size,
+                               color: isTested ? colors[`category.${category}`] : '#f4f4f4'
+                             }
+                           })
+                           return sofar
+                         },
+                         {}
+                       ))
+                     }
+                   })
+                 }
+               })
+             }
+           })
+
+           return {
+             dataByRelease
+           }
+         }
+       )
+
+
+       export const selectSunburstByReleaseWithSortedLevel = createSelector(
+         selectSunburstByRelease,
+         (endpointsByRelease) => {
+           var dataByRelease = endpointsByRelease.dataByRelease
+           var sortedDataByRelease = mapValues(dataByRelease, (release) => {
+             var levels = release.children
+             var sortedLevels = orderBy(levels, 'name', 'desc')
+             release.children = sortedLevels
+             return release
+           })
+           endpointsByRelease.dataByRelease = sortedDataByRelease
+           return endpointsByRelease
+         }
+       )
+
+       export const selectIsSunburstReady = selectIsEndpointsReady
+
+       var colors = {
+         'alpha': '#e6194b',
+         'beta': '#0082c8',
+         'stable': '#3cb44b',
+         'unused': '#ffffff'
+       }
+
+       var categories = [
+         "admissionregistration",
+         "apiextensions",
+         "apiregistration",
+         "apis",
+         "apps",
+         "authentication",
+         "authorization",
+         "autoscaling",
+         "batch",
+         "certificates",
+         "core",
+         "events",
+         "extensions",
+         "logs",
+         "networking",
+         "policy",
+         "rbacAuthorization",
+         "scheduling",
+         "settings",
+         "storage",
+         "version"
+       ]
+
+       var more_colors = [
+         "#b71c1c", "#880E4F", "#4A148C", "#311B92", "#1A237E", "#0D47A1",
+         "#01579B", "#006064", "#004D40", "#1B5E20", "#33691E", "#827717",
+         "#F57F17", "#FF6F00", "#E65100", "#BF360C", "#f44336", "#E91E63",
+         "#9C27B0", "#673AB7", "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4",
+         "#009688", "#4CAF50", "#8BC34A", "#CDDC39", "#FFEB3B", "#FFC107",
+         "#FF9800", "#FF5722"
+       ]
+
+       for (var catidx = 0; catidx < categories.length; catidx++) {
+         var category = categories[catidx]
+         colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
+       }
+     #+END_SRC
+
+     #+RESULTS: Chart Selector
+
+ Endpoints are unique by Release, Name, and Method.
+
+*** Routing Selector
+    :PROPERTIES:
+    :header-args: :noweb yes :tangle ./src/selectors/routing.js
+    :END:
+     #+NAME: Routing Selector
+     #+BEGIN_SRC js
+
+       export function selectActiveRoute (state) {
+         return state.routing.activeRoute
+       }
+
+       export function selectRouteChange (state) {
+         return state.routing.routeChange
+       }
+     #+END_SRC
+
+
+ Endpoints are unique by Release, Name, and Method.
+
+* Process
+* Footnotes
+** Resources
+*** d3
+**** [[https://medium.com/@Elijah_Meeks/interactive-applications-with-react-d3-f76f7b3ebc71][interactive applications with react-d3]]
+     this is really good.
+**** [[https://www.smashingmagazine.com/2018/02/react-d3-ecosystem/][Bringing Together react, d3, and their ecosystem]]
+**** [[http://www.adeveloperdiary.com/react-js/integrate-react-and-d3/][How to Integrate React and d3 the right way]]
+**** [[https://bost.ocks.org/mike/join/][Thinking with Joins]]
+*** react/redux
+    - [[https://read.reduxbook.com][Human Redux, by Henrik Joreteg]]
+
+** isocket
+*** Connecting the left pair / isocket
+
+ ssh needs '-t' twice because it needs to be forced to allocate a remote terminal
+ _even_ when we don't have have local one (within emacs)
+
+
+#+NAME: left_session_create
+#+BEGIN_SRC shell :var session="zz-left" terminal_exec="xterm -e" user="zz" host="apisnoop.cncf.io" :session nil :results silent
+  $terminal_exec \
+      "ssh -att \
+           -L /tmp/.$session.isocket:/tmp/.$session.isocket \
+           -l $user \
+           $host \
+      tmate -S /tmp/.$session.isocket \
+            new-session \
+            -A \
+            -s $session \
+            -n emacs \
+      emacs --fg-daemon=$session" \
+  &
+#+END_SRC
+
+#+NAME: left_session_setup
+#+BEGIN_SRC shell :var session="zz-left" user="zz" host="apisnoop.cncf.io" :session nil :results silent
+  ssh -att $user@$host \
+  "tmate -S /tmp/.$session.isocket \
+        new-window \
+        -n client" \
+   "emacsclient -nw \
+              --socket-name $session \
+              ~/apisnoop/webui/web_ui.org"
+#+END_SRC
+
+ #+NAME: left_session
+ #+BEGIN_SRC shell :wrap "SRC text :noeval" :results verbatim :var session="zz-left" user="zz" host="apisnoop.cncf.io" :results silen
+  ssh -att $user@$host \
+    tmate -S /tmp/.$SESSION.isocket wait tmate-ready > /dev/null &&
+  ssh -att $user@$host \
+    tmate -S /tmp/.$SESSION.isocket display -p \'#{tmate_ssh}\' 2> /dev/null
+# ssh -tt root@apisnoop.cncf.io \
+#  tmate -S /tmp/.$SESSION.isocket display -p \'#{tmate_ssh}\'
+ #+END_SRC
+
+ #+RESULTS: left_session
+ #+BEGIN_SRC text :noeval
+ #+END_SRC
+
+**** Connecting to emacs daemon
+
+ #+NAME: alse run emacsclient
+ #+BEGIN_SRC tmate :noeval
+ export SESSION=lt-emacs
+ emacsclient --socket-name $SESSION
+ #+END_SRC
+
+*** Connecting the right pair / isocket
+
+#+NAME: right_session_create
+#+BEGIN_SRC shell :var session="zz-right" terminal_exec="xterm -e" user="zz" host="apisnoop.cncf.io" :session nil :results silent
+  $terminal_exec \
+      "ssh -att \
+           -L /tmp/.$session.isocket:/tmp/.$session.isocket \
+           -l $user \
+           $host \
+      tmate -S /tmp/.$session.isocket \
+            new-session \
+            -A \
+            -s $session \
+            -n misc" \
+  &
+#+END_SRC
+
+
+ #+NAME: right_session_join
+ #+BEGIN_SRC shell :results silent
+ export SESSION=api-snoop
+ export XTERM_EXEC="roxterm -e"
+ $XTERM_EXEC ssh -Att root@apisnoop.cncf.io \
+  tmate -S /tmp/.$SESSION.isocket \
+   at \; sleep 9999
+ #+END_SRC
+
+ #+NAME: right_session_setup
+ #+BEGIN_SRC shell :results verbatim
+ export SESSION=api-snoop
+ echo ssh -tt root@apisnoop.cncf.io \
+  tmate -S /tmp/.$SESSION.isocket \
+    new-window -n session \
+     bash
+ #+END_SRC
+
+ #+NAME: right_session
+ #+BEGIN_SRC shell :cache yes :wrap "SRC text :noeval" :results verbatim
+ export SESSION=api-snoop
+ ssh -tt root@apisnoop.cncf.io \
+  tmate -S /tmp/.$SESSION.isocket display -p \'#{tmate_ssh}\'
+ #+END_SRC
+
+ #+RESULTS[dd96525b42bbbe741e292e99ad5f3592a7163025]: right_session
+ #+BEGIN_SRC text :noeval
+ ssh mJrsCgvGTOTOFagYpBKvRf7EE@sf2.tmate.io
+ #+END_SRC
+
+
+
+
+
+ #+NAME: give this to your pair
+ #+BEGIN_SRC bash :noweb yes :var left_session=left_session() right_session=right_session()
+ echo "ii pair session ready
+ left: $left_session
+ right: $right_session
+ "
+ #+END_SRC
+
+ #+RESULTS: give this to your pair
+ | ii     | pair | session | ready |
+ | left:  | nil  |         |       |
+ | right: | nil  |         |       |
+ |        |      |         |       |
+
+*** TODO Sharing your eyes
+
+#+NAME: give this to your pair
+#+BEGIN_SRC bash :noweb yes :var left_session=left_session() :var right_session=right_session()
+echo "ii pair session ready
+left: $left_session
+right: $right_session
+"
+#+END_SRC
+** Working with d3
+*** Introduction
+   d3 is the data visualization library that was used to make our original sunburst.  The way it works is to mount itself to the dom, and then appends new elements to the dom based on the data it was given. If that data changes, it transforms the elements as needed.
+
+   The way react works is it attaches itself to the dom, then creates a //shadow dom// that it is continually listening to, adding and removing elements in this dom as needed based on the data(the state) it was given.
+
+   In other words, they work in largely the same way, and both wanna attach themselves to the dom and manipulate it.  This...isn't good.  We want to have /1/ thing making shadow doms and calls on the website, and so it is a bit tricky to get react and d3 working together.
+
+The upside is that a number of people have tackled this challenge and created different react/d3 libraries for how the two can work together.  The downside is that I'm not sure yet which is the best to do.
+
+Put simply, it is not easy to take our existing sunburst code and just paste it into our new app.  We are going to need to transform it in some way based on the guidance of the library we are using.
+
+So the question is why we are putting ourselves into this trouble?
+*** WHY WE ARE PUTTING OURSELVES INTO THIS TROUBLE
+    My assumption with all of this is that when people hear 'apisnoop', they are thinking of the site in which you can see the data visualziations.  And so the webapp is important for the project and will be expanded.  React would be great for this in the long run.
+
+Similarly, I am expecting that we are going to have more types of visualizations than just the sunburst--and that even the sunburst may change.  So we are going to want to have an understanding for a language in which we can make a //bunch// of visualizations. d3 is great for this.
+
+If we do it right, we can have reusable components too that other teams could use for their own k8s projects, and that we could use ourselves.  For example--displaying two sunburst charts side by side would be much easier in react/d3 then what i ws trying to do before (appending both to the same id on a standard html document.)  This requires that I move through some d3 tutorials though.
+
+At the end of this, though, we will have a backend server that is easy to setup and can ping different url's (github repos or testgrid artifacts) and grab their data.  Then, we can manipulate that data in whatever way we want but also pass it along to our frontend.  This front-end can then have different options and tags setto really dive in and explore.
+
+If this is the purpose of apisnoop then let's do it.  If it's too much overkill though, then I can try a simpler solution.
+*** Possible Process to get going
+**** Setup a simple d3 visualization to understand the process
+**** pipe data into this simple visualization through our redux state.
+**** Pore over the original code again (the original blog post) to see how to best convert it
+**** Change the sunburst's origin point from a CSV file to JSON
+**** Change the sunbursts origin point from JSON to our redux store.
+*** Second Process
+**** Setup different pages for different d3-react libraries that already have ubilt components.
+**** explore piping our data into the one we like.
+**** Use testgrid conformance data and make simple visualizations to it.
+     We are wanting to keep the data retrieval tied into the visualizing, so we dont' end up with a pretty graph that can't be used for what we have.  So we can grab the testgrid stuff now and see what we can do with it.
+
+
+**** Use that going forward.
+*** Possible Libraries to use
+**** Victory
+     https://formidable.com/open-source/victory/
+**** Britecharts react
+     https://eventbrite.github.io/britecharts-react/
+**** Recharts
+     http://recharts.org/en-US/
+** Aaron Feedback
+- useful troubleshooting tool:
+  - adding test names to user agents to verify a test was testing what we thought it was.
+  - filter audit logs by user-agent and then see 'when this test case is run, here are the endpoints it accesses chronologically".
+    - This is separate from number of times hit.  that is useful in aggregate, this is something different.
+  - pulling in an audit log of timestamp/verb/uri
+- Feature of pointing to the specific line in the source for each test, to pull its definition, would be a good //Next// step.
+  - This is something we can do with whakapapa, but it's not something we have now.
+- Discovery front: Filtering more endpoints from APIsnoop's definition of coverage.
+  - If beta endpoints always get hit because an api server is doing discovery, then that's cool but nothing we can ever prevent conformance tests from doing and we shouldn't care about it from a test coverage perspective.
+  - How do we signify that this is the kinda hit that's happening for an endpoint?
+  - We have a good start with filtering to just e2e, but even our e2etests are hitting those endpoints.  There are some endpoints where, logically they don't need to get tested or anything like that.
+  - Get to a point whwere we can manually specify, or have a blacklist of apiendpoints that we aren't factoring into our coverage viz.
+  - One way to do this is to filter out the endpoints that are hit by nearly all of the tests.  This is a good indicator that the endpoint is for initialization or something like that, and not actually a part of this test's function.
+- Unique Endpoints hit by a test: this is something that isn't covered by our sunburst or katherine's viz.  Pick a test, and then see the endpoints that are //only// hit by this test.
+  - which endpoints hit are unique, versus which ones are common across all test cases.  This would let us know which test cases are doing good stuff and which endpoints are essentially meaningless.
+  - you could have a center endpoint change to the perspective of that test, and then that test would only show the endpoints that it hits.....but that may not be that useful.  We dont' wanna see All the endpoints, we wanna see which ones are //special// for this test.
+  - Hierarchy vizes aren't that useful.
+  - I just wanna find a way to slice and dice data with raw queries and see where that leads us...and take some of the more useful queries and generate reports from that.  This sounds like a new approach for apisnoop.
+
+Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people like aaron?  is it a kubernetes end user?  If it's aaraon, he is saying he knows how to write certain queries, but he would rather have this  already done and then he can do further exploration.
+'For an endpoint that's only hit three times, what are the tests that are hitting this endpoint.  And then we could follow up with what the tests are doing from an api perspective.  'Okay, now let me see the full api stream from this test."
+ - auotmate this, or provide shiny reports for this.  This isn't the end user coming up with the interesting things, this is us coming up with interesting things that we are letting the end user come to their own conclusions on.
+ - We eventually want to show api coverage going up over time across different builds. o
+ - We might be able to format things in such a way to have a test dashboard that shows individual api endpoints and #'s: how many times they been hit, something like that.
+ - Is code coverage a different thing?  when talking about it being a command line tool that generates reports from it...or is that just what the group is trying to do.  the benefit of the command line tool is that you can automate it running for every build. We could then just have a page that displays these reports even maybe.
+ - We want to share shinies at kubeconf china.
+ - Get visualization up to good place that replaces existing visualization.
+ - Showing all the api accesses per user-agent or test as a different Dashboard to have.
+ - Take care of you for whatever demos you need for apisnoop.
+ - It would be worth it to show we're providing value to cncf as a whole, but right now it's good to just be able to have Aaron say that the work we're doing makes it easier for conformance to do the things they want to do.
+ - Let's not work on things that don't end up providing value, over-delivering when he really just wants somethings maller and specific.  He's happy to have some reports that don't need to be that shiny, but maybe a little bit interactive.  and these reports would be:
+   - If I click on a user agent, I can see the in-order access of all the api endpoints.
+   - To get some kind of report that shows me what kind of endpoints don't matter (every test hits them) and which ones are interesting (cos only a few endpoints hit them) and what are those tests?
+     - this may lead to a point where we try to make a whitelist of endpoints in our coverage, but let's not cross that bridge yet.
+   - For wednesday deadline...this isn't a hard deadline, we can touch base on Tuesday/Monday and see where we at.
+** Pairing With Mikey
+*** Background
+    I went through a pairing Session with [[https://dinosaur.is][Mikey]], to help with the overall architecture and code logic of the webui
+* Experiment
+  :PROPERTIES:
+  :header-args: :dir (concat (file-name-directory buffer-file-name) "client")
+  :header-args:tmate: :socket "/tmp/.zz-right.isocket"
+  :header-args:tmate: :session "zz-right"
+  :END:
+
+# Local Variables:
+# org-confirm-babel-evaluate: nil
+# End:
+* Tasks
+** TODO [9/12] Tasks For Refactoring our Data and understanding of it.
+   - [X]  Convert JSON dump to New Flat Database
+   - [X] Hookup react/redux to query endpoints.
+   - [X] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
+   - [X] Practice Converting flat database to Sunburst Data structure.
+   - [X] Sort Level so it is Stable, Beta, Alpha
+   - [X] pass down chart selector data to main page props, pass down focused key path to render label within sunburst
+   - [X] Add Percentage Calculation to center label.
+     - I think I would want to do a data transformation, that counts the isTested for each of the child nodes, and piles that into an equation in the parent node.
+     - How much of the existing work can I use with this?
+     - STRATEGY: we've added the coverage to our endpoints information.  So we could now have a 'coverage' selector that listens to the full path array and finds the coverage information in the endpoints for it.  We don't need to do any extra action, we just need to work off our existing stuff.
+     - If nothing is set, then we are going to want to know the coverage by release.  So the first step, then, would be: 'Without Focus Path selectInteriorLabel = endpoints[release][coverage]' with focus path it would be endpoints[release][fp1][fp2][coverage]...i guess based on the full apth length (it could be up to 3, level, category, endpoint).
+   - [ ] Fix routing so activeRoute isn't hard-coded.
+   - [ ] re-hook up routing to route by release name
+   - [ ] Change endpoint path so it displays UNTESTED for the whole untested block (currently displaying random endpoint name).
+   - [X] Query endpoints by Release.
+   - [X] remove dependency on releaseStore reducer.
+** TODO [3/12] Future Tasks
+   - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
+   - [X] Hover over Part of Sunburst shows relevant rays highlighted.
+   - [X] Hover over Sunburst, see testing percentage update in center.
+   - [ ] Click on Useragent, sunburst zooms onto that subset of data.
+   - [ ] Refactor Chart Selector to not be heavily nested..
+   - [ ] Move colors calculation out of sunburst selector into its own thing.
+   - [ ] Separate sunburst selector thangs from chart interaction thangs (maybe?  may be premature optimization).
+   - [X] Remove unused props from app.js
+   - [ ] Make each test Sequence an object, instead of an array. or at least ask someone if that's really necessary?  Maybe not necessary.
+   - [ ] Improve performance of page load, by only calling a test when needed.
+   - [ ] Refactor tests so the entire object isn't being loaded in the client.  That feels way too heavy, and instead you should only load up the testInfo (all the api endpoints being accessed) when there is an active_test, and you display that only on that active test.
+   - [ ] When you click on an endpoint, it adds to the URL so that you can share the URL and have be right on the hovered sunburst with the filtered tests and such.
+** DONE [10/10] Achievements To Unlock to match and surpass old webui
+   CLOSED: [2018-11-06 Tue 13:49]
+   - [X] Mikey has a functional understanding of what we're trying to do.
+   - [X] It generally feels better
+   - [X] Sunburst Changes Based on Route
+   - [X] It loads faster
+   - [X] When you click on a test, it lists the endpoints sequence.
+   - [X] Add testTags to our endpoint api
+   - [X] When you hover on an endpoint, it shows the test tags.
+   - [X] When you click on an endpoint, it locks the chart in place.
+     - [X] Add 'clicked' as state in sunburstChart, following the same logic in the [[https://github.com/uber/react-vis/blob/master/showcase/sunbursts/basic-sunburst.js][react-vis tutorial]]
+     - [X] When you mouseOut, if clicked isn't true //then// send out the clearing of focusPath.  Otherwise, keep it.
+   - [X] When you click on an endpoint, it filters the list of tests to just the ones that touch that endpoint.
+     - [X] Devise strategy: when you click on a node you have the focus path as an array, which would end with an endpoint (if we are on an endpoint, otherwise it'd show the category or level). We have tests who each have an endpoint listed within them.  Maybe we query our db at that point for tests?endpointsIncludeEndpointName, or something similar to that.  Then, we change the logic beneath to only show tests once an endpoint is clicked, and it's based on the tests we retrieve...
+     - [X] Doublecheck our releases for tests, to see how it be structured:  it goes release.data.tests.count.endpoints.  These endpoints //look// to correspond with our endpoint names pretty nicely.  But I think this means we'll have to separate out the tests into their own endoint too. It'd be best if it was just called 'tests', but we already ahve that for test_sequence.  how hard is it to switch that over?
+   - [X] When you view the endpoint sequence, it is single line with a timestamp of HH:MM:SS:ss and then the rest of the info.
+** TODO Add logic to API to filter endpoints to only those touched by e2e.
+   We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
+
+** DONE Change front-end logic so it only pulls data from the necessary sunburst.
+   CLOSED: [2018-11-04 Sun 22:29]
+   Right now the we have an endpoint called /Releases, organized by Build name.  These correspond to the sunbursts.  We are pulling in the entire api, we should only do buildname.data.sunburst
+*** [3/4] Subtasks
+    - [X] Remove excess noise from front-end for right now--the filters essentially.
+    - [X] Add URL path to each Release you click
+    - [X] Add fetchSunburst action to sunburst segment component, and pass it along the url params.
+    - [ ] Query the api database based on the params and return just the sunburst data.`
+** DONE change keypath logic so it only highlights if parent is on keypath.
+   CLOSED: [2018-11-04 Sun 22:30]
+** DONE-AND-SHARED [6/6] Add Test Information To Webui
+   CLOSED: [2018-11-06 Tue 03:37]
+   - State "DONE-AND-SHARED" from "NEXT"       [2018-11-06 Tue 03:37]
+   When I am looking at a release,  I can see both the sunburst and a list of tests that happen with this release, so that I have more context on what is actually happening with our test coverage.
+   When I click on a test, I can see a chronological list of the endpoints it accesses, so I can understand what this test is doing and if it is necessary.
+- [X] Add unique api endpoint for tests
+- [X] Bring the tests into our redux store when app first loads.
+- [X] Massage data to group by release, using same format as our endpoints
+- [X] list tests to side of sunburst
+- [X] clicking on a test makes it the 'active_test', which updates state.
+- [X] When there is an active_test, display its chronological list.  does not need to be styled fancy.
+
+** TODO [0/1] Questions
+   - [ ] Why does brining in the selectsunburstSorted selector affect the sunburst (when it is a new selector, not the previous one.

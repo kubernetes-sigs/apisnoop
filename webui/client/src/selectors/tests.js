@@ -16,7 +16,7 @@ export const selectEndpointTests = (state) => {
 export const selectActiveTestRaw = (state) => {
   return {
     name: state.tests.activeTest,
-    route: state.routes.activeRoute,
+    route: state.routing.activeRoute,
   }
 }
 

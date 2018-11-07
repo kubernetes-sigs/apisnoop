@@ -4,3 +4,10 @@ export function changeActiveRoute (target) {
     payload: target
   }
 }
+
+export function doUpdateUrl (pathname) {
+  return {
+    type: 'UPDATE_URL',
+    payload: pathname
+  }
+}

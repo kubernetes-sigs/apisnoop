@@ -5,7 +5,9 @@ import './index.css'
 
 import {Provider} from 'react-redux'
 
+
 import App from './components/App'
+import {doUpdateUrl} from './actions/routing'
 import store from './store.js'
 import registerServiceWorker from './lib/service-workers'
 
@@ -17,4 +19,4 @@ ReactDOM.render(
     </BrowserRouter>,
   document.getElementById('root')
 )
-  registerServiceWorker()
+registerServiceWorker()
