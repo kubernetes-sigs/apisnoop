@@ -1,12 +1,11 @@
 import { createSelector, createStructuredSelector } from 'reselect'
-
-import { forEach, get, map, mapValues, orderBy, without, reduce, values } from 'lodash'
+import { forEach, get, includes, map, mapValues, orderBy, sortBy, reduce, values, without } from 'lodash'
 
 import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
          selectEndpointsWithTestCoverage,
          selectIsEndpointsReady } from './endpoints'
+import { selectRelease } from './routing'
 
-import { selectActiveRoute } from './routing'
 
 export function selectFocusPathAsArray (state) {
   return state.charts.focusedKeyPath
@@ -27,7 +26,7 @@ export const selectInteriorLabelComponents = createStructuredSelector({
   focusPath: selectFocusPathAsArray,
   isEndpointsReady: selectIsEndpointsReady,
   endpoints: selectEndpointsWithTestCoverage,
-  releaseFromRoute: selectActiveRoute
+  releaseFromRoute: selectRelease
 }
                                                                      )
 // TODO make this muuuuch better.  The nesting is gross, but it is because
@@ -41,13 +40,15 @@ export const selectInteriorLabel = createSelector(
         return endpoints[releaseFromRoute]['coverage']
       } else {
         var path = (without(focusPath, 'root'))
-        var endpoint = get(endpoints[releaseFromRoute], path)
-        if (endpoint.coverage) {
-          return endpoint.coverage
+        var testedEndpoint = get(endpoints[releaseFromRoute], path)
+        if (testedEndpoint && testedEndpoint.coverage) {
+          return testedEndpoint.coverage
+        } else if (!testedEndpoint) {
+          return {description: 'untested', test_tags: []}
         } else {
-          var method = Object.keys(endpoint)[0]
-          return {description: endpoint[method]['description'],
-                  test_tags: endpoint[method]['test_tags']
+          var method = Object.keys(testedEndpoint)[0]
+          return {description: testedEndpoint[method]['description'],
+                  test_tags: testedEndpoint[method]['test_tags']
                  }
         }
       }
@@ -69,36 +70,59 @@ export const selectSunburstByRelease = createSelector(
               return {
                 name: category,
                 color: colors[`category.${category}`],
-                children: values(reduce(
-                  endpointsByNameAndMethod,
-                  (sofar, endpointsByMethod, name) => {
-                    forEach(endpointsByMethod, (endpoint, method) => {
-                      var { isTested } = endpoint
-                      var path = isTested ? `${name}/${method}` : 'untested'
-                      var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
-                      sofar[path] = {
-                        name: name,
-                        size,
-                        color: isTested ? colors[`category.${category}`] : '#f4f4f4'
-                      }
-                    })
-                    return sofar
-                  },
-                  {}
-                ))
+                children: endpointsSortedByConformance(endpointsByNameAndMethod)
               }
             })
           }
         })
       }
     })
-
     return {
       dataByRelease
     }
   }
 )
 
+function endpointsSortedByConformance (endpointsByNameAndMethod) {
+  var endpoints = createEndpointAndMethod(endpointsByNameAndMethod)
+  var sortedEndpoints = sortBy(endpoints, [
+    (endpoint) => endpoint.name === 'Untested',
+    (endpoint) => endpoint.isConformance !== 'conformance'])
+  return sortedEndpoints
+}
+
+function createEndpointAndMethod(endpointsByNameAndMethod) {
+  return values(reduce(
+    endpointsByNameAndMethod,
+    (sofar, endpointsByMethod, name) => {
+      sofar = fillOutEndpointInfo(sofar, endpointsByMethod, name)
+      return sofar
+    },
+    {}
+  ))
+}
+
+function fillOutEndpointInfo (sofar, endpointsByMethod, name) {
+  forEach(endpointsByMethod, (endpoint, method) => {
+    var { isTested } = endpoint
+    var isConformance = checkForConformance(endpoint.test_tags)
+    var path = isTested ? `${name}/${method}` : 'Untested'
+    var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
+    sofar[path] = {
+      name: isTested ? name : 'Untested',
+      isConformance: isConformance ? "conformance" : "not conformance",
+      size,
+      color: isTested ? calculateColor(endpoint) : '#f4f4f4'
+    }
+  })
+  return sofar
+}
+
+
+function checkForConformance (test_tags) {
+  var tagsAsStrings = test_tags.map(tag => tag.replace(/\[|]/g,''))
+  return includes(tagsAsStrings, 'Conformance')
+}
 
 export const selectSunburstByReleaseWithSortedLevel = createSelector(
   selectSunburstByRelease,
@@ -160,4 +184,16 @@ var more_colors = [
 for (var catidx = 0; catidx < categories.length; catidx++) {
   var category = categories[catidx]
   colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
+}
+
+function calculateColor (endpoint) {
+  var partOfConformance = checkForConformance(endpoint.test_tags)
+  if (endpoint.isTested && partOfConformance)  {
+    return colors[`category.${endpoint.category}`]
+  }  else if (endpoint.isTested) {
+    var fadedColor = colors[`category.${endpoint.category}`] + '80'
+    return fadedColor
+  } else {
+    return '#f4f4f4'
+  }
 }

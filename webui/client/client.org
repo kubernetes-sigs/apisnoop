@@ -142,7 +142,6 @@ npm install reselect
     const { pathname } = store.getState().routing
     if (window.location.pathname !== pathname) {
       window.history.pushState(null, '', pathname)
-     document.body.scrollTop = 0
     }
   })
 
@@ -472,8 +471,8 @@ npm install reselect
                <div id='sunburst'>
                <h2>{release}</h2>
                {focusPathAsString.length > 0   ?
-                <div className='h3 pa1'>{focusPathAsString}</div> :
-                <div className='h2 pa1'>'Hover over Chart for Path'</div>
+                <div className='h2 pa1 mb1'>{focusPathAsString}</div> :
+                <div className='h2 pa1 mb1'>'Hover over Chart for Path'</div>
                }
              {chartLocked ? <strong>Click to Unlock</strong> : <strong>Click to Lock</strong>}
 
@@ -1348,34 +1347,32 @@ npm install reselect
        import MainPage from '../pages/main-page'
 
        const initialState = {
-         pathname: typeof window.location !== 'undefined' ? window.location.pathname : '/',
-         release: typeof window.location !== 'undefined' ? window.location.pathname.replace('/','') : 'Master',
+         pathname: typeof window.location.pathname !== 'undefined' ? window.location.pathname : '/',
+         release: releaseSet() ? window.location.pathname.replace('/','') : 'master',
          endpoint: '',
-         page: MainPage,
-         activeRoute: 'master',
-         routeChange: false
+         page: MainPage
        }
-       export default (state = initialState, action = {}) => {
-         if (action.type === 'ACTIVE_ROUTE_CHANGED') {
-           return {
-             ...state,
-             activeRoute: action.payload,
-             routeChange: true
-           }
-         }
 
+
+       export default   (state = initialState, action = {}) => {
          if (action.type === 'UPDATE_URL') {
            var path = action.payload
            return {
              ...state,
              pathname: path.url,
-             release: path.params.release ? path.params.release : '',
+             release: path.params.release ? path.params.release : 'master',
              endpoint: path.params.endpoint ? path.params.endpoint : '',
              page: path.page
            }
          }
          return state;
        }
+
+       function releaseSet () {
+         return window.location.pathname !== undefined && window.location.pathname !== '/'
+       }
+
+
      #+END_SRC
 ** Selectors
 *** index.js
@@ -1450,8 +1447,8 @@ npm install reselect
          (endpointsById) => {
            var endpointsByRelease = groupBy(endpointsById, 'release')
            return mapValues(endpointsByRelease, endpointsInRelease => {
-             var coverage = calculateCoverage(endpointsInRelease)
              var endpointsByLevel = groupBy(endpointsInRelease, 'level')
+             var coverage = calculateCoverage(endpointsInRelease)
              return Object.assign({},{coverage}, mapValues(endpointsByLevel, endpointsInLevel => {
                var endpointsByCategory = groupBy(endpointsInLevel, 'category')
                var coverage = calculateCoverage(endpointsInLevel)
@@ -1461,7 +1458,7 @@ npm install reselect
                  return Object.assign({}, {coverage}, mapValues(endpointsByName, endpointsInName => {
                    var methods = keyBy(endpointsInName, 'method')
                    return mapValues(methods, method => {
-                     var coverage = method.test_tags
+                     var coverage = method.test_tags ? method.test_tags : [] // display empty array if untested, so chart don't break.
                      return Object.assign({}, {coverage}, method)
                    })
                  }))
@@ -1502,7 +1499,7 @@ npm install reselect
        export const selectActiveTestRaw = (state) => {
          return {
            name: state.tests.activeTest,
-           route: state.routing.activeRoute,
+           route: state.routing.release,
          }
        }
 
@@ -1550,14 +1547,13 @@ npm install reselect
      #+NAME: Chart Selector
      #+BEGIN_SRC js
        import { createSelector, createStructuredSelector } from 'reselect'
-
-       import { forEach, get, map, mapValues, orderBy, without, reduce, values } from 'lodash'
+       import { forEach, get, includes, map, mapValues, orderBy, sortBy, reduce, values, without } from 'lodash'
 
        import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
                 selectEndpointsWithTestCoverage,
                 selectIsEndpointsReady } from './endpoints'
+       import { selectRelease } from './routing'
 
-       import { selectActiveRoute } from './routing'
 
        export function selectFocusPathAsArray (state) {
          return state.charts.focusedKeyPath
@@ -1578,7 +1574,7 @@ npm install reselect
          focusPath: selectFocusPathAsArray,
          isEndpointsReady: selectIsEndpointsReady,
          endpoints: selectEndpointsWithTestCoverage,
-         releaseFromRoute: selectActiveRoute
+         releaseFromRoute: selectRelease
        }
                                                                             )
        // TODO make this muuuuch better.  The nesting is gross, but it is because
@@ -1592,13 +1588,15 @@ npm install reselect
                return endpoints[releaseFromRoute]['coverage']
              } else {
                var path = (without(focusPath, 'root'))
-               var endpoint = get(endpoints[releaseFromRoute], path)
-               if (endpoint.coverage) {
-                 return endpoint.coverage
+               var testedEndpoint = get(endpoints[releaseFromRoute], path)
+               if (testedEndpoint && testedEndpoint.coverage) {
+                 return testedEndpoint.coverage
+               } else if (!testedEndpoint) {
+                 return {description: 'untested', test_tags: []}
                } else {
-                 var method = Object.keys(endpoint)[0]
-                 return {description: endpoint[method]['description'],
-                         test_tags: endpoint[method]['test_tags']
+                 var method = Object.keys(testedEndpoint)[0]
+                 return {description: testedEndpoint[method]['description'],
+                         test_tags: testedEndpoint[method]['test_tags']
                         }
                }
              }
@@ -1620,36 +1618,59 @@ npm install reselect
                      return {
                        name: category,
                        color: colors[`category.${category}`],
-                       children: values(reduce(
-                         endpointsByNameAndMethod,
-                         (sofar, endpointsByMethod, name) => {
-                           forEach(endpointsByMethod, (endpoint, method) => {
-                             var { isTested } = endpoint
-                             var path = isTested ? `${name}/${method}` : 'untested'
-                             var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
-                             sofar[path] = {
-                               name: name,
-                               size,
-                               color: isTested ? colors[`category.${category}`] : '#f4f4f4'
-                             }
-                           })
-                           return sofar
-                         },
-                         {}
-                       ))
+                       children: endpointsSortedByConformance(endpointsByNameAndMethod)
                      }
                    })
                  }
                })
              }
            })
-
            return {
              dataByRelease
            }
          }
        )
 
+       function endpointsSortedByConformance (endpointsByNameAndMethod) {
+         var endpoints = createEndpointAndMethod(endpointsByNameAndMethod)
+         var sortedEndpoints = sortBy(endpoints, [
+           (endpoint) => endpoint.name === 'Untested',
+           (endpoint) => endpoint.isConformance !== 'conformance'])
+         return sortedEndpoints
+       }
+
+       function createEndpointAndMethod(endpointsByNameAndMethod) {
+         return values(reduce(
+           endpointsByNameAndMethod,
+           (sofar, endpointsByMethod, name) => {
+             sofar = fillOutEndpointInfo(sofar, endpointsByMethod, name)
+             return sofar
+           },
+           {}
+         ))
+       }
+
+       function fillOutEndpointInfo (sofar, endpointsByMethod, name) {
+         forEach(endpointsByMethod, (endpoint, method) => {
+           var { isTested } = endpoint
+           var isConformance = checkForConformance(endpoint.test_tags)
+           var path = isTested ? `${name}/${method}` : 'Untested'
+           var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
+           sofar[path] = {
+             name: isTested ? name : 'Untested',
+             isConformance: isConformance ? "conformance" : "not conformance",
+             size,
+             color: isTested ? calculateColor(endpoint) : '#f4f4f4'
+           }
+         })
+         return sofar
+       }
+
+
+       function checkForConformance (test_tags) {
+         var tagsAsStrings = test_tags.map(tag => tag.replace(/\[|]/g,''))
+         return includes(tagsAsStrings, 'Conformance')
+       }
 
        export const selectSunburstByReleaseWithSortedLevel = createSelector(
          selectSunburstByRelease,
@@ -1712,12 +1733,19 @@ npm install reselect
          var category = categories[catidx]
          colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
        }
+
+       function calculateColor (endpoint) {
+         var partOfConformance = checkForConformance(endpoint.test_tags)
+         if (endpoint.isTested && partOfConformance)  {
+           return colors[`category.${endpoint.category}`]
+         }  else if (endpoint.isTested) {
+           var fadedColor = colors[`category.${endpoint.category}`] + '80'
+           return fadedColor
+         } else {
+           return '#f4f4f4'
+         }
+       }
      #+END_SRC
-
-     #+RESULTS: Chart Selector
-
- Endpoints are unique by Release, Name, and Method.
-
 *** Routing Selector
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./src/selectors/routing.js
@@ -1988,25 +2016,9 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
 # org-confirm-babel-evaluate: nil
 # End:
 * Tasks
-** TODO [9/13] Tasks For Refactoring our Data and understanding of it.
-   - [X]  Convert JSON dump to New Flat Database
-   - [X] Hookup react/redux to query endpoints.
-   - [X] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
-   - [X] Practice Converting flat database to Sunburst Data structure.
-   - [X] Sort Level so it is Stable, Beta, Alpha
-   - [X] pass down chart selector data to main page props, pass down focused key path to render label within sunburst
-   - [X] Add Percentage Calculation to center label.
-     - I think I would want to do a data transformation, that counts the isTested for each of the child nodes, and piles that into an equation in the parent node.
-     - How much of the existing work can I use with this?
-     - STRATEGY: we've added the coverage to our endpoints information.  So we could now have a 'coverage' selector that listens to the full path array and finds the coverage information in the endpoints for it.  We don't need to do any extra action, we just need to work off our existing stuff.
-     - If nothing is set, then we are going to want to know the coverage by release.  So the first step, then, would be: 'Without Focus Path selectInteriorLabel = endpoints[release][coverage]' with focus path it would be endpoints[release][fp1][fp2][coverage]...i guess based on the full apth length (it could be up to 3, level, category, endpoint).
-   - [ ] Fix routing so activeRoute isn't hard-coded.
-   - [ ] re-hook up routing to route by release name
-   - [ ] Change endpoint path so it displays UNTESTED for the whole untested block (currently displaying random endpoint name).
-   - [X] Query endpoints by Release.
-   - [X] remove dependency on releaseStore reducer.
-   - [ ] add queryString to our arsenal, so you can do a direct url to an endpoint
-** TODO [3/12] Future Tasks
+** TODO Visually distinguish tested endpoints tagged [Conformance]
+   [[https://github.com/cncf/apisnoop/issues/46][Github Issue]].  So we can do a bit of regex on the endpoint...though I thionk each one has a test tag and those would include conformance...right?
+** TODO [3/15] Future Tasks
    - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
    - [X] Hover over Part of Sunburst shows relevant rays highlighted.
    - [X] Hover over Sunburst, see testing percentage update in center.
@@ -2019,6 +2031,27 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
    - [ ] Improve performance of page load, by only calling a test when needed.
    - [ ] Refactor tests so the entire object isn't being loaded in the client.  That feels way too heavy, and instead you should only load up the testInfo (all the api endpoints being accessed) when there is an active_test, and you display that only on that active test.
    - [ ] When you click on an endpoint, it adds to the URL so that you can share the URL and have be right on the hovered sunburst with the filtered tests and such.
+   - [ ] add queryString to our arsenal, so you can do a direct url to an endpoint
+   - [ ] Change endpoint path so it displays UNTESTED for the whole untested block (currently displaying random endpoint name).
+   - [ ] Add logic to API to filter endpoints to only those touched by e2e. We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
+
+** DONE [11/11] Tasks For Refactoring our Data and understanding of it.
+   CLOSED: [2018-11-07 Wed 21:01]
+   - [X]  Convert JSON dump to New Flat Database
+   - [X] Hookup react/redux to query endpoints.
+   - [X] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
+   - [X] Practice Converting flat database to Sunburst Data structure.
+   - [X] Sort Level so it is Stable, Beta, Alpha
+   - [X] pass down chart selector data to main page props, pass down focused key path to render label within sunburst
+   - [X] Add Percentage Calculation to center label.
+     - I think I would want to do a data transformation, that counts the isTested for each of the child nodes, and piles that into an equation in the parent node.
+     - How much of the existing work can I use with this?
+     - STRATEGY: we've added the coverage to our endpoints information.  So we could now have a 'coverage' selector that listens to the full path array and finds the coverage information in the endpoints for it.  We don't need to do any extra action, we just need to work off our existing stuff.
+     - If nothing is set, then we are going to want to know the coverage by release.  So the first step, then, would be: 'Without Focus Path selectInteriorLabel = endpoints[release][coverage]' with focus path it would be endpoints[release][fp1][fp2][coverage]...i guess based on the full apth length (it could be up to 3, level, category, endpoint).
+   - [X] Fix routing so activeRoute isn't hard-coded.
+   - [X] re-hook up routing to route by release name
+   - [X] Query endpoints by Release.
+   - [X] remove dependency on releaseStore reducer.
 ** DONE [10/10] Achievements To Unlock to match and surpass old webui
    CLOSED: [2018-11-06 Tue 13:49]
    - [X] Mikey has a functional understanding of what we're trying to do.
@@ -2035,9 +2068,6 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
      - [X] Devise strategy: when you click on a node you have the focus path as an array, which would end with an endpoint (if we are on an endpoint, otherwise it'd show the category or level). We have tests who each have an endpoint listed within them.  Maybe we query our db at that point for tests?endpointsIncludeEndpointName, or something similar to that.  Then, we change the logic beneath to only show tests once an endpoint is clicked, and it's based on the tests we retrieve...
      - [X] Doublecheck our releases for tests, to see how it be structured:  it goes release.data.tests.count.endpoints.  These endpoints //look// to correspond with our endpoint names pretty nicely.  But I think this means we'll have to separate out the tests into their own endoint too. It'd be best if it was just called 'tests', but we already ahve that for test_sequence.  how hard is it to switch that over?
    - [X] When you view the endpoint sequence, it is single line with a timestamp of HH:MM:SS:ss and then the rest of the info.
-** TODO Add logic to API to filter endpoints to only those touched by e2e.
-   We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
-
 ** DONE Change front-end logic so it only pulls data from the necessary sunburst.
    CLOSED: [2018-11-04 Sun 22:29]
    Right now the we have an endpoint called /Releases, organized by Build name.  These correspond to the sunbursts.  We are pulling in the entire api, we should only do buildname.data.sunburst

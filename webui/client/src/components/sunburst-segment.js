@@ -22,8 +22,8 @@ class SunburstSegment extends Component {
         <div id='sunburst'>
         <h2>{release}</h2>
         {focusPathAsString.length > 0   ?
-         <div className='h3 pa1'>{focusPathAsString}</div> :
-         <div className='h2 pa1'>'Hover over Chart for Path'</div>
+         <div className='h2 pa1 mb1'>{focusPathAsString}</div> :
+         <div className='h2 pa1 mb1'>'Hover over Chart for Path'</div>
         }
       {chartLocked ? <strong>Click to Unlock</strong> : <strong>Click to Lock</strong>}
 

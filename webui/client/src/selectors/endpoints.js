@@ -50,8 +50,8 @@ export const selectEndpointsWithTestCoverage = createSelector(
   (endpointsById) => {
     var endpointsByRelease = groupBy(endpointsById, 'release')
     return mapValues(endpointsByRelease, endpointsInRelease => {
-      var coverage = calculateCoverage(endpointsInRelease)
       var endpointsByLevel = groupBy(endpointsInRelease, 'level')
+      var coverage = calculateCoverage(endpointsInRelease)
       return Object.assign({},{coverage}, mapValues(endpointsByLevel, endpointsInLevel => {
         var endpointsByCategory = groupBy(endpointsInLevel, 'category')
         var coverage = calculateCoverage(endpointsInLevel)
@@ -61,7 +61,7 @@ export const selectEndpointsWithTestCoverage = createSelector(
           return Object.assign({}, {coverage}, mapValues(endpointsByName, endpointsInName => {
             var methods = keyBy(endpointsInName, 'method')
             return mapValues(methods, method => {
-              var coverage = method.test_tags
+              var coverage = method.test_tags ? method.test_tags : [] // display empty array if untested, so chart don't break.
               return Object.assign({}, {coverage}, method)
             })
           }))
