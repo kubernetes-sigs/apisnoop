@@ -1,3 +1,5 @@
+import routeMatcher from '../routes'
+
 export function changeActiveRoute (target) {
   return {
     type: 'ACTIVE_ROUTE_CHANGED',
@@ -6,8 +8,9 @@ export function changeActiveRoute (target) {
 }
 
 export function doUpdateUrl (pathname) {
+  var pathData = routeMatcher(pathname)
   return {
     type: 'UPDATE_URL',
-    payload: pathname
+    payload: pathData
   }
 }

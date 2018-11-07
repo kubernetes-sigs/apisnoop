@@ -1,27 +1,29 @@
 import React, { Component } from 'react'
 import { connect } from 'react-redux'
-import { Route } from 'react-router-dom'
 import { createStructuredSelector } from 'reselect'
 
 
-import { selectReleaseNamesFromEndpoints, selectIsEndpointsReady } from '../selectors'
+import { selectReleaseNamesFromEndpoints, selectIsEndpointsReady, selectPage } from '../selectors'
 import { fetchEndpoints } from '../actions/endpoints'
 import { doFetchTests } from '../actions/tests'
-import { changeActiveRoute } from '../actions/routing'
 
 import Header from './header'
 import Footer from './footer'
 import ReleasesList from './releases-list.js'
-import MainPage from '../pages/main-page.js'
 
 class App extends Component {
+
   componentDidMount(){
     this.props.fetchEndpoints()
-    this.props.doFetchTests()
+    this.props.fetchTests()
   }
 
   render(){
-    const {releaseNames, endpointsReady, changeActiveRoute } = this.props
+    const {
+      Page,
+      releaseNames,
+      endpointsReady
+    } = this.props
 
     return (
       <div id='app'>
@@ -29,11 +31,8 @@ class App extends Component {
         {endpointsReady &&
          <ReleasesList
            releases={releaseNames}
-           selected='master'
-           changeActiveRoute={changeActiveRoute}
          /> }
-  <Route exact path='/' component={MainPage} />
-  <Route exact path='/:release' component={MainPage} />
+        <Page />
         <Footer />
       </div>
     )
@@ -43,8 +42,9 @@ class App extends Component {
 export default connect(
   createStructuredSelector({
     releaseNames: selectReleaseNamesFromEndpoints,
-    endpointsReady: selectIsEndpointsReady
+    endpointsReady: selectIsEndpointsReady,
+    Page: selectPage
   }),
   {fetchEndpoints,
-   doFetchTests,
-   changeActiveRoute})(App)
+   fetchTests: doFetchTests
+  })(App)

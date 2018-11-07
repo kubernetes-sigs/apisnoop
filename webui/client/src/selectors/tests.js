@@ -1,5 +1,5 @@
 import { createSelector, createStructuredSelector } from 'reselect'
-import { groupBy, keyBy, mapValues, size } from 'lodash'
+import { groupBy, keyBy, mapValues } from 'lodash'
 
 export function selectTestsById (state) {
   return state.tests.byId

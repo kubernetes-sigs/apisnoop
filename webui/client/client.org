@@ -123,7 +123,6 @@ npm install reselect
 #+BEGIN_SRC js
   import React from 'react'
   import ReactDOM from 'react-dom'
-  import { BrowserRouter } from 'react-router-dom'
   import './index.css'
 
   import {Provider} from 'react-redux'
@@ -134,17 +133,65 @@ npm install reselect
   import store from './store.js'
   import registerServiceWorker from './lib/service-workers'
 
+
+  window.addEventListener('popstate', () => {
+    store.dispatch(doUpdateUrl(window.location.pathname))
+  })
+
+  store.subscribe(() => {
+    const { pathname } = store.getState().routing
+    if (window.location.pathname !== pathname) {
+      window.history.pushState(null, '', pathname)
+     document.body.scrollTop = 0
+    }
+  })
+
   ReactDOM.render(
-      <BrowserRouter>
       <Provider store={store}>
       <App />
-      </Provider>
-      </BrowserRouter>,
+      </Provider>,
     document.getElementById('root')
   )
   registerServiceWorker()
 
 #+END_SRC
+** store.js
+   :PROPERTIES:
+   :header-args: :tangle ./src/store.js
+   :END:
+   sets up our redux store and any middleware we need to apply to it (like thunk, which we use for our api calls to the backend)
+   #+NAME: store.js
+   #+BEGIN_SRC js
+     import { createStore, applyMiddleware } from 'redux'
+     import thunk from 'redux-thunk'
+     import promise from 'redux-promise-middleware'
+     import { composeWithDevTools } from 'redux-devtools-extension'
+     import rootReducer from './reducers'
+
+     const middleware = composeWithDevTools(applyMiddleware(promise(), thunk))
+
+     export default createStore(rootReducer, middleware)
+
+   #+END_SRC
+
+   #+RESULTS: store.js
+** routes.js
+   :PROPERTIES:
+   :header-args: :noweb yes :tangle ./src/routes.js
+   :END:
+   This is to use the nice router function [[https://github.com/HenrikJoreteg/feather-route-matcher][feather route matcher]].  I am anticipating a time when we will want the release as a url that includes some additional info like user-agent and endpoint and all of that.  So I want to be able to match these easily.
+   #+NAME: routes.js
+   #+BEGIN_SRC js
+     import createMatcher from 'feather-route-matcher'
+     import MainPage from './pages/main-page'
+
+     export default createMatcher({
+       '/': MainPage,
+       '/:release': MainPage
+     })
+   #+END_SRC
+
+
 ** Our App(app.js)
    :PROPERTIES:
    :header-args: :noweb yes :tangle ./src/components/App.js
@@ -158,20 +205,20 @@ npm install reselect
     #+BEGIN_SRC js
       import React, { Component } from 'react'
       import { connect } from 'react-redux'
-      import { Route } from 'react-router-dom'
       import { createStructuredSelector } from 'reselect'
 
 
-      import { selectReleaseNamesFromEndpoints, selectIsEndpointsReady } from '../selectors'
+      import { selectReleaseNamesFromEndpoints, selectIsEndpointsReady, selectPage } from '../selectors'
       import { fetchEndpoints } from '../actions/endpoints'
       import { doFetchTests } from '../actions/tests'
-      import { changeActiveRoute } from '../actions/routing'
 
       import Header from './header'
       import Footer from './footer'
       import ReleasesList from './releases-list.js'
-      import MainPage from '../pages/main-page.js'
     #+END_SRC
+
+    #+RESULTS: Import React
+
   We'll start by bringing in React and its Component class-we inherit all the features of this class when we render our own components, which gives them all the power we may not see at first.  We also bring in connect, which will connect our react ui to the front-end's state; which lets us dynamically change what's displayed based on the data being fed it.
 
  We are doing this because we want to have navigation links for the different releases, that will show a sunburst graph per release.  We don't know what these release_names will be though, and so we'll fetch them from the db and dynamically build our navlinks from them.
@@ -190,13 +237,18 @@ npm install reselect
     #+NAME: App Layout
     #+BEGIN_SRC js
       class App extends Component {
+
         componentDidMount(){
           this.props.fetchEndpoints()
-          this.props.doFetchTests()
+          this.props.fetchTests()
         }
 
         render(){
-          const {releaseNames, endpointsReady, changeActiveRoute } = this.props
+          const {
+            Page,
+            releaseNames,
+            endpointsReady
+          } = this.props
 
           return (
             <div id='app'>
@@ -204,11 +256,8 @@ npm install reselect
               {endpointsReady &&
                <ReleasesList
                  releases={releaseNames}
-                 selected='master'
-                 changeActiveRoute={changeActiveRoute}
                /> }
-        <Route exact path='/' component={MainPage} />
-        <Route exact path='/:release' component={MainPage} />
+              <Page />
               <Footer />
             </div>
           )
@@ -218,11 +267,12 @@ npm install reselect
       export default connect(
         createStructuredSelector({
           releaseNames: selectReleaseNamesFromEndpoints,
-          endpointsReady: selectIsEndpointsReady
+          endpointsReady: selectIsEndpointsReady,
+          Page: selectPage
         }),
         {fetchEndpoints,
-         doFetchTests,
-         changeActiveRoute})(App)
+         fetchTests: doFetchTests
+        })(App)
     #+END_SRC
 
 ** Pages
@@ -241,7 +291,6 @@ npm install reselect
          import { doChooseActiveTest, doSetEndpointTests } from '../actions/tests'
 
             import {
-              selectActiveRoute,
               selectActiveTest,
               selectChartLocked,
               selectEndpointTests,
@@ -249,8 +298,8 @@ npm install reselect
               selectFocusPathAsArray,
               selectFocusPathAsString,
               selectInteriorLabel,
+              selectRelease,
               selectReleaseNamesFromEndpoints,
-              selectRouteChange,
               selectIsSunburstReady,
               selectIsTestsReady,
               selectSunburstByReleaseWithSortedLevel
@@ -262,7 +311,6 @@ npm install reselect
             class MainPage extends Component {
               render(){
                 const {
-                  activeRoute,
                   activeTest,
                   chartLocked,
                   doChooseActiveTest,
@@ -275,31 +323,27 @@ npm install reselect
                   isSunburstReady,
                   isTestsReady,
                   lockChart,
-                  routeChange,
+                  release,
                   setEndpointTests,
                   sunburstByRelease,
                   unfocusChart,
                   unlockChart
                 } = this.props
 
-                const releaseBasedOnRoute = this.props.location.pathname.replace('/','')
 
                 return (
                     <main id='main-splash' className='min-vh-100'>
                     {/* <h2>You are doing a good job.</h2> */}
                     {isSunburstReady && <SunburstSegment
-                     sunburst={{
-                       data: routeChange ? sunburstByRelease.dataByRelease[activeRoute]
-                         : sunburstByRelease.dataByRelease[releaseBasedOnRoute]
-                     }}
+                     sunburst={{data: sunburstByRelease.dataByRelease[release]}}
                      chartLocked={chartLocked}
-                     endpoints={endpoints[activeRoute]}
+                     endpoints={endpoints[release]}
                      focusChart={focusChart}
                      unfocusChart={unfocusChart}
                      lockChart={lockChart}
                      unlockChart={unlockChart}
                      setEndpointTests={setEndpointTests}
-                     release= {activeRoute}
+                     release= {release}
                      focusPath={focusPath}
                      focusPathAsString={focusPathAsString}
                      interiorLabel={interiorLabel}
@@ -320,7 +364,6 @@ npm install reselect
 
             export default connect(
               createStructuredSelector({
-                activeRoute: selectActiveRoute,
                 activeTest: selectActiveTest,
                 chartLocked: selectChartLocked,
                 endpoints: selectEndpointsWithTestCoverage,
@@ -330,8 +373,8 @@ npm install reselect
                 isSunburstReady: selectIsSunburstReady,
                 isTestsReady: selectIsTestsReady,
                 interiorLabel: selectInteriorLabel,
+                release: selectRelease,
                 releaseNames: selectReleaseNamesFromEndpoints,
-                routeChange: selectRouteChange,
                 sunburstByRelease: selectSunburstByReleaseWithSortedLevel
               }),
               {doChooseActiveTest,
@@ -429,7 +472,7 @@ npm install reselect
                <div id='sunburst'>
                <h2>{release}</h2>
                {focusPathAsString.length > 0   ?
-                <div className='h2 pa1'>{focusPathAsString}</div> :
+                <div className='h3 pa1'>{focusPathAsString}</div> :
                 <div className='h2 pa1'>'Hover over Chart for Path'</div>
                }
              {chartLocked ? <strong>Click to Unlock</strong> : <strong>Click to Lock</strong>}
@@ -671,26 +714,23 @@ npm install reselect
      #+NAME: releases-list.js
      #+BEGIN_SRC js
        import React, { Component } from 'react'
-       import { NavLink } from 'react-router-dom'
 
        class ReleasesList extends Component {
          constructor (props) {
            super(props)
            this.optionsList = this.optionsList.bind(this)
-           this.handleClick = this.handleClick.bind(this)
          }
 
          optionsList (options) {
            return options.map(option => {
              return(
-                 <NavLink
+                 <a
                    className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink"
-                   exact to={option}
+                   href={option}
                    key={`release_${option}`}
-                   onClick={this.handleClick}
                  >
                  {option}
-               </NavLink>
+               </a>
              )
            })
          }
@@ -702,10 +742,6 @@ npm install reselect
                {this.optionsList(this.props.releases)}
                </div>
            )
-         }
-
-         handleClick (e) {
-           this.props.changeActiveRoute(e.target.innerText)
          }
        }
 
@@ -1086,26 +1122,25 @@ npm install reselect
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./src/actions/routing.js
     :END:
-**** Change Active Route
-      #+NAME: changeActiveRoute
-      #+BEGIN_SRC js
-        export function changeActiveRoute (target) {
-          return {
-            type: 'ACTIVE_ROUTE_CHANGED',
-            payload: target
-          }
-        }
-      #+END_SRC
-**** Update URL
-      #+NAME: Update URL
-      #+BEGIN_SRC js
-        export function doUpdateUrl (pathname) {
-          return {
-            type: 'UPDATE_URL',
-            payload: pathname
-          }
-        }
-      #+END_SRC
+  #+NAME: Routing Actions
+  #+BEGIN_SRC js
+     import routeMatcher from '../routes'
+
+    export function changeActiveRoute (target) {
+      return {
+        type: 'ACTIVE_ROUTE_CHANGED',
+        payload: target
+      }
+    }
+
+    export function doUpdateUrl (pathname) {
+      var pathData = routeMatcher(pathname)
+      return {
+        type: 'UPDATE_URL',
+        payload: pathData
+      }
+    }
+  #+END_SRC
 ** Reducers
 *** Introduction
   - Reducers/Charts :: Help us manage how a chart is manipulated based on mouseover, click, mouseleave, and other things..
@@ -1310,13 +1345,17 @@ npm install reselect
 
      #+NAME: The Routing Reducer
      #+BEGIN_SRC js
+       import MainPage from '../pages/main-page'
+
        const initialState = {
          pathname: typeof window.location !== 'undefined' ? window.location.pathname : '/',
+         release: typeof window.location !== 'undefined' ? window.location.pathname.replace('/','') : 'Master',
+         endpoint: '',
+         page: MainPage,
          activeRoute: 'master',
          routeChange: false
        }
        export default (state = initialState, action = {}) => {
-
          if (action.type === 'ACTIVE_ROUTE_CHANGED') {
            return {
              ...state,
@@ -1326,12 +1365,15 @@ npm install reselect
          }
 
          if (action.type === 'UPDATE_URL') {
+           var path = action.payload
            return {
              ...state,
-             pathname: action.payload
+             pathname: path.url,
+             release: path.params.release ? path.params.release : '',
+             endpoint: path.params.endpoint ? path.params.endpoint : '',
+             page: path.page
            }
          }
-
          return state;
        }
      #+END_SRC
@@ -1443,7 +1485,7 @@ npm install reselect
      #+NAME: Tests Selector
      #+BEGIN_SRC js
        import { createSelector, createStructuredSelector } from 'reselect'
-       import { groupBy, keyBy, mapValues, size } from 'lodash'
+       import { groupBy, keyBy, mapValues } from 'lodash'
 
        export function selectTestsById (state) {
          return state.tests.byId
@@ -1690,12 +1732,26 @@ npm install reselect
        export function selectRouteChange (state) {
          return state.routing.routeChange
        }
+
+       export function selectPathName (state) {
+         return state.routing.pathname
+       }
+       export function selectRelease (state) {
+         return state.routing.release
+       }
+
+       export function selectPage (state) {
+         return state.routing.page
+       }
+
      #+END_SRC
 
 
  Endpoints are unique by Release, Name, and Method.
 
 * Process
+** Notes!
+   the routing by redux is mad pleasant.  We aen't doing any actual routing, we are just continually re-rendering the page based on the data being given to us by Redux.  We can continually reduce that down, so that most of the stuff we are bringing up is only through the routing of redux (like which endpoint to show and such like that).  It'd be awesome, for example, to be able to update the url when you click Share...and that makes a url for you to share and when you put that in....yes yes yes this is good!
 * Footnotes
 ** Resources
 *** d3
@@ -1932,7 +1988,7 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
 # org-confirm-babel-evaluate: nil
 # End:
 * Tasks
-** TODO [9/12] Tasks For Refactoring our Data and understanding of it.
+** TODO [9/13] Tasks For Refactoring our Data and understanding of it.
    - [X]  Convert JSON dump to New Flat Database
    - [X] Hookup react/redux to query endpoints.
    - [X] Integrate Reselect to computed data views (instead of getting data, withoutm assaging, and trying to fit it into the sunburst.)
@@ -1949,6 +2005,7 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
    - [ ] Change endpoint path so it displays UNTESTED for the whole untested block (currently displaying random endpoint name).
    - [X] Query endpoints by Release.
    - [X] remove dependency on releaseStore reducer.
+   - [ ] add queryString to our arsenal, so you can do a direct url to an endpoint
 ** TODO [3/12] Future Tasks
    - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
    - [X] Hover over Part of Sunburst shows relevant rays highlighted.
