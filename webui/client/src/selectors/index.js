@@ -1,4 +1,4 @@
 export * from './endpoints'
 export * from './charts'
-export * from './routes'
+export * from './routing'
 export * from './tests'

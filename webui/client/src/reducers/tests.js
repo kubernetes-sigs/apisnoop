@@ -3,6 +3,7 @@ const { keyBy } = require('lodash')
 const initialState = {
   activeTest: {},
   byId: {},
+  endpointTests: [],
   errors: {},
   isLoading: false,
   hasLoaded: false
@@ -27,16 +28,30 @@ export default (state = initialState, action = {}) => {
       hasLoaded: true
     }
   }
+  case 'ENDPOINT_TESTS_SET': {
+    return {
+      ...state,
+      endpointTests: action.payload
+    }
+  }
   case 'NEW_ACTIVE_TEST_CHOSEN': {
     return {
       ...state,
       activeTest: action.payload
     }
   }
+  case 'CHART_UNLOCKED': {
+    return {
+      ...state,
+      activeTest: {},
+      endpointTests: []
+    }
+  }
   case 'ACTIVE_ROUTE_CHANGED': {
     return {
       ...state,
-      activeTest: {}
+      activeTest: {},
+      endpointTests: []
     }
   }
   default:

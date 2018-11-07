@@ -1,6 +1,6 @@
 import React from 'react'
 import { Sunburst, LabelSeries } from 'react-vis'
-import { get, includes } from 'lodash'
+import { forEach, get, includes, uniq, without } from 'lodash'
 
 const LABEL_STYLE = {
   PERCENTAGE: {
@@ -25,10 +25,12 @@ export default function SunburstChart (props) {
 
   const {
     chartLocked,
+    endpoints,
     focusChart,
     focusPath,
     interiorLabel,
     lockChart,
+    setEndpointTests,
     sunburst,
     unfocusChart,
     unlockChart
@@ -63,7 +65,7 @@ export default function SunburstChart (props) {
      ]}
      />}
     </Sunburst>
-    </div>
+      </div>
   )
 
   function determineColor (node) {
@@ -89,10 +91,14 @@ export default function SunburstChart (props) {
     }
   }
 
-  function handleClick (node) {
+  function handleClick () {
     if (chartLocked){
       unlockChart()
-    } else if (!chartLocked) {
+    } else if (!chartLocked && focusPath.length > 3) {
+      var endpointTests = getEndpointTests(focusPath)
+      setEndpointTests(endpointTests)
+      lockChart()
+    } else {
       lockChart()
     }
   }
@@ -104,5 +110,17 @@ export default function SunburstChart (props) {
     var nodeKey = get(node, 'data.name') || get(node, 'name')
     var parentKeyPath = getKeyPath(node.parent)
     return [...parentKeyPath, nodeKey]
+  }
+
+  function getEndpointTests (focusPath) {
+    var endpointTests = []
+    var pathSansRoot = without(focusPath, 'root')
+    var lockedEndpoint = get(endpoints, pathSansRoot)
+    forEach(lockedEndpoint, (method) => {
+      for (var test of method.tests) {
+        endpointTests.push(test)
+      }
+    })
+    return uniq(endpointTests)
   }
 }

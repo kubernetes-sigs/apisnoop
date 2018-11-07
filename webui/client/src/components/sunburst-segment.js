@@ -12,6 +12,7 @@ class SunburstSegment extends Component {
            lockChart,
            interiorLabel,
            release,
+           setEndpointTests,
            sunburst,
            unfocusChart,
            unlockChart} = this.props
@@ -21,7 +22,7 @@ class SunburstSegment extends Component {
         <div id='sunburst'>
         <h2>{release}</h2>
         {focusPathAsString.length > 0   ?
-         <div className='h2 pa1'>{focusPathAsString}</div> :
+         <div className='h3 pa1'>{focusPathAsString}</div> :
          <div className='h2 pa1'>'Hover over Chart for Path'</div>
         }
       {chartLocked ? <strong>Click to Unlock</strong> : <strong>Click to Lock</strong>}
@@ -35,6 +36,7 @@ class SunburstSegment extends Component {
           lockChart={lockChart}
           focusPathAsString={focusPathAsString}
           interiorLabel={interiorLabel}
+          setEndpointTests={setEndpointTests}
           unfocusChart={unfocusChart}
           unlockChart={unlockChart}
         />
@@ -52,7 +54,7 @@ class SunburstSegment extends Component {
     function displayTestTags (testTags) {
       return testTags.map(testTag => {
         return (<li key={testTag} className='dib mr1 mb1' >
-                <p className='f6 f5-ns b db pa2 mt0 mb0 link dim dark-gray ba b--black-20'>
+                <p className='f7 f6-ns b db pa0'>
                 {testTag}
                 </p>
                 </li>)

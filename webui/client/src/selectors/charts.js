@@ -6,7 +6,7 @@ import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
          selectEndpointsWithTestCoverage,
          selectIsEndpointsReady } from './endpoints'
 
-import { selectActiveRoute } from './routes'
+import { selectActiveRoute } from './routing'
 
 export function selectFocusPathAsArray (state) {
   return state.charts.focusedKeyPath
