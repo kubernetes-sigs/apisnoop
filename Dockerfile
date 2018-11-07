@@ -35,8 +35,8 @@ COPY dev/audit-log-review audit
 COPY webui webui
 COPY index.ipynb index.ipynb
 COPY sources.yaml sources.yaml
-COPY downloadAudits.py downloadAudits.py
-RUN  python downloadAudits.py sources.yaml ./data
+COPY downloadArtifacts.py downloadArtifacts.py
+RUN  python downloadArtifacts.py sources.yaml ./data
 RUN chown -R $NB_USER.$NB_USER audit webui *.py *pynb data
 USER ${NB_USER}
 COPY processAudits /
