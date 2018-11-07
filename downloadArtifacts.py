@@ -108,9 +108,10 @@ def main(sources,dest):
             print("Still downloading: " + download)
         print("Downloaded: " + download)
         # import ipdb; ipdb.set_trace(context=60)
-    for gzfile in glob.glob('./data/*/*/*audit*gz'):
+    for gzfile in glob.glob(dest + '/*/*/*audit*gz'):
         if os.path.isfile(gzfile + '.processed'):
             next
+        print("Processing: " + gzfile)
         jobdir = os.path.dirname(gzfile)
         audit_log = jobdir + '/' + 'kube-apiserver-audit.log'
         audit_log_bak = audit_log + '.bak'

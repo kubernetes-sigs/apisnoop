@@ -41,5 +41,6 @@ RUN  pip install --no-cache -r requirements.txt
 RUN  python downloadArtifacts.py sources.yaml ./data
 RUN  chown -R $NB_USER.$NB_USER audit webui *.py *pynb data
 USER ${NB_USER}
-COPY processAudits /
-RUN  /processAudits
+COPY processAudits.py processAudits.py
+RUN  python processAudits.py > processAudits.sh
+RUN  bash processAudits.sh
