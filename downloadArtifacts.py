@@ -1,7 +1,9 @@
 import yaml
 import json
-from urllib import urlopen, urlretrieve
-#from urllib.request import urlopen, urlretrieve
+try:
+    from urllib.request import urlopen, urlretrieve
+except Exception as e:
+    from urllib import urlopen, urlretrieve
 #import datetime
 import os
 import re
