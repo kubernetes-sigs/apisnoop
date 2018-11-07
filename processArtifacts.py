@@ -45,7 +45,7 @@ def main(folder):
         outfile = folder + '/processed-audits/' + type + '_' + \
             semver + '_' + str(ts.date()) + ".json"
         print("(python", "audit/logreview.py", "process-audit", auditfile, branch, outfile, ")&")
-    print "wait $(jobs -p)"
+    print("wait $(jobs -p)")
 
 
 if __name__ == "__main__":
