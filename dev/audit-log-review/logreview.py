@@ -21,8 +21,13 @@ from lib.parsers import *
 
 def create_folders():
     for name in ['cache', 'output']:
-        if not os.path.exists(name):
-            os.makedirs(name)
+        try:
+            if not os.path.exists(name):
+                # we get a race condition here
+                os.makedirs(name)
+        except Exception as e:
+            pass
+
 
 def generate_endpoints_tree(openapi_spec):
     # Base tests structure, without audit / test loaded
