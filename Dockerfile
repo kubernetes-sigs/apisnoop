@@ -32,8 +32,8 @@ RUN echo "alias emc='emacsclient -t '" > /etc/profile.d/emc-alias.sh
 RUN curl -L https://github.com/tmate-io/tmate/releases/download/2.2.1/tmate-2.2.1-static-linux-amd64.tar.gz \
   | tar  -f - -C /usr/local/bin -xvz --strip-components=1
 COPY dev/audit-log-review audit
-COPY downloadAudits /
-RUN /downloadAudits
+COPY downloadAudits.py
+RUN  python downloadAudits.py
 COPY webui webui
 COPY index.ipynb index.ipynb
 RUN chown -R $NB_USER.$NB_USER audit webui *pynb data
