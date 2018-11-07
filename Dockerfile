@@ -36,8 +36,10 @@ COPY webui webui
 COPY index.ipynb index.ipynb
 COPY sources.yaml sources.yaml
 COPY downloadArtifacts.py downloadArtifacts.py
+COPY requirements.txt requirements.txt
+RUN  pip install --no-cache -r requirements.txt
 RUN  python downloadArtifacts.py sources.yaml ./data
-RUN chown -R $NB_USER.$NB_USER audit webui *.py *pynb data
+RUN  chown -R $NB_USER.$NB_USER audit webui *.py *pynb data
 USER ${NB_USER}
 COPY processAudits /
-RUN /processAudits
+RUN  /processAudits
