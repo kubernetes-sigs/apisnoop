@@ -1,6 +1,8 @@
 import { createSelector, createStructuredSelector } from 'reselect'
 import { forEach, get, includes, map, mapValues, orderBy, sortBy, reduce, values, without } from 'lodash'
 
+import { fadeColor } from '../lib/utils'
+
 import { selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod,
          selectEndpointsWithTestCoverage,
          selectIsEndpointsReady } from './endpoints'
@@ -95,8 +97,10 @@ function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod)
 function endpointsSortedByConformance (endpointsByNameAndMethod) {
   var endpoints = createEndpointAndMethod(endpointsByNameAndMethod)
   var sortedEndpoints = sortBy(endpoints, [
-    (endpoint) => endpoint.name === 'Untested',
-    (endpoint) => endpoint.isConformance !== 'conformance'])
+    (endpoint) => endpoint.tested === 'untested',
+    (endpoint) => endpoint.isConformance !== 'conformance',
+    (endpoint) => endpoint.testTagCount
+  ])
   return sortedEndpoints
 }
 
@@ -116,13 +120,15 @@ function fillOutMethodInfo (sofar, endpointsByMethod, name) {
   forEach(endpointsByMethod, (endpoint, method) => {
     var { isTested } = endpoint
     var isConformance = checkForConformance(endpoint.test_tags)
-    var path = isTested ? `${name}/${method}` : 'Untested'
+    var path = `${name}/${method}`
     var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
     sofar[path] = {
-      name: isTested ? name : 'Untested',
+      name,
+      testTagCount: endpoint.test_tags.length,
+      tested: isTested ? 'tested' : 'untested',
       isConformance: isConformance ? "conformance" : "not conformance",
       size,
-      color: isTested ? calculateColor(endpoint) : '#f4f4f4',
+      color: isTested ? calculateColor(endpoint, isConformance) : 'rgba(244,244,244, 1)',
     }
   })
   return sofar
@@ -151,10 +157,10 @@ export const selectSunburstByReleaseWithSortedLevel = createSelector(
 export const selectIsSunburstReady = selectIsEndpointsReady
 
 var colors = {
-  'alpha': '#e6194b',
-  'beta': '#0082c8',
-  'stable': '#3cb44b',
-  'unused': '#ffffff'
+  'alpha': 'rgba(230, 25, 75, 1)',
+  'beta': 'rgba(0, 130, 200, 1)',
+  'stable': 'rgba(60, 180, 75, 1)',
+  'unused': 'rgba(255, 255, 255, 1)'
 }
 
 var categories = [
@@ -178,27 +184,35 @@ var categories = [
   "scheduling",
   "settings",
   "storage",
-  "version"
+  "version",
+  "auditregistration",
+  "coordination"
 ]
 
 var more_colors = [
-  "#b71c1c", "#880E4F", "#4A148C", "#311B92", "#1A237E", "#0D47A1",
-  "#01579B", "#006064", "#004D40", "#1B5E20", "#33691E", "#827717",
-  "#F57F17", "#FF6F00", "#E65100", "#BF360C", "#f44336", "#E91E63",
-  "#9C27B0", "#673AB7", "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4",
-  "#009688", "#4CAF50", "#8BC34A", "#CDDC39", "#FFEB3B", "#FFC107",
-  "#FF9800", "#FF5722"
+  'rgba(183, 28, 28, 1)', 'rgba(136, 14, 79, 1)', 'rgba(74, 20, 140, 1)', 'rgba(49, 27, 146, 1)', 'rgba(26, 35, 126, 1)', 'rgba(13, 71, 161, 1)',
+  'rgba(1, 87, 155, 1)', 'rgba(0, 96, 100, 1)', 'rgba(0, 77, 64, 1)', 'rgba(27, 94, 32, 1)', 'rgba(51, 105, 30, 1)', 'rgba(130, 119, 23, 1)',
+  'rgba(245, 127, 23, 1)', 'rgba(255, 111, 0, 1)', 'rgba(230, 81, 0, 1)', 'rgba(191, 54, 12, 1)', 'rgba(244, 67, 54, 1)', 'rgba(233, 30, 99, 1)',
+  'rgba(156, 39, 176, 1)', 'rgba(103, 58, 183, 1)', 'rgba(63, 81, 181, 1)', 'rgba(33, 150, 243, 1)', 'rgba(3, 169, 244, 1)', 'rgba(0, 188, 212, 1)',
+  'rgba(0, 150, 136, 1)', 'rgba(76, 175, 80, 1)', 'rgba(139, 195, 74, 1)', 'rgba(205, 220, 57, 1)', 'rgba(255, 235, 59, 1)', 'rgba(255, 193, 7, 1)',
+  'rgba(255, 152, 0, 1)', 'rgba(255, 87, 34, 1)'
 ]
+
+//   var more_colors = ["#b71c1c", "#880E4F", "#4A148C", "#311B92", "#1A237E", "#0D47A1", "#01579B", "#006064", "#004D40", "#1B5E20", "#33691E", "#827717", "#F57F17", "#FF6F00", "#E65100", "#BF360C", "#f44336", "#E91E63", "#9C27B0", "#673AB7", "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4", "#009688", "#4CAF50", "#8BC34A", "#CDDC39", "#FFEB3B", "#FFC107", "#FF9800", "#FF5722"]
 
 for (var catidx = 0; catidx < categories.length; catidx++) {
   var category = categories[catidx]
   colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
 }
 
-function calculateColor (endpoint) {
-  if (endpoint.isTested)  {
+function calculateColor (endpoint, isConformance) {
+  if (endpoint.isTested && isConformance)  {
     return colors[`category.${endpoint.category}`]
+  } else  if( endpoint.isTested && !isConformance) {
+    var color = colors[`category.${endpoint.category}`]
+    var fadedColor = fadeColor(color, '0.2')
+    return fadedColor
   } else {
-    return '#f4f4f4'
+    return 'rgba(244, 244, 244, 1)'
   }
 }

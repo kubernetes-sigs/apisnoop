@@ -47,7 +47,7 @@ import { doChooseActiveTest, doSetEndpointTests } from '../actions/tests'
 
 
        return (
-           <main id='main-splash' className='min-vh-100'>
+           <main id='main-splash' className='min-vh-80'>
            {/* <h2>You are doing a good job.</h2> */}
            {isSunburstReady && <SunburstSegment
             sunburst={{data: sunburstByRelease.dataByRelease[release]}}
