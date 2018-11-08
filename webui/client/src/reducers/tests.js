@@ -40,6 +40,12 @@ export default (state = initialState, action = {}) => {
       activeTest: action.payload
     }
   }
+  case 'ACTIVE_TEST_CLOSED': {
+    return {
+      ...state,
+      activeTest: {}
+    }
+  }
   case 'CHART_UNLOCKED': {
     return {
       ...state,

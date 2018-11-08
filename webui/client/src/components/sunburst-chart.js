@@ -77,7 +77,8 @@ export default function SunburstChart (props) {
        return node.color = 'rgba(255,255,255,0.1)'
       } else if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
         node.checked = true
-        return node.color = node.color
+        var brightColor = fadeColor(node.color, '1')
+        return node.color = brightColor
        // return node.color = 'rgba(255,218,185,1)'
       } else {
         var fadedColor = fadeColor(node.color, '0.1')
@@ -107,8 +108,8 @@ export default function SunburstChart (props) {
     if (chartLocked){
       unlockChart()
     } else if (!chartLocked && focusPath.length > 3) {
-      var endpointTests = getEndpointTests(focusPath)
-      setEndpointTests(endpointTests)
+       var endpointTests = getEndpointTests(focusPath)
+       setEndpointTests(endpointTests)
       lockChart()
     } else {
       lockChart()
