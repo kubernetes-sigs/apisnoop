@@ -29,10 +29,18 @@ class App extends Component {
       <div id='app'>
         <Header />
         {endpointsReady &&
+         <div>
          <ReleasesList
            releases={releaseNames}
-         /> }
+         />
         <Page />
+        </div>
+        }
+        {!endpointsReady &&
+        <div className='min-vh-80'>
+        <h3>Loading...</h3>
+        </div>
+        }
         <Footer />
       </div>
     )
