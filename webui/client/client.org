@@ -526,6 +526,7 @@ npm install reselect
        import React from 'react'
        import { Sunburst, LabelSeries } from 'react-vis'
        import { forEach, get, includes, uniq, without } from 'lodash'
+       import hexToRgba from 'hex-to-rgba'
 
        const LABEL_STYLE = {
          PERCENTAGE: {
@@ -568,9 +569,9 @@ npm install reselect
            hideRootNode
            colorType="literal"
            data={sunburst.data}
-           getColor={node => determineColor(node)}
            height={500}
            width={500}
+           getColor={node => determineColor(node)}
            onValueMouseOver={handleMouseOver}
            onValueMouseOut={handleMouseOut}
            onValueClick={handleClick}
@@ -595,10 +596,18 @@ npm install reselect
 
          function determineColor (node) {
            if (focusPath.length > 0) {
-             if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
-               return node.color
+             if (!node.color) {
+              return node.color = 'white'
+             } else if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
+               return node.color = node.color
              } else {
-               return node.color + '19'
+               var color = '#EEEEEE'
+               var fadedColor = hexToRgba(color, 0.4)
+               if (node.color.indexOf('#') >= 0) {
+                 return node.color = hexToRgba(node.color, 0.1)
+               } else {
+                 return node.color = node.color
+               }
              }
            }
            return node.color
@@ -1396,7 +1405,7 @@ npm install reselect
      #+NAME: Endpoints Selector
      #+BEGIN_SRC js
        import { createSelector } from 'reselect'
-       import { groupBy, keyBy, mapValues } from 'lodash'
+       import { groupBy, keyBy, mapValues, sortBy } from 'lodash'
        import { calculateCoverage } from '../lib/utils.js'
 
        export function selectEndpointsById (state) {
@@ -1419,7 +1428,10 @@ npm install reselect
        export const selectReleaseNamesFromEndpoints = createSelector(
          selectEndpointsByReleaseAndNameAndMethod,
          (endpointsByReleaseAndNameAndMethod) => {
-           return Object.keys(endpointsByReleaseAndNameAndMethod)
+           var releaseNames = Object.keys(endpointsByReleaseAndNameAndMethod)
+           return sortBy(releaseNames, [
+             (release) => release === 'master'
+           ])
          }
        )
 
@@ -1643,14 +1655,15 @@ npm install reselect
          return values(reduce(
            endpointsByNameAndMethod,
            (sofar, endpointsByMethod, name) => {
-             sofar = fillOutEndpointInfo(sofar, endpointsByMethod, name)
+             sofar = fillOutMethodInfo(sofar, endpointsByMethod, name)
              return sofar
            },
            {}
          ))
        }
 
-       function fillOutEndpointInfo (sofar, endpointsByMethod, name) {
+       // TODO change endpoint to method for clarity starting on line 115
+       function fillOutMethodInfo (sofar, endpointsByMethod, name) {
          forEach(endpointsByMethod, (endpoint, method) => {
            var { isTested } = endpoint
            var isConformance = checkForConformance(endpoint.test_tags)
@@ -1660,12 +1673,11 @@ npm install reselect
              name: isTested ? name : 'Untested',
              isConformance: isConformance ? "conformance" : "not conformance",
              size,
-             color: isTested ? calculateColor(endpoint) : '#f4f4f4'
+             color: isTested ? calculateColor(endpoint) : '#f4f4f4',
            }
          })
          return sofar
        }
-
 
        function checkForConformance (test_tags) {
          var tagsAsStrings = test_tags.map(tag => tag.replace(/\[|]/g,''))
@@ -1735,16 +1747,14 @@ npm install reselect
        }
 
        function calculateColor (endpoint) {
-         var partOfConformance = checkForConformance(endpoint.test_tags)
-         if (endpoint.isTested && partOfConformance)  {
+         if (endpoint.isTested)  {
            return colors[`category.${endpoint.category}`]
-         }  else if (endpoint.isTested) {
-           var fadedColor = colors[`category.${endpoint.category}`] + '80'
-           return fadedColor
          } else {
            return '#f4f4f4'
          }
        }
+
+
      #+END_SRC
 *** Routing Selector
     :PROPERTIES:

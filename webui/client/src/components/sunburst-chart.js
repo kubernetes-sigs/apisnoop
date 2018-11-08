@@ -1,6 +1,7 @@
 import React from 'react'
 import { Sunburst, LabelSeries } from 'react-vis'
 import { forEach, get, includes, uniq, without } from 'lodash'
+import hexToRgba from 'hex-to-rgba'
 
 const LABEL_STYLE = {
   PERCENTAGE: {
@@ -43,9 +44,9 @@ export default function SunburstChart (props) {
     hideRootNode
     colorType="literal"
     data={sunburst.data}
-    getColor={node => determineColor(node)}
     height={500}
     width={500}
+    getColor={node => determineColor(node)}
     onValueMouseOver={handleMouseOver}
     onValueMouseOut={handleMouseOut}
     onValueClick={handleClick}
@@ -70,10 +71,18 @@ export default function SunburstChart (props) {
 
   function determineColor (node) {
     if (focusPath.length > 0) {
-      if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
-        return node.color
+      if (!node.color) {
+       return node.color = 'white'
+      } else if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
+        return node.color = node.color
       } else {
-        return node.color + '19'
+        var color = '#EEEEEE'
+        var fadedColor = hexToRgba(color, 0.4)
+        if (node.color.indexOf('#') >= 0) {
+          return node.color = hexToRgba(node.color, 0.1)
+        } else {
+          return node.color = node.color
+        }
       }
     }
     return node.color

@@ -95,14 +95,15 @@ function createEndpointAndMethod(endpointsByNameAndMethod) {
   return values(reduce(
     endpointsByNameAndMethod,
     (sofar, endpointsByMethod, name) => {
-      sofar = fillOutEndpointInfo(sofar, endpointsByMethod, name)
+      sofar = fillOutMethodInfo(sofar, endpointsByMethod, name)
       return sofar
     },
     {}
   ))
 }
 
-function fillOutEndpointInfo (sofar, endpointsByMethod, name) {
+// TODO change endpoint to method for clarity starting on line 115
+function fillOutMethodInfo (sofar, endpointsByMethod, name) {
   forEach(endpointsByMethod, (endpoint, method) => {
     var { isTested } = endpoint
     var isConformance = checkForConformance(endpoint.test_tags)
@@ -112,12 +113,11 @@ function fillOutEndpointInfo (sofar, endpointsByMethod, name) {
       name: isTested ? name : 'Untested',
       isConformance: isConformance ? "conformance" : "not conformance",
       size,
-      color: isTested ? calculateColor(endpoint) : '#f4f4f4'
+      color: isTested ? calculateColor(endpoint) : '#f4f4f4',
     }
   })
   return sofar
 }
-
 
 function checkForConformance (test_tags) {
   var tagsAsStrings = test_tags.map(tag => tag.replace(/\[|]/g,''))
@@ -187,12 +187,8 @@ for (var catidx = 0; catidx < categories.length; catidx++) {
 }
 
 function calculateColor (endpoint) {
-  var partOfConformance = checkForConformance(endpoint.test_tags)
-  if (endpoint.isTested && partOfConformance)  {
+  if (endpoint.isTested)  {
     return colors[`category.${endpoint.category}`]
-  }  else if (endpoint.isTested) {
-    var fadedColor = colors[`category.${endpoint.category}`] + '80'
-    return fadedColor
   } else {
     return '#f4f4f4'
   }

@@ -1,5 +1,5 @@
 import { createSelector } from 'reselect'
-import { groupBy, keyBy, mapValues } from 'lodash'
+import { groupBy, keyBy, mapValues, sortBy } from 'lodash'
 import { calculateCoverage } from '../lib/utils.js'
 
 export function selectEndpointsById (state) {
@@ -22,7 +22,10 @@ export const selectEndpointsByReleaseAndNameAndMethod = createSelector(
 export const selectReleaseNamesFromEndpoints = createSelector(
   selectEndpointsByReleaseAndNameAndMethod,
   (endpointsByReleaseAndNameAndMethod) => {
-    return Object.keys(endpointsByReleaseAndNameAndMethod)
+    var releaseNames = Object.keys(endpointsByReleaseAndNameAndMethod)
+    return sortBy(releaseNames, [
+      (release) => release === 'master'
+    ])
   }
 )
 
