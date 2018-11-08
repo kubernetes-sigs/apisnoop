@@ -22,6 +22,7 @@ store.subscribe(() => {
   }
 })
 
+document.title = 'APISnoop | ' + store.getState().routing.release
 ReactDOM.render(
     <Provider store={store}>
     <App />

@@ -66,13 +66,7 @@ export const selectSunburstByRelease = createSelector(
           return {
             name: level,
             color: colors[level],
-            children: map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
-              return {
-                name: category,
-                color: colors[`category.${category}`],
-                children: endpointsSortedByConformance(endpointsByNameAndMethod)
-              }
-            })
+            children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod)
           }
         })
       }
@@ -82,6 +76,21 @@ export const selectSunburstByRelease = createSelector(
     }
   }
 )
+
+function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod) {
+  var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod)
+  return orderBy(categories, (category) => category.children.length, ['desc'])
+}
+
+function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod) {
+  return map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
+    return {
+      name: category,
+      color: colors[`category.${category}`],
+      children: endpointsSortedByConformance(endpointsByNameAndMethod)
+    }
+  })
+}
 
 function endpointsSortedByConformance (endpointsByNameAndMethod) {
   var endpoints = createEndpointAndMethod(endpointsByNameAndMethod)
