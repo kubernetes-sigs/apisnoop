@@ -46,7 +46,7 @@ def main(folder):
             semver + '_' + str(ts.date()) + ".json"
         print("(")
         print(
-            ' '.join(["python", "audit/logreview.py", "process-audit", auditfile, branch, outfile])
+            ' '.join(["python", "processAuditlog.py", auditfile, branch, outfile])
         )
         print(")&")
     print("wait $(jobs -p)")
