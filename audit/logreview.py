@@ -197,15 +197,18 @@ def main():
         Endpoint.update_from_coverage(rows)
         return # we are done
     elif sys.argv[1] == 'load-audit':
-        if len(sys.argv) < 5:
+        if len(sys.argv) < 6:
             usage_and_exit()
-        filename = sys.argv[2]
+        db_file = sys.argv[2]
+        db.bind('sqlite', os.path.abspath(db_file), create_db=True)
+        db.generate_mapping(create_tables=True)
+        filename = sys.argv[3]
         if not os.path.isfile(filename):
             print "Invalid filename given"
             usage_and_exit()
-        branch_or_tag = sys.argv[3]
+        branch_or_tag = sys.argv[4]
         openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
-        appname = sys.argv[4]
+        appname = sys.argv[5]
         openapi_spec = load_openapi_spec(openapi_uri)
         audit_log = load_audit_log(filename)
         report = generate_coverage_report(openapi_spec, audit_log)

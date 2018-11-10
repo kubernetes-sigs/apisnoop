@@ -42,11 +42,19 @@ def main(folder):
             type = 'conformance'
         else:
             type = 'sig-release'
-        outfile = folder + '/processed-audits/' + type + '_' + \
-            semver + '_' + str(ts.date()) + ".json"
+        audit_name = type + '_' + semver + '_' + str(ts.date())
+        outfile = folder + '/processed-audits/' + audit_name + ".json"
+        outdb = folder + '/' + audit_name + ".sqlite"
         print("(")
         print(
-            ' '.join(["python", "processAuditlog.py", auditfile, branch, outfile])
+            ' '.join(["python", "processAuditlog.py",
+                      auditfile, branch, outfile])
+        )
+        print(")&")
+        print("(")
+        print(
+            ' '.join(["python", "audit/logreview.py", "load-audit", outdb,
+                      auditfile, branch, audit_name])
         )
         print(")&")
     print("wait $(jobs -p)")

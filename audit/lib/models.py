@@ -1,6 +1,6 @@
 from pony.orm import *
 
-__all__ = ['Endpoint', 'App', 'EndpointHit', 'commit', 'db_session', 'desc', 'count', 'select']
+__all__ = ['Endpoint', 'App', 'EndpointHit', 'commit', 'db_session', 'desc', 'count', 'select', 'db']
 
 db = Database()
 
@@ -132,5 +132,6 @@ class EndpointHit(db.Entity):
             return obj, False
 
 
-db.bind('sqlite', '../database.sqlite', create_db=True)
-db.generate_mapping(create_tables=True)
+# db.bind('sqlite', '../../data/database.sqlite', create_db=True)
+
+# db.generate_mapping(create_tables=True)

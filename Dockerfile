@@ -31,7 +31,7 @@ RUN apt install git \
 RUN echo "alias emc='emacsclient -t '" > /etc/profile.d/emc-alias.sh
 RUN curl -L https://github.com/tmate-io/tmate/releases/download/2.2.1/tmate-2.2.1-static-linux-amd64.tar.gz \
   | tar  -f - -C /usr/local/bin -xvz --strip-components=1
-COPY dev/audit-log-review audit
+COPY audit audit
 COPY webui webui
 COPY index.ipynb index.ipynb
 COPY sources.yaml sources.yaml
@@ -42,5 +42,6 @@ RUN  python downloadArtifacts.py sources.yaml ./data
 RUN  chown -R $NB_USER.$NB_USER audit webui *.py *pynb data
 USER ${NB_USER}
 COPY processArtifacts.py processArtifacts.py
+COPY processAuditlog.py processAuditlog.py
 RUN  python processArtifacts.py data > processArtifacts.sh
 RUN  bash processArtifacts.sh
