@@ -18,6 +18,12 @@ export function doChooseActiveTest (test) {
   }
 }
 
+export function doCloseActiveTest (test) {
+  return {
+    type: 'ACTIVE_TEST_CLOSED'
+  }
+}
+
 export function doSetEndpointTests (endpointTests) {
   return {
     type: 'ENDPOINT_TESTS_SET',

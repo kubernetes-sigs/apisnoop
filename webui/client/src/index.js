@@ -19,10 +19,10 @@ store.subscribe(() => {
   const { pathname } = store.getState().routing
   if (window.location.pathname !== pathname) {
     window.history.pushState(null, '', pathname)
-   document.body.scrollTop = 0
   }
 })
 
+document.title = 'APISnoop | ' + store.getState().routing.release
 ReactDOM.render(
     <Provider store={store}>
     <App />

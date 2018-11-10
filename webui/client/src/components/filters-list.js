@@ -14,7 +14,6 @@ class FiltersList extends Component {
       return selection.replace(/_/g,'.') //.replace(/^/,'[').replace(/$/,']')
     })
     return formattedNames.map(name => {
-      console.log({name, selected})
       if (selected.includes(name)) {
         return(
             <a className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink" href="#0" key={`filter_${name}`}>{name}</a>

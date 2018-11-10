@@ -1,5 +1,5 @@
 import { createSelector } from 'reselect'
-import { groupBy, keyBy, mapValues } from 'lodash'
+import { groupBy, keyBy, mapValues, sortBy } from 'lodash'
 import { calculateCoverage } from '../lib/utils.js'
 
 export function selectEndpointsById (state) {
@@ -22,7 +22,10 @@ export const selectEndpointsByReleaseAndNameAndMethod = createSelector(
 export const selectReleaseNamesFromEndpoints = createSelector(
   selectEndpointsByReleaseAndNameAndMethod,
   (endpointsByReleaseAndNameAndMethod) => {
-    return Object.keys(endpointsByReleaseAndNameAndMethod)
+    var releaseNames = Object.keys(endpointsByReleaseAndNameAndMethod)
+    return sortBy(releaseNames, [
+      (release) => release === 'master'
+    ])
   }
 )
 
@@ -50,8 +53,8 @@ export const selectEndpointsWithTestCoverage = createSelector(
   (endpointsById) => {
     var endpointsByRelease = groupBy(endpointsById, 'release')
     return mapValues(endpointsByRelease, endpointsInRelease => {
-      var coverage = calculateCoverage(endpointsInRelease)
       var endpointsByLevel = groupBy(endpointsInRelease, 'level')
+      var coverage = calculateCoverage(endpointsInRelease)
       return Object.assign({},{coverage}, mapValues(endpointsByLevel, endpointsInLevel => {
         var endpointsByCategory = groupBy(endpointsInLevel, 'category')
         var coverage = calculateCoverage(endpointsInLevel)
@@ -61,7 +64,7 @@ export const selectEndpointsWithTestCoverage = createSelector(
           return Object.assign({}, {coverage}, mapValues(endpointsByName, endpointsInName => {
             var methods = keyBy(endpointsInName, 'method')
             return mapValues(methods, method => {
-              var coverage = method.test_tags
+              var coverage = method.test_tags ? method.test_tags : [] // display empty array if untested, so chart don't break.
               return Object.assign({}, {coverage}, method)
             })
           }))

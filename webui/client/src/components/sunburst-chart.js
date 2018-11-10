@@ -1,6 +1,7 @@
 import React from 'react'
 import { Sunburst, LabelSeries } from 'react-vis'
 import { forEach, get, includes, uniq, without } from 'lodash'
+import { fadeColor } from '../lib/utils'
 
 const LABEL_STYLE = {
   PERCENTAGE: {
@@ -43,9 +44,9 @@ export default function SunburstChart (props) {
     hideRootNode
     colorType="literal"
     data={sunburst.data}
-    getColor={node => determineColor(node)}
     height={500}
     width={500}
+    getColor={node => determineColor(node)}
     onValueMouseOver={handleMouseOver}
     onValueMouseOut={handleMouseOut}
     onValueClick={handleClick}
@@ -69,15 +70,27 @@ export default function SunburstChart (props) {
   )
 
   function determineColor (node) {
-    if (focusPath.length > 0) {
-      if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
-        return node.color
+    if (focusPath.length > 0 && !node.checked) {
+      if (!node.color) {
+       // return node.color = node.color
+       node.checked = true
+       return node.color = 'rgba(255,255,255,0.1)'
+      } else if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
+        node.checked = true
+        var brightColor = fadeColor(node.color, '1')
+        return node.color = brightColor
+       // return node.color = 'rgba(255,218,185,1)'
       } else {
-        return node.color + '19'
+        var fadedColor = fadeColor(node.color, '0.1')
+        node.checked = true
+//         return node.color = 'rgba(255,218,185,1)'
+        return node.color = fadedColor
+
+        }
       }
-    }
+    node.checked = false
     return node.color
-  }
+    }
 
   function handleMouseOver (node, event) {
     if (!chartLocked) {
@@ -95,8 +108,8 @@ export default function SunburstChart (props) {
     if (chartLocked){
       unlockChart()
     } else if (!chartLocked && focusPath.length > 3) {
-      var endpointTests = getEndpointTests(focusPath)
-      setEndpointTests(endpointTests)
+       var endpointTests = getEndpointTests(focusPath)
+       setEndpointTests(endpointTests)
       lockChart()
     } else {
       lockChart()

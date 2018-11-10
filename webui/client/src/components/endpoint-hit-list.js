@@ -2,13 +2,14 @@ import React from 'react'
 import { size } from 'lodash'
 import dayjs from 'dayjs'
 
-export default function EndpointHitList({activeTest}) {
+export default function EndpointHitList({activeTest, closeActiveTest}) {
   if (size(activeTest) <= 0) return null
 
   return (
       <div className='pa2'>
       <h3>{activeTest.name}</h3>
-      <ul className='list'>{listEndpoints(activeTest.sequence)}</ul>
+      <button onClick={handleClick}>close</button>
+      <ul className='list ph3 ph5-ns pv4'>{listEndpoints(activeTest.sequence)}</ul>
       </div>
   )
 
@@ -23,10 +24,13 @@ export default function EndpointHitList({activeTest}) {
       }
       var stepKey = `${sequence.indexOf(data)}_${step.timestamp}`
       return(
-          <li key={stepKey} className='tl'>
+          <li key={stepKey} className='f6 f5-ns b db pa2 link dim dark-gray ba b--black-20'>
           <p>{step.level} / {step.category} / {step.method} / {step.endpoint} <em>{step.timestamp}</em></p>
           </li>
       )
     })
+  }
+  function handleClick() {
+    closeActiveTest()
   }
 }
