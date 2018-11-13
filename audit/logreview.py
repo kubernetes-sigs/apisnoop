@@ -8,15 +8,19 @@ import json
 import sqlite3
 import csv
 
-from urlparse import urlparse
+try:
+    from urllib.parse import urlparse
+except Exception as e:
+    from urlparse import urlparse
+
 from collections import defaultdict
 from pprint import pprint
 
 
-from lib.webserver import start_webserver
-from lib.models import *
-from lib.parsers import *
-from lib import exports
+#from lib.webserver import start_webserver
+from audit.lib.models import *
+from audit.lib.parsers import *
+from audit.lib import exports
 
 # https://github.com/kubernetes/kubernetes/pull/50627/files
 
@@ -86,7 +90,7 @@ def count_event(count_tree, event, spec_entry):
     try:
         count_tree[path]['methods'][method]['counter'] += 1
     except:
-        print method, event['requestURI'], path, count_tree[path]['methods'].keys(), event['verb']
+        print(method, event['requestURI'], path, count_tree[path]['methods'].keys(), event['verb'])
         raise
 
 def get_count_results(count_tree):
@@ -155,20 +159,20 @@ def generate_coverage_report(openapi_spec, audit_log):
     return report
 
 def usage_and_exit():
-    print "Usage:"
-    print "  logreview.py help"
-    print "    - Show this message."
-    print "  logreview.py load-coverage <filename>"
-    print "    - Load Google Docs test coverage spreadsheet from CSV."
-    print "  logreview.py load-audit <filename> <branch_or_tag> <appname>"
-    print "    - Load Kubernetes audit log using openapi spec from specified branch or tag for app into database."
-    print "  logreview.py remove-audit <appname>"
-    print "    - Delete Kubernetes audit log for app from database."
-    print "  logreview.py export-data <exporter-name> <output-filename> <appname (optional)>"
-    print "    - Export audit log information from database as CSV files."
-    print "    - Available exporters: " + ", ".join(exports.list_exports())
-    print "  logreview.py start-server"
-    print "    - Start web server to display data visualisations."
+    print("Usage:")
+    print("  logreview.py help")
+    print("    - Show this message.")
+    print("  logreview.py load-coverage <filename>")
+    print("    - Load Google Docs test coverage spreadsheet from CSV.")
+    print("  logreview.py load-audit <filename> <branch_or_tag> <appname>")
+    print("    - Load Kubernetes audit log using openapi spec from specified branch or tag for app into database.")
+    print("  logreview.py remove-audit <appname>")
+    print("    - Delete Kubernetes audit log for app from database.")
+    print("  logreview.py export-data <exporter-name> <output-filename> <appname (optional)>")
+    print("    - Export audit log information from database as CSV files.")
+    print("    - Available exporters: " + ", ".join(exports.list_exports()))
+    print("  logreview.py start-server")
+    print("    - Start web server to display data visualisations.")
     exit(1)
 
 
@@ -191,7 +195,7 @@ def main():
             usage_and_exit()
         filename = sys.argv[2]
         if not os.path.isfile(filename):
-            print "Invalid filename given"
+            print("Invalid filename given")
             usage_and_exit()
         rows = load_coverage_csv(filename)
         Endpoint.update_from_coverage(rows)
@@ -204,7 +208,7 @@ def main():
         db.generate_mapping(create_tables=True)
         filename = sys.argv[3]
         if not os.path.isfile(filename):
-            print "Invalid filename given"
+            print("Invalid filename given")
             usage_and_exit()
         branch_or_tag = sys.argv[4]
         openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
@@ -222,9 +226,9 @@ def main():
         other_args = sys.argv[4:]
         try:
             exports.export_data(exporter_name, output_path, *other_args)
-            print "Exported to %s successfully" % output_path
+            print("Exported to %s successfully" % output_path)
         except Exception as e:
-            print e.message
+            print(e.message)
             raise
         return
     elif sys.argv[1] == 'remove-audit':
@@ -233,10 +237,10 @@ def main():
         appname = sys.argv[2]
         found = App.remove_from_db(appname)
         if not found:
-            print "%s does not exist" % appname
+            print("%s does not exist" % appname)
             exit(1)
         else:
-            print "%s deleted" % appname
+            print("%s deleted" % appname)
         return
 
     elif sys.argv[1] == 'start-server':

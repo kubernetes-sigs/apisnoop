@@ -11,7 +11,7 @@ def export_data(export_name, export_path, *args):
     else:
         app_name = None
 
-    print app_name
+    print(app_name)
 
     if export_name not in exports:
         raise Exception("Export not found: %s" % export_name)

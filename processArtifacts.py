@@ -47,16 +47,16 @@ def main(folder):
         outdb = folder + '/' + audit_name + ".sqlite"
         print("(")
         print(
-            ' '.join(["python", "processAuditlog.py",
+            ' '.join(["python2", "processAuditlog.py",
                       auditfile, branch, outfile])
         )
         print(")&")
-        print("(")
-        print(
-            ' '.join(["python", "audit/logreview.py", "load-audit", outdb,
-                      auditfile, branch, audit_name])
-        )
-        print(")&")
+        # print("(")
+        # print(
+        #     ' '.join(["python2", "audit/logreview.py", "load-audit", outdb,
+        #               auditfile, branch, audit_name])
+        # )
+        # print(")&")
     print("wait $(jobs -p)")
 
 

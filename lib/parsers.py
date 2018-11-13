@@ -7,7 +7,11 @@ import requests
 
 import hashlib
 
-from urlparse import urlparse
+try:
+    from urllib.parse import urlparse
+except Exception as e:
+    from urlparse import urlparse
+
 from collections import defaultdict
 
 __all__ = ['load_openapi_spec', 'load_audit_log', 'load_coverage_csv']
