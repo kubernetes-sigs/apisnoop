@@ -1,28 +1,23 @@
 #!/usr/bin/python
-
 import sys
 import os
-import glob
 import re
 import json
-import sqlite3
-import csv
 
 from urlparse import urlparse
-from collections import defaultdict
-from pprint import pprint
 
-
-#from lib.webserver import start_webserver
-#from lib.models import *
-from lib.parsers import *
-#from lib import exports
+from lib.parsers import load_openapi_spec, load_audit_log
 
 
 def create_folders():
     for name in ['cache', 'output']:
-        if not os.path.exists(name):
-            os.makedirs(name)
+        try:
+            if not os.path.exists(name):
+                # we get a race condition here
+                os.makedirs(name)
+        except Exception as e:
+            pass
+
 
 def generate_endpoints_tree(openapi_spec):
     # Base tests structure, without audit / test loaded
@@ -34,7 +29,7 @@ def generate_endpoints_tree(openapi_spec):
             method = endpoint['methods'][method_name]
             deprecated = re.match("[Dd]eprecated", method["description"])
             if deprecated:
-                import ipdb; ipdb.set_trace(context=60)
+                # import ipdb; ipdb.set_trace(context=60)
                 continue
 
             op = method['operationId']
@@ -57,6 +52,7 @@ def generate_endpoints_tree(openapi_spec):
             }
 
     return endpoints
+
 
 def generate_sunburst_tree(openapi_spec):
     # Base sunburst structure, without audit / test loaded
@@ -89,8 +85,7 @@ def generate_sunburst_tree(openapi_spec):
         "name": "root",
         "children": []
     }
-    level_children = []
-    for level in ['stable','beta','alpha']:
+    for level in ['stable', 'beta', 'alpha']:
         categories = sunburst[level]
         category_children = []
         for category, op_methods in categories.items():
@@ -108,30 +103,6 @@ def generate_sunburst_tree(openapi_spec):
             {"name": level,
              "children": category_children})
     return root
-
-def generate_count_tree(openapi_spec):
-    count_tree = {}
-
-    for endpoint in openapi_spec['paths'].values():
-        path = endpoint['path']
-        count_tree[path] = {
-            "counter": 0,
-            "methods": {},
-            "misses": {},
-            "level": endpoint.get("level")
-        }
-        for method in endpoint['methods']:
-            count_tree[path]['methods'][method] = {
-                "counter": 0,
-                "fields": {},
-                # "agents": [],
-                # "tests": [],
-                # "test_tags": [],
-                "tags": endpoint['methods'][method]['tags'],
-                "category": endpoint['methods'][method]['category']
-            }
-
-    return count_tree
 
 
 def find_openapi_entry(openapi_spec, event):
@@ -161,84 +132,29 @@ def find_openapi_entry(openapi_spec, event):
     return None
 
 
-def sunburst_event(sunburst, event, spec_entry):
-    #spec_entry must have method for event
-    path = spec_entry['path']
-    level = spec_entry.get('level')
-    method = event['method']
-    useragent = event.get('userAgent', ' ')
-    test_name_start = ' -- '
-    agent = useragent.split(' ')[0]
-    category = spec_entry['methods'][method]['category']
-    sunburst[level][category][path][method]['counter'] += 1
+def generate_count_tree(openapi_spec):
+    count_tree = {}
 
-    if agent not in sunburst[level][category][path][method]['agents']:
-        sunburst[level][category][path][method]['agents'].append(agent)
-
-    if 'e2e.test' in useragent and test_name_start in useragent:
-        test_name = useragent.split(test_name_start)[1]
-        test_tags = re.findall(r'\[.+?\]', test_name)
-        if test_name not in sunburst[level][category][path][method]['tests']:
-            sunburst[level][category][path][method]['tests'].append(test_name)
-        for tag in test_tags:
-            if tag not in sunburst[level][category][path][method]['test_tags']:
-                sunburst[level][category][path][method]['test_tags'].append(tag)
-
-def count_event(count_tree, event, spec_entry):
-    path = spec_entry['path']
-    method = event['method']
-    useragent = event.get('userAgent', ' ')
-    agent = useragent.split(' ')[0]
-    test_name_start = ' -- '
-    count_type = 'methods'
-
-    count_tree[path]['counter'] += 1
-
-    if method not in count_tree[path]['methods']:
-        count_type = 'misses'
-        if method not in count_tree[path]['misses']:
-            count_tree[path]['misses'][method] = {
-                'counter': 0, 'agents': [], 'tests': []
+    for endpoint in openapi_spec['paths'].values():
+        path = endpoint['path']
+        count_tree[path] = {
+            "counter": 0,
+            "methods": {},
+            "misses": {},
+            "level": endpoint.get("level")
+        }
+        for method in endpoint['methods']:
+            count_tree[path]['methods'][method] = {
+                "counter": 0,
+                "fields": {},
+                # "agents": [],
+                # "tests": [],
+                # "test_tags": [],
+                "tags": endpoint['methods'][method]['tags'],
+                "category": endpoint['methods'][method]['category']
             }
-    count_tree[path][count_type][method]['counter'] += 1
 
-    if agent not in count_tree[path][count_type][method]['agents']:
-        count_tree[path][count_type][method]['agents'].append(agent)
-
-    if 'e2e.test' in useragent:
-        if test_name_start in useragent:
-            test_name = useragent.split(test_name_start)[1]
-            test_tags = re.findall(r'\[.+?\]', test_name)
-        else:
-            test_name = 'none given'
-        if test_name not in count_tree[path][count_type][method]['tests']:
-            count_tree[path][count_type][method]['tests'].append(
-                test_name)
-        for tag in test_tags:
-            if tag not in count_tree[path][count_type][method]['test_tags']:
-                count_tree[path][count_type][method]['tests_tags'].append(tag)
-
-def test_event(test_tree, event, spec_entry):
-    path = spec_entry['path']
-    useragent = event['userAgent']
-    test_name_start = ' -- '
-
-    if useragent.find(test_name_start) > -1:
-        test_name = useragent.split(test_name_start)[1]
-        test_tags = re.findall(r'\[.+?\]', test_name)
-        for tag in test_tags:
-            if tag not in test_tree['tags']:
-                test_tree['tags'].append(tag)
-        if test_name not in test_tree['tests'].keys():
-            test_tree['tests'][test_name] = {
-                'paths': {}
-            }
-        if path not in test_tree['tests'][test_name]['paths'].keys():
-            test_tree['tests'][test_name]['paths'][path] = {
-                'counter': 1
-            }
-        else:
-            test_tree['tests'][test_name]['paths'][path]['counter'] += 1
+    return count_tree
 
 
 def get_count_results(count_tree):
@@ -256,7 +172,8 @@ def get_count_results(count_tree):
             }]
 
     r = sorted(results,
-               key=lambda x: (-x['counter'], x['level'], x['url'], x['method']))
+               key=lambda x: (-x['counter'],
+                              x['level'], x['url'], x['method']))
     return r
 
 
@@ -278,7 +195,8 @@ def generate_coverage_report(openapi_spec, audit_log):
         useragent = event.get('userAgent', ' ')
         # look for the url in the OpenAPI spec
         if spec_entry is None:
-            # print("API Entry not found for event URL \"%s\"" % event['requestURI'])
+            # print("API Entry not found for event URL \"%s\"" % \
+            #   event['requestURI'])
             # openapi/v2 (kubectl)
             # /apis/scalingpolicy.kope.io/*/scalingpolcies
             # /apis/metrics.kope.io/*
@@ -321,7 +239,7 @@ def generate_coverage_report(openapi_spec, audit_log):
         # sb_path=filter(lambda p: p['name']==path, sb_category['children'])[0]
         # sb_method=filter(lambda m: m['name']==method, sb_path['children'])[0]
         # sunburst_event(sunburst, event, spec_entry)
-        if event.get('userAgent',False) and useragent.startswith('e2e.test'):
+        if event.get('userAgent', False) and useragent.startswith('e2e.test'):
             test_name_start = ' -- '
             if useragent.find(test_name_start) > -1:
                 test_name = useragent.split(test_name_start)[1]
@@ -329,7 +247,8 @@ def generate_coverage_report(openapi_spec, audit_log):
                     tests[test_name] = {}
                 if test_name not in test_sequences.keys():
                     test_sequences[test_name] = []
-                test_sequences[test_name].append([event['timestamp'],level,category,method,op])
+                test_sequences[test_name].append([event['timestamp'],
+                                                  level, category, method, op])
                 if op not in tests[test_name].keys():
                     tests[test_name][op] = {}
                 if method not in tests[test_name][op].keys():
@@ -354,6 +273,10 @@ def generate_coverage_report(openapi_spec, audit_log):
                         endpoints[op][method]['tests'].append(test_name)
                     # if tag not in sb_method['test_tags']:
                     #     sb_method['test_tags'].append(tag)
+
+        else:
+            # Only look at e2e for now, skip anything else
+            continue
 
         agent = event.get('userAgent', ' ').split(' ')[0]
         if agent not in useragents.keys():
@@ -424,101 +347,30 @@ def generate_coverage_report(openapi_spec, audit_log):
 
 def usage_and_exit():
     print("Usage:")
-    print("  logreview.py help")
-    print("    - Show this message.")
-    print("  logreview.py load-coverage <filename>")
-    print("    - Load Google Docs test coverage spreadsheet from CSV.")
-    print("  logreview.py process-audit <audit-filename> <branch_or_tag> <output-jsonfile>")
-    print("    - Load audit log with openapi spec from branch or tag for app into jsonfile.")
-    print("  logreview.py load-audit <filename> <branch_or_tag> <appname>")
-    print("    - Load audit log with openapi spec from branch or tag for app into database.")
-    print("  logreview.py remove-audit <appname>")
-    print("    - Delete Kubernetes audit log for app from database.")
-    print("  logreview.py export-data <exporter-name> <output-filename> <appname (optional)>")
-    print("    - Export audit log information from database as CSV files.")
-    # print("    - Available exporters: " + ", ".join(exports.list_exports()))
-    print("  logreview.py start-server")
-    print("    - Start web server to display data visualisations.")
+    print("  process-audit.py <auditfile> <branch_or_tag> <outfile>")
+    print("    - Process audit file for use with webui")
     exit(1)
 
 
 def main():
-    # Commands
-
-    # load-coverage [filename] -- loads extract from google spreadsheet
-    # load-audit [filename] [app] -- loads an audit log under the name of app
-    # process-audit [audit-filename] [k8s-branch] [output-jsonfile] -- processes an audit log
-    # generate-report [output-filename] -- outputs the details to a file
-
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 4:
         usage_and_exit()
     # create folder structure on disk
     create_folders()
 
-    # process
-    if sys.argv[1] == 'help':
+    filename = sys.argv[1]
+    if not os.path.isfile(filename):
+        print("Invalid filename given")
         usage_and_exit()
-    elif sys.argv[1] == 'load-coverage':
-        if len(sys.argv) < 3:
-            usage_and_exit()
-        filename = sys.argv[2]
-        if not os.path.isfile(filename):
-            print("Invalid filename given")
-            usage_and_exit()
-        rows = load_coverage_csv(filename)
-        Endpoint.update_from_coverage(rows)
-        return  # we are done
-
-    elif sys.argv[1] == 'process-audit':
-        if len(sys.argv) < 5:
-            usage_and_exit()
-        filename = sys.argv[2]
-        if not os.path.isfile(filename):
-            print("Invalid filename given")
-            usage_and_exit()
-        branch_or_tag = sys.argv[3]
-        openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
-        openapi_spec = load_openapi_spec(openapi_uri)
-        audit_log = load_audit_log(filename)
-        report = generate_coverage_report(openapi_spec, audit_log)
-        # report = generate_coverage_report(openapi_spec, audit_log)
-        # import ipdb; ipdb.set_trace(context=60)
-        # App.update_from_results(appname, report['results'])
-        # write json next to logfile
-        output_path = sys.argv[4]
-        open(output_path, 'w').write(
-            json.dumps(report))
-        return  # we are done
-
-    elif sys.argv[1] == 'export-data':
-        if len(sys.argv) < 4:
-            usage_and_exit()
-        exporter_name = sys.argv[2]
-        output_path = sys.argv[3]
-        other_args = sys.argv[4:]
-        try:
-            exports.export_data(exporter_name, output_path, *other_args)
-            print("Exported to %s successfully" % output_path)
-        except Exception as e:
-            print(e.message)
-            raise
-        return
-
-    elif sys.argv[1] == 'remove-audit':
-        if len(sys.argv) < 3:
-            usage_and_exit
-        appname = sys.argv[2]
-        found = App.remove_from_db(appname)
-        if not found:
-            print("%s does not exist" % appname)
-            exit(1)
-        else:
-            print("%s deleted" % appname)
-        return
-
-    elif sys.argv[1] == 'start-server':
-        start_webserver()
-        return
+    branch_or_tag = sys.argv[2]
+    openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
+    openapi_spec = load_openapi_spec(openapi_uri)
+    audit_log = load_audit_log(filename)
+    report = generate_coverage_report(openapi_spec, audit_log)
+    output_path = sys.argv[3]
+    open(output_path, 'w').write(
+        json.dumps(report))
+    return  # we are done
 
 
 if __name__ == "__main__":
