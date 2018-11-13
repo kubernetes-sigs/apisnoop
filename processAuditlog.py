@@ -274,6 +274,10 @@ def generate_coverage_report(openapi_spec, audit_log):
                     # if tag not in sb_method['test_tags']:
                     #     sb_method['test_tags'].append(tag)
 
+        else:
+            # Only look at e2e for now, skip anything else
+            continue
+
         agent = event.get('userAgent', ' ').split(' ')[0]
         if agent not in useragents.keys():
             useragents[agent] = {}

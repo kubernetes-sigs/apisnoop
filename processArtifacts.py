@@ -42,7 +42,7 @@ def main(folder):
             type = 'conformance'
         else:
             type = 'sig-release'
-        audit_name = type + '_' + semver + '_' + str(ts.date())
+        audit_name = type + '_' + semver + '_' + str(ts.date()) + '_e2e-only'
         outfile = folder + '/processed-audits/' + audit_name + ".json"
         outdb = folder + '/' + audit_name + ".sqlite"
         print("(")
