@@ -47,7 +47,7 @@ def main(folder):
         outdb = folder + '/' + audit_name + ".sqlite"
         print("(")
         print(
-            ' '.join(["python2", "processAuditlog.py",
+            ' '.join(["python", "processAuditlog.py",
                       auditfile, branch, outfile])
         )
         print(")&")
