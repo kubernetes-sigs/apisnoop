@@ -4,10 +4,13 @@ import os
 import re
 import json
 
-from urlparse import urlparse
+try:
+    from urllib.parse import urlparse
+except Exception as e:
+    from urlparse import urlparse
 
 from lib.parsers import load_openapi_spec, load_audit_log
-
+from processArtifacts import file_to_json
 
 def create_folders():
     for name in ['cache', 'output']:
@@ -37,6 +40,40 @@ def generate_endpoints_tree(openapi_spec):
                 endpoints[op] = {}
 
             endpoints[op][method_name] = {
+                "cat": method["category"],
+                "desc": method["description"],
+                "group": method["group"],
+                "kind": method["kind"],
+                "ver": method["version"],
+                "path": endpoint['path'],
+                "level": endpoint['level'],
+                # "deprecated": deprecated,
+                "counter": 0,
+                "agents": [],
+                "test_tags": [],
+                "tests": []
+            }
+
+    return endpoints
+
+def generate_new_endpoints_tree(openapi_spec):
+    # Base tests structure, without audit / test loaded
+
+    endpoints = {}
+
+    for endpoint in openapi_spec['paths'].values():
+        for (method_name, method) in endpoint['methods'].items():
+            method = endpoint['methods'][method_name]
+            deprecated = re.match("[Dd]eprecated", method["description"])
+            if deprecated:
+                # import ipdb; ipdb.set_trace(context=60)
+                continue
+
+            op = method['operationId']
+            # if op not in endpoints.keys():
+            #     endpoints[op] = {}
+
+            endpoints[method_name + ':' + op] = {
                 "cat": method["category"],
                 "desc": method["description"],
                 "group": method["group"],
@@ -137,19 +174,16 @@ def generate_count_tree(openapi_spec):
 
     for endpoint in openapi_spec['paths'].values():
         path = endpoint['path']
-        count_tree[path] = {
-            "counter": 0,
-            "methods": {},
-            "misses": {},
-            "level": endpoint.get("level")
-        }
         for method in endpoint['methods']:
-            count_tree[path]['methods'][method] = {
+            count_tree[method+':'+path] = {
                 "counter": 0,
+                "methods": {},
+                "misses": {},
                 "fields": {},
-                # "agents": [],
-                # "tests": [],
-                # "test_tags": [],
+                "agents": [],
+                "tests": [],
+                "test_tags": [],
+                "level": endpoint.get("level"),
                 "tags": endpoint['methods'][method]['tags'],
                 "category": endpoint['methods'][method]['category']
             }
@@ -161,15 +195,13 @@ def get_count_results(count_tree):
     results = []
 
     for url, url_data in count_tree.items():
-        for method, method_data in url_data['methods'].items():
-            results += [{
-                'url': url,
-                'method': method,
-                'level': url_data['level'],
-                'tags': ','.join(method_data['tags']),
-                'category': method_data['category'],
-                'counter': method_data['counter']
-            }]
+        results += [{
+            'url': url,
+            'level': url_data['level'],
+            'tags': ','.join(url_data['tags']),
+            'category': url_data['category'],
+            'counter': url_data['counter']
+        }]
 
     r = sorted(results,
                key=lambda x: (-x['counter'],
@@ -178,9 +210,11 @@ def get_count_results(count_tree):
 
 
 def generate_coverage_report(openapi_spec, audit_log):
+
     endpoints = generate_endpoints_tree(openapi_spec)
+    new_endpoints = generate_new_endpoints_tree(openapi_spec)
     sunburst = generate_sunburst_tree(openapi_spec)
-    # count_tree = generate_count_tree(openapi_spec)
+    count_tree = generate_count_tree(openapi_spec)
     # test_tree = {'tests': {}, 'tags': []}
     tests = {}
     test_tags = {}
@@ -304,6 +338,7 @@ def generate_coverage_report(openapi_spec, audit_log):
     report = {}
     report['sunburst'] = sunburst
     report['endpoints'] = endpoints
+    report['new_endpoints'] = new_endpoints
     report['tests'] = tests
     report['test_tags'] = test_tags
     report['test_sequences'] = test_sequences
@@ -311,10 +346,9 @@ def generate_coverage_report(openapi_spec, audit_log):
     report['unknown_urls'] = unknown_urls
     report['unknown_url_methods'] = unknown_url_methods
     # import ipdb; ipdb.set_trace(context=60)
-
-    # count_tree = generate_count_tree(openapi_spec)
-    # report['count'] = count_tree
-    # report['results'] = get_count_results(count_tree)
+    count_tree = generate_count_tree(openapi_spec)
+    report['count'] = count_tree
+    report['results'] = get_count_results(count_tree)
     # report['unknown_url_methods'] = unknown_url_methods
 
     # generate some simple statistics
@@ -367,6 +401,19 @@ def main():
     openapi_spec = load_openapi_spec(openapi_uri)
     audit_log = load_audit_log(filename)
     report = generate_coverage_report(openapi_spec, audit_log)
+    # import ipdb; ipdb.set_trace(context=60)
+    auditpath = os.path.dirname(filename)
+    metadata = file_to_json(auditpath + '/artifacts/metadata.json')
+    finished = file_to_json(auditpath + '/finished.json')
+    semver = finished['version'].split('v')[1].split('-')[0]
+    major = semver.split('.')[0]
+    minor = semver.split('.')[1]
+    if minor != '13':
+        branch = "release-"+major+'.'+minor
+    else:
+        commit = metadata['version'].split('+')[-1]
+        # branch = 'master'
+        branch = commit
     output_path = sys.argv[3]
     open(output_path, 'w').write(
         json.dumps(report))
