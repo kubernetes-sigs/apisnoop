@@ -214,7 +214,7 @@ def generate_coverage_report(openapi_spec, audit_log):
     endpoints = generate_endpoints_tree(openapi_spec)
     new_endpoints = generate_new_endpoints_tree(openapi_spec)
     sunburst = generate_sunburst_tree(openapi_spec)
-    count_tree = generate_count_tree(openapi_spec)
+    # count_tree = generate_count_tree(openapi_spec)
     # test_tree = {'tests': {}, 'tags': []}
     tests = {}
     test_tags = {}
@@ -346,9 +346,9 @@ def generate_coverage_report(openapi_spec, audit_log):
     report['unknown_urls'] = unknown_urls
     report['unknown_url_methods'] = unknown_url_methods
     # import ipdb; ipdb.set_trace(context=60)
-    count_tree = generate_count_tree(openapi_spec)
-    report['count'] = count_tree
-    report['results'] = get_count_results(count_tree)
+    # count_tree = generate_count_tree(openapi_spec)
+    # report['count'] = count_tree
+    # report['results'] = get_count_results(count_tree)
     # report['unknown_url_methods'] = unknown_url_methods
 
     # generate some simple statistics
