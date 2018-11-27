@@ -8,11 +8,18 @@
 :headers-args:shell: :prologue "bq query <<EOF\n" :epilogue "\nEOF" :results output verbatim raw replace:results output verbatim raw replace:results output verbatim raw replace :results output verbatim raw replace
 :END:
 
-You need bigquery access to kubernetes-charts.
+You need bigquery access to kubernetes-charts. Details on installing can be found at [[https://cloud.google.com/sdk/docs/quickstart-debian-ubuntu][Install the Google Cloud: SDK Quickstart for Debian and Ubuntu]]
 
-Data seems to be rolled up into 30 minute increments and a table for each day.
+The 'bq' command is used to query various datasets. Details can be found at [[https://cloud.google.com/bigquery/docs/bq-command-line-tool][Using the bq Command-Line Tool]]
 
-** Simple query to show 30 minute rollup for a specific date
+** Exploring a single 24 hours period
+
+The data seems to be rolled up into 48 blocks that are hit every 30 minutes over a 24 hour period.
+
+*** Query: Count the times does the 'created' permission get used?
+
+Most of the packages are hit every 30 minutes, at either 25 or 55 past the hour
+
 #+NAME: simpler
 #+HEADER: :prologue "bq query -n 2000 --nouse_legacy_sql <<EOF\n"
 #+HEADER: :headers-args:shell: :epilogue "\nEOF"
@@ -301,6 +308,9 @@ Data seems to be rolled up into 30 minute increments and a table for each day.
 #+end_example
 
 
+*** Query: Package/Permission count
+
+How many times does each permission get used on a package?
 #+NAME: sequence
 #+HEADER: :prologue "bq query -n 2000 --nouse_legacy_sql <<EOF\n"
 #+HEADER: :headers-args:shell: :epilogue "\nEOF"
@@ -308,38 +318,16 @@ Data seems to be rolled up into 30 minute increments and a table for each day.
 #+HEADER: :exports both
 #+BEGIN_SRC shell
   SELECT DISTINCT
-  -- timestamp, protopayload_auditlog.resourceName,
-  -- protopayload_auditlog.requestMetadata.callerIp,
-  -- protopayload_auditlog.methodName,
   protopayload_auditlog.resourceName,
-  -- authorizationInfo.resource,
   authorizationInfo.permission,
   COUNT (authorizationInfo.permission) AS count
-  -- protopayload_auditlog.requestMetadata.callerSuppliedUserAgent
   FROM kubernetes_charts_data_access.cloudaudit_googleapis_com_data_access_20181121,
        UNNEST(protopayload_auditlog.authorizationInfo) AS authorizationInfo
   WHERE protopayload_auditlog.resourceName LIKE '%.tgz'
-        -- AND ( authorizationInfo.permission = 'storage.objects.create'
-        -- OR authorizationInfo.permission = 'storage.objects.delete' )
   GROUP BY
            protopayload_auditlog.resourceName,
-           -- authorizationInfo.resource,
            authorizationInfo.permission
   ORDER BY protopayload_auditlog.resourceName
--- ,timestamp
-#+END_SRC
-
-#+NAME: locate logBucket
-#+BEGIN_SRC shell :results raw :wrap "SRC json" :results code
-gsutil logging get gs://kubernetes-charts | jq .
-#+END_SRC
-
-#+RESULTS: locate logBucket
-#+BEGIN_SRC json
-{
-  "logBucket": "kubernetes-charts-logging",
-  "logObjectPrefix": "kubernetes-charts"
-}
 #+END_SRC
 
 #+RESULTS: sequence
@@ -956,10 +944,163 @@ gsutil logging get gs://kubernetes-charts | jq .
 #+end_example
 
 
+*** Locate Bucket information
+
+#+NAME: locate logBucket
+#+BEGIN_SRC shell :results raw :wrap "SRC json" :results code
+gsutil logging get gs://kubernetes-charts | jq .
+#+END_SRC
+
+#+RESULTS: locate logBucket
+#+BEGIN_SRC json
+{
+  "logBucket": "kubernetes-charts-logging",
+  "logObjectPrefix": "kubernetes-charts"
+}
+#+END_SRC
+
+
+*** Query: Which user agent is making the most requests?
+
+#+NAME: useragent usage summary
+#+HEADER: :prologue "bq query -n 2000 --nouse_legacy_sql <<EOF\n"
+#+HEADER: :headers-args:shell: :epilogue "\nEOF"
+#+HEADER: :results output verbatim src replace
+#+HEADER: :exports both
+#+BEGIN_SRC shell
+  SELECT DISTINCT protopayload_auditlog.requestMetadata.callerSuppliedUserAgent AS callerSuppliedUserAgent, COUNT(protopayload_auditlog.requestMetadata.callerSuppliedUserAgent) AS count
+  FROM kubernetes_charts_data_access.cloudaudit_googleapis_com_data_access_20181121
+  GROUP BY protopayload_auditlog.requestMetadata.callerSuppliedUserAgent
+  ORDER BY count DESC, callerSuppliedUserAgent
+#+END_SRC
+
+#+RESULTS: useragent usage summary
+#+begin_example
+
++---------------------------------------------------------------------------------------------------------------------------------------------------------+--------+
+|                                                                 callerSuppliedUserAgent                                                                 | count  |
++---------------------------------------------------------------------------------------------------------------------------------------------------------+--------+
+| git/2.17.1,gzip(gfe)                                                                                                                                    | 895706 |
+| git/2.17.0,gzip(gfe)                                                                                                                                    |  20193 |
+| apitools gsutil/4.34 Python/2.7.13 (linux2) google-cloud-sdk/225.0.0 analytics/disabled,gzip(gfe)                                                       |   7987 |
+| apitools gsutil/4.34 Python/2.7.13 (linux2) google-cloud-sdk/226.0.0 analytics/disabled,gzip(gfe)                                                       |   3630 |
+| Artifactory/4.16.0,gzip(gfe)                                                                                                                            |   1554 |
+| Artifactory/6.5.2,gzip(gfe)                                                                                                                             |    279 |
+| git/2.7.4,gzip(gfe)                                                                                                                                     |    168 |
+| Helm/2.9.1,gzip(gfe)                                                                                                                                    |     95 |
+| Artifactory/6.4.1,gzip(gfe)                                                                                                                             |     94 |
+| Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                           |     42 |
+| Artifactory/6.3.3,gzip(gfe)                                                                                                                             |     34 |
+| Artifactory/6.1.0,gzip(gfe)                                                                                                                             |     32 |
+| Artifactory/6.5.1,gzip(gfe)                                                                                                                             |     28 |
+| Artifactory/5.8.0,gzip(gfe)                                                                                                                             |     24 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                     |     22 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                     |     21 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36,gzip(gfe)                      |     20 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:63.0) Gecko/20100101 Firefox/63.0,gzip(gfe)                                                            |     18 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0.1 Safari/605.1.15,gzip(gfe)                       |     18 |
+| Artifactory/6.2.0,gzip(gfe)                                                                                                                             |     14 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:63.0) Gecko/20100101 Firefox/63.0,gzip(gfe)                                                            |     14 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36,gzip(gfe)                      |     14 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0.1 Safari/605.1.15,gzip(gfe)                       |     14 |
+| Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:63.0) Gecko/20100101 Firefox/63.0,gzip(gfe)                                                                |     13 |
+| Helm/2.11.0,gzip(gfe)                                                                                                                                   |     12 |
+| Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:63.0) Gecko/20100101 Firefox/63.0,gzip(gfe)                                                                  |     12 |
+| Mozilla/5.0 (X11; FreeBSD amd64; rv:63.0) Gecko/20100101 Firefox/63.0,gzip(gfe)                                                                         |     10 |
+| Slackbot 1.0 (+https://api.slack.com/robots),gzip(gfe)                                                                                                  |     10 |
+| Artifactory/6.5.0,gzip(gfe)                                                                                                                             |      8 |
+| Artifactory/6.5.3,gzip(gfe)                                                                                                                             |      8 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/70.0.3538.77 Chrome/70.0.3538.77 Safari/537.36,gzip(gfe)         |      8 |
+| Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm),gzip(gfe)                                                                       |      8 |
+| Artifactory/5.10.4,gzip(gfe)                                                                                                                            |      7 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36,gzip(gfe)                                      |      7 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                     |      6 |
+| Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.67 Safari/537.36,gzip(gfe)                            |      6 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                                     |      6 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.110 Safari/537.36,gzip(gfe)                                     |      6 |
+| Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.110 Safari/537.36,gzip(gfe)                           |      5 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36,gzip(gfe)                                     |      5 |
+| Artifactory/5.9.0,gzip(gfe)                                                                                                                             |      4 |
+| Artifactory/5.9.3,gzip(gfe)                                                                                                                             |      4 |
+| Mozilla/5.0 (Windows NT 10.0; WOW64; rv:45.0) Gecko/20100101 Firefox/45.0,gzip(gfe)                                                                     |      4 |
+| Mozilla/5.0 (Windows NT 10.0; WOW64; rv:60.0) Gecko/20100101 Firefox/60.0,gzip(gfe)                                                                     |      4 |
+| Mozilla/5.0 (Windows NT 6.1; Trident/7.0; rv:11.0) like Gecko,gzip(gfe)                                                                                 |      4 |
+| Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                                 |      4 |
+| Mozilla/5.0 (Windows NT 6.1; WOW64; rv:45.0) Gecko/20100101 Firefox/45.0,gzip(gfe)                                                                      |      4 |
+| Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.75 Safari/537.36,gzip(gfe)                             |      4 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.75 Safari/537.36 Google Favicon,gzip(gfe)                       |      4 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.67 Safari/537.36,gzip(gfe)                                      |      4 |
+| Mozilla/5.0 (X11; Linux x86_64; rv:63.0) Gecko/20100101 Firefox/63.0,gzip(gfe)                                                                          |      4 |
+| Googlebot-Image/1.0,gzip(gfe)                                                                                                                           |      3 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:60.0) Gecko/20100101 Firefox/60.0,gzip(gfe)                                                            |      3 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                     |      3 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0 Safari/605.1.15,gzip(gfe)                           |      3 |
+| Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36,gzip(gfe)                            |      3 |
+| Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36,gzip(gfe)                             |      3 |
+| Artifactory/5.10.0,gzip(gfe)                                                                                                                            |      2 |
+| Artifactory/5.10.3,gzip(gfe)                                                                                                                            |      2 |
+| Artifactory/5.11.0,gzip(gfe)                                                                                                                            |      2 |
+| Artifactory/5.9.1,gzip(gfe)                                                                                                                             |      2 |
+| Artifactory/6.0.1,gzip(gfe)                                                                                                                             |      2 |
+| Artifactory/6.3.2,gzip(gfe)                                                                                                                             |      2 |
+| CCBot/2.0 (https://commoncrawl.org/faq/),gzip(gfe)                                                                                                      |      2 |
+| Go-http-client/2.0,gzip(gfe)                                                                                                                            |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:64.0) Gecko/20100101 Firefox/64.0,gzip(gfe)                                                            |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36,gzip(gfe)                     |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                     |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36,gzip(gfe)                      |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                     |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36,gzip(gfe)                     |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.81 Safari/537.36,gzip(gfe)                      |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36,gzip(gfe)                      |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3602.2 Safari/537.36,gzip(gfe)                       |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3615.0 Safari/537.36,gzip(gfe)                       |      2 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0.2 Safari/605.1.15,gzip(gfe)                       |      2 |
+| Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36,gzip(gfe)                                |      2 |
+| Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                                |      2 |
+| Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3616.0 Safari/537.36,gzip(gfe)                                  |      2 |
+| Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.162 Safari/537.36,gzip(gfe)                           |      2 |
+| Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3534.4 Safari/537.36,gzip(gfe)                             |      2 |
+| Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36,gzip(gfe)                                        |      2 |
+| Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                                        |      2 |
+| Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36; 360Spider,gzip(gfe)                      |      2 |
+| Mozilla/5.0 (Windows NT 6.1; WOW64; rv:63.0) Gecko/20100101 Firefox/63.0,gzip(gfe)                                                                      |      2 |
+| Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36,gzip(gfe)                            |      2 |
+| Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                            |      2 |
+| Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:63.0) Gecko/20100101 Firefox/63.0,gzip(gfe)                                                                 |      2 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36,gzip(gfe)                                     |      2 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36,gzip(gfe)                                      |      2 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.84 Safari/537.36,gzip(gfe)                                      |      2 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.103 Safari/537.36 Viv/2.1.1337.47,gzip(gfe)                     |      2 |
+| Mozilla/5.0 (compatible; BLEXBot/1.0; +http://webmeup-crawler.com/),gzip(gfe)                                                                           |      2 |
+| Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html),gzip(gfe)                                                                      |      2 |
+| Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots),gzip(gfe)                                                                              |      2 |
+| Mozilla/5.0 (iPhone; CPU iPhone OS 11_3 like Mac OS X) AppleWebKit/604.1.34 (KHTML, like Gecko) CriOS/70.0.3538.75 Mobile/15E148 Safari/604.1,gzip(gfe) |      2 |
+| Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/70.0.3538.75 Mobile/15E148 Safari/605.1,gzip(gfe) |      2 |
+| Nexus/3.13.0-01 (OSS; Linux; 3.10.0-862.11.6.el7.x86_64; amd64; 1.8.0_181),gzip(gfe)                                                                    |      2 |
+| Nexus/3.13.0-01 (PRO; Windows Server 2012; 6.2; amd64; 1.8.0_172),gzip(gfe)                                                                             |      2 |
+| git/2.5.4 (Apple Git-61),gzip(gfe)                                                                                                                      |      2 |
+| ltx71 - (http://ltx71.com/),gzip(gfe)                                                                                                                   |      2 |
+| Artifactory/6.3.0,gzip(gfe)                                                                                                                             |      1 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30,gzip(gfe)                         |      1 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36,gzip(gfe)                     |      1 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36,gzip(gfe)                     |      1 |
+| Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36,gzip(gfe)                      |      1 |
+| Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.170 Safari/537.36,gzip(gfe)                           |      1 |
+| Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko,gzip(gfe)                                                                          |      1 |
+| Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.81 Safari/537.36,gzip(gfe)                                      |      1 |
+| Twingly Recon-Klondike/1.0 (+https://developer.twingly.com),gzip(gfe)                                                                                   |      1 |
++---------------------------------------------------------------------------------------------------------------------------------------------------------+--------+
+#+end_example
+
+
+
 ** References
 
 - https://console.cloud.google.com/bigquery?project=kubernetes-charts&p=kubernetes-charts&d=kubernetes_charts_data_access&page=dataset&pli=1
 - https://firebase.googleblog.com/2017/03/bigquery-tip-unnest-function.htmlA
+
+
 
 ** Schema
 
@@ -1116,7 +1257,11 @@ textPayload 			STRING 		  NULLABLE
 traceSampled 			BOOLEAN   	NULLABLE
 #+END_EXAMPLE
 
-** Queries
+
+** Explore data set with console.cloud.google.com/bigqueryqueries
+
+Testing ideas with the web console. To be cleaned up
+
 #+BEGIN_EXAMPLE
 ===================================
 
@@ -1547,6 +1692,7 @@ LIMIT 250
 ===========
 #+END_EXAMPLE
 
+
 ** Data Insights
 
 - logName:			projects/kubernetes-charts/logs/cloudaudit.googleapis.com%2Fdata_access
@@ -1608,6 +1754,8 @@ ec2-34-207-110-137.compute-1.amazonaws.com.
 
 #+END_EXAMPLE
 
+
+
 ** Insights: ResourceNames
 
 #+BEGIN_EXAMPLE
@@ -1632,3 +1780,13 @@ projects/_/buckets/kubernetes-charts/objects/index.yaml
 projects/_/buckets/kubernetes-charts/objects/index.yaml:properties      <<< Interesting
 
 #+END_EXAMPLE
+
+
+# Local Variables:
+# eval: (require (quote ob-shell))
+# eval: (require (quote ob-lisp))
+# eval: (require (quote ob-emacs-lisp))
+# eval: (require (quote ob-js))
+# eval: (require (quote ob-go))
+# org-confirm-babel-evaluate: nil
+# End:
