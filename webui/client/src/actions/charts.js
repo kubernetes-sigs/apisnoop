@@ -1,7 +1,28 @@
+import { assign } from 'lodash'
+
 export function focusChart (keyPath) {
-  return {
-    type: 'CHART_FOCUSED',
-    payload: keyPath
+  return function ( dispatch, getState) {
+    dispatch({
+      type: 'CHART_FOCUSED',
+      payload: keyPath
+    })
+
+    const state = getState()
+    const {route} = state
+    const { url, params } = route
+    const { level, category, endpoint, method } = params
+    dispatch({
+      type: 'URL_UPDATED',
+      payload: {
+        url: route.url,
+        params: assign({}, route.params, {
+          level,
+          category,
+          endpoint,
+          method
+        })
+      }
+    })
   }
 }
 
