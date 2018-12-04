@@ -2,7 +2,7 @@ import MainPage from '../pages/main-page'
 
 const initialState = {
   pathname: typeof window.location.pathname !== 'undefined' ? window.location.pathname : '/',
-  release: releaseSet() ? window.location.pathname.replace('/','') : 'master',
+  release: isReleaseSet() ? window.location.pathname.replace('/','') : 'master',
   endpoint: '',
   page: MainPage
 }
@@ -22,6 +22,6 @@ export default   (state = initialState, action = {}) => {
   return state;
 }
 
-function releaseSet () {
+function isReleaseSet () {
   return window.location.pathname !== undefined && window.location.pathname !== '/'
 }
