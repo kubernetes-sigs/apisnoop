@@ -1,0 +1,184 @@
+---
+# Source: hlf-ord/templates/configmap--ord.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-hlf-ord--ord
+  labels:
+    app: hlf-ord
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: hlf-ord-1.2.5
+data:
+  ## Location where fabric-ca-client configuration is saved
+  FABRIC_CA_CLIENT_HOME: /var/hyperledger/fabric-ca-client
+  ## Orderer defaults
+  ORDERER_CFG_PATH: /var/hyperledger/config
+  ORDERER_GENERAL_LEDGERTYPE: file
+  ORDERER_FILELEDGER_LOCATION: /var/hyperledger/ledger
+  ORDERER_GENERAL_BATCHTIMEOUT: 1s
+  ORDERER_GENERAL_BATCHSIZE_MAXMESSAGECOUNT: "10"
+  ORDERER_GENERAL_MAXWINDOWSIZE: "1000"
+  ORDERER_GENERAL_ORDERERTYPE: "solo"
+  ORDERER_GENERAL_LISTENADDRESS: 0.0.0.0
+  ORDERER_GENERAL_LISTENPORT: "7050"
+  ORDERER_GENERAL_LOGLEVEL: debug
+  ORDERER_GENERAL_LOCALMSPDIR: /var/hyperledger/msp
+  ORDERER_GENERAL_LOCALMSPID: "OrdererMSP"
+  ORDERER_GENERAL_GENESISMETHOD: file
+  ORDERER_GENERAL_GENESISFILE: /hl_config/genesis/genesis.block
+  ORDERER_GENERAL_GENESISPROFILE: initial
+  ORDERER_GENERAL_TLS_ENABLED: "false"
+  ORDERER_GENERAL_TLS_CERTIFICATE: "/var/hyperledger/tls/server/pair/tls.crt"
+  ORDERER_GENERAL_TLS_PRIVATEKEY: "/var/hyperledger/tls/server/pair/tls.key"
+  ORDERER_GENERAL_TLS_ROOTCAS: "/var/hyperledger/tls/server/cert/cacert.pem"
+  ORDERER_GENERAL_TLS_CLIENTAUTHREQUIRED: "false"
+  # This is fixed prior to starting the orderer
+  ORDERER_GENERAL_TLS_CLIENTROOTCAS: "/var/hyperledger/tls/client/cert/*"
+  GODEBUG: "netdns=go"
+  ADMIN_MSP_PATH: /var/hyperledger/admin_msp
+
+---
+# Source: hlf-ord/templates/pvc.yaml
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-hlf-ord
+  labels:
+    app: hlf-ord
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: hlf-ord-1.2.5
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "1Gi"
+
+---
+# Source: hlf-ord/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-hlf-ord
+  labels:
+    app: hlf-ord
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: hlf-ord-1.2.5
+spec:
+  type: ClusterIP
+  ports:
+    - port: 7050
+      targetPort: 7050
+      protocol: TCP
+      name: grpc
+  selector:
+    app: hlf-ord
+    release: RELEASE-NAME
+
+---
+# Source: hlf-ord/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-hlf-ord
+  labels:
+    app: hlf-ord
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: hlf-ord-1.2.5
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hlf-ord
+      release: RELEASE-NAME
+  # Ensure we allow our pod to be unavailable, so we can upgrade
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: hlf-ord
+        heritage: "Tiller"
+        release: "RELEASE-NAME"
+        chart: hlf-ord-1.2.5
+    spec:
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: RELEASE-NAME-hlf-ord
+      containers:
+        - name: orderer
+          image: "hyperledger/fabric-orderer:1.3.0"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: ord-port
+              containerPort: 7050
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+              - ls
+              - /var/hyperledger
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          # TODO: Improve readiness probe (ideally `ps aux | awk '$11=="orderer"'`)
+          readinessProbe:
+            exec:
+              command:
+              - ls
+              - /var/hyperledger
+            initialDelaySeconds: 15
+          command:
+            - bash
+            - -c
+            - |
+
+              while [ ! -d /var/hyperledger/admin_msp/admincerts ] || [ -z "$(ls -A /var/hyperledger/admin_msp/admincerts)" ];
+              do
+                echo "\033[0;31m /var/hyperledger/admin_msp/admincerts must contain Ord admin certificates files \033[0m"
+                sleep 60
+              done
+
+              while [ ! -d /hl_config/genesis ] || [ -z "$(ls -A /hl_config/genesis)" ];
+              do
+                echo "\033[0;31m /hl_config/genesis must contain Genesis transaction \033[0m"
+                sleep 60
+              done
+
+              while [ ! -d ${ORDERER_GENERAL_LOCALMSPDIR}/signcerts ];
+              do
+                echo "\033[0;31m ${ORDERER_GENERAL_LOCALMSPDIR}/signcerts directory must exist \033[0m"
+                sleep 60
+              done
+
+              echo "\033[0;32m Create ${ORDERER_FILELEDGER_LOCATION} directory to avoid restarts \033[0m"
+              mkdir -p ${ORDERER_FILELEDGER_LOCATION}
+              mkdir -p ${ORDERER_FILELEDGER_LOCATION}/index
+
+              if [ $ORDERER_GENERAL_TLS_CLIENTAUTHREQUIRED ]
+              then
+                export ORDERER_GENERAL_TLS_CLIENTROOTCAS=$(echo $(ls $ORDERER_GENERAL_TLS_CLIENTROOTCAS) | echo "[$(sed 's/ /,/g')]")
+              fi
+
+              echo ">\033[0;35m orderer \033[0m"
+              orderer
+          envFrom:
+            - configMapRef:
+                name: RELEASE-NAME-hlf-ord--ord
+          volumeMounts:
+            - mountPath: /var/hyperledger
+              name: data
+          resources:
+            {}
+            
+
+---
+# Source: hlf-ord/templates/ingress.yaml
+
+

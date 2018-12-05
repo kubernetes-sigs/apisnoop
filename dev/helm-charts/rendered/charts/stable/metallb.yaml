@@ -1,0 +1,247 @@
+---
+# Source: metallb/templates/service-accounts.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: RELEASE-NAME-metallb-controller
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: metallb-0.8.2
+    app: metallb
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: RELEASE-NAME-metallb-speaker
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: metallb-0.8.2
+    app: metallb
+
+---
+# Source: metallb/templates/rbac.yaml
+# Roles
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: RELEASE-NAME-metallb:controller
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: metallb-0.8.2
+    app: metallb
+rules:
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "watch", "update"]
+- apiGroups: [""]
+  resources: ["services/status"]
+  verbs: ["update"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: RELEASE-NAME-metallb:speaker
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: metallb-0.8.2
+    app: metallb
+rules:
+- apiGroups: [""]
+  resources: ["services", "endpoints", "nodes"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: RELEASE-NAME-metallb-config-watcher
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: metallb-0.8.2
+    app: metallb
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+---
+
+## Role bindings
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: RELEASE-NAME-metallb:controller
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: metallb-0.8.2
+    app: metallb
+subjects:
+- kind: ServiceAccount
+  name: RELEASE-NAME-metallb-controller
+  namespace: hub
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: RELEASE-NAME-metallb:controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: RELEASE-NAME-metallb:speaker
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: metallb-0.8.2
+    app: metallb
+subjects:
+- kind: ServiceAccount
+  name: RELEASE-NAME-metallb-speaker
+  namespace: hub
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: RELEASE-NAME-metallb:speaker
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: RELEASE-NAME-metallb-config-watcher
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: metallb-0.8.2
+    app: metallb
+subjects:
+- kind: ServiceAccount
+  name: RELEASE-NAME-metallb-controller
+- kind: ServiceAccount
+  name: RELEASE-NAME-metallb-speaker
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: RELEASE-NAME-metallb-config-watcher
+---
+# Source: metallb/templates/speaker.yaml
+apiVersion: apps/v1beta2
+kind: DaemonSet
+metadata:
+  name: RELEASE-NAME-metallb-speaker
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: metallb-0.8.2
+    app: metallb
+    component: speaker
+spec:
+  selector:
+    matchLabels:
+      app: metallb
+      component: speaker
+      release: "RELEASE-NAME"
+  template:
+    metadata:
+      labels:
+        heritage: "Tiller"
+        release: "RELEASE-NAME"
+        chart: metallb-0.8.2
+        app: metallb
+        component: speaker
+    spec:
+      serviceAccountName: RELEASE-NAME-metallb-speaker
+      terminationGracePeriodSeconds: 0
+      hostNetwork: true
+      containers:
+      - name: speaker
+        image: metallb/speaker:v0.7.3
+        imagePullPolicy: IfNotPresent
+        args:
+        - --port=7472
+        - --config=metallb-config
+        env:
+        - name: METALLB_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        ports:
+        - name: monitoring
+          containerPort: 7472
+        resources:
+          {}
+          
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_RAW
+
+---
+# Source: metallb/templates/controller.yaml
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-metallb-controller
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: metallb-0.8.2
+    app: metallb
+    component: controller
+spec:
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: metallb
+      component: controller
+      release: "RELEASE-NAME"
+  template:
+    metadata:
+      labels:
+        heritage: "Tiller"
+        release: "RELEASE-NAME"
+        chart: metallb-0.8.2
+        app: metallb
+        component: controller
+    spec:
+      serviceAccountName: RELEASE-NAME-metallb-controller
+      terminationGracePeriodSeconds: 0
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534 # nobody
+      containers:
+      - name: controller
+        image: metallb/controller:v0.7.3
+        imagePullPolicy: IfNotPresent
+        args:
+        - --port=7472
+        - --config=metallb-config
+        ports:
+        - name: monitoring
+          containerPort: 7472
+        resources:
+          {}
+          
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+
+---
+# Source: metallb/templates/config.yaml
+
+

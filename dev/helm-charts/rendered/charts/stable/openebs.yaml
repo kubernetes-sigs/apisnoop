@@ -1,0 +1,490 @@
+---
+# Source: openebs/templates/cm-maya-apiserver-config.yaml
+# This is the install related config. It specifies the version of openebs
+# components i.e. custom operators that gets installed. This config is
+# used by maya-apiserver.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-openebs-install-config
+  labels:
+    app: openebs
+    chart: openebs-0.7.2
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: install-config
+data:
+  install: |
+    spec:
+      install:
+      - version: "0.7.0"
+
+---
+# Source: openebs/templates/cm-node-disk-manager.yaml
+# This is the node-disk-manager related config.
+# It can be used to customize the disks probes and filters
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-openebs-ndm-config
+  labels:
+    app: openebs
+    chart: openebs-0.7.2
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: ndm-config
+data:
+  # udev-probe is default or primary probe which should be enabled to run ndm
+  # filterconfigs contails configs of filters - in ther form fo include
+  # and exclude comma separated strings
+  node-disk-manager.config: |
+    probeconfigs:
+      - key: udev-probe
+        name: udev probe
+        state: true
+      - key: smart-probe
+        name: smart probe
+        state: true
+    filterconfigs:
+      - key: os-disk-exclude-filter
+        name: os disk exclude filter
+        state: true
+        exclude: "/,/etc/hosts,/boot"
+      - key: vendor-filter
+        name: vendor filter
+        state: true
+        include: ""
+        exclude: "CLOUDBYT,OpenEBS"
+      - key: path-filter
+        name: path filter
+        state: true
+        include: ""
+        exclude: "loop,fd0,sr0,/dev/ram,/dev/dm-"
+---
+
+---
+# Source: openebs/templates/serviceaccount.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: RELEASE-NAME-openebs
+  labels:
+    app: openebs
+    chart: openebs-0.7.2
+    release: RELEASE-NAME
+    heritage: Tiller
+
+---
+# Source: openebs/templates/clusterrole.yaml
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: RELEASE-NAME-openebs
+  labels:
+    app: openebs
+    chart: openebs-0.7.2
+    release: RELEASE-NAME
+    heritage: Tiller
+rules:
+- apiGroups: ["*"]
+  resources: ["nodes", "nodes/proxy"]
+  verbs: ["*"]
+- apiGroups: ["*"]
+  resources: ["namespaces", "services", "pods", "deployments", "events", "endpoints", "configmaps", "jobs"]
+  verbs: ["*"]
+- apiGroups: ["*"]
+  resources: ["storageclasses", "persistentvolumeclaims", "persistentvolumes"]
+  verbs: ["*"]
+- apiGroups: ["volumesnapshot.external-storage.k8s.io"]
+  resources: ["volumesnapshots", "volumesnapshotdatas"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: [ "get", "list", "create", "update", "delete"]
+- apiGroups: ["*"]
+  resources: [ "disks"]
+  verbs: ["*" ]
+- apiGroups: ["*"]
+  resources: [ "storagepoolclaims", "storagepools"]
+  verbs: ["*" ]
+- apiGroups: ["*"]
+  resources: [ "castemplates", "runtasks"]
+  verbs: ["*" ]
+- apiGroups: ["*"]
+  resources: [ "cstorpools", "cstorvolumereplicas", "cstorvolumes"]
+  verbs: ["*" ]
+- nonResourceURLs: ["/metrics"]
+  verbs: ["get"]
+
+---
+# Source: openebs/templates/clusterrolebinding.yaml
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: RELEASE-NAME-openebs
+  labels:
+    app: openebs
+    chart: openebs-0.7.2
+    release: RELEASE-NAME
+    heritage: Tiller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: RELEASE-NAME-openebs
+subjects:
+- kind: ServiceAccount
+  name: RELEASE-NAME-openebs
+  namespace: hub
+
+---
+# Source: openebs/templates/service-maya-apiserver.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-openebs-apiservice
+  labels:
+    app: openebs
+    chart: openebs-0.7.2
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  ports:
+  - name: api
+    port: 5656
+    targetPort: 5656
+    protocol: TCP
+  selector:
+    app: openebs
+    release: RELEASE-NAME
+    component: apiserver
+  sessionAffinity: None
+
+---
+# Source: openebs/templates/daemonset-ndm.yaml
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: RELEASE-NAME-openebs-ndm
+  labels:
+    app: openebs
+    chart: openebs-0.7.2
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: ndm
+spec:
+  selector:
+    matchLabels:
+      app: openebs
+      release: RELEASE-NAME
+      component: ndm
+  template:
+    metadata:
+      labels:
+        app: openebs
+        release: RELEASE-NAME
+        component: ndm
+    spec:
+      serviceAccountName: RELEASE-NAME-openebs
+      hostNetwork: true
+      containers:
+      - name: openebs-ndm
+        image: "quay.io/openebs/node-disk-manager-amd64:v0.2.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - /usr/sbin/ndm
+        - start
+        securityContext:
+          privileged: true
+        env:
+        # pass hostname as env variable using downward API to the NDM container
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        # specify the directory where the sparse files need to be created.
+        # if not specified, then sparse files will not be created.
+        - name: SPARSE_FILE_DIR
+          value: "/var/openebs/sparse"
+        # Size(bytes) of the sparse file to be created.
+        - name: SPARSE_FILE_SIZE
+          value: "10737418240"
+        # Specify the number of sparse files to be created
+        - name: SPARSE_FILE_COUNT
+          value: "1"
+        volumeMounts:
+        - name: config
+          mountPath: /host/node-disk-manager.config
+          subPath: node-disk-manager.config
+          readOnly: true
+        - name: udev
+          mountPath: /run/udev
+        - name: procmount
+          mountPath: /host/mounts
+        - name: sparsepath
+          mountPath: /var/openebs/sparse
+      volumes:
+      - name: config
+        configMap:
+          name: RELEASE-NAME-openebs-ndm-config
+      - name: udev
+        hostPath:
+          path: /run/udev
+          type: Directory
+      # mount /proc/1/mounts (mount file of process 1 of host) inside container
+      # to read which partition is mounted on / path
+      - name: procmount
+        hostPath:
+          path: /proc/1/mounts
+      - name: sparsepath
+        hostPath:
+          path: /var/openebs/sparse
+      # By default the node-disk-manager will be run on all kubernetes nodes
+      # If you would like to limit this to only some nodes, say the nodes
+      # that have storage attached, you could label those node and use
+      # nodeSelector.
+      #
+      # e.g. label the storage nodes with - "openebs.io/nodegroup"="storage-node"
+      # kubectl label node <node-name> "openebs.io/nodegroup"="storage-node"
+      #nodeSelector:
+      #  "openebs.io/nodegroup": "storage-node"
+
+---
+# Source: openebs/templates/deployment-maya-apiserver.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-openebs-apiserver
+  labels:
+    app: openebs
+    chart: openebs-0.7.2
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: apiserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openebs
+      release: RELEASE-NAME
+  template:
+    metadata:
+      labels:
+        app: openebs
+        release: RELEASE-NAME
+        component: apiserver
+    spec:
+      serviceAccountName: RELEASE-NAME-openebs
+      containers:
+      - name: openebs-apiserver
+        image: "quay.io/openebs/m-apiserver:0.7.2"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5656
+        env:
+        # OPENEBS_IO_KUBE_CONFIG enables maya api service to connect to K8s
+        # based on this config. This is ignored if empty.
+        # This is supported for maya api server version 0.5.2 onwards
+        #- name: OPENEBS_IO_KUBE_CONFIG
+        #  value: "/home/ubuntu/.kube/config"
+        # OPENEBS_IO_K8S_MASTER enables maya api service to connect to K8s
+        # based on this address. This is ignored if empty.
+        # This is supported for maya api server version 0.5.2 onwards
+        #- name: OPENEBS_IO_K8S_MASTER
+        #  value: "http://172.28.128.3:8080"
+        # OPENEBS_IO_INSTALL_CONFIG_NAME specifies the config map containing the install configuration.
+        # Currently, the configuration can be used to specifiy the default version for the CAS Templates
+        - name: OPENEBS_IO_INSTALL_CONFIG_NAME
+          value: RELEASE-NAME-openebs-install-config
+        # OPENEBS_IO_INSTALL_DEFAULT_CSTOR_SPARSE_POOL decides whether default cstor sparse pool should be
+        # configured as a part of openebs installation.
+        # If "true" a default cstor sparse pool will be configured, if "false" it will not be configured.
+        - name: OPENEBS_IO_INSTALL_DEFAULT_CSTOR_SPARSE_POOL
+          value: "true"
+        # OPENEBS_NAMESPACE provides the namespace of this deployment as an
+        # environment variable
+        - name: OPENEBS_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        # OPENEBS_SERVICE_ACCOUNT provides the service account of this pod as
+        # environment variable
+        - name: OPENEBS_SERVICE_ACCOUNT
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.serviceAccountName
+        # OPENEBS_MAYA_POD_NAME provides the name of this pod as
+        # environment variable
+        - name: OPENEBS_MAYA_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OPENEBS_IO_JIVA_CONTROLLER_IMAGE
+          value: "quay.io/openebs/jiva:0.7.2"
+        - name: OPENEBS_IO_JIVA_REPLICA_IMAGE
+          value: "quay.io/openebs/jiva:0.7.2"
+        - name: OPENEBS_IO_JIVA_REPLICA_COUNT
+          value: "3"
+        - name: OPENEBS_IO_CSTOR_TARGET_IMAGE
+          value: "quay.io/openebs/cstor-istgt:0.7.2"
+        - name: OPENEBS_IO_CSTOR_POOL_IMAGE
+          value: "quay.io/openebs/cstor-pool:0.7.2"
+        - name: OPENEBS_IO_CSTOR_POOL_MGMT_IMAGE
+          value: "quay.io/openebs/cstor-pool-mgmt:0.7.2"
+        - name: OPENEBS_IO_CSTOR_VOLUME_MGMT_IMAGE
+          value: "quay.io/openebs/cstor-volume-mgmt:0.7.2"
+        - name: OPENEBS_IO_VOLUME_MONITOR_IMAGE
+          value: "quay.io/openebs/m-exporter:0.7.2"
+
+---
+# Source: openebs/templates/deployment-maya-provisioner.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-openebs-provisioner
+  labels:
+    app: openebs
+    chart: openebs-0.7.2
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: provisioner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openebs
+      release: RELEASE-NAME
+  template:
+    metadata:
+      labels:
+        app: openebs
+        release: RELEASE-NAME
+        component: provisioner
+    spec:
+      serviceAccountName: RELEASE-NAME-openebs
+      containers:
+      - name: openebs-provisioner
+        image: "quay.io/openebs/openebs-k8s-provisioner:0.7.2"
+        imagePullPolicy: IfNotPresent
+        env:
+        # OPENEBS_IO_K8S_MASTER enables openebs provisioner to connect to K8s
+        # based on this address. This is ignored if empty.
+        # This is supported for openebs provisioner version 0.5.2 onwards
+        #- name: OPENEBS_IO_K8S_MASTER
+        #  value: "http://10.128.0.12:8080"
+        # OPENEBS_IO_KUBE_CONFIG enables openebs provisioner to connect to K8s
+        # based on this config. This is ignored if empty.
+        # This is supported for openebs provisioner version 0.5.2 onwards
+        #- name: OPENEBS_IO_KUBE_CONFIG
+        #  value: "/home/ubuntu/.kube/config"
+        # OPENEBS_NAMESPACE is the namespace that this provisioner will
+        # lookup to find maya api service
+        - name: OPENEBS_NAMESPACE
+          value: "hub"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        # OPENEBS_MAYA_SERVICE_NAME provides the maya-apiserver K8s service name,
+        # that provisioner should forward the volume creaet/delete requests.
+        # If not present, "maya-apiserver-service" will be used for lookup.
+        # This is supported for openebs provisioner version 0.5.3-RC1 onwards
+        - name: OPENEBS_MAYA_SERVICE_NAME
+          value: "RELEASE-NAME-openebs-apiservice"
+        # The following values will be set as annotations to the PV object.
+        # Refer : https://github.com/openebs/external-storage/pull/15
+        #- name: OPENEBS_MONITOR_URL
+        #  value: ""
+        #- name: OPENEBS_MONITOR_VOLKEY
+        #  value: ""
+        #- name: MAYA_PORTAL_URL
+        #  value: ""
+
+---
+# Source: openebs/templates/deployment-maya-snapshot-operator.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-openebs-snapshot-operator
+  labels:
+    app: openebs
+    chart: openebs-0.7.2
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: snapshot-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openebs
+      release: RELEASE-NAME
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: openebs
+        release: RELEASE-NAME
+        component: snapshot-operator
+    spec:
+      serviceAccountName: RELEASE-NAME-openebs
+      containers:
+      - name: openebs-snapshot-controller
+        image: "quay.io/openebs/snapshot-controller:0.7.2"
+        imagePullPolicy: IfNotPresent
+        env:
+        # OPENEBS_IO_K8S_MASTER enables openebs snapshot controller to connect to K8s
+        # based on this address. This is ignored if empty.
+        # This is supported for openebs snapshot controller version 0.6-RC1 onwards
+        #- name: OPENEBS_IO_K8S_MASTER
+        #  value: "http://10.128.0.12:8080"
+        # OPENEBS_IO_KUBE_CONFIG enables openebs snapshot controller to connect to K8s
+        # based on this config. This is ignored if empty.
+        # This is supported for openebs snapshot controller version 0.6-RC1 onwards
+        #- name: OPENEBS_IO_KUBE_CONFIG
+        #  value: "/home/ubuntu/.kube/config"
+        # OPENEBS_NAMESPACE is the namespace that this snapshot controller will
+        # lookup to find maya api service
+        - name: OPENEBS_NAMESPACE
+          value: "hub"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        # OPENEBS_MAYA_SERVICE_NAME provides the maya-apiserver K8s service name,
+        # that snapshot controller should forward the volume snapshot requests.
+        # If not present, "maya-apiserver-service" will be used for lookup.
+        # This is supported for openebs snapshot controller version 0.6-RC1 onwards
+        - name: OPENEBS_MAYA_SERVICE_NAME
+          value: "RELEASE-NAME-openebs-apiservice"
+      - name: openebs-snapshot-provisioner
+        image: "quay.io/openebs/snapshot-provisioner:0.7.2"
+        imagePullPolicy: IfNotPresent
+        env:
+        # OPENEBS_IO_K8S_MASTER enables openebs snapshot provisioner to connect to K8s
+        # based on this address. This is ignored if empty.
+        # This is supported for openebs snapshot provisioner version 0.6-RC1 onwards
+        #- name: OPENEBS_IO_K8S_MASTER
+        #  value: "http://10.128.0.12:8080"
+        # OPENEBS_IO_KUBE_CONFIG enables openebs snapshot provisioner to connect to K8s
+        # based on this config. This is ignored if empty.
+        # This is supported for openebs snapshot provisioner version 0.6-RC1 onwards
+        #- name: OPENEBS_IO_KUBE_CONFIG
+        #  value: "/home/ubuntu/.kube/config"
+        # OPENEBS_NAMESPACE is the namespace that this snapshot provisioner will
+        # lookup to find maya api service
+        - name: OPENEBS_NAMESPACE
+          value: "hub"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        # OPENEBS_MAYA_SERVICE_NAME provides the maya-apiserver K8s service name,
+        # that snapshot provisioner should forward the volume snapshot PV requests.
+        # If not present, "maya-apiserver-service" will be used for lookup.
+        # This is supported for openebs snapshot provisioner version 0.6-RC1 onwards
+        - name: OPENEBS_MAYA_SERVICE_NAME
+          value: "RELEASE-NAME-openebs-apiservice"
+

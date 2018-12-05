@@ -1,0 +1,296 @@
+---
+# Source: redis-ha/templates/redis-ha-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-redis-ha-configmap
+  labels:
+    heritage: Tiller
+    release: RELEASE-NAME
+    chart: redis-ha-3.0.2
+    app: RELEASE-NAME-redis-ha
+data:
+  redis.conf: |
+    dir "/data"
+    maxmemory 0
+    maxmemory-policy volatile-lru
+    min-slaves-max-lag 5
+    min-slaves-to-write 1
+    rdbchecksum yes
+    rdbcompression yes
+    repl-diskless-sync yes
+    save 900 1
+
+  sentinel.conf: |
+    dir "/data"
+    sentinel down-after-milliseconds mymaster 10000
+    sentinel failover-timeout mymaster 180000
+    sentinel parallel-syncs mymaster 5
+
+  init.sh: |
+    MASTER=`redis-cli -h RELEASE-NAME-redis-ha -p 26379 sentinel get-master-addr-by-name mymaster | grep -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'`
+    REDIS_CONF=/data/conf/redis.conf
+    SENTINEL_CONF=/data/conf/sentinel.conf
+    
+    set -e
+    function sentinel_update(){
+        echo "Updating sentinel config"
+        sed -i "1s/^/sentinel monitor mymaster $1 6379 2 \n/" $SENTINEL_CONF
+    }
+
+    function redis_update(){
+        echo "Updating redis config"
+        echo "slaveof $1 6379" >> $REDIS_CONF
+    }
+
+    function setup_defaults(){
+        echo "Setting up defaults"
+        if [[ "$HOSTNAME" == "RELEASE-NAME-redis-ha-server-0" ]]; then
+            echo "Setting this pod as the default master"
+            sed -i "s/^.*slaveof.*//" $REDIS_CONF
+            sentinel_update "$POD_IP"
+        else
+            echo "Setting default slave config.."
+            echo "slaveof RELEASE-NAME-redis-ha-server-0.RELEASE-NAME-redis-ha 6379" >> $REDIS_CONF
+            sentinel_update "RELEASE-NAME-redis-ha-server-0.RELEASE-NAME-redis-ha"
+            redis_update "RELEASE-NAME-redis-ha-server-0.RELEASE-NAME-redis-ha"
+        fi
+    }
+
+    function find_master(){
+        echo "Attempting to find master"
+        if [[ ! `redis-cli -h $MASTER ping` ]]; then
+           echo "Can't ping master, attempting to force failover"
+           if redis-cli -h RELEASE-NAME-redis-ha -p 26379 sentinel failover mymaster | grep -q 'NOGOODSLAVE' ; then 
+               setup_defaults
+               return 0
+           fi
+           sleep 10
+           MASTER=`redis-cli -h RELEASE-NAME-redis-ha -p 26379 sentinel get-master-addr-by-name mymaster | grep -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'`
+           if [[ "$MASTER" ]]; then
+               sentinel_update $MASTER
+               redis_update $MASTER
+           else
+              echo "Could not failover, exiting..."
+              exit 1
+           fi
+        else
+            echo "Found reachable master, updating config"
+            sentinel_update $MASTER
+            redis_update $MASTER
+        fi
+    }
+
+    mkdir -p /data/conf/
+    echo "Initializing config.."
+
+    cp /readonly-config/redis.conf $REDIS_CONF
+    cp /readonly-config/sentinel.conf $SENTINEL_CONF
+
+    if [[ "$MASTER" ]]; then
+        find_master
+    else
+        setup_defaults
+    fi
+    if [[ "$AUTH" ]]; then
+        echo "Setting auth values"
+        sed -i "s/replace-default-auth/$AUTH/" $REDIS_CONF $SENTINEL_CONF
+    fi
+
+    echo "Ready..."
+
+---
+# Source: redis-ha/templates/redis-ha-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-redis-ha
+  labels:
+    app: redis-ha
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: redis-ha-3.0.2
+  annotations:
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: server
+    port: 6379
+    protocol: TCP
+    targetPort: redis
+  - name: sentinel
+    port: 26379
+    protocol: TCP
+    targetPort: sentinel
+  selector:
+    release: RELEASE-NAME
+    app: redis-ha
+
+---
+# Source: redis-ha/templates/tests/test-redis-ha-service.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: RELEASE-NAME-redis-ha-service-test
+  labels:
+    app: redis-ha
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: redis-ha-3.0.2
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  containers:
+  - name: "RELEASE-NAME-service-test"
+    image: redis:4.0.11-alpine
+    command:
+      - sh
+      - -c
+      - redis-cli -h RELEASE-NAME-redis-ha -p 6379 info server
+  restartPolicy: Never
+
+---
+# Source: redis-ha/templates/redis-ha-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: RELEASE-NAME-redis-ha-server
+  labels:
+    app: redis-ha
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: redis-ha-3.0.2
+spec:
+  selector:
+    matchLabels:
+      release: RELEASE-NAME
+      app: redis-ha
+  serviceName: RELEASE-NAME-redis-ha
+  replicas: 3
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        checksum/config: 542b4d6138bb1c2b1a740ba69792b93115603c23c394d9f6a426c8b0bd1885a0
+      labels:
+        release: RELEASE-NAME
+        app: redis-ha
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: redis-ha
+                  release: RELEASE-NAME
+              topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app:  redis-ha
+                    release: RELEASE-NAME
+                topologyKey: failure-domain.beta.kubernetes.io/zone
+        
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        
+      initContainers:
+      - name: config-init
+        image: redis:4.0.11-alpine
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        args:
+        - /readonly-config/init.sh
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        volumeMounts:
+        - name: config
+          mountPath: /readonly-config
+          readOnly: true
+        - name: data
+          mountPath: /data
+      containers:
+      - name: redis
+        image: redis:4.0.11-alpine
+        imagePullPolicy: IfNotPresent
+        command:
+        - redis-server
+        args:
+        - /data/conf/redis.conf
+        livenessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        readinessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        resources:
+          {}
+          
+        ports:
+        - name: redis
+          containerPort: 6379
+        volumeMounts:
+        - mountPath: /data
+          name: data
+      - name: sentinel
+        image: redis:4.0.11-alpine
+        imagePullPolicy: IfNotPresent
+        command:
+          - redis-sentinel
+        args:
+          - /data/conf/sentinel.conf
+        livenessProbe:
+          exec:
+            command: ["redis-cli", "-p", "26379", "ping"]
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        readinessProbe:
+          exec:
+            command: ["redis-cli", "-p", "26379", "ping"]
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        resources:
+          {}
+          
+        ports:
+          - name: sentinel
+            containerPort: 26379
+        volumeMounts:
+        - mountPath: /data
+          name: data
+      volumes:
+      - name: config
+        configMap:
+          name: RELEASE-NAME-redis-ha-configmap
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      annotations:
+    spec:
+      accessModes:
+        - "ReadWriteOnce"
+      resources:
+        requests:
+          storage: "10Gi"
+
+---
+# Source: redis-ha/templates/redis-auth-secret.yaml
+
+---
+# Source: redis-ha/templates/redis-ha-pdb.yaml
+

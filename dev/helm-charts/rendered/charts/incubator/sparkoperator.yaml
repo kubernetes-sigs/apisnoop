@@ -1,0 +1,277 @@
+---
+# Source: sparkoperator/templates/spark-operator-serviceaccount.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: RELEASE-NAME-sparkoperator
+  labels:
+    app.kubernetes.io/name: sparkoperator
+    helm.sh/chart: sparkoperator-0.1.3
+    app.kubernetes.io/instance: RELEASE-NAME
+    app.kubernetes.io/managed-by: Tiller
+
+---
+# Source: sparkoperator/templates/spark-serviceaccount.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: 
+    RELEASE-NAME-spark
+  namespace: default
+  labels:
+    app.kubernetes.io/name: sparkoperator
+    helm.sh/chart: sparkoperator-0.1.3
+    app.kubernetes.io/instance: RELEASE-NAME
+    app.kubernetes.io/managed-by: Tiller
+
+---
+# Source: sparkoperator/templates/spark-operator-rbac.yaml
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sparkoperator-cr
+  labels:
+    app.kubernetes.io/name: sparkoperator
+    helm.sh/chart: sparkoperator-0.1.3
+    app.kubernetes.io/instance: RELEASE-NAME
+    app.kubernetes.io/managed-by: Tiller
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["*"]
+- apiGroups: [""]
+  resources: ["services", "configmaps", "secrets"]
+  verbs: ["create", "get", "delete"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "update", "patch"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["create", "get", "update", "delete"]
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources: ["mutatingwebhookconfigurations"]
+  verbs: ["create", "get", "update", "delete"]
+- apiGroups: ["sparkoperator.k8s.io"]
+  resources: ["sparkapplications", "scheduledsparkapplications"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sparkoperator-crb
+  namespace: hub
+  labels:
+    app.kubernetes.io/name: sparkoperator
+    helm.sh/chart: sparkoperator-0.1.3
+    app.kubernetes.io/instance: RELEASE-NAME
+    app.kubernetes.io/managed-by: Tiller
+subjects:
+  - kind: ServiceAccount
+    name: RELEASE-NAME-sparkoperator
+    namespace: hub
+roleRef:
+  kind: ClusterRole
+  name: sparkoperator-cr
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Source: sparkoperator/templates/spark-rbac.yaml
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: default
+  name: spark-role
+  labels:
+    app.kubernetes.io/name: sparkoperator
+    helm.sh/chart: sparkoperator-0.1.3
+    app.kubernetes.io/instance: RELEASE-NAME
+    app.kubernetes.io/managed-by: Tiller
+rules:
+- apiGroups:
+  - "" # "" indicates the core API group
+  resources:
+  - "pods"
+  verbs:
+  - "*"
+- apiGroups:
+  - "" # "" indicates the core API group
+  resources:
+  - "services"
+  verbs:
+  - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-role-binding
+  namespace: default
+  labels:
+    app.kubernetes.io/name: sparkoperator
+    helm.sh/chart: sparkoperator-0.1.3
+    app.kubernetes.io/instance: RELEASE-NAME
+    app.kubernetes.io/managed-by: Tiller
+subjects:
+- kind: ServiceAccount
+  name: 
+    RELEASE-NAME-spark
+  namespace: default
+roleRef:
+  kind: Role
+  name: spark-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Source: sparkoperator/templates/webhook-service.yaml
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-sparkoperator-webhook
+  labels:
+    app.kubernetes.io/name: sparkoperator
+    helm.sh/chart: sparkoperator-0.1.3
+    app.kubernetes.io/instance: RELEASE-NAME
+    app.kubernetes.io/managed-by: Tiller
+spec:
+  ports:
+  - port: 443
+    targetPort: 8080
+    name: webhook
+  selector:
+    app.kubernetes.io/name: sparkoperator
+    app.kubernetes.io/version: v2.3.1-v1alpha1-latest
+
+
+---
+# Source: sparkoperator/templates/spark-operator-deployment.yaml
+# If the admission webhook is enabled, then a post-install step is required
+# to generate and install the secret in the operator namespace.
+
+# In the post-install hook, the token corresponding to the operator service account
+# is used to authenticate with the Kubernetes API server to install the secret bundle.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-sparkoperator
+  labels:
+    app.kubernetes.io/name: sparkoperator
+    helm.sh/chart: sparkoperator-0.1.3
+    app.kubernetes.io/instance: RELEASE-NAME
+    app.kubernetes.io/managed-by: Tiller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sparkoperator
+      app.kubernetes.io/version: v2.3.1-v1alpha1-latest
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "10254"
+        prometheus.io/path: "/metrics"
+      labels:
+        app.kubernetes.io/name: sparkoperator
+        app.kubernetes.io/version: v2.3.1-v1alpha1-latest
+      initializers:
+        pending: []
+    spec:
+      serviceAccountName: RELEASE-NAME-sparkoperator
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: spark-webhook-certs
+      containers:
+      - name: sparkoperator
+        image: gcr.io/spark-operator/spark-operator:v2.3.1-v1alpha1-latest
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - name: webhook-certs
+            mountPath: /etc/webhook-certs
+        ports:
+          - containerPort: 10254
+        
+        command: ["/usr/bin/spark-operator"]
+        args:
+        - -enable-metrics=true
+        - -metrics-labels=app_type
+        - -enable-webhook=true
+        - -webhook-svc-namespace=hub
+        - -logtostderr
+
+---
+# Source: sparkoperator/templates/webhook-cleanup-job.yaml
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: RELEASE-NAME-sparkoperator-cleanup
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-delete-policy": hook-succeeded
+  labels:
+    app.kubernetes.io/name: sparkoperator
+    helm.sh/chart: sparkoperator-0.1.3
+    app.kubernetes.io/instance: RELEASE-NAME
+    app.kubernetes.io/managed-by: Tiller
+spec:
+  template:
+    spec:
+      serviceAccountName: RELEASE-NAME-sparkoperator
+      restartPolicy: OnFailure
+      containers:
+      - name: main
+        image: gcr.io/spark-operator/spark-operator:v2.3.1-v1alpha1-latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - "/bin/sh"
+        - "-c"
+        - "curl -ik \
+          -X DELETE \
+          -H \"Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)\" \
+          -H \"Accept: application/json\" \
+          -H \"Content-Type: application/json\" \
+          https://kubernetes.default.svc/api/v1/namespaces/hub/secrets/spark-webhook-certs"
+
+
+---
+# Source: sparkoperator/templates/webhook-init-job.yaml
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: RELEASE-NAME-sparkoperator-init
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-delete-policy": hook-succeeded
+  labels:
+    app.kubernetes.io/name: sparkoperator
+    helm.sh/chart: sparkoperator-0.1.3
+    app.kubernetes.io/instance: RELEASE-NAME
+    app.kubernetes.io/managed-by: Tiller
+spec:
+  template:
+    spec:
+      serviceAccountName: RELEASE-NAME-sparkoperator
+      restartPolicy: OnFailure
+      containers:
+      - name: main
+        image: gcr.io/spark-operator/spark-operator:v2.3.1-v1alpha1-latest
+        imagePullPolicy: IfNotPresent
+        command: ["/usr/bin/gencerts.sh", "-n", "hub", "-p"]
+
+
+---
+# Source: sparkoperator/templates/spark-namespace.yaml
+
+

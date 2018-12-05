@@ -1,0 +1,206 @@
+---
+# Source: zookeeper/templates/service-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-zookeeper-headless
+  labels:
+    app: zookeeper
+    chart: zookeeper-1.2.0
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  clusterIP: None
+  ports:
+    - name: client
+      port: 2181
+      targetPort: 
+      protocol: TCP
+    - name: election
+      port: 3888
+      targetPort: 
+      protocol: TCP
+    - name: server
+      port: 2888
+      targetPort: 
+      protocol: TCP
+  selector:
+    app: zookeeper
+    release: RELEASE-NAME
+
+---
+# Source: zookeeper/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-zookeeper
+  labels:
+    app: zookeeper
+    chart: zookeeper-1.2.0
+    release: RELEASE-NAME
+    heritage: Tiller
+  annotations:
+spec:
+  type: ClusterIP
+  ports:
+    - name: client
+      port: 2181
+      protocol: TCP
+      targetPort: client
+      
+  selector:
+    app: zookeeper
+    release: RELEASE-NAME
+
+---
+# Source: zookeeper/templates/statefulset.yaml
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: RELEASE-NAME-zookeeper
+  labels:
+    app: zookeeper
+    chart: zookeeper-1.2.0
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: server
+spec:
+  serviceName: RELEASE-NAME-zookeeper-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: zookeeper
+      release: RELEASE-NAME
+      component: server
+  updateStrategy:
+    type: OnDelete
+    
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+        release: RELEASE-NAME
+        component: server
+      annotations:
+    spec:
+      terminationGracePeriodSeconds: 1800
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        
+      containers:
+
+        - name: zookeeper
+          image: "gcr.io/google_samples/k8szk:v3"
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -xec
+            - zkGenConfig.sh && exec zkServer.sh start-foreground
+          ports:
+            - name: client
+              containerPort: 2181
+              protocol: TCP
+              
+            - name: election
+              containerPort: 3888
+              protocol: TCP
+              
+            - name: server
+              containerPort: 2888
+              protocol: TCP
+              
+          livenessProbe:
+            exec:
+              command:
+              - zkOk.sh
+            initialDelaySeconds: 20
+            
+          readinessProbe:
+            exec:
+              command:
+              - zkOk.sh
+            initialDelaySeconds: 20
+            
+          env:
+            - name: ZK_REPLICAS
+              value: "3"
+            - name: JMXAUTH
+              value: "false"
+            - name: JMXDISABLE
+              value: "false"
+            - name: JMXPORT
+              value: "1099"
+            - name: JMXSSL
+              value: "false"
+            - name: ZK_CLIENT_PORT
+              value: "2181"
+            - name: ZK_ELECTION_PORT
+              value: "3888"
+            - name: ZK_HEAP_SIZE
+              value: "2G"
+            - name: ZK_INIT_LIMIT
+              value: "5"
+            - name: ZK_LOG_LEVEL
+              value: "INFO"
+            - name: ZK_MAX_CLIENT_CNXNS
+              value: "60"
+            - name: ZK_MAX_SESSION_TIMEOUT
+              value: "40000"
+            - name: ZK_MIN_SESSION_TIMEOUT
+              value: "4000"
+            - name: ZK_PURGE_INTERVAL
+              value: "0"
+            - name: ZK_SERVER_PORT
+              value: "2888"
+            - name: ZK_SNAP_RETAIN_COUNT
+              value: "3"
+            - name: ZK_SYNC_LIMIT
+              value: "10"
+            - name: ZK_TICK_TIME
+              value: "2000"
+          resources:
+            {}
+            
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/zookeeper
+      volumes:
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        resources:
+          requests:
+            storage: "5Gi"
+
+---
+# Source: zookeeper/templates/poddisruptionbudget.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: RELEASE-NAME-zookeeper
+  labels:
+    app: zookeeper
+    chart: zookeeper-1.2.0
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: server
+spec:
+  selector:
+    matchLabels:
+      app: zookeeper
+      release: RELEASE-NAME
+      component: server
+  maxUnavailable: 1
+  
+
+---
+# Source: zookeeper/templates/config-jmx-exporter.yaml
+
+
+---
+# Source: zookeeper/templates/job-chroots.yaml
+

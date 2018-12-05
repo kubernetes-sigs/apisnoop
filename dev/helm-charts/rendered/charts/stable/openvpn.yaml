@@ -1,0 +1,213 @@
+---
+# Source: openvpn/templates/config-openvpn.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-openvpn
+  labels:
+    app: openvpn
+    chart: openvpn-3.10.0
+    release: RELEASE-NAME
+    heritage: Tiller
+data:
+  setup-certs.sh: |-
+    #!/bin/bash
+    EASY_RSA_LOC="/etc/openvpn/certs"
+    SERVER_CERT="${EASY_RSA_LOC}/pki/issued/server.crt"
+    if [ -e "$SERVER_CERT" ]
+    then
+      echo "found existing certs - reusing"
+    else
+      cp -R /usr/share/easy-rsa/* $EASY_RSA_LOC
+      cd $EASY_RSA_LOC
+      ./easyrsa init-pki
+      echo "ca\n" | ./easyrsa build-ca nopass
+      ./easyrsa build-server-full server nopass
+      ./easyrsa gen-dh
+    fi
+
+
+  newClientCert.sh: |-
+      #!/bin/bash
+      EASY_RSA_LOC="/etc/openvpn/certs"
+      cd $EASY_RSA_LOC
+      MY_IP_ADDR="$2"
+      ./easyrsa build-client-full $1 nopass
+      cat >${EASY_RSA_LOC}/pki/$1.ovpn <<EOF
+      client
+      nobind
+      dev tun
+      remote ${MY_IP_ADDR} 443 tcp
+      redirect-gateway def1
+      <key>
+      `cat ${EASY_RSA_LOC}/pki/private/$1.key`
+      </key>
+      <cert>
+      `cat ${EASY_RSA_LOC}/pki/issued/$1.crt`
+      </cert>
+      <ca>
+      `cat ${EASY_RSA_LOC}/pki/ca.crt`
+      </ca>
+      EOF
+      cat pki/$1.ovpn
+
+  configure.sh: |-
+      #!/bin/sh
+      /etc/openvpn/setup/setup-certs.sh
+      iptables -t nat -A POSTROUTING -s 10.240.0.0/255.255.0.0 -o eth0 -j MASQUERADE
+      mkdir -p /dev/net
+      if [ ! -c /dev/net/tun ]; then
+          mknod /dev/net/tun c 10 200
+      fi
+
+      if [ "$DEBUG" == "1" ]; then
+          echo ========== ${OVPN_CONFIG} ==========
+          cat "${OVPN_CONFIG}"
+          echo ====================================
+      fi
+      IP=$(ip route get 8.8.8.8 | awk '/8.8.8.8/ {print $NF}')
+      BASEIP=`echo $IP | cut -d"." -f1-3`
+      NETWORK=`echo $BASEIP".0"`
+      DNS=$(cat /etc/resolv.conf | grep -v '^#' | grep nameserver | awk '{print $2}')
+      SEARCH=$(cat /etc/resolv.conf | grep -v '^#' | grep search | awk '{$1=""; print $0}')
+      FORMATTED_SEARCH=""
+      for DOMAIN in $SEARCH; do
+        FORMATTED_SEARCH="${FORMATTED_SEARCH}push \"dhcp-option DOMAIN-SEARCH ${DOMAIN}\"\n"
+      done
+      cp -f /etc/openvpn/setup/openvpn.conf /etc/openvpn/
+      sed 's|OVPN_K8S_SEARCH|'"${FORMATTED_SEARCH}"'|' -i /etc/openvpn/openvpn.conf
+      sed 's|OVPN_K8S_DNS|'"${DNS}"'|' -i /etc/openvpn/openvpn.conf
+      sed 's|NETWORK|'"${NETWORK}"'|' -i /etc/openvpn/openvpn.conf
+
+      openvpn --config /etc/openvpn/openvpn.conf
+  openvpn.conf: |-
+      server 10.240.0.0 255.255.0.0
+      verb 3
+      key /etc/openvpn/certs/pki/private/server.key
+      ca /etc/openvpn/certs/pki/ca.crt
+      cert /etc/openvpn/certs/pki/issued/server.crt
+      dh /etc/openvpn/certs/pki/dh.pem
+
+      key-direction 0
+      keepalive 10 60
+      persist-key
+      persist-tun
+
+      proto tcp
+      port  443
+      dev tun0
+      status /tmp/openvpn-status.log
+
+      user nobody
+      group nogroup
+
+      push "route NETWORK 255.255.240.0"
+
+      push "route 10.0.0.0 255.0.0.0"
+
+
+
+
+      OVPN_K8S_SEARCH
+
+      push "dhcp-option DNS OVPN_K8S_DNS"
+---
+# Source: openvpn/templates/certs-pvc.yaml
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-openvpn
+  labels:
+    app: openvpn
+    chart: openvpn-3.10.0
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "2M"
+
+---
+# Source: openvpn/templates/openvpn-service.yaml
+kind: Service
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-openvpn
+  labels:
+    app: openvpn
+    chart: openvpn-3.10.0
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  ports:
+    - name: openvpn
+      port: 443
+      targetPort: 443
+      protocol: TCP
+  selector:
+    app: openvpn
+    release: RELEASE-NAME
+  type: LoadBalancer
+
+---
+# Source: openvpn/templates/openvpn-deployment.yaml
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-openvpn
+  labels:
+    app: openvpn
+    chart: openvpn-3.10.0
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openvpn
+      release: RELEASE-NAME
+  template:
+    metadata:
+      labels:
+        app: openvpn
+        release: RELEASE-NAME
+      annotations:
+        checksum/config: 07e725f5c7d9156f11a9ac6fd836e0f35c0e63f6429e24209c1abdd9b3cc0834
+    spec:
+      containers:
+      - name: openvpn
+        image: "jfelten/openvpn-docker:1.1.0"
+        imagePullPolicy: IfNotPresent
+        command: ["/etc/openvpn/setup/configure.sh"]
+        ports:
+        - containerPort: 443
+          name: openvpn
+        securityContext:
+          capabilities:
+            add:
+              - NET_ADMIN
+        resources:
+          requests:
+            cpu: "300m"
+            memory: "128Mi"
+          limits:
+            cpu: "300m"
+            memory: "128Mi"
+        volumeMounts:
+          - mountPath: /etc/openvpn/setup
+            name: openvpn
+            readOnly: false
+          - mountPath: /etc/openvpn/certs
+            name: certs
+            readOnly: false
+      volumes:
+      - name: openvpn
+        configMap:
+          name: RELEASE-NAME-openvpn
+          defaultMode: 0775
+      - name: certs
+        persistentVolumeClaim:
+          claimName: RELEASE-NAME-openvpn

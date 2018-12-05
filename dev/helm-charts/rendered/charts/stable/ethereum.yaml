@@ -1,0 +1,480 @@
+---
+# Source: ethereum/templates/ethstats.secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: RELEASE-NAME-ethereum-ethstats
+  labels:
+    app: ethereum
+    chart: ethereum-0.1.4
+    release: RELEASE-NAME
+    heritage: Tiller
+type: Opaque
+data:
+  WS_SECRET: "bXktc2VjcmV0LWZvci1jb25uZWN0aW5nLXRvLWV0aHN0YXRz"
+---
+# Source: ethereum/templates/geth-account.secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: RELEASE-NAME-ethereum-geth-account
+  labels:
+    app: ethereum
+    chart: ethereum-0.1.4
+    release: RELEASE-NAME
+    heritage: Tiller
+type: Opaque
+data:
+---
+# Source: ethereum/templates/geth.configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-ethereum-geth-config
+  labels:
+    app: ethereum
+    chart: ethereum-0.1.4
+    release: RELEASE-NAME
+    heritage: Tiller
+data:
+  networkid: "98052"
+  genesis.json: |-
+    {
+        "config": {
+            "chainId": 98052,
+            "homesteadBlock": 0,
+            "eip150Block": 0,
+            "eip155Block": 0,
+            "eip158Block": 0
+        },
+        "difficulty":  "0x0400",
+        "gasLimit": "0x8000000",
+        "alloc": {
+        }
+    }
+---
+# Source: ethereum/templates/bootnode.service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-ethereum-bootnode
+  labels:
+    app: ethereum
+    chart: ethereum-0.1.4
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: bootnode
+spec:
+  selector:
+    app: ethereum
+    release: RELEASE-NAME
+    component: bootnode
+  clusterIP: None
+  ports:
+  - name: discovery
+    port: 30301
+    protocol: UDP
+  - name: http
+    port: 80
+---
+# Source: ethereum/templates/ethstats.service.yaml
+kind: Service
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-ethereum-ethstats
+  labels:
+    app: ethereum
+    chart: ethereum-0.1.4
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: ethstats
+spec:
+  selector:
+    app: ethereum
+    release: RELEASE-NAME
+    component: ethstats
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: http
+---
+# Source: ethereum/templates/geth-tx.service.yaml
+kind: Service
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-ethereum-geth-tx
+  labels:
+    app: ethereum
+    chart: ethereum-0.1.4
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: geth-tx
+spec:
+  selector:
+    app: ethereum
+    release: RELEASE-NAME
+    component: geth-tx
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  ports:
+  - name: rpc
+    port: 8545
+  - name: ws
+    port: 8546
+---
+# Source: ethereum/templates/bootnode.deployment.yaml
+apiVersion: apps/v1beta2 
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-ethereum-bootnode
+  labels:
+    app: ethereum
+    chart: ethereum-0.1.4
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: bootnode
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ethereum
+      release: RELEASE-NAME
+      component: bootnode
+  template:
+    metadata:
+      labels:
+        app: ethereum
+        release: RELEASE-NAME
+        component: bootnode
+    spec:
+      containers:
+      - name: bootnode
+        image: ethereum/client-go:alltools-v1.7.3
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh"]
+        args: 
+        - "-c"
+        - "bootnode --nodekey=/etc/bootnode/node.key --verbosity=4"
+        volumeMounts:
+        - name: data
+          mountPath: /etc/bootnode
+        ports:
+        - name: discovery
+          containerPort: 30301
+          protocol: UDP
+      - name: bootnode-server
+        image: ethereum/client-go:alltools-v1.7.3
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh"]
+        args:
+        - "-c"
+        - "while [ 1 ]; do echo -e \"HTTP/1.1 200 OK\n\nenode://$(bootnode -writeaddress --nodekey=/etc/bootnode/node.key)@$(POD_IP):30301\" | nc -l -v -p 80 || break; done;"
+        volumeMounts:
+        - name: data
+          mountPath: /etc/bootnode
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 80
+      initContainers:
+      - name: genkey
+        image: ethereum/client-go:alltools-v1.7.3
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh"]
+        args:
+        - "-c"
+        - "bootnode --genkey=/etc/bootnode/node.key"
+        volumeMounts:
+        - name: data
+          mountPath: /etc/bootnode
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+# Source: ethereum/templates/ethstats.deployment.yaml
+apiVersion: apps/v1beta2 
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-ethereum-ethstats
+  labels:
+    app: ethereum
+    chart: ethereum-0.1.4
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: ethstats
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ethereum
+      release: RELEASE-NAME
+      component: ethstats
+  template:
+    metadata:
+      labels:
+        app: ethereum
+        release: RELEASE-NAME
+        component: ethstats
+    spec:
+      containers:
+      - name: ethstats
+        image: ethereumex/eth-stats-dashboard:v0.0.1
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 3000
+        env:
+        - name: WS_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: RELEASE-NAME-ethereum-ethstats
+              key: WS_SECRET
+---
+# Source: ethereum/templates/geth-miner.deployment.yaml
+apiVersion: apps/v1beta2 
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-ethereum-geth-miner
+  labels:
+    app: ethereum
+    chart: ethereum-0.1.4
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: geth-miner
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ethereum
+      release: RELEASE-NAME
+      component: geth-miner
+  template:
+    metadata:
+      labels:
+        app: ethereum
+        release: RELEASE-NAME
+        component: geth-miner
+    spec:
+      containers:
+      - name: geth-miner
+        image: ethereum/client-go:v1.7.3
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh"]
+        args: 
+        - "-c"
+        - "geth --bootnodes=`cat /root/.ethereum/bootnodes` --mine --etherbase=0 --networkid=${NETWORK_ID} --ethstats=${HOSTNAME}:${ETHSTATS_SECRET}@${ETHSTATS_SVC} --verbosity=5"
+        env:
+        - name: ETHSTATS_SVC
+          value: RELEASE-NAME-ethereum-ethstats.hub
+        - name: ETHSTATS_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: RELEASE-NAME-ethereum-ethstats
+              key: WS_SECRET
+        - name: NETWORK_ID
+          valueFrom:
+            configMapKeyRef:
+              name: RELEASE-NAME-ethereum-geth-config
+              key: networkid
+        ports:
+        - name: discovery-udp
+          containerPort: 30303
+          protocol: UDP
+        - name: discovery-tcp
+          containerPort: 30303
+        volumeMounts:
+        - name: data
+          mountPath: /root/.ethereum
+      initContainers:
+      - name: init-genesis
+        image: ethereum/client-go:v1.7.3
+        imagePullPolicy: IfNotPresent
+        args:
+        - "init"
+        - "/var/geth/genesis.json"
+        volumeMounts:
+        - name: data
+          mountPath: /root/.ethereum
+        - name: config
+          mountPath: /var/geth
+      - name: import-geth-account
+        image: ethereum/client-go:v1.7.3
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh"]
+        args:
+        - "-c"
+        - "geth account import --password /root/.ethereum/account/accountSecret /root/.ethereum/account/accountPrivateKey"
+        volumeMounts:
+        - name: data
+          mountPath: /root/.ethereum
+        - name: account
+          readOnly: true
+          mountPath: /root/.ethereum/account
+      - name: get-bootnodes
+        image: ethereum/client-go:v1.7.3
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh"]
+        args:
+        - "-c"
+        - |-
+          apk add --no-cache curl; 
+          CNT=0;
+          echo "retreiving bootnodes from $BOOTNODE_SVC"
+          while [ $CNT -le 90 ] 
+          do
+            curl -m 5 -s $BOOTNODE_SVC | xargs echo -n >> /geth/bootnodes;
+            if [ -s /geth/bootnodes ] 
+            then
+              cat /geth/bootnodes;
+              exit 0;
+            fi;
+          
+            echo "no bootnodes found. retrying $CNT..."; 
+            sleep 2 || break;
+            CNT=$((CNT+1));
+          done;
+          echo "WARNING. unable to find bootnodes. continuing but geth may not be able to find any peers.";
+          exit 0;
+        env:
+        - name: BOOTNODE_SVC
+          value: RELEASE-NAME-ethereum-bootnode.hub
+        volumeMounts:
+        - name: data
+          mountPath: /geth
+      volumes:
+      - name: data
+        emptyDir: {}
+      - name: config 
+        configMap:
+          name: RELEASE-NAME-ethereum-geth-config
+      - name: account
+        secret:
+          secretName: RELEASE-NAME-ethereum-geth-account
+---
+# Source: ethereum/templates/geth-tx.deployment.yaml
+apiVersion: apps/v1beta2 
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-ethereum-geth-tx
+  labels:
+    app: ethereum
+    chart: ethereum-0.1.4
+    release: RELEASE-NAME
+    heritage: Tiller
+    component: geth-tx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ethereum
+      release: RELEASE-NAME
+      component: geth-tx
+  template:
+    metadata:
+      labels:
+        app: ethereum
+        release: RELEASE-NAME
+        component: geth-tx
+    spec:
+      containers:
+      - name: geth-tx
+        image: ethereum/client-go:v1.7.3
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh"]
+        args: 
+        - "-c"
+        - "geth --bootnodes=`cat /root/.ethereum/bootnodes` --rpc --rpcaddr 0.0.0.0 --rpcapi=eth,net,web3 --rpccorsdomain='*' --ws --networkid=${NETWORK_ID} --ethstats=${HOSTNAME}:${ETHSTATS_SECRET}@${ETHSTATS_SVC} --verbosity=5"
+        env:
+        - name: ETHSTATS_SVC
+          value: RELEASE-NAME-ethereum-ethstats.hub
+        - name: ETHSTATS_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: RELEASE-NAME-ethereum-ethstats
+              key: WS_SECRET
+        - name: NETWORK_ID
+          valueFrom:
+            configMapKeyRef:
+              name: RELEASE-NAME-ethereum-geth-config
+              key: networkid
+        ports:
+        - name: rpc
+          containerPort: 8545
+        - name: ws
+          containerPort: 8546
+        - name: discovery-udp
+          containerPort: 30303
+          protocol: UDP
+        - name: discovery-tcp
+          containerPort: 30303
+        volumeMounts:
+        - name: data
+          mountPath: /root/.ethereum
+      initContainers:
+      - name: init-genesis
+        image: ethereum/client-go:v1.7.3
+        imagePullPolicy: IfNotPresent
+        args:
+        - "init"
+        - "/var/geth/genesis.json"
+        volumeMounts:
+        - name: data
+          mountPath: /root/.ethereum
+        - name: config
+          mountPath: /var/geth
+      - name: import-geth-account
+        image: ethereum/client-go:v1.7.3
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh"]
+        args:
+        - "-c"
+        - "geth account import --password /root/.ethereum/account/accountSecret /root/.ethereum/account/accountPrivateKey"
+        volumeMounts:
+        - name: data
+          mountPath: /root/.ethereum
+        - name: account
+          readOnly: true
+          mountPath: /root/.ethereum/account
+      - name: get-bootnodes
+        image: ethereum/client-go:v1.7.3
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh"]
+        args:
+        - "-c"
+        - |-
+          apk add --no-cache curl; 
+          CNT=0;
+          echo "retreiving bootnodes from $BOOTNODE_SVC"
+          while [ $CNT -le 90 ] 
+          do
+            curl -m 5 -s $BOOTNODE_SVC | xargs echo -n >> /geth/bootnodes;
+            if [ -s /geth/bootnodes ] 
+            then
+              cat /geth/bootnodes;
+              exit 0;
+            fi;
+          
+            echo "no bootnodes found. retrying $CNT..."; 
+            sleep 2 || break;
+            CNT=$((CNT+1));
+          done;
+          echo "WARNING. unable to find bootnodes. continuing but geth may not be able to find any peers.";
+          exit 0;
+        env:
+        - name: BOOTNODE_SVC
+          value: RELEASE-NAME-ethereum-bootnode.hub
+        volumeMounts:
+        - name: data
+          mountPath: /geth
+      volumes:
+      - name: data
+        emptyDir: {}
+      - name: config 
+        configMap:
+          name: RELEASE-NAME-ethereum-geth-config
+      - name: account
+        secret:
+          secretName: RELEASE-NAME-ethereum-geth-account

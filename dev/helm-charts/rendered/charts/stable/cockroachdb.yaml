@@ -1,0 +1,239 @@
+---
+# Source: cockroachdb/templates/cockroachdb-statefulset.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  # This service is meant to be used by clients of the database. It exposes a ClusterIP that will
+  # automatically load balance connections to the different database pods.
+  name: "RELEASE-NAME-cockroachdb-public"
+  annotations:
+    {}
+    
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: "cockroachdb-2.0.6"
+    component: "RELEASE-NAME-cockroachdb"
+spec:
+  type: ClusterIP
+  ports:
+  # The main port, served by gRPC, serves Postgres-flavor SQL, internode
+  # traffic and the cli.
+  - port: 26257
+    targetPort: 26257
+    name: grpc
+  # The secondary port serves the UI as well as health and debug endpoints.
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    component: "RELEASE-NAME-cockroachdb"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # This service only exists to create DNS entries for each pod in the stateful
+  # set such that they can resolve each other's IP addresses. It does not
+  # create a load-balanced ClusterIP and should not be used directly by clients
+  # in most circumstances.
+  name: "RELEASE-NAME-cockroachdb"
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: "cockroachdb-2.0.6"
+    component: "RELEASE-NAME-cockroachdb"
+  annotations:
+    # Use this annotation in addition to the actual field below because the
+    # annotation will stop being respected soon but the field is broken in
+    # some versions of Kubernetes:
+    # https://github.com/kubernetes/kubernetes/issues/58662
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+    # Enable automatic monitoring of all instances when Prometheus is running in the cluster.
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "_status/vars"
+    prometheus.io/port: "8080"
+spec:
+  ports:
+  - port: 26257
+    targetPort: 26257
+    name: grpc
+  # The secondary port serves the UI as well as health and debug endpoints.
+  - port: 8080
+    targetPort: 8080
+    name: http
+  # We want all pods in the StatefulSet to have their addresses published for
+  # the sake of the other CockroachDB pods even before they're ready, since they
+  # have to be able to talk to each other in order to become ready.
+  publishNotReadyAddresses: true
+  clusterIP: None
+  selector:
+    component: "RELEASE-NAME-cockroachdb"
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: "RELEASE-NAME-cockroachdb-budget"
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: "cockroachdb-2.0.6"
+    component: "RELEASE-NAME-cockroachdb"
+spec:
+  selector:
+    matchLabels:
+      component: "RELEASE-NAME-cockroachdb"
+  maxUnavailable: 1
+---
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: "RELEASE-NAME-cockroachdb"
+spec:
+  serviceName: "RELEASE-NAME-cockroachdb"
+  replicas: 3
+  selector:
+    matchLabels:
+      heritage: "Tiller"
+      release: "RELEASE-NAME"
+      component: "RELEASE-NAME-cockroachdb"
+  template:
+    metadata:
+      labels:
+        heritage: "Tiller"
+        release: "RELEASE-NAME"
+        chart: "cockroachdb-2.0.6"
+        component: "RELEASE-NAME-cockroachdb"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values:
+                  - "RELEASE-NAME-cockroachdb"
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: "RELEASE-NAME-cockroachdb"
+        image: "cockroachdb/cockroach:v2.1.1"
+        imagePullPolicy: "Always"
+        ports:
+        - containerPort: 26257
+          name: grpc
+        - containerPort: 8080
+          name: http
+        livenessProbe:
+          httpGet:
+            path: "/health"
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: "/health?ready=1"
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 2
+        resources:
+          {}
+          
+        env:
+        - name: STATEFULSET_NAME
+          value: "RELEASE-NAME-cockroachdb"
+        - name: STATEFULSET_FQDN
+          value: "RELEASE-NAME-cockroachdb.hub.svc.cluster.local"
+        - name: COCKROACH_CHANNEL
+          value: kubernetes-helm
+        volumeMounts:
+        - name: datadir
+          mountPath: /cockroach/cockroach-data
+        command:
+          - "/bin/bash"
+          - "-ecx"
+            # The use of qualified `hostname -f` is crucial:
+            # Other nodes aren't able to look up the unqualified hostname.
+          - "exec /cockroach/cockroach start --logtostderr --insecure --advertise-host $(hostname).${STATEFULSET_FQDN} --http-host 0.0.0.0 --http-port 8080 --port 26257 --cache 25% --max-sql-memory 25%  --join ${STATEFULSET_NAME}-0.${STATEFULSET_FQDN}:26257,${STATEFULSET_NAME}-1.${STATEFULSET_FQDN}:26257,${STATEFULSET_NAME}-2.${STATEFULSET_FQDN}:26257"
+      # No pre-stop hook is required, a SIGTERM plus some time is all that's
+      # needed for graceful shutdown of a node.
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - name: datadir
+        persistentVolumeClaim:
+          claimName: datadir
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+    
+  volumeClaimTemplates:
+  - metadata:
+      name: datadir
+    spec:
+      accessModes:
+        - "ReadWriteOnce"
+      resources:
+        requests:
+          storage: "100Gi"
+
+---
+# Source: cockroachdb/templates/tests/client-test.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "RELEASE-NAME-cockroachdb-test"
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  containers:
+  - name: "client-test"
+    image: "cockroachdb/cockroach:v2.1.1"
+    imagePullPolicy: "Always"
+    command:
+      - "/cockroach/cockroach"
+      - "sql"
+      - "--insecure"
+      - "--host"
+      - "RELEASE-NAME-cockroachdb-public.hub"
+      - "--port"
+      - "26257"
+      - "-e"
+      - "SHOW DATABASES;"
+  restartPolicy: Never
+
+---
+# Source: cockroachdb/templates/cluster-init.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "RELEASE-NAME-cockroachdb-init"
+  labels:
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+    chart: "cockroachdb-2.0.6"
+spec:
+  template:
+    spec:
+      containers:
+      - name: cluster-init
+        image: "cockroachdb/cockroach:v2.1.1"
+        imagePullPolicy: "Always"
+        # Run the command in an `until` loop because this job is bound to come
+        # up before the cockroach pods (due to the time needed to get
+        # persistent volumes attached to nodes), and sleeping 5 seconds between
+        # attempts is much better than letting the pod fail when the init
+        # command does and waiting out Kubernetes' non-configurable exponential
+        # backoff for pod restarts.
+        command:
+          - "/bin/bash"
+          - "-ecx"
+          - "until /cockroach/cockroach init --insecure --host=RELEASE-NAME-cockroachdb-0.RELEASE-NAME-cockroachdb --port 26257; do sleep 5; done"
+      restartPolicy: OnFailure
+
+---
+# Source: cockroachdb/templates/cockroachdb-networkpolicy.yaml
+
+

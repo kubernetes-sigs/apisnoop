@@ -1,0 +1,138 @@
+---
+# Source: linkerd/templates/config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: RELEASE-NAME-linkerd
+    chart: "linkerd-0.4.1"
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+  name: RELEASE-NAME-linkerd-config
+data:
+
+  config.yaml: |-
+    admin:
+      port: 9990
+
+    namers:
+    - kind: io.l5d.k8s
+      # kubectl proxy forwards localhost:8001 to the Kubernetes master API
+      host: localhost
+      port: 8001
+    routers:
+    - protocol: http
+      # Incoming requests to linkerd with a Host header of "hello" get assigned
+      # a name like /http/1.1/GET/hello.  This dtab transforms that into
+      # /#/io.l5d.k8s/hub/http/hello which indicates that the kubernetes
+      # namer should query the API for ports named "http" on pods in the
+      # "hub" namespace named "hello".  linkerd will then load balance over
+      # those pods.
+      dtab: |
+        /http/1.1/* => /#/io.l5d.k8s/hub/http
+      servers:
+      - ip: 0.0.0.0
+        port: 4140
+
+
+---
+# Source: linkerd/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-linkerd
+  labels:
+    chart: "linkerd-0.4.1"
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/probe: "true"
+    prometheus.io/path: "/admin/metrics/prometheus"
+    prometheus.io/port: "9990"
+spec:
+  type: ClusterIP
+  ports:
+  - name: outgoing
+    port: 4140
+  - name: incoming
+    port: 4141
+  - name: admin
+    port: 9990
+  selector:
+    app: RELEASE-NAME-linkerd
+
+---
+# Source: linkerd/templates/daemonset.yaml
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  labels:
+    app: RELEASE-NAME-linkerd
+    chart: "linkerd-0.4.1"
+    heritage: "Tiller"
+    release: "RELEASE-NAME"
+  name: RELEASE-NAME-linkerd
+spec:
+  template:
+    metadata:
+      annotations:
+      labels:
+        app: RELEASE-NAME-linkerd
+        release: "RELEASE-NAME"
+    spec:
+      volumes:
+      - name: RELEASE-NAME-linkerd-config
+        configMap:
+          name: "RELEASE-NAME-linkerd-config"
+      containers:
+      - name: l5d
+        image: buoyantio/linkerd:1.1.2
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        args:
+        - /io.buoyant/linkerd/config/config.yaml
+        ports:
+        - name: incoming
+          containerPort: 4141
+          hostPort: 4141
+        - name: outgoing
+          containerPort: 4140
+          hostPort: 4140
+        - name: admin
+          containerPort: 9990
+          hostPort: 9990
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 0
+            memory: 512Mi
+          
+        livenessProbe:
+          httpGet:
+            path: /admin
+            port: 9990
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: "RELEASE-NAME-linkerd-config"
+          mountPath: "/io.buoyant/linkerd/config"
+          readOnly: true
+      - name: kubectl
+        image: buoyantio/kubectl:v1.6.2
+        args:
+        - "proxy"
+        - "-p"
+        - "8001"
+        resources:
+          requests:
+            cpu: 0
+            memory: 32Mi
+          
+
+---
+# Source: linkerd/templates/ingress.yaml
+

@@ -1,0 +1,185 @@
+---
+# Source: verdaccio/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-verdaccio
+  labels:
+    app: verdaccio
+    chart: verdaccio-0.5.0
+    release: RELEASE-NAME
+    heritage: Tiller
+data:
+  config.yaml: |-
+    # This is the config file used for the docker images.
+    # It allows all users to do anything, so don't use it on production systems.
+    #
+    # Do not configure host and port under `listen` in this file
+    # as it will be ignored when using docker.
+    # see https://github.com/verdaccio/verdaccio/blob/master/docs/docker.md#docker-and-custom-port-configuration
+    #
+    # Look here for more config file examples:
+    # https://github.com/verdaccio/verdaccio/tree/master/conf
+    #
+    
+    # path to a directory with all packages
+    storage: /verdaccio/storage/data
+    
+    web:
+      # WebUI is enabled as default, if you want disable it, just uncomment this line
+      #enable: false
+      title: Verdaccio
+    
+    auth:
+      htpasswd:
+        file: /verdaccio/storage/htpasswd
+        # Maximum amount of users allowed to register, defaults to "+infinity".
+        # You can set this to -1 to disable registration.
+        #max_users: 1000
+    
+    # a list of other known repositories we can talk to
+    uplinks:
+      npmjs:
+        url: https://registry.npmjs.org/
+    
+    packages:
+      '@*/*':
+        # scoped packages
+        access: $all
+        publish: $authenticated
+        proxy: npmjs
+    
+      '**':
+        # allow all users (including non-authenticated users) to read and
+        # publish all packages
+        #
+        # you can specify usernames/groupnames (depending on your auth plugin)
+        # and three keywords: "$all", "$anonymous", "$authenticated"
+        access: $all
+    
+        # allow all known users to publish packages
+        # (anyone can register by default, remember?)
+        publish: $authenticated
+    
+        # if package is not available locally, proxy requests to 'npmjs' registry
+        proxy: npmjs
+    
+    # To use `npm audit` uncomment the following section
+    middlewares:
+      audit:
+        enabled: true
+    
+    # log settings
+    logs:
+      - {type: stdout, format: pretty, level: http}
+      #- {type: file, path: verdaccio.log, level: info}
+    
+
+---
+# Source: verdaccio/templates/pvc.yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  labels:
+    app: RELEASE-NAME-verdaccio
+    chart: "verdaccio-0.5.0"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+  name: RELEASE-NAME-verdaccio
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "8Gi"
+
+---
+# Source: verdaccio/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-verdaccio
+  labels:
+    app: verdaccio
+    chart: verdaccio-0.5.0
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  clusterIP: ""
+  ports:
+    - port: 4873
+      targetPort: http
+      protocol: TCP
+      name: 
+  selector:
+    app: verdaccio
+    release: RELEASE-NAME
+  type: ClusterIP
+
+---
+# Source: verdaccio/templates/deployment.yaml
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: verdaccio
+    chart: verdaccio-0.5.0
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-verdaccio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  template:
+    metadata:
+      annotations:
+        checksum/config: 1e0ef0451d328e172b5a1f53d175bb6523f6394ad9df1f166a241c3e90b01254
+      labels:
+        app: verdaccio
+        release: RELEASE-NAME
+    spec:
+      containers:
+        - name: verdaccio
+          image: "verdaccio/verdaccio:3.8.1"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4873
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /-/ping
+              port: http
+            initialDelaySeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /-/ping
+              port: http
+            initialDelaySeconds: 5
+          resources:
+            {}
+            
+          volumeMounts:
+            - mountPath: /verdaccio/storage
+              name: storage
+              readOnly: false
+            - mountPath: /verdaccio/conf
+              name: config
+              readOnly: true
+      # Allow non-root user to access PersistentVolume
+      securityContext:
+        runAsUser: 100
+        fsGroup: 101
+      volumes:
+      - name: config
+        configMap:
+          name: RELEASE-NAME-verdaccio
+      - name: storage
+        persistentVolumeClaim:
+          claimName: RELEASE-NAME-verdaccio
+
+---
+# Source: verdaccio/templates/ingress.yaml
+
+

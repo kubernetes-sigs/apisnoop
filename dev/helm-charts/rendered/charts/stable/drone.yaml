@@ -1,0 +1,208 @@
+---
+# Source: drone/templates/secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: RELEASE-NAME-drone
+  labels:
+    app: drone
+    chart: "drone-1.7.3"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+type: Opaque
+data:
+  
+  secret: "NVVMMzRCNVh1RDJmOUN1c3NZVnNoYXFO"
+  
+
+---
+# Source: drone/templates/pvc.yaml
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-drone
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "1Gi"
+
+---
+# Source: drone/templates/service-account.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: RELEASE-NAME-drone
+  labels:
+    app: drone
+    chart: "drone-1.7.3"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+
+
+---
+# Source: drone/templates/role.yaml
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: RELEASE-NAME-drone
+  labels:
+    app: drone
+    chart: "drone-1.7.3"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+rules:
+  - apiGroups:
+      - extensions
+    resources:
+      - deployments
+    verbs:
+      - get
+      - list
+      - patch
+      - update
+
+
+---
+# Source: drone/templates/role-binding.yaml
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: RELEASE-NAME-drone
+  labels:
+    app: drone
+    chart: "drone-1.7.3"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: RELEASE-NAME-drone
+subjects:
+- kind: ServiceAccount
+  name: RELEASE-NAME-drone
+  namespace: hub
+
+
+---
+# Source: drone/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-drone
+  annotations:
+  labels:
+    app: drone
+    chart: "drone-1.7.3"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+  - name: grpc
+    port: 9000
+    targetPort: 9000
+  selector:
+    app: drone
+    release: "RELEASE-NAME"
+    component: server
+
+---
+# Source: drone/templates/deployment-agent.yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-drone-agent
+  labels:
+    app: drone
+    chart: "drone-1.7.3"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+    component: agent
+spec:
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        checksum/secrets: 4cd9a091bbe806b6672fbb32fb2a54ae55281077acddcd54cc770af724fa5223
+      labels:
+        app: drone
+        release: "RELEASE-NAME"
+        component: agent
+    spec:
+      serviceAccountName: RELEASE-NAME-drone
+      containers:
+      - name: RELEASE-NAME-drone-agent
+        image: "docker.io/drone/agent:0.8.6"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        env:
+          - name: DRONE_SERVER
+            value: RELEASE-NAME-drone:9000
+          - name: DRONE_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-drone
+                key: secret
+          - name: DOCKER_HOST
+            value: tcp://localhost:2375
+          - name: DRONE_DEBUG
+            value: "false"
+        livenessProbe:
+          httpGet:
+            path: "/healthz"
+            port: http
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: "/healthz"
+            port: http
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 3
+        resources:
+          {}
+          
+      - name: RELEASE-NAME-drone-dind
+        image: "docker.io/library/docker:18.06.1-ce-dind"
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: DOCKER_DRIVER
+          value: overlay2
+        
+        securityContext:
+          privileged: true
+        resources:
+          {}
+          
+        volumeMounts:
+          - name: docker-graph-storage
+            mountPath: /var/lib/docker
+      volumes:
+      - name: docker-graph-storage
+        emptyDir: {}
+
+---
+# Source: drone/templates/deployment-server.yaml
+
+
+---
+# Source: drone/templates/ingress.yaml
+
