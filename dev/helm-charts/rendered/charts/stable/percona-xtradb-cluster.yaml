@@ -1,0 +1,472 @@
+---
+# Source: percona-xtradb-cluster/templates/secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: RELEASE-NAME-pxc
+  labels:
+    app: RELEASE-NAME-pxc
+    chart: "percona-xtradb-cluster-0.6.0"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+type: Opaque
+data:
+  
+  mysql-root-password: "WG1UNDRFcjJrdQ=="
+  
+  
+  mysql-password: "MXFKUnNEZ2ttRA=="
+  
+  
+  xtrabackup-password: "bURwc2FRZVVLSg=="
+  
+
+---
+# Source: percona-xtradb-cluster/templates/config-map_mysql-config.yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-pxc-config-files
+  labels:
+    app: RELEASE-NAME-pxc
+    chart: "percona-xtradb-cluster-0.6.0"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+data:
+  node.cnf: |+
+    [mysqld]
+    datadir=/var/lib/mysql
+    default_storage_engine=InnoDB
+    binlog_format=ROW
+    innodb_flush_log_at_trx_commit  = 0
+    innodb_flush_method             = O_DIRECT
+    innodb_file_per_table           = 1
+    innodb_autoinc_lock_mode=2
+    bind_address = 0.0.0.0
+    wsrep_slave_threads=2
+    wsrep_cluster_address=gcomm://
+    wsrep_provider=/usr/lib/galera3/libgalera_smm.so
+    wsrep_cluster_name=galera
+    wsrep_sst_method=xtrabackup-v2
+  
+  
+
+
+
+---
+# Source: percona-xtradb-cluster/templates/config-map_startup-scripts.yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-pxc-startup-scripts
+  labels:
+    app: RELEASE-NAME-pxc
+    chart: "percona-xtradb-cluster-0.6.0"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+data:
+  entrypoint.sh: |
+    #!/bin/bash
+    set -e
+    
+    if [[ -n "${DEBUG}" ]]; then
+        set -x
+    fi
+    
+    . /startup-scripts/functions.sh
+    
+    ipaddr=$(hostname -i | awk ' { print $1 } ')
+    hostname=$(hostname)
+    echo "I AM $hostname - $ipaddr"
+    
+    # if command starts with an option, prepend mysqld
+    if [ "${1:0:1}" = '-' ]; then
+        CMDARG="$@"
+    fi
+    
+    cluster_join=$(resolveip -s "${K8S_SERVICE_NAME}" || echo "")
+    if [[ -z "${cluster_join}" ]]; then
+        echo "I am the Primary Node"
+        init_mysql
+        write_password_file
+        exec mysqld --user=mysql --wsrep_cluster_name=$SHORT_CLUSTER_NAME --wsrep_node_name=$hostname \
+        --wsrep_cluster_address=gcomm:// --wsrep_sst_method=xtrabackup-v2 \
+        --wsrep_sst_auth="xtrabackup:$XTRABACKUP_PASSWORD" \
+        --wsrep_node_address="$ipaddr" $CMDARG
+    else
+        echo "I am not the Primary Node"
+        chown -R mysql:mysql /var/lib/mysql
+        touch /var/log/mysqld.log
+        chown mysql:mysql /var/log/mysqld.log
+        write_password_file
+        exec mysqld --user=mysql --wsrep_cluster_name=$SHORT_CLUSTER_NAME --wsrep_node_name=$hostname \
+        --wsrep_cluster_address="gcomm://$cluster_join" --wsrep_sst_method=xtrabackup-v2 \
+        --wsrep_sst_auth="xtrabackup:$XTRABACKUP_PASSWORD" \
+        --wsrep_node_address="$ipaddr" $CMDARG
+    fi
+    
+  functions.sh: |
+    #!/bin/bash
+    
+    write_password_file() {
+    if [[ -n "${MYSQL_ROOT_PASSWORD}" ]]; then
+        cat <<EOF > /root/.my.cnf
+        [client]
+        user=root
+        password=${MYSQL_ROOT_PASSWORD}
+    EOF
+    fi
+    }
+    
+    init_mysql() {
+    DATADIR=/var/lib/mysql
+    # if we have CLUSTER_JOIN - then we do not need to perform datadir initialize
+    # the data will be copied from another node
+    if [ ! -e "$DATADIR/mysql" ]; then
+        if [ -z "$MYSQL_ROOT_PASSWORD" -a -z "$MYSQL_ALLOW_EMPTY_PASSWORD" -a -z "$MYSQL_RANDOM_ROOT_PASSWORD" -a -z "$MYSQL_ROOT_PASSWORD_FILE" ]; then
+                            echo >&2 'error: database is uninitialized and password option is not specified '
+                            echo >&2 '  You need to specify one of MYSQL_ROOT_PASSWORD, MYSQL_ROOT_PASSWORD_FILE,  MYSQL_ALLOW_EMPTY_PASSWORD or MYSQL_RANDOM_ROOT_PASSWORD'
+                            exit 1
+                    fi
+    
+        if [ ! -z "$MYSQL_ROOT_PASSWORD_FILE" -a -z "$MYSQL_ROOT_PASSWORD" ]; then
+        MYSQL_ROOT_PASSWORD=$(cat $MYSQL_ROOT_PASSWORD_FILE)
+        fi
+        mkdir -p "$DATADIR"
+    
+        echo "Running --initialize-insecure on $DATADIR"
+        ls -lah $DATADIR
+        mysqld --initialize-insecure
+        chown -R mysql:mysql "$DATADIR"
+        chown mysql:mysql /var/log/mysqld.log
+        echo 'Finished --initialize-insecure'
+    
+        mysqld --user=mysql --datadir="$DATADIR" --skip-networking &
+        pid="$!"
+    
+        mysql=( mysql --protocol=socket -uroot )
+    
+        for i in {30..0}; do
+        if echo 'SELECT 1' | "${mysql[@]}" &> /dev/null; then
+            break
+        fi
+        echo 'MySQL init process in progress...'
+        sleep 1
+        done
+        if [ "$i" = 0 ]; then
+        echo >&2 'MySQL init process failed.'
+        exit 1
+        fi
+    
+        # sed is for https://bugs.mysql.com/bug.php?id=20545
+        mysql_tzinfo_to_sql /usr/share/zoneinfo | sed 's/Local time zone must be set--see zic manual page/FCTY/' | "${mysql[@]}" mysql
+        "${mysql[@]}" <<-EOSQL
+        -- What's done in this file shouldn't be replicated
+        --  or products like mysql-fabric won't work
+        SET @@SESSION.SQL_LOG_BIN=0;
+        CREATE USER 'root'@'${ALLOW_ROOT_FROM}' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}' ;
+        GRANT ALL ON *.* TO 'root'@'${ALLOW_ROOT_FROM}' WITH GRANT OPTION ;
+        ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
+        GRANT ALL ON *.* TO 'root'@'localhost' WITH GRANT OPTION ;
+        CREATE USER 'xtrabackup'@'localhost' IDENTIFIED BY '$XTRABACKUP_PASSWORD';
+        GRANT RELOAD,PROCESS,LOCK TABLES,REPLICATION CLIENT ON *.* TO 'xtrabackup'@'localhost';
+        GRANT REPLICATION CLIENT ON *.* TO monitor@'%' IDENTIFIED BY 'monitor';
+        GRANT PROCESS ON *.* TO monitor@localhost IDENTIFIED BY 'monitor';
+        DROP DATABASE IF EXISTS test ;
+        FLUSH PRIVILEGES ;
+    EOSQL
+        if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
+        mysql+=( -p"${MYSQL_ROOT_PASSWORD}" )
+        fi
+    
+        if [ "$MYSQL_DATABASE" ]; then
+        echo "CREATE DATABASE IF NOT EXISTS \`$MYSQL_DATABASE\` ;" | "${mysql[@]}"
+        mysql+=( "$MYSQL_DATABASE" )
+        fi
+    
+        if [ "$MYSQL_USER" -a "$MYSQL_PASSWORD" ]; then
+        echo "CREATE USER '"$MYSQL_USER"'@'%' IDENTIFIED BY '"$MYSQL_PASSWORD"' ;" | "${mysql[@]}"
+    
+        if [ "$MYSQL_DATABASE" ]; then
+            echo "GRANT ALL ON \`"$MYSQL_DATABASE"\`.* TO '"$MYSQL_USER"'@'%' ;" | "${mysql[@]}"
+        fi
+    
+        echo 'FLUSH PRIVILEGES ;' | "${mysql[@]}"
+        fi
+    
+        if [ ! -z "$MYSQL_ONETIME_PASSWORD" ]; then
+        "${mysql[@]}" <<-EOSQL
+            ALTER USER 'root'@'%' PASSWORD EXPIRE;
+    EOSQL
+        fi
+        if ! kill -s TERM "$pid" || ! wait "$pid"; then
+        echo >&2 'MySQL init process failed.'
+        exit 1
+        fi
+    
+        echo
+        echo 'MySQL init process done. Ready for start up.'
+        echo
+    fi
+    
+    }
+    
+
+---
+# Source: percona-xtradb-cluster/templates/tests/pxc-test-cm.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-pxc-tests
+data:
+  run.sh: |-
+    echo "Testing Percona XtraDB Cluster"
+    creds="-uroot -p${MYSQL_ROOT_PASSWORD} -h RELEASE-NAME-pxc"
+    echo "==> basic mysql ping"
+    mysqladmin $creds ping
+    [[ $? != "0" ]] && exit $?
+    echo "==> test basic query"
+    mysql $creds -e "select now() \G"
+    [[ $? != "0" ]] && exit $?
+    echo "==> checking if cluster is ready"
+    mysql $creds -e "SHOW GLOBAL STATUS LIKE 'wsrep_ready' \G" | grep Value | awk '{ print $2}' | grep ON
+    [[ $? != "0" ]] && exit $?
+    echo "==> checking if cluster size matches replica count"
+    cluster_size=$(mysql $creds -e "SHOW GLOBAL STATUS LIKE 'wsrep_cluster_size' \G" | grep Value | awk '{ print $2}')
+    [[ $? != "0" ]] && exit $?
+    [[ "${cluster_size}" == "3" ]] || exit 1
+    echo "SUCCESS"
+    exit 0
+
+---
+# Source: percona-xtradb-cluster/templates/service-metrics.yaml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "RELEASE-NAME-pxc-metrics"
+  labels:
+    app: RELEASE-NAME-pxc
+    chart: "percona-xtradb-cluster-0.6.0"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+spec:
+  clusterIP: None
+  ports:
+  - port: 9104
+  selector:
+    app: RELEASE-NAME-pxc
+    release: "RELEASE-NAME"
+
+
+---
+# Source: percona-xtradb-cluster/templates/service-percona.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-pxc
+  labels:
+    app: RELEASE-NAME-pxc
+    chart: "percona-xtradb-cluster-0.6.0"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+    targetPort: mysql
+  selector:
+    app: RELEASE-NAME-pxc
+    release: "RELEASE-NAME"
+
+---
+# Source: percona-xtradb-cluster/templates/service-repl.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: "RELEASE-NAME-pxc-repl"
+  labels:
+    app: RELEASE-NAME-pxc
+    chart: "percona-xtradb-cluster-0.6.0"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+spec:
+  clusterIP: None
+  ports:
+  - name: galera
+    port: 4567
+  - name: state-xfer
+    port: 4568
+  - name: state-snap
+    port: 4444
+  selector:
+    app: RELEASE-NAME-pxc
+    release: "RELEASE-NAME"
+
+---
+# Source: percona-xtradb-cluster/templates/tests/pxc-test.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "RELEASE-NAME-test-tefsh"
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  containers:
+  - name: pxc-test
+    image: "percona/percona-xtradb-cluster:5.7.19"
+    imagePullPolicy: "IfNotPresent"
+    command: ["bash", "/tests/run.sh"]
+    env:
+    - name: MYSQL_ROOT_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: RELEASE-NAME-pxc
+          key: mysql-root-password
+    volumeMounts:
+    - mountPath: /tests
+      name: tests
+  volumes:
+  - name: tests
+    configMap:
+      name: RELEASE-NAME-pxc-tests
+  restartPolicy: Never
+
+---
+# Source: percona-xtradb-cluster/templates/statefulset.yaml
+apiVersion: apps/v1beta2
+kind: StatefulSet
+metadata:
+  name: RELEASE-NAME-pxc
+  labels:
+    app: RELEASE-NAME-pxc
+    chart: "percona-xtradb-cluster-0.6.0"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: RELEASE-NAME-pxc
+      release: "RELEASE-NAME"
+  serviceName: RELEASE-NAME-pxc
+  template:
+    metadata:
+      labels:
+        app: RELEASE-NAME-pxc
+        chart: "percona-xtradb-cluster-0.6.0"
+        release: "RELEASE-NAME"
+        heritage: "Tiller"
+    spec:
+      initContainers:
+      - name: "remove-lost-found"
+        image: "busybox:1.25.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - "rm"
+        - "-fr"
+        - "/var/lib/mysql/lost+found"
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+      containers:
+      - name: database
+        image: "percona/percona-xtradb-cluster:5.7.19"
+        imagePullPolicy: "IfNotPresent"
+        command:
+        - "/bin/bash"
+        - "/startup-scripts/entrypoint.sh"
+        resources:
+          null
+          
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: RELEASE-NAME-pxc
+              key: mysql-root-password
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: RELEASE-NAME-pxc
+              key: mysql-password
+        - name: XTRABACKUP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: RELEASE-NAME-pxc
+              key: xtrabackup-password
+        - name: MYSQL_USER
+          value: ""
+        - name: MYSQL_DATABASE
+          value: ""
+        - name: ALLOW_ROOT_FROM
+          value: "%"
+        - name: CLUSTER_NAME
+          value: RELEASE-NAME-pxc
+        - name: SHORT_CLUSTER_NAME
+          value: RELEASE-NAME-pxc
+        - name: K8S_SERVICE_NAME
+          value: RELEASE-NAME-pxc-repl
+        - name: DEBUG
+          value: "true"
+        ports:
+        - name: mysql
+          containerPort: 3306
+        - name: galera-repl
+          containerPort: 4567
+        - name: state-transfer
+          containerPort: 4568
+        - name: state-snapshot
+          containerPort: 4444
+        livenessProbe:
+          exec:
+            command: ["mysqladmin","ping"]
+          initialDelaySeconds: 30
+          timeoutSeconds: 2
+        readinessProbe:
+          exec:
+            command: ["mysql", "-h", "127.0.0.1", "-e", "SELECT 1"]
+          initialDelaySeconds: 30
+          timeoutSeconds: 2
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        - name: mysql-startup-scripts
+          mountPath: /startup-scripts
+        - name: mysql-config-files
+          mountPath: /etc/mysql/conf.d
+        - name: slash-root
+          mountPath: /root
+        - name: var-log
+          mountPath: /var/log
+      
+      - name: "logs"
+        image: "busybox:1.25.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - "tail"
+        - "-f"
+        - "/var/log/mysqld.log"
+        volumeMounts:
+        - name: var-log
+          mountPath: /var/log
+      
+      
+      volumes:
+      - name: slash-root
+        emptyDir: {}
+      - name: var-log
+        emptyDir: {}
+      - name: mysql-config-files
+        configMap:
+          name: RELEASE-NAME-pxc-config-files
+      - name: mysql-startup-scripts
+        configMap:
+          name: RELEASE-NAME-pxc-startup-scripts
+      - name: mysql-data
+        emptyDir: {}
+---
+# Source: percona-xtradb-cluster/templates/pdb.yaml
+
+

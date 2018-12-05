@@ -1,0 +1,139 @@
+---
+# Source: filebeat/templates/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: RELEASE-NAME-filebeat
+  labels:
+    app: filebeat
+    chart: filebeat-1.0.5
+    release: RELEASE-NAME
+    heritage: Tiller
+type: Opaque
+data:
+  filebeat.yml: ICAgIGZpbGViZWF0LmNvbmZpZzoKICAgICAgbW9kdWxlczoKICAgICAgICBwYXRoOiAke3BhdGguY29uZmlnfS9tb2R1bGVzLmQvKi55bWwKICAgICAgICByZWxvYWQuZW5hYmxlZDogZmFsc2UKICAgICAgcHJvc3BlY3RvcnM6CiAgICAgICAgcGF0aDogJHtwYXRoLmNvbmZpZ30vcHJvc3BlY3RvcnMuZC8qLnltbAogICAgICAgIHJlbG9hZC5lbmFibGVkOiBmYWxzZQogICAgZmlsZWJlYXQucHJvc3BlY3RvcnM6CiAgICAtIGVuYWJsZWQ6IHRydWUKICAgICAgcGF0aHM6CiAgICAgIC0gL3Zhci9sb2cvKi5sb2cKICAgICAgLSAvdmFyL2xvZy9tZXNzYWdlcwogICAgICAtIC92YXIvbG9nL3N5c2xvZwogICAgICB0eXBlOiBsb2cKICAgIC0gY29udGFpbmVycy5pZHM6CiAgICAgIC0gJyonCiAgICAgIHByb2Nlc3NvcnM6CiAgICAgIC0gYWRkX2t1YmVybmV0ZXNfbWV0YWRhdGE6CiAgICAgICAgICBpbl9jbHVzdGVyOiB0cnVlCiAgICAgIC0gZHJvcF9ldmVudDoKICAgICAgICAgIHdoZW46CiAgICAgICAgICAgIGVxdWFsczoKICAgICAgICAgICAgICBrdWJlcm5ldGVzLmNvbnRhaW5lci5uYW1lOiBmaWxlYmVhdAogICAgICB0eXBlOiBkb2NrZXIKICAgIGh0dHAuZW5hYmxlZDogZmFsc2UKICAgIGh0dHAucG9ydDogNTA2NgogICAgb3V0cHV0LmZpbGU6CiAgICAgIGZpbGVuYW1lOiBmaWxlYmVhdAogICAgICBudW1iZXJfb2ZfZmlsZXM6IDUKICAgICAgcGF0aDogL3Vzci9zaGFyZS9maWxlYmVhdC9kYXRhCiAgICAgIHJvdGF0ZV9ldmVyeV9rYjogMTAwMDAKICAgIHByb2Nlc3NvcnM6CiAgICAtIGFkZF9jbG91ZF9tZXRhZGF0YTogbnVsbAogICAg
+
+---
+# Source: filebeat/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: RELEASE-NAME-filebeat
+  labels:
+    app: filebeat
+    chart: filebeat-1.0.5
+    release: RELEASE-NAME
+    heritage: Tiller
+---
+# Source: filebeat/templates/clusterrole.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: RELEASE-NAME-filebeat
+  labels:
+    app: filebeat
+    chart: filebeat-1.0.5
+    release: RELEASE-NAME
+    heritage: Tiller
+rules:
+- apiGroups: [""]
+  resources:
+  - namespaces
+  - pods
+  verbs: ["get", "list", "watch"]
+---
+# Source: filebeat/templates/clusterrolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: RELEASE-NAME-filebeat
+  labels:
+    app: filebeat
+    chart: filebeat-1.0.5
+    release: RELEASE-NAME
+    heritage: Tiller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: RELEASE-NAME-filebeat
+subjects:
+- kind: ServiceAccount
+  name: RELEASE-NAME-filebeat
+  namespace: hub
+---
+# Source: filebeat/templates/daemonset.yaml
+apiVersion: apps/v1beta2
+kind: DaemonSet
+metadata:
+  name: RELEASE-NAME-filebeat
+  labels:
+    app: filebeat
+    chart: filebeat-1.0.5
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+      release: RELEASE-NAME
+  minReadySeconds: 10
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: filebeat
+        release: RELEASE-NAME
+      annotations:
+        checksum/secret: bf4f3f65eb19a3f90c03f0d3d39f9c01c0b94026008fc767e46dc54844599435
+    spec:
+      initContainers:
+      containers:
+      - name: filebeat
+        image: "docker.elastic.co/beats/filebeat-oss:6.5.1"
+        imagePullPolicy: IfNotPresent
+        args:
+        - "-e"
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: filebeat-config
+          mountPath: /usr/share/filebeat/filebeat.yml
+          readOnly: true
+          subPath: filebeat.yml
+        - name: data
+          mountPath: /usr/share/filebeat/data
+        - name: varlog
+          mountPath: /var/log
+          readOnly: true
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+      volumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: filebeat-config
+        secret:
+          secretName: RELEASE-NAME-filebeat
+      - name: data
+        hostPath:
+          path: /var/lib/filebeat
+          type: DirectoryOrCreate
+      terminationGracePeriodSeconds: 60
+      serviceAccountName: RELEASE-NAME-filebeat
+

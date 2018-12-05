@@ -1,0 +1,237 @@
+---
+# Source: hackmd/charts/postgresql/templates/secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: RELEASE-NAME-postgresql
+  labels:
+    app: RELEASE-NAME-postgresql
+    chart: "postgresql-0.8.4"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+type: Opaque
+data:
+  
+  postgres-password: "WGx2a1hTYnhzcQ=="
+  
+
+---
+# Source: hackmd/charts/postgresql/templates/pvc.yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-postgresql
+  labels:
+    app: RELEASE-NAME-postgresql
+    chart: "postgresql-0.8.4"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "8Gi"
+---
+# Source: hackmd/templates/pvc.yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-hackmd
+  labels:
+    app: RELEASE-NAME-hackmd
+    chart: "hackmd-0.1.1"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+  annotations:
+spec:
+  accessModes:
+    - ReadWriteOnce
+    
+  resources:
+    requests:
+      storage: "2Gi"
+---
+# Source: hackmd/charts/postgresql/templates/svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-postgresql
+  labels:
+    app: RELEASE-NAME-postgresql
+    chart: "postgresql-0.8.4"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+spec:
+  type: ClusterIP
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: postgresql
+  selector:
+    app: RELEASE-NAME-postgresql
+---
+# Source: hackmd/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-hackmd
+  labels:
+    app: hackmd
+    chart: hackmd-0.1.1
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: hackmd
+    release: RELEASE-NAME
+
+---
+# Source: hackmd/charts/postgresql/templates/deployment.yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-postgresql
+  labels:
+    app: RELEASE-NAME-postgresql
+    chart: "postgresql-0.8.4"
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+spec:
+  template:
+    metadata:
+      labels:
+        app: RELEASE-NAME-postgresql
+    spec:
+      containers:
+      - name: RELEASE-NAME-postgresql
+        image: "postgres:9.6.2"
+        imagePullPolicy: ""
+        env:
+        - name: POSTGRES_USER
+          value: "hackmd"
+          # Required for pg_isready in the health probes.
+        - name: PGUSER
+          value: "hackmd"
+        - name: POSTGRES_DB
+          value: "hackmd"
+        - name: POSTGRES_INITDB_ARGS
+          value: ""
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: RELEASE-NAME-postgresql
+              key: postgres-password
+        - name: POD_IP
+          valueFrom: { fieldRef: { fieldPath: status.podIP } }
+        ports:
+        - name: postgresql
+          containerPort: 5432
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - exec pg_isready --host $POD_IP
+          initialDelaySeconds: 60
+          timeoutSeconds: 5
+          failureThreshold: 6
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - exec pg_isready --host $POD_IP
+          initialDelaySeconds: 5
+          timeoutSeconds: 3
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data/pgdata
+          subPath: postgresql-db
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: RELEASE-NAME-postgresql
+
+---
+# Source: hackmd/templates/deployment.yaml
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-hackmd
+  labels:
+    app: hackmd
+    chart: hackmd-0.1.1
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hackmd
+      release: RELEASE-NAME
+  template:
+    metadata:
+      labels:
+        app: hackmd
+        release: RELEASE-NAME
+    spec:
+      containers:
+        - name: hackmd
+          image: "hackmdio/hackmd:1.0.1-ce-alpine"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: 3000
+            initialDelaySeconds: 120
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: 3000
+            initialDelaySeconds: 30
+          env:
+            - name: HMD_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: RELEASE-NAME-postgresql
+                  key: postgres-password
+            - name: HMD_DB_URL
+              value: postgres://hackmd:$(HMD_DB_PASSWORD)@RELEASE-NAME-postgresql:5432/hackmd
+          volumeMounts:
+            - name: data
+              mountPath: "/hackmd/public/uploads"
+          resources:
+            {}
+            
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: RELEASE-NAME-hackmd
+
+---
+# Source: hackmd/charts/postgresql/templates/networkpolicy.yaml
+
+
+---
+# Source: hackmd/templates/ingress.yaml
+
+

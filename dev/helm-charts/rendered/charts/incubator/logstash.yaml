@@ -1,0 +1,226 @@
+---
+# Source: logstash/templates/patterns-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-logstash-patterns
+  labels:
+    app: logstash
+    chart: logstash-0.9.6
+    release: RELEASE-NAME
+    heritage: Tiller
+data:
+
+---
+# Source: logstash/templates/pipeline-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-logstash-pipeline
+  labels:
+    app: logstash
+    chart: logstash-0.9.6
+    release: RELEASE-NAME
+    heritage: Tiller
+data:
+  input_main: |-
+    input {
+      # udp {
+      #   port => 1514
+      #   type => syslog
+      # }
+      # tcp {
+      #   port => 1514
+      #   type => syslog
+      # }
+      beats {
+        port => 5044
+      }
+      # http {
+      #   port => 8080
+      # }
+      # kafka {
+      #   ## ref: https://www.elastic.co/guide/en/logstash/current/plugins-inputs-kafka.html
+      #   bootstrap_servers => "kafka-input:9092"
+      #   codec => json { charset => "UTF-8" }
+      #   consumer_threads => 1
+      #   topics => ["source"]
+      #   type => "example"
+      # }
+    }
+  output_main: |-
+    output {
+      # stdout { codec => rubydebug }
+      elasticsearch {
+        hosts => ["${ELASTICSEARCH_HOST}:${ELASTICSEARCH_PORT}"]
+        manage_template => false
+        index => "%{[@metadata][beat]}-%{+YYYY.MM.dd}"
+        document_type => "%{[@metadata][type]}"
+      }
+      # kafka {
+      #   ## ref: https://www.elastic.co/guide/en/logstash/current/plugins-outputs-kafka.html
+      #   bootstrap_servers => "kafka-output:9092"
+      #   codec => json { charset => "UTF-8" }
+      #   compression_type => "lz4"
+      #   topic_id => "destination"
+      # }
+    }
+
+---
+# Source: logstash/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-logstash
+  labels:
+    app: logstash
+    chart: logstash-0.9.6
+    release: RELEASE-NAME
+    heritage: Tiller
+  annotations:
+spec:
+  type: ClusterIP
+  ports:
+    - name: beats
+      port: 5044
+      protocol: TCP
+      targetPort: beats
+      
+  selector:
+    app: logstash
+    release: RELEASE-NAME
+
+---
+# Source: logstash/templates/statefulset.yaml
+apiVersion: apps/v1beta2
+kind: StatefulSet
+metadata:
+  name: RELEASE-NAME-logstash
+  labels:
+    app: logstash
+    chart: logstash-0.9.6
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  serviceName: RELEASE-NAME-logstash
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+      release: RELEASE-NAME
+  template:
+    metadata:
+      labels:
+        app: logstash
+        release: RELEASE-NAME
+      annotations:
+        checksum/patterns: 61b57a9924bcaa3e2e0403d8844b5bb21bbe0e8e05ebb8e2e36a2b54ee916a56
+        checksum/pipeline: 3ea597689f09ec1a67bf3578cb88ed5a220dd42417d78615009b84f6473e523b
+    spec:
+      securityContext:
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+
+        ## logstash
+        - name: logstash
+          image: "docker.elastic.co/logstash/logstash-oss:6.4.2"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: monitor
+              containerPort: 9600
+              protocol: TCP
+            - containerPort: 5044
+              name: beats
+              protocol: TCP
+            
+          livenessProbe:
+            httpGet:
+              path: /
+              port: monitor
+            initialDelaySeconds: 20
+            
+          readinessProbe:
+            httpGet:
+              path: /
+              port: monitor
+            initialDelaySeconds: 20
+            
+          env:
+            ## Logstash monitoring API host and port env vars
+            - name: HTTP_HOST
+              value: "0.0.0.0"
+            - name: HTTP_PORT
+              value: "9600"
+            ## Elasticsearch output
+            - name: ELASTICSEARCH_HOST
+              value: "elasticsearch-client.default.svc.cluster.local"
+            - name: ELASTICSEARCH_PORT
+              value: "9200"
+            ## Additional env vars
+            - name: CONFIG_RELOAD_AUTOMATIC
+              value: "true"
+            - name: PATH_CONFIG
+              value: "/usr/share/logstash/pipeline"
+            - name: PATH_DATA
+              value: "/usr/share/logstash/data"
+            - name: QUEUE_CHECKPOINT_WRITES
+              value: "1"
+            - name: QUEUE_DRAIN
+              value: "true"
+            - name: QUEUE_MAX_BYTES
+              value: "1gb"
+            - name: QUEUE_TYPE
+              value: "persisted"
+          resources:
+            {}
+            
+          volumeMounts:
+            - mountPath: /usr/share/logstash/data
+              name: data
+            - mountPath: /usr/share/logstash/patterns
+              name: patterns
+            - mountPath: /usr/share/logstash/pipeline
+              name: pipeline
+            
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: patterns
+          configMap:
+            name: RELEASE-NAME-logstash-patterns
+        - name: pipeline
+          configMap:
+            name: RELEASE-NAME-logstash-pipeline
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        resources:
+          requests:
+            storage: "2Gi"
+
+---
+# Source: logstash/templates/poddisruptionbudget.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: RELEASE-NAME-logstash
+  labels:
+    app: logstash
+    chart: logstash-0.9.6
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  selector:
+    matchLabels:
+      app: logstash
+      release: RELEASE-NAME
+  maxUnavailable: 1
+  
+
+---
+# Source: logstash/templates/ingress.yaml
+
+

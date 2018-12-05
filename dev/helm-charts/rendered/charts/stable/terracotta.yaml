@@ -1,0 +1,174 @@
+---
+# Source: terracotta/templates/config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-terracotta-configuration
+  labels:
+    app: terracotta
+    chart: terracotta-1.0.0
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+data:
+  tc-config.xml: |
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <tc-config xmlns="http://www.terracotta.org/config">
+        <plugins>
+            <config>
+                <ohr:offheap-resources xmlns:ohr="http://www.terracotta.org/config/offheap-resource">
+                    <ohr:resource name="offheap-1" unit="MB">512</ohr:resource>
+                    <ohr:resource name="offheap-2" unit="MB">256</ohr:resource>
+                </ohr:offheap-resources>
+            </config>
+        </plugins>
+        <servers>
+        
+            <server host="RELEASE-NAME-terracotta-0.RELEASE-NAME-terracotta" name="RELEASE-NAME-terracotta-0" bind="0.0.0.0">
+                <logs>stdout:</logs>
+                <tsa-port bind="0.0.0.0">9410</tsa-port>
+                <tsa-group-port bind="0.0.0.0">9430</tsa-group-port>
+            </server>
+        
+            <server host="RELEASE-NAME-terracotta-1.RELEASE-NAME-terracotta" name="RELEASE-NAME-terracotta-1" bind="0.0.0.0">
+                <logs>stdout:</logs>
+                <tsa-port bind="0.0.0.0">9410</tsa-port>
+                <tsa-group-port bind="0.0.0.0">9430</tsa-group-port>
+            </server>
+        
+        </servers>
+    </tc-config>
+
+---
+# Source: terracotta/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: RELEASE-NAME-terracotta
+  labels:
+    app: terracotta
+    chart: terracotta-1.0.0
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+---
+# Source: terracotta/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: RELEASE-NAME-terracotta
+  labels:
+    app: terracotta
+    chart: terracotta-1.0.0
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  verbs:
+  - get
+  - list
+---
+# Source: terracotta/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: RELEASE-NAME-terracotta
+  labels:
+    app: terracotta
+    chart: terracotta-1.0.0
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: RELEASE-NAME-terracotta
+subjects:
+- kind: ServiceAccount
+  name: RELEASE-NAME-terracotta
+  namespace: hub
+
+
+---
+# Source: terracotta/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-terracotta
+  labels:
+    app: terracotta
+    chart: terracotta-1.0.0
+    release: RELEASE-NAME
+    heritage: Tiller
+  annotations:
+    # see https://github.com/kubernetes/kubernetes/issues/39363 , to have dns entries available immediately
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: terracotta-port
+      port: 9410
+    - name: sync-port
+      port: 9430
+  selector:
+    app: terracotta
+    release: "RELEASE-NAME"
+
+---
+# Source: terracotta/templates/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: RELEASE-NAME-terracotta
+  labels:
+    app: terracotta
+    chart: terracotta-1.0.0
+    release: "RELEASE-NAME"
+    heritage: "Tiller"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: terracotta
+      release: "RELEASE-NAME"
+  serviceName: RELEASE-NAME-terracotta
+  template:
+    metadata:
+      labels:
+        app: terracotta
+        release: "RELEASE-NAME"
+    spec:
+      initContainers:
+      # be careful with busybox versions : https://github.com/docker-library/busybox/issues/48
+      - name: init-RELEASE-NAME-terracotta
+        image: busybox:1.28
+        # check service name resolution works fine; if it can't resolve the service, a split brain could occur
+        command: ['sh', '-c', 'until nslookup RELEASE-NAME-terracotta; do echo "waiting for RELEASE-NAME-terracotta to resolve"; sleep 2; done;']
+      containers:
+      - name: RELEASE-NAME-terracotta
+        image: "terracotta/terracotta-server-oss:5.5.1"
+        imagePullPolicy: "Always"
+        command: ["bin/start-tc-server.sh"]
+        args: ["-f", "/config/tc-config.xml", "-n", "$(POD_NAME)"]
+        resources:
+          {}
+          
+        ports:
+          - name: terracotta-port
+            containerPort: 9410
+          - name: sync-port
+            containerPort: 9430
+        volumeMounts:
+          - name: config-volume
+            mountPath: /config
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+      volumes:
+      - name: config-volume
+        configMap:
+          name: RELEASE-NAME-terracotta-configuration
+

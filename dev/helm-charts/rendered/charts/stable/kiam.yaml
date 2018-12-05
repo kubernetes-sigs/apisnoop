@@ -1,0 +1,326 @@
+---
+# Source: kiam/templates/agent-secret.yaml
+kind: Secret
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-kiam-agent
+type: Opaque
+data:
+  ca: null
+  cert: null
+  key: null
+  
+
+---
+# Source: kiam/templates/server-secret.yaml
+kind: Secret
+apiVersion: v1
+metadata:
+  name: RELEASE-NAME-kiam-server
+type: Opaque
+data:
+  ca: null
+  cert: null
+  key: null
+  
+
+---
+# Source: kiam/templates/agent-serviceaccount.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: kiam
+    chart: kiam-2.0.0-rc3
+    component: "agent"
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-kiam-agent
+
+---
+# Source: kiam/templates/server-serviceaccount.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: kiam
+    chart: kiam-2.0.0-rc3
+    component: "server"
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-kiam-server
+
+---
+# Source: kiam/templates/server-read-clusterrole.yaml
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  labels:
+    app: kiam
+    chart: kiam-2.0.0-rc3
+    component: "server"
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-kiam-read
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+      - pods
+    verbs:
+      - watch
+      - get
+      - list
+---
+# Source: kiam/templates/server-write-clusterrole.yaml
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  labels:
+    app: kiam
+    chart: kiam-2.0.0-rc3
+    component: "server"
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-kiam-write
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+---
+# Source: kiam/templates/server-read-clusterrolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app: kiam
+    chart: kiam-2.0.0-rc3
+    component: "server"
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-kiam-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: RELEASE-NAME-kiam-read
+subjects:
+  - kind: ServiceAccount
+    name: RELEASE-NAME-kiam-server
+    namespace: hub
+
+---
+# Source: kiam/templates/server-write-clusterrolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app: kiam
+    chart: kiam-2.0.0-rc3
+    component: "server"
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-kiam-write
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: RELEASE-NAME-kiam-write
+subjects:
+  - kind: ServiceAccount
+    name: RELEASE-NAME-kiam-server
+    namespace: hub
+
+---
+# Source: kiam/templates/server-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kiam
+    chart: kiam-2.0.0-rc3
+    component: "server"
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-kiam-server
+spec:
+  clusterIP: None
+  selector:
+    app: kiam
+    component: "server"
+    release: RELEASE-NAME
+  ports:
+    - name: grpclb
+      port: 443
+      targetPort: 443
+      protocol: TCP
+
+---
+# Source: kiam/templates/agent-daemonset.yaml
+apiVersion: apps/v1beta2
+kind: DaemonSet
+metadata:
+  labels:
+    app: kiam
+    chart: kiam-2.0.0-rc3
+    component: "agent"
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-kiam-agent
+spec:
+  selector:
+    matchLabels:
+      app: kiam
+      component: "agent"
+      release: RELEASE-NAME
+  template:
+    metadata:
+      labels:
+        app: kiam
+        component: "agent"
+        release: RELEASE-NAME
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: RELEASE-NAME-kiam-agent
+      tolerations:
+        []
+        
+      volumes:
+        - name: tls
+          secret:
+            secretName: RELEASE-NAME-kiam-agent
+        - name: xtables
+          hostPath:
+            path: /run/xtables.lock
+      containers:
+        - name: kiam-agent
+          image: "quay.io/uswitch/kiam:v3.0-rc1"
+          imagePullPolicy: IfNotPresent
+          command:
+            - /kiam
+            - agent
+          args:
+            - --host-interface=cali+
+            - --json-log
+            - --level=info
+            - --port=8181
+            - --cert=/etc/kiam/tls/cert
+            - --key=/etc/kiam/tls/key
+            - --ca=/etc/kiam/tls/ca
+            - --server-address=RELEASE-NAME-kiam-server:443
+            - --prometheus-listen-addr=0.0.0.0:9620
+            - --prometheus-sync-interval=5s
+            - --gateway-timeout-creation=50ms
+          env:
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          volumeMounts:
+            - mountPath: /etc/kiam/tls
+              name: tls
+            - mountPath: /var/run/xtables.lock
+              name: xtables
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 8181
+            initialDelaySeconds: 3
+            periodSeconds: 3
+  updateStrategy:
+    type: OnDelete
+
+---
+# Source: kiam/templates/server-daemonset.yaml
+apiVersion: apps/v1beta2
+kind: DaemonSet
+metadata:
+  labels:
+    app: kiam
+    chart: kiam-2.0.0-rc3
+    component: "server"
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-kiam-server
+spec:
+  selector:
+    matchLabels:
+      app: kiam
+      component: "server"
+      release: RELEASE-NAME
+  template:
+    metadata:
+      labels:
+        app: kiam
+        component: "server"
+        release: RELEASE-NAME
+    spec:
+      serviceAccountName: RELEASE-NAME-kiam-server
+      hostNetwork: false
+      tolerations:
+        []
+        
+      volumes:
+        - name: tls
+          secret:
+            secretName: RELEASE-NAME-kiam-server
+      containers:
+        - name: kiam-server
+          image: "quay.io/uswitch/kiam:v3.0-rc1"
+          imagePullPolicy: IfNotPresent
+          command:
+            - /kiam
+            - server
+          args:
+            - --json-log
+            - --level=info
+            - --bind=0.0.0.0:443
+            - --cert=/etc/kiam/tls/cert
+            - --key=/etc/kiam/tls/key
+            - --ca=/etc/kiam/tls/ca
+            - --role-base-arn-autodetect
+            - --session-duration=15m
+            - --sync=1m
+            - --prometheus-listen-addr=0.0.0.0:9620
+            - --prometheus-sync-interval=5s
+          volumeMounts:
+            - mountPath: /etc/kiam/tls
+              name: tls
+          livenessProbe:
+            exec:
+              command:
+                - /kiam
+                - health
+                - --cert=/etc/kiam/tls/cert
+                - --key=/etc/kiam/tls/key
+                - --ca=/etc/kiam/tls/ca
+                - --server-address=localhost:443
+                - --server-address-refresh=2s
+                - --timeout=5s
+                - --gateway-timeout-creation=50ms
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - /kiam
+                - health
+                - --cert=/etc/kiam/tls/cert
+                - --key=/etc/kiam/tls/key
+                - --ca=/etc/kiam/tls/ca
+                - --server-address=localhost:443
+                - --server-address-refresh=2s
+                - --timeout=5s
+                - --gateway-timeout-creation=50ms
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 10
+  updateStrategy:
+    type: OnDelete
+

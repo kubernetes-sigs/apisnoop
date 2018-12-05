@@ -1,0 +1,118 @@
+---
+# Source: riemann/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: RELEASE-NAME-riemann
+  labels:
+    app: riemann
+    chart: riemann-0.1.2
+    release: RELEASE-NAME
+    heritage: Tiller
+data:
+  riemann.config: |
+    ;Init Logging
+    (logging/init {:console true})
+    
+    ; Listen on the local interface over TCP (5555), UDP (5555), and websockets
+    ; (5556)
+    (let [host "0.0.0.0"]
+      (tcp-server {:host host})
+      (udp-server {:host host})
+      (ws-server  {:host host}))
+    
+    ; Expire old events from the index every 5 seconds.
+    (periodically-expire 5 {:keep-keys [:host :service :tags]})
+    
+    (let [index (index)]
+      ; Inbound events will be passed to these streams:
+      (streams
+        (default :ttl 60
+          ; Index all events immediately.
+          index
+          #(info %)
+    )))
+    
+
+---
+# Source: riemann/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-riemann
+  labels:
+    app: riemann
+    chart: riemann-0.1.2
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  type: ClusterIP
+  ports:
+  - name: riemann-tcp
+    port: 5555
+    targetPort: riemann-tcp
+    protocol: TCP
+  - name: riemann-udp
+    port: 5555
+    targetPort: riemann-udp
+    protocol: UDP
+  - name: riemann-ws
+    port: 5556
+    targetPort: riemann-ws
+    protocol: TCP
+  selector:
+    app: riemann
+    release: RELEASE-NAME
+
+---
+# Source: riemann/templates/deployment.yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-riemann
+  labels:
+    app: riemann
+    chart: riemann-0.1.2
+    release: RELEASE-NAME
+    heritage: Tiller
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: riemann
+        chart: riemann-0.1.2
+        release: RELEASE-NAME
+        heritage: Tiller
+    spec:
+      containers:
+      - name: riemann
+        image: "raykrueger/riemann:0.2.14"
+        imagePullPolicy: "IfNotPresent"
+        livenessProbe:
+          tcpSocket:
+            port: riemann-tcp
+          initialDelaySeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: riemann-tcp
+          initialDelaySeconds: 5
+        volumeMounts:
+        - name: "RELEASE-NAME-config"
+          mountPath: /usr/local/etc/riemann
+        ports:
+        - name: riemann-tcp
+          containerPort: 5555
+          protocol: TCP
+        - name: riemann-udp
+          containerPort: 5555
+          protocol: UDP
+        - name: riemann-ws
+          protocol: TCP
+          containerPort: 5556
+      volumes:
+      - name: "RELEASE-NAME-config"
+        configMap:
+          name: RELEASE-NAME-riemann
+
+

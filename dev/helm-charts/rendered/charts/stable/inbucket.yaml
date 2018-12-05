@@ -1,0 +1,190 @@
+---
+# Source: inbucket/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inbucket-configmap
+  labels:
+    app: inbucket
+    chart: inbucket
+    release: RELEASE-NAME
+    heritage: Tiller
+data:
+  INBUCKET_LOGLEVEL: info
+  INBUCKET_MAILBOXNAMING: local
+  INBUCKET_POP3_ADDR: 0.0.0.0:1100
+  INBUCKET_POP3_DOMAIN: inbucket
+  INBUCKET_POP3_TIMEOUT: 600s
+  INBUCKET_SMTP_ADDR: 0.0.0.0:2500
+  INBUCKET_SMTP_DEFAULTACCEPT: "true"
+  INBUCKET_SMTP_DEFAULTSTORE: "true"
+  INBUCKET_SMTP_DISCARDDOMAINS: ""
+  INBUCKET_SMTP_DOMAIN: inbucket
+  INBUCKET_SMTP_MAXMESSAGEBYTES: "10240000"
+  INBUCKET_SMTP_MAXRECIPIENTS: "200"
+  INBUCKET_SMTP_REJECTDOMAINS: ""
+  INBUCKET_SMTP_TIMEOUT: 300s
+  INBUCKET_STORAGE_MAILBOXMSGCAP: "500"
+  INBUCKET_STORAGE_PARAMS: ""
+  INBUCKET_STORAGE_RETENTIONPERIOD: 24h
+  INBUCKET_STORAGE_RETENTIONSLEEP: 50ms
+  INBUCKET_STORAGE_TYPE: memory
+  INBUCKET_WEB_ADDR: 0.0.0.0:9000
+  INBUCKET_WEB_COOKIEAUTHKEY: ""
+  INBUCKET_WEB_GREETINGFILE: ui/greeting.html
+  INBUCKET_WEB_MAILBOXPROMPT: '@inbucket'
+  INBUCKET_WEB_MONITORHISTORY: "30"
+  INBUCKET_WEB_MONITORVISIBLE: "true"
+  INBUCKET_WEB_TEMPLATECACHE: "true"
+  INBUCKET_WEB_UIDIR: ui
+  
+
+---
+# Source: inbucket/templates/tests/inbucket-config-test.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inbucket-tests
+  labels:
+    chart: inbucket-2.0.0
+    app: inbucket
+    release: RELEASE-NAME
+    heritage: Tiller
+data:
+  run.sh: |-
+    @test "Testing Inbucket is accessible" {
+      curl --retry 48 --retry-delay 10 RELEASE-NAME-inbucket.hub.svc.cluster.local:9000
+    }
+---
+# Source: inbucket/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: inbucket
+    chart: inbucket-2.0.0
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-inbucket
+spec:
+  type: "ClusterIP"
+  clusterIP: ""
+  ports:
+    - name: http
+      port: 9000
+      protocol: TCP
+      targetPort: http
+    - name: smtp
+      port: 2500
+      protocol: TCP
+      targetPort: smtp
+    - name: pop3
+      port: 1100
+      protocol: TCP
+      targetPort: pop3
+  selector:
+    app: inbucket
+    release: RELEASE-NAME
+
+---
+# Source: inbucket/templates/tests/inbucket-test.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "inbucket-test-fibkf"
+  labels:
+    chart: inbucket-2.0.0
+    app: inbucket
+    release: RELEASE-NAME
+    heritage: Tiller
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  initContainers:
+    - name: "test-framework"
+      image: "dduportal/bats:0.4.0"
+      command:
+      - "bash"
+      - "-c"
+      - |
+        set -ex
+        # copy bats to tools dir
+        cp -R /usr/local/libexec/ /tools/bats/
+      volumeMounts:
+      - mountPath: /tools
+        name: tools
+  containers:
+    - name: RELEASE-NAME-test
+      image: "dduportal/bats:0.4.0"
+      command: ["/tools/bats/bats", "-t", "/tests/run.sh"]
+      volumeMounts:
+      - mountPath: /tests
+        name: tests
+        readOnly: true
+      - mountPath: /tools
+        name: tools
+  volumes:
+  - name: tests
+    configMap:
+      name: inbucket-tests
+  - name: tools
+    emptyDir: {}
+  restartPolicy: Never
+---
+# Source: inbucket/templates/deployment.yaml
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  labels:
+    app: inbucket
+    chart: inbucket-2.0.0
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-inbucket
+spec:
+  selector:
+    matchLabels:
+      app: inbucket
+      release: "RELEASE-NAME"
+  template:
+    metadata:
+      labels:
+        app: inbucket
+        release: "RELEASE-NAME"
+    spec:
+      containers:
+        - name: inbucket
+          image: "jhillyerd/inbucket:release-2.0.0"
+          imagePullPolicy: "IfNotPresent"
+          envFrom:
+          - configMapRef:
+              name: inbucket-configmap
+          ports:
+            - name: http
+              containerPort: 9000
+              protocol: TCP
+            - name: smtp
+              containerPort: 2500
+              protocol: TCP
+            - name: pop3
+              containerPort: 1100
+              protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: smtp
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: smtp
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {}
+            
+
+---
+# Source: inbucket/templates/ingress.yaml
+
+

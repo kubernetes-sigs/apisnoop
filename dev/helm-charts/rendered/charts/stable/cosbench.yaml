@@ -1,0 +1,182 @@
+---
+# Source: cosbench/templates/controller-serviceaccount.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: cosbench
+    chart: cosbench-1.0.0
+    component: controller
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-cosbench-controller
+
+---
+# Source: cosbench/templates/driver-serviceaccount.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: cosbench
+    chart: cosbench-1.0.0
+    component: driver
+    heritage: Tiller
+    release: RELEASE-NAME
+  name: RELEASE-NAME-cosbench-driver
+
+---
+# Source: cosbench/templates/controller-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-cosbench-controller
+  labels:
+    app: cosbench
+    chart: cosbench-1.0.0
+    component: controller
+    heritage: Tiller
+    release: RELEASE-NAME
+spec:
+  type: 
+  ports:
+    - name: controller
+      port: 19088
+      targetPort: controller
+      protocol: TCP
+  selector:
+    app: cosbench
+    component: controller
+    release: RELEASE-NAME
+
+---
+# Source: cosbench/templates/driver-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: RELEASE-NAME-cosbench-driver
+  labels:
+    app: cosbench
+    chart: cosbench-1.0.0
+    component: driver
+    heritage: Tiller
+    release: RELEASE-NAME
+spec:
+  clusterIP: None
+  ports:
+    - name: driver
+      port: 18088
+      targetPort: driver
+      protocol: TCP
+  selector:
+    app: cosbench
+    component: driver
+    release: RELEASE-NAME
+
+---
+# Source: cosbench/templates/controller-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: RELEASE-NAME-cosbench-controller
+  labels:
+    app: cosbench
+    chart: cosbench-1.0.0
+    component: controller
+    heritage: Tiller
+    release: RELEASE-NAME
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cosbench
+      release: RELEASE-NAME
+      component: controller
+  template:
+    metadata:
+      labels:
+        app: cosbench
+        release: RELEASE-NAME
+        component: controller
+    spec:
+      serviceAccountName: RELEASE-NAME-cosbench-controller
+      containers:
+        - name: cosbench
+          image: "zenko/zenko-cosbench:0.0.6"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: controller
+              containerPort: 19088
+              protocol: TCP
+          env:
+            - name: LOG_LEVEL
+              value: "DEBUG"
+            - name: DRIVERS
+              value: "RELEASE-NAME-cosbench-driver-0.RELEASE-NAME-cosbench-driver"
+          args: ['java','-Dcosbench.tomcat.config=conf/controller-tomcat-server.xml','-server','-cp','main/*','org.eclipse.equinox.launcher.Main','-configuration','conf/.controller','-console','19089']
+
+---
+# Source: cosbench/templates/driver-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: RELEASE-NAME-cosbench-driver
+  labels:
+    app: cosbench
+    chart: cosbench-1.0.0
+    component: driver
+    heritage: Tiller
+    release: RELEASE-NAME
+spec:
+  serviceName: RELEASE-NAME-cosbench-driver
+  replicas: 1
+  selector:
+    matchLabels:
+        app: cosbench
+        component: driver
+        release: "RELEASE-NAME"
+  template:
+    metadata:
+      labels:
+        app: cosbench
+        component: driver
+        release: "RELEASE-NAME"
+    spec:
+      serviceAccountName: RELEASE-NAME-cosbench-driver
+      containers:
+        - name: RELEASE-NAME-cosbench-driver
+          image: "zenko/zenko-cosbench:0.0.6"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: driver
+              containerPort: 18088
+              protocol: TCP
+          env:
+            - name: LOG_LEVEL
+              value: "DEBUG"
+          args: ['java','-Dcosbench.tomcat.config=conf/driver-tomcat-server.xml','-server','-cp','main/*','org.eclipse.equinox.launcher.Main','-configuration','conf/.driver','-console','18089']
+          resources:
+            limits:
+              cpu: 1
+              memory: 4Gi
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 5
+            podAffinityTerm:
+              topologyKey: "kubernetes.io/hostname"
+              labelSelector:
+                matchLabels:
+                  app:  cosbench
+                  component: driver
+                  release: "RELEASE-NAME"
+
+---
+# Source: cosbench/templates/controller-ingress.yaml
+
+
