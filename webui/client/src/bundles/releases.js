@@ -15,6 +15,7 @@ export default {
       return routeParams.releaseName || 'master'
     }
   }
+
 import { client } from './'
 
 const url = '/api/v1/releases'

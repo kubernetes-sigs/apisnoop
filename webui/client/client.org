@@ -8,6 +8,7 @@
 #+XPROPERTY: header-args:shell :wrap "SRC text"
 #+PROPERTY: header-args:tmate :socket "/tmp/.zz-left.isocket"
 #+PROPERTY: header-args:tmate :session api:main
+#+PROPERTY: header-args:js :results silent
 
 * Introduction
   This is a web-based visual interface to the data curation and manipulation we are doing as the APISnoop project.  The purpose is to display previously unseen connections between the testing coverage of kubernetes, and the people and communities these various parts of kubernetes matter to.
@@ -55,6 +56,9 @@ tree -d
  ===
  Then navigate to localhost:3000, if it isn't already opened for you.
 * Architecture
+  This is built as a dynamic web app, as opposed to a static site.  And so when the page loads, we dynamically fetch data from both our backend server and the app's own state management.  Then we display information derived from the application state and that backend server.
+
+  We do this using React for the front-end framework, and redux-bundler for our state management.  This is all done 'client-side'
 ** React
 ** Redux-Bundler
 *** Resources
@@ -67,6 +71,19 @@ tree -d
 ** Reducers are dumb and that's a good thing
    the reducer is a continually replaced object that holds the current state of the app.  We want the reducer to be as dumb and simple as possible...so no if/else statements or functions that define what the value of some part of the state should be.  It only holds the clean, proper value
 ** Our logic is done through selectors and reactors
+** The App is designed as a v. pretty spreadsheet
+   as taken from human redux.  Essentially have everything based on simple data in the redux store, that we manipulate thorugh other functions.
+** The URL is our source of truth
+   As we navigate around the site, including navigating our mouse arounmd the chart, the URL will change to reflect the current method, level, and all that we are on.  The app then listens to this and updates its data appropriately.
+
+* Conventions
+** Redux-Bundler
+   how to write selectors, reducers, all that.
+   stylistic choices.   Best practices go in our principles
+** this org-file
+   adding new bundles.
+   structurikng the code
+   the code block arguments
 * File Structure
 * Initiatory Code
 ** index.js
@@ -95,29 +112,13 @@ tree -d
        document.getElementById('root')
      )
    #+END_SRC
-* Components
-** App
-   :PROPERTIES:
-   :header-args: :tangle ./src/components/app.js
-   :END:
-   the initiatory component.  This is sort of the standard layout in which all other views are placed within.
-   #+Name: App.js
-   #+BEGIN_SRC js
-     import React from 'react'
-     import { connect } from 'redux-bundler-react'
-
-     export default connect(
-       ({}) => (
-           <div>
-             <h1>hello</h1>
-           </div>
-       )
-     )
-   #+END_SRC
-
-   #+RESULTS: App.js
-
 * Bundles
+  Another way of thinking of these are 'concerns'.  As we add functionality, it will come in the form of a bundle.  This bundle will define:
+- the state as related to this concern (reducers),
+- How we manipulate and then give the data in the state to our components (the selectors),
+- How we listen for conditions in the state that would trigger actions to happen (the reactors),
+- The actions that change the state (Actions)
+
 ** index
    :PROPERTIES:
    :header-args: :tangle ./src/bundles/index.js
@@ -149,20 +150,169 @@ tree -d
     #+BEGIN_SRC js
       export default {
         name: 'zach',
-        <<Zach Reducer>>
+          <<Zach Reducer>>,
+          <<Zach Selectors>>,
+          <<Zach Actions>>
       }
     #+END_SRC
 *** Reducer
     #+NAME: Zach Reducer
     #+BEGIN_SRC js :tangle no
-      reducer:  (state = [], action) => {
-        return state
+      getReducer: () => {
+        const initialState = {
+          nickName: 'Cool Zach, my Dear Friend.',
+          isAwesome: true,
+          favoriteMovie: 'Fired Up'
+        }
+        return((state = initialState, action) => {
+          if (action.type === 'FAVORITE_MOVIE_CHANGED') {
+            state = {
+              ...state,
+              favoriteMovie: action.payload
+            }
+          }
+          return state
+        })
+      }
+
+
+    #+END_SRC
+    We are using getReducer because we want to dynamically configure our reducer (e.g. setting an initial state that gets fed to the reducer.)
+*** Selectors
+    these are what would handle any sort of data manipulation or transformation, so the reducer can be a simple, dumb object.
+    The components often then request information from the selectors, and not directly from a reducer.
+    #+NAME: Zach Selectors
+    #+BEGIN_SRC js :tangle no
+      selectFavoriteMovie: state => state.zach.favoriteMovie,
+      selectNickName: state => state.zach.nickName
+    #+END_SRC
+*** Actions
+    #+NAME: Zach Actions
+    #+BEGIN_SRC js :tangle no
+      doChangeFavoriteMovie: () => ({ dispatch }) => {
+        var favoriteMovies = [
+          'Fired Up',
+          'Sullivan\'s Travels',
+          'The Big Lebowski',
+          'Tully'
+        ]
+        dispatch({
+          type: 'FAVORITE_MOVIE_CHANGED',
+          payload: favoriteMovies[Math.floor(Math.random()*favoriteMovies.length)]
+        })
       }
     #+END_SRC
-*** Selectors
-*** Actions
 *** Reactors
+* Components
+** App
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/app.js
+   :END:
+   the initiatory component.  This is sort of the standard layout in which all other views are placed within.
+   #+Name: App.js
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+
+     import Header from './header'
+     import Footer from './footer'
+
+     export default connect(
+       'selectFavoriteMovie',
+       'selectNickName',
+       'doChangeFavoriteMovie',
+       ({ doChangeFavoriteMovie, favoriteMovie, nickName}) => (
+           <div id='app'>
+           <Header />
+           <div class='min-vh-80'>
+           <h1>hello, {nickName}</h1>
+           <p>Your favorite movie is {favoriteMovie}</p>
+           <button
+         onClick={() =>
+                  doChangeFavoriteMovie()
+                 }
+           >Change Fave Movie</button>
+           </div>
+           <Footer />
+           </div>
+       )
+     )
+   #+END_SRC
+
+   If you compare this to the original app, you can see it is far less duplicated or strange code.  Everything is just held in the connect function, where we bring in our selectors and actions, and then reference them directly in our presentational component.
+   #+NAME: original app
+   #+BEGIN_SRC js :tangle no
+     import React, { Component } from 'react'
+     import { connect } from 'react-redux'
+     import { createStructuredSelector } from 'reselect'
+
+
+     import { selectReleaseNamesFromEndpoints, selectIsEndpointsReady, selectPage } from '../selectors'
+     import { fetchEndpoints } from '../actions/endpoints'
+     import { doFetchTests } from '../actions/tests'
+
+     import Header from './header'
+     import Footer from './footer'
+     import ReleasesList from './releases-list.js'
+
+     class App extends Component {
+
+       componentDidMount(){
+         this.props.fetchEndpoints()
+         this.props.fetchTests()
+       }
+
+       render(){
+         const {
+           Page,
+           releaseNames,
+           endpointsReady
+         } = this.props
+
+         return (
+           <div id='app'>
+             <Header />
+             {endpointsReady &&
+              <div>
+              <ReleasesList
+                releases={releaseNames}
+              />
+             <Page />
+             </div>
+             }
+             {!endpointsReady &&
+             <div className='min-vh-80'>
+             <h3>Loading...</h3>
+             </div>
+             }
+             <Footer />
+           </div>
+         )
+       }
+     }
+
+     export default connect(
+       createStructuredSelector({
+         releaseNames: selectReleaseNamesFromEndpoints,
+         endpointsReady: selectIsEndpointsReady,
+         Page: selectPage
+       }),
+       {fetchEndpoints,
+        fetchTests: doFetchTests
+       })(App)
+   #+END_SRC
 * Footnotes
+** Glossary
+ - client-side ::
+ - dynamic web app ::
+ - static web site ::
+ - immutable state ::
+ - selector ::
+ - reducer ::
+ - action creator ::
+ - reactor ::
+ - store ::
+ - state ::
 ** Resources
 *** d3
 **** [[https://medium.com/@Elijah_Meeks/interactive-applications-with-react-d3-f76f7b3ebc71][interactive applications with react-d3]]
@@ -170,9 +320,6 @@ tree -d
 **** [[https://www.smashingmagazine.com/2018/02/react-d3-ecosystem/][Bringing Together react, d3, and their ecosystem]]
 **** [[http://www.adeveloperdiary.com/react-js/integrate-react-and-d3/][How to Integrate React and d3 the right way]]
 **** [[https://bost.ocks.org/mike/join/][Thinking with Joins]]
-*** react/redux
-    - [[https://read.reduxbook.com][Human Redux, by Henrik Joreteg]]
-
 ** isocket
 *** Connecting the left pair / isocket
 
@@ -304,92 +451,23 @@ left: $left_session
 right: $right_session
 "
 #+END_SRC
-** Working with d3
-*** Introduction
-   d3 is the data visualization library that was used to make our original sunburst.  The way it works is to mount itself to the dom, and then appends new elements to the dom based on the data it was given. If that data changes, it transforms the elements as needed.
-
-   The way react works is it attaches itself to the dom, then creates a //shadow dom// that it is continually listening to, adding and removing elements in this dom as needed based on the data(the state) it was given.
-
-   In other words, they work in largely the same way, and both wanna attach themselves to the dom and manipulate it.  This...isn't good.  We want to have /1/ thing making shadow doms and calls on the website, and so it is a bit tricky to get react and d3 working together.
-
-The upside is that a number of people have tackled this challenge and created different react/d3 libraries for how the two can work together.  The downside is that I'm not sure yet which is the best to do.
-
-Put simply, it is not easy to take our existing sunburst code and just paste it into our new app.  We are going to need to transform it in some way based on the guidance of the library we are using.
-
-So the question is why we are putting ourselves into this trouble?
-*** WHY WE ARE PUTTING OURSELVES INTO THIS TROUBLE
-    My assumption with all of this is that when people hear 'apisnoop', they are thinking of the site in which you can see the data visualziations.  And so the webapp is important for the project and will be expanded.  React would be great for this in the long run.
-
-Similarly, I am expecting that we are going to have more types of visualizations than just the sunburst--and that even the sunburst may change.  So we are going to want to have an understanding for a language in which we can make a //bunch// of visualizations. d3 is great for this.
-
-If we do it right, we can have reusable components too that other teams could use for their own k8s projects, and that we could use ourselves.  For example--displaying two sunburst charts side by side would be much easier in react/d3 then what i ws trying to do before (appending both to the same id on a standard html document.)  This requires that I move through some d3 tutorials though.
-
-At the end of this, though, we will have a backend server that is easy to setup and can ping different url's (github repos or testgrid artifacts) and grab their data.  Then, we can manipulate that data in whatever way we want but also pass it along to our frontend.  This front-end can then have different options and tags setto really dive in and explore.
-
-If this is the purpose of apisnoop then let's do it.  If it's too much overkill though, then I can try a simpler solution.
-*** Possible Process to get going
-**** Setup a simple d3 visualization to understand the process
-**** pipe data into this simple visualization through our redux state.
-**** Pore over the original code again (the original blog post) to see how to best convert it
-**** Change the sunburst's origin point from a CSV file to JSON
-**** Change the sunbursts origin point from JSON to our redux store.
-*** Second Process
-**** Setup different pages for different d3-react libraries that already have ubilt components.
-**** explore piping our data into the one we like.
-**** Use testgrid conformance data and make simple visualizations to it.
-     We are wanting to keep the data retrieval tied into the visualizing, so we dont' end up with a pretty graph that can't be used for what we have.  So we can grab the testgrid stuff now and see what we can do with it.
-
-
-**** Use that going forward.
-*** Possible Libraries to use
-**** Victory
-     https://formidable.com/open-source/victory/
-**** Britecharts react
-     https://eventbrite.github.io/britecharts-react/
-**** Recharts
-     http://recharts.org/en-US/
-** Aaron Feedback
-- useful troubleshooting tool:
-  - adding test names to user agents to verify a test was testing what we thought it was.
-  - filter audit logs by user-agent and then see 'when this test case is run, here are the endpoints it accesses chronologically".
-    - This is separate from number of times hit.  that is useful in aggregate, this is something different.
-  - pulling in an audit log of timestamp/verb/uri
-- Feature of pointing to the specific line in the source for each test, to pull its definition, would be a good //Next// step.
-  - This is something we can do with whakapapa, but it's not something we have now.
-- Discovery front: Filtering more endpoints from APIsnoop's definition of coverage.
-  - If beta endpoints always get hit because an api server is doing discovery, then that's cool but nothing we can ever prevent conformance tests from doing and we shouldn't care about it from a test coverage perspective.
-  - How do we signify that this is the kinda hit that's happening for an endpoint?
-  - We have a good start with filtering to just e2e, but even our e2etests are hitting those endpoints.  There are some endpoints where, logically they don't need to get tested or anything like that.
-  - Get to a point whwere we can manually specify, or have a blacklist of apiendpoints that we aren't factoring into our coverage viz.
-  - One way to do this is to filter out the endpoints that are hit by nearly all of the tests.  This is a good indicator that the endpoint is for initialization or something like that, and not actually a part of this test's function.
-- Unique Endpoints hit by a test: this is something that isn't covered by our sunburst or katherine's viz.  Pick a test, and then see the endpoints that are //only// hit by this test.
-  - which endpoints hit are unique, versus which ones are common across all test cases.  This would let us know which test cases are doing good stuff and which endpoints are essentially meaningless.
-  - you could have a center endpoint change to the perspective of that test, and then that test would only show the endpoints that it hits.....but that may not be that useful.  We dont' wanna see All the endpoints, we wanna see which ones are //special// for this test.
-  - Hierarchy vizes aren't that useful.
-  - I just wanna find a way to slice and dice data with raw queries and see where that leads us...and take some of the more useful queries and generate reports from that.  This sounds like a new approach for apisnoop.
-
-Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people like aaron?  is it a kubernetes end user?  If it's aaraon, he is saying he knows how to write certain queries, but he would rather have this  already done and then he can do further exploration.
-'For an endpoint that's only hit three times, what are the tests that are hitting this endpoint.  And then we could follow up with what the tests are doing from an api perspective.  'Okay, now let me see the full api stream from this test."
- - auotmate this, or provide shiny reports for this.  This isn't the end user coming up with the interesting things, this is us coming up with interesting things that we are letting the end user come to their own conclusions on.
- - We eventually want to show api coverage going up over time across different builds. o
- - We might be able to format things in such a way to have a test dashboard that shows individual api endpoints and #'s: how many times they been hit, something like that.
- - Is code coverage a different thing?  when talking about it being a command line tool that generates reports from it...or is that just what the group is trying to do.  the benefit of the command line tool is that you can automate it running for every build. We could then just have a page that displays these reports even maybe.
- - We want to share shinies at kubeconf china.
- - Get visualization up to good place that replaces existing visualization.
- - Showing all the api accesses per user-agent or test as a different Dashboard to have.
- - Take care of you for whatever demos you need for apisnoop.
- - It would be worth it to show we're providing value to cncf as a whole, but right now it's good to just be able to have Aaron say that the work we're doing makes it easier for conformance to do the things they want to do.
- - Let's not work on things that don't end up providing value, over-delivering when he really just wants somethings maller and specific.  He's happy to have some reports that don't need to be that shiny, but maybe a little bit interactive.  and these reports would be:
-   - If I click on a user agent, I can see the in-order access of all the api endpoints.
-   - To get some kind of report that shows me what kind of endpoints don't matter (every test hits them) and which ones are interesting (cos only a few endpoints hit them) and what are those tests?
-     - this may lead to a point where we try to make a whitelist of endpoints in our coverage, but let's not cross that bridge yet.
-   - For wednesday deadline...this isn't a hard deadline, we can touch base on Tuesday/Monday and see where we at.
-** Pairing With Mikey
-*** Background
-    I went through a pairing Session with [[https://dinosaur.is][Mikey]], to help with the overall architecture and code logic of the webui
 * Tasks
-** TODO Visually distinguish tested endpoints tagged [Conformance]
-   [[https://github.com/cncf/apisnoop/issues/46][Github Issue]].  So we can do a bit of regex on the endpoint...though I thionk each one has a test tag and those would include conformance...right?
+** DONE get basic webpage working with redux bundler
+   CLOSED: [2018-12-05 Wed 11:29]
+   just get it to say hello at least
+** DONE bring back our headers and footers to basic page
+   CLOSED: [2018-12-05 Wed 14:22]
+** TODO consolidate notes from last mikey pair (the note left about the role of the url)
+** TODO Share a link to a build and the build loads quickly
+  [[https://gitlab.ii.coop/ii/cncf/apisnoop/issues/15][issue link]]
+** TODO It is possible to share a link to a chart filtered to an endpoint
+  [[https://gitlab.ii.coop/ii/cncf/apisnoop/issues/12][gitlab link]]
+  this would be filtered to level, category, endpoint, and method.  iT shoudl show the chart locked and highlighted.
+** TODO Webui loads meaningful chart within seconds
+  [[https://gitlab.ii.coop/ii/cncf/apisnoop/issues/9][gitlab link]]
+  before any data lods, there'll be a chart outline to signify loading.  But the data should still come quickly.
+** TODO We have distinct dev and prod backends
+  [[https://gitlab.ii.coop/ii/cncf/apisnoop/issues/11][gitlab link]]
 ** TODO [3/15] Future Tasks
    - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
    - [X] Hover over Part of Sunburst shows relevant rays highlighted.
@@ -462,5 +540,7 @@ Question from this, then: Who is apisnoop's audience?  Is it Aaron,and people li
 - [X] clicking on a test makes it the 'active_test', which updates state.
 - [X] When there is an active_test, display its chronological list.  does not need to be styled fancy.
 
-** TODO [0/1] Questions
-   - [ ] Why does brining in the selectsunburstSorted selector affect the sunburst (when it is a new selector, not the previous one.
+** DONE-AND-SHARED Visually distinguish tested endpoints tagged [Conformance]
+   CLOSED: [2018-12-05 Wed 14:22]
+   - State "DONE-AND-SHARED" from "DONE"       [2018-12-05 Wed 14:22]
+   [[https://github.com/cncf/apisnoop/issues/46][Github Issue]].  So we can do a bit of regex on the endpoint...though I thionk each one has a test tag and those would include conformance...right?
