@@ -1,26 +1,26 @@
 import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
 
 const bundle = createAsyncResourceBundle({
-  name: 'endpoints',
+  name: 'tests',
   getPromise: ({ client, store }) => {
     const currentReleaseName = store.selectCurrentReleaseName()
-    return fetchEndpointsByReleaseName(client, currentReleaseName)
+    return fetchTestsByReleaseName(client, currentReleaseName)
   }
 })
 
-bundle.reactEndpointsFetch = createSelector(
-  'selectEndpointsShouldUpdate',
+bundle.reactTestsFetch = createSelector(
+  'selectTestsShouldUpdate',
   (shouldUpdate, currentReleaseId) => {
     if (!shouldUpdate) return
-    return { actionCreator: 'doFetchEndpoints' }
+    return { actionCreator: 'doFetchTests' }
   }
 )
 
 
 export default bundle
 
-function fetchEndpointsByReleaseName (client, releaseName) {
-  return client.service('endpoints').find({
+function fetchTestsByReleaseName (client, releaseName) {
+  return client.service('tests').find({
     query: {
       release: releaseName
     }
