@@ -1,8 +1,10 @@
+import feathers from '@feathersjs/feathers'
+import RestClient from '@feathersjs/rest-client'
 import axios from 'axios'
 
 // TODO add envify as browserify transform
 const config = {
-  backendUrl: process.env.BACKEND_URL
+  backendUrl: process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api/v1'
 }
 
 export default {
@@ -17,10 +19,8 @@ export default {
 }
 
 function createClient (config) {
-  return axios.create({
-    baseURL: config.baseUrl,
-    headers: {
-      "Content-Type": "application/json"
-    }
-  })
+  const restClient = RestClient(config.backendUrl)
+
+  return feathers()
+    .configure(restClient.axios(axios))
 }

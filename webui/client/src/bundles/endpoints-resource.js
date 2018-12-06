@@ -1,11 +1,9 @@
-const url = '/api/v1/endpoints'
-
 const bundle = createAsyncResourceBundle({
   name: 'endpoints',
   actionBaseType: 'ENDPOINTS',
   getPromise: ({ client, getState }) => {
     // TODO use url params to fetch
-    return client.get(url)
+    return client.service('endpoints').find()
   }
 })
 

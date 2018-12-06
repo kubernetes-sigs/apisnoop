@@ -1,10 +1,7 @@
 import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
 
-const url = '/api/v1/releases'
-
 const bundle = createAsyncResourceBundle({
   name: 'releasesIndex',
-  actionBaseType: 'RELEASES_INDEX',
   getPromise: ({ client, getState }) => {
     return fetchReleasesIndex(client)
   }
@@ -22,5 +19,12 @@ bundle.reactReleasesIndexFetch = createSelector(
 export default bundle
 
 function fetchReleasesIndex (client) {
-  return client.get(`${url}?$select[]=name&$select[]=_id`)
+  return client.service('releases').find({
+    query: {
+      $select: [
+        'name',
+        '_id'
+      ]
+    }
+  })
 }

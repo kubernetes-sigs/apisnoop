@@ -1,5 +1,3 @@
-const url = '/api/v1/releases'
-
 const bundle = createAsyncResourceBundle({
   name: 'currentRelease',
   actionBaseType: 'CURRENT_RELEASE',
@@ -25,7 +23,7 @@ bundle.reactEndpointsFetch = createSelector(
 export default bundle
 
 function fetchReleaseById (client, releaseId) {
-  return client.get(`${url}?_id=${releaseId}`)
+  return client.service('releases').get(releaseId)
 }
 
 function findReleaseIdByName (releases, name) {

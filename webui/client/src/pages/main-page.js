@@ -1,17 +1,25 @@
-import React, { Component } from 'react'
+import React from 'react'
 import { connect } from 'redux-bundler-react'
 
-
-function MainPage (props) {
-  return (
-    <main id='main-splash' className='min-vh-80 pa4 flex'>
-      <h2>You are doing a good job.</h2>
-    </main>
-  )
-}
+import ReleasesList from '../components/releases-list'
 
 export default connect(
-  MainPage
+  'selectReleasesIndex',
+  function MainPage (props) {
+    const {
+      releasesIndex
+    } = props
+
+    return (
+      <main id='main-splash' className='min-vh-80 pa4 flex'>
+        <h2>You are doing a good job.</h2>
+
+        <ReleasesList
+          releases={releasesIndex}
+        />
+      </main>
+    )
+  }
 )
 
 /*
