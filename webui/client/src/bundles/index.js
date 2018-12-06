@@ -7,7 +7,6 @@ import releases from './releases'
 import releasesIndexResource from './releases-index-resource'
 import routes from './routes'
 import testsResource from './tests-resource'
-import url from './url'
 
 export default composeBundles(
   config,
@@ -16,6 +15,5 @@ export default composeBundles(
   releases,
   releasesIndexResource,
   routes,
-  testsResource,
-  url
+  testsResource
 )
