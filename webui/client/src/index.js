@@ -9,11 +9,11 @@ import createStore from './bundles'
 
 var store = createStore()
 
-// document.title = 'APISnoop | ' + store.getState().routing.release
+document.title = 'APISnoop | ' // + store.getState().routing.release
 
 render(
-    <Provider store={store}>
+  <Provider store={store}>
     <App />
-    </Provider>,
+  </Provider>,
   document.getElementById('root')
 )

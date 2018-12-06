@@ -5,9 +5,9 @@ const config = {
   backendUrl: process.env.BACKEND_URL
 }
 
-export default = {
+export default {
   name: 'config',
-  reducer: (state = initialState) => state,
+  reducer: (state = config) => state,
   getExtraArgs: store => {
     return {
       config,

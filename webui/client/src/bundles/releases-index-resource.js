@@ -1,10 +1,12 @@
+import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
 const url = '/api/v1/releases'
 
 const bundle = createAsyncResourceBundle({
   name: 'releasesIndex',
   actionBaseType: 'RELEASES_INDEX',
   getPromise: ({ client, getState }) => {
-    return fetchNames(client)
+    return fetchReleasesIndex(client)
   }
 })
 
