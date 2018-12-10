@@ -8,7 +8,7 @@ export default {
       ['selectCurrentReleaseName'],
       (currentReleaseName) => {
         store.doMarkCurrentReleaseAsOutdated()
-        store.doMarkEndpointsAsOutdated()
+        store.doMarkEndpointsResourceAsOutdated()
         store.doMarkTestsAsOutdated()
       }
     )

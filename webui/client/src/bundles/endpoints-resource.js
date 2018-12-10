@@ -1,7 +1,7 @@
 import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
 
 const bundle = createAsyncResourceBundle({
-  name: 'endpoints',
+  name: 'endpointsResource',
   getPromise: ({ client, store }) => {
     const currentReleaseName = store.selectCurrentReleaseName()
     return fetchEndpointsByReleaseName(client, currentReleaseName)
@@ -9,10 +9,10 @@ const bundle = createAsyncResourceBundle({
 })
 
 bundle.reactEndpointsFetch = createSelector(
-  'selectEndpointsShouldUpdate',
+  'selectEndpointsResourceShouldUpdate',
   (shouldUpdate, currentReleaseId) => {
     if (!shouldUpdate) return
-    return { actionCreator: 'doFetchEndpoints' }
+    return { actionCreator: 'doFetchEndpointsResource' }
   }
 )
 

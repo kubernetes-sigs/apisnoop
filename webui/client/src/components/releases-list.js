@@ -1,8 +1,8 @@
 import React from 'react'
+import { connect } from 'redux-bundler-react'
 
 function ReleaseItem (props) {
   const { release } = props
-
   return (
     <li className='dib'>
       <a
@@ -17,15 +17,15 @@ function ReleaseItem (props) {
 }
 
 function ReleasesList (props) {
-  const { releases } = props
+  const { releasesIndex } = props
 
-  if (releases == null) return null
+  if (releasesIndex == null) return null
 
   return (
     <div className="ph3 mt4">
       <h2 className="f6 fw6 ttu tracked">Releases</h2>
       <ul className='list'>
-        {releases.map(release => {
+        {releasesIndex.map(release => {
           return <ReleaseItem release={release} />
         })}
       </ul>
@@ -33,8 +33,11 @@ function ReleasesList (props) {
   )
 }
 
-export default ReleasesList
-
 function getReleaseUrl (release) {
   return `/${release.name}`
 }
+
+export default connect(
+  'selectReleasesIndex',
+  ReleasesList
+)

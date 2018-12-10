@@ -11,11 +11,11 @@ export default connect(
   ({ doUpdateUrl, route }) => {
     const CurrentPage = route
     return (
-      <div onClick={navHelper(doUpdateUrl)}>
+        <div onClick={navHelper(doUpdateUrl)}>
         <Header />
         <CurrentPage />
         <Footer />
-      </div>
+        </div>
     )
   }
 )
