@@ -1,33 +1,47 @@
 import React from 'react'
 import { Sunburst } from 'react-vis'
 import { connect } from 'redux-bundler-react'
-import { get } from 'lodash'
+import {
+  filter,
+  get,
+  isUndefined,
+  pickBy } from 'lodash'
 
 const SunburstChart = (props) => {
   const {
-   sunburst,
-   doUpdateQuery
+    sunburst,
+    doUpdateQuery
   } = props
 
+  console.log('sunburst!!!')
   return (
-    <Sunburst
-      hideRootNode
-      colorType="literal"
-      data={sunburst}
-      height={500}
-      width={500}
-      getColor={node => node.color}
-      onValueMouseOver={handleMouseOver}
-    >
-    </Sunburst>
+      <Sunburst
+    hideRootNode
+    colorType="literal"
+    data={sunburst}
+    height={500}
+    width={500}
+    getColor={node => node.color}
+    onValueMouseOver={handleMouseOver}
+      >
+      </Sunburst>
   )
-function handleMouseOver (node, event) {
-  var path = getKeyPath(node)
-  doUpdateQuery({level: path[1]})
-}
+  function handleMouseOver (node, event) {
+    var path = getKeyPath(node)
+    var rawQuery = {
+      level: path[1],
+      category: path[2],
+      name: path[3]
+    }
+    var query = propertiesWithValue(rawQuery)
+    doUpdateQuery(query)
+  }
 }
 
 
+function propertiesWithValue (obj) {
+  return pickBy(obj, (val) => !isUndefined(val))
+}
 function getKeyPath (node) {
   if (!node.parent) {
     return ['root'];
