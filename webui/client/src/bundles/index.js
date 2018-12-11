@@ -1,5 +1,6 @@
 import { composeBundles } from 'redux-bundler'
 
+import colours from './colours'
 import config from './config'
 import currentReleaseResource from './current-release-resource'
 import endpointsResource from './endpoints-resource'
@@ -11,6 +12,7 @@ import sunburst from './sunburst'
 import testsResource from './tests-resource'
 
 export default composeBundles(
+  colours,
   config,
   currentReleaseResource,
   endpointsResource,

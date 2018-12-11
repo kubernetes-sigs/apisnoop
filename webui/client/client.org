@@ -174,6 +174,7 @@ tree -d
      #+BEGIN_SRC js
        import { composeBundles } from 'redux-bundler'
 
+       import colours from './colours'
        import config from './config'
        import currentReleaseResource from './current-release-resource'
        import endpointsResource from './endpoints-resource'
@@ -190,6 +191,7 @@ tree -d
      #+NAME: bundle index: compose bundle
      #+BEGIN_SRC js
        export default composeBundles(
+         colours,
          config,
          currentReleaseResource,
          endpointsResource,
@@ -201,7 +203,98 @@ tree -d
          testsResource
        )
      #+END_SRC
+*** Colours
+    These were locked away inside the sunburst chart, which didn't seem the best, because they were hard to reason about.  I want to make it it's own bundle, that we can then select the final calculations from and use that to set the color for each endpoint.
+    #+NAME: Colors bundle
+    #+BEGIN_SRC js :tangle ./src/bundles/colours.js
+      import { createSelector } from 'redux-bundler'
 
+      export default {
+        name: 'colours',
+        getReducer: () => {
+          const initialState = {
+            colours: {
+              'alpha': 'rgba(230, 25, 75, 1)',
+              'beta': 'rgba(0, 130, 200, 1)',
+              'stable': 'rgba(60, 180, 75, 1)',
+              'unused': 'rgba(255, 255, 255, 1)'
+            },
+            moreColours: [
+              'rgba(183, 28, 28, 1)',
+              'rgba(136, 14, 79, 1)',
+              'rgba(74, 20, 140, 1)',
+              'rgba(49, 27, 146, 1)',
+              'rgba(26, 35, 126, 1)',
+              'rgba(13, 71, 161, 1)',
+              'rgba(1, 87, 155, 1)',
+              'rgba(0, 96, 100, 1)',
+              'rgba(0, 77, 64, 1)',
+              'rgba(27, 94, 32, 1)',
+              'rgba(51, 105, 30, 1)',
+              'rgba(130, 119, 23, 1)',
+              'rgba(245, 127, 23, 1)',
+              'rgba(255, 111, 0, 1)',
+              'rgba(230, 81, 0, 1)',
+              'rgba(191, 54, 12, 1)',
+              'rgba(244, 67, 54, 1)',
+              'rgba(233, 30, 99, 1)',
+              'rgba(156, 39, 176, 1)',
+              'rgba(103, 58, 183, 1)',
+              'rgba(63, 81, 181, 1)',
+              'rgba(33, 150, 243, 1)',
+              'rgba(3, 169, 244, 1)',
+              'rgba(0, 188, 212, 1)',
+              'rgba(0, 150, 136, 1)',
+              'rgba(76, 175, 80, 1)',
+              'rgba(139, 195, 74, 1)',
+              'rgba(205, 220, 57, 1)',
+              'rgba(255, 235, 59, 1)',
+              'rgba(255, 193, 7, 1)',
+              'rgba(255, 152, 0, 1)',
+              'rgba(255, 87, 34, 1)'
+
+            ],
+            categories: [
+              "admissionregistration",
+              "apiextensions",
+              "apiregistration",
+              "apis",
+              "apps",
+              "authentication",
+              "authorization",
+              "autoscaling",
+              "batch",
+              "certificates",
+              "core",
+              "events",
+              "extensions",
+              "logs",
+              "networking",
+              "policy",
+              "rbacAuthorization",
+              "scheduling",
+              "settings",
+              "storage",
+              "version",
+              "auditregistration",
+              "coordination"
+            ]
+          }
+          return (state=initialState, action) => {
+            return state
+          }
+        },
+        selectLevelColours: (state) => state.colours.colours,
+        selectCategoryColours: (state) => {
+          var colours = {}
+          for (var catidx = 0; catidx < state.colours.categories.length; catidx++) {
+            var category = state.colours.categories[catidx]
+            colours['category.' + category] = state.colours.moreColours[(catidx * 3) % state.colours.moreColours.length]
+          }
+          return colours
+        }
+      }
+    #+END_SRC
 *** Endpoints Resource
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/endpoints-resource.js :noweb yes
@@ -436,6 +529,7 @@ tree -d
         forEach,
         get,
         includes,
+        isEmpty,
         map,
         mapValues,
         orderBy,
@@ -452,7 +546,7 @@ tree -d
         <<Sunburst Action Creators>>
       }
 
-      <<Charts Helper Functions>>
+      <<Sunburst Helper Functions>>
     #+END_SRC
 **** Reducer
    #+NAME: Sunburst Reducer
@@ -498,14 +592,17 @@ tree -d
    #+BEGIN_SRC js :tangle no
      selectSunburst: createSelector(
        'selectEndpointsByLevelAndCategoryAndNameAndMethod',
-       (endpointsByLevelAndCategoryAndNameAndMethod) => {
+       'selectLevelColours',
+       'selectCategoryColours',
+       'selectQueryObject',
+       (endpointsByLevelAndCategoryAndNameAndMethod, levelColours, categoryColours, queryObject) => {
          return {
            name: 'root',
            children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
              return {
                name: level,
-               color: colors[level],
-               children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod)
+               color: determineLevelColours(queryObject, levelColours, level),
+               children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject)
              }
            })
          }
@@ -576,26 +673,6 @@ tree -d
          }
        }
      ),
-     selectLabelStyle: () => {
-       return {
-         PERCENTAGE: {
-           fontSize: '1.3em',
-           textAnchor: 'middle'
-         },
-         FRACTION: {
-           fontSize: '1.2em,',
-           textAnchor: 'middle'
-         },
-         PATH: {
-           fontSize: '1em',
-           textAnchor: 'middle'
-         },
-         DESCRIPTION: {
-           fontSize: '0.9em',
-           textAnchor: 'middle'
-         }
-       }
-     },
      selectSunburstByRelease: createSelector(
        'selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod',
        (endpointsByReleaseAndLevelAndCategoryAndNameAndMethod) => {
@@ -685,58 +762,99 @@ tree -d
        }
      },
 **** Helper Functions
-     #+NAME: Charts Helper Functions
+     #+NAME: Sunburst Helper Functions
      #+BEGIN_SRC js :tangle no
-       function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod) {
-         var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod)
+       function determineLevelColours (query, colours, level) {
+         if (isEmpty(query)) {
+           return colours[level]
+         } else if (query.level === level){
+           return colours[level]
+         } else {
+           console.log({query, level})
+           return fadeColor(colours[level], '0.1')
+         }
+       }
+       function determineCategoryColours (query, categoryColours, category, level) {
+         if (isEmpty(query)) {
+           return categoryColours[category]
+         } else if (query.level === level && query.category === category){
+           return categoryColours[`category.${category}`]
+         } else {
+           console.log({query, category})
+           return fadeColor(categoryColours[`category.${category}`], '0.1')
+         }
+       }
+       function determineEndpointColours (query, color, category, level, endpoint) {
+         if (isEmpty(query)) {
+           return color
+         } else if (query.level === level && query.category === category && query.name === endpoint){
+           return color
+         } else {
+           return fadeColor(color, '0.1')
+         }
+
+       }
+       function calculateInitialColor (endpoint, isConformance) {
+         if (endpoint.isTested && isConformance)  {
+           return colors[`category.${endpoint.category}`]
+         } else  if( endpoint.isTested && !isConformance) {
+           var color = colors[`category.${endpoint.category}`]
+           var fadedColor = fadeColor(color, '0.2')
+           return fadedColor
+         } else {
+           return 'rgba(244, 244, 244, 1)'
+         }
+       }
+       function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject) {
+         var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject)
          return orderBy(categories, (category) => category.children.length, ['desc'])
        }
 
-       function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod) {
+       function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject) {
          return map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
            return {
              name: category,
-             color: colors[`category.${category}`],
-             children: endpointsSortedByConformance(endpointsByNameAndMethod)
+             color: determineCategoryColours(queryObject, categoryColours, category, level),
+             children: endpointsSortedByConformance(endpointsByNameAndMethod, category, level, queryObject, categoryColours)
            }
          })
        }
 
-       function endpointsSortedByConformance (endpointsByNameAndMethod) {
-         var endpoints = createEndpointAndMethod(endpointsByNameAndMethod)
+       function endpointsSortedByConformance (endpointsByNameAndMethod, category, level, queryObject, categoryColours) {
+         var endpoints = createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours)
          var sortedEndpoints = sortBy(endpoints, [
-           (endpoint) => endpoint.tested === 'untested',
-           (endpoint) => endpoint.isConformance !== 'conformance',
+           (endpoint) => endpoint.tested === 'untested', (endpoint) => endpoint.isConformance !== 'conformance',
            (endpoint) => endpoint.testTagCount
          ])
          return sortedEndpoints
        }
 
-       function createEndpointAndMethod(endpointsByNameAndMethod) {
+       function createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours) {
          return values(reduce(
            endpointsByNameAndMethod,
            (sofar, endpointsByMethod, name) => {
-             sofar = fillOutMethodInfo(sofar, endpointsByMethod, name)
+             sofar = fillOutMethodInfo(sofar, endpointsByMethod, category, name, level, queryObject, categoryColours)
              return sofar
            },
            {}
          ))
        }
 
-       // TODO change endpoint to method for clarity starting on line 115
-       function fillOutMethodInfo (sofar, endpointsByMethod, name) {
+       function fillOutMethodInfo (sofar, endpointsByMethod, category, name, level, queryObject, categoryColours) {
          forEach(endpointsByMethod, (endpoint, method) => {
            var { isTested } = endpoint
            var isConformance = checkForConformance(endpoint.test_tags)
            var path = `${name}/${method}`
            var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
+           var initialColor = calculateInitialColor(endpoint, isConformance)
            sofar[path] = {
              name,
+             parentName: category,
              testTagCount: endpoint.test_tags.length,
              tested: isTested ? 'tested' : 'untested',
              isConformance: isConformance ? "conformance" : "not conformance",
              size,
-             color: isTested ? calculateColor(endpoint, isConformance) : 'rgba(244,244,244, 1)',
+             color: isTested ? determineEndpointColours(queryObject, initialColor, category, level, endpoint) : 'rgba(244,244,244, 1)',
            }
          })
          return sofar
@@ -820,19 +938,14 @@ tree -d
          colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
        }
 
-       function calculateColor (endpoint, isConformance) {
-         if (endpoint.isTested && isConformance)  {
-           return colors[`category.${endpoint.category}`]
-         } else  if( endpoint.isTested && !isConformance) {
-           var color = colors[`category.${endpoint.category}`]
-           var fadedColor = fadeColor(color, '0.2')
-           return fadedColor
-         } else {
-           return 'rgba(244, 244, 244, 1)'
-         }
-       }
 
      #+END_SRC
+**** Thoughts on colour
+     Every node has a color that renders in our sunburst.  That color can be in two states: bright if it is focused on, and faded if it is not.  Before, we figured out this color in the d3 visualization by tracing through the keypath every time.  What I feel like we could do now is to check in the sunburst selectors whether or not that node is part of the current URL query. If it is, give it a bright color.  If it is not, give it a faded color.
+
+This means we have to be aware of the node's parent too, because methods and categories are shared across each level.  So you ahve to do a thing of 'are you a part of the path and is your parent also a part of the path, and is your parents.parent a part of the path?  If so, do this color.
+
+I feel this would be easiest with three functions, even though they're kinda similar.  determineLevelColor(level), determineCategoryColor(category), determineEndpointColor(endpoint).  For the level, it just checks whether there is a query and if it's a part of it.  Category checks if there's a query and if it and the level are a part of it.  endpoint the same, but level and category too.
 *** Tests Resource
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/tests-resouce.js :noweb yes
@@ -1243,7 +1356,7 @@ tree -d
     :END:
     For our mouse over we'll use the url bundle, which gives us 'doUpdateQuery'.  We can give it an object and it'l add each part to the query string.  So we'll just iterate over the keypath and assign as needed.
 
-The keypath will have at minimum 2 and at most 4 nodes [root, level, category, method].  So we need to take that array and for each index, if there's something there, add it to an object.
+The keypath will have at minimum 2 and at most 4 nodes [root, level, category, method].  So we need to take that array and for each index, if there's something there, add it to an object.  Then we pass that object as our query, which updates the url.  This lets us do a thing where we determine the color of a node based on whether it's path is in the query string.  So we could do something where we take the node's path and make an object, and then compare the values of the two objects?
 
     #+NAME: Sunburst
     #+BEGIN_SRC js

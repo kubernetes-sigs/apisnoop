@@ -38,7 +38,6 @@ const SunburstChart = (props) => {
   }
 }
 
-
 function propertiesWithValue (obj) {
   return pickBy(obj, (val) => !isUndefined(val))
 }
