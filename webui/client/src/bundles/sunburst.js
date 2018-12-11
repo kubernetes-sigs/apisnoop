@@ -114,24 +114,22 @@ function determineLevelColours (query, colours, level) {
   } else if (query.level === level){
     return colours[level]
   } else {
-    console.log({query, level})
     return fadeColor(colours[level], '0.1')
   }
 }
 function determineCategoryColours (query, categoryColours, category, level) {
   if (isEmpty(query)) {
-    return categoryColours[category]
+    return categoryColours[`category.${category}`]
   } else if (query.level === level && query.category === category){
     return categoryColours[`category.${category}`]
   } else {
-    console.log({query, category})
     return fadeColor(categoryColours[`category.${category}`], '0.1')
   }
 }
 function determineEndpointColours (query, color, category, level, endpoint) {
   if (isEmpty(query)) {
     return color
-  } else if (query.level === level && query.category === category && query.name === endpoint){
+  } else if (query.level === level && query.category === category && query.name === endpoint.name){
     return color
   } else {
     return fadeColor(color, '0.1')
