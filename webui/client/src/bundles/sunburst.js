@@ -71,6 +71,14 @@ export default {
       }
     }
   ),
+  selectSunburstSorted: createSelector(
+    'selectSunburst',
+    (sunburst) => {
+      var sortedLevels = orderBy(sunburst.children, 'name', 'desc')
+      sunburst.children = sortedLevels
+      return sunburst
+    }
+  ),
   selectLabelStyle: () => {
     return {
       PERCENTAGE: {
@@ -100,53 +108,9 @@ export default {
     return {
       type: 'CHART_UNLOCKED'
     }
-  },
-  doUnfocusChart: () => {
-    return {
-      type: 'CHART_UNFOCUSED'
-    }
   }
 }
 
-function determineLevelColours (query, colours, level) {
-  if (isEmpty(query)) {
-    return colours[level]
-  } else if (query.level === level){
-    return colours[level]
-  } else {
-    return fadeColor(colours[level], '0.1')
-  }
-}
-function determineCategoryColours (query, categoryColours, category, level) {
-  if (isEmpty(query)) {
-    return categoryColours[`category.${category}`]
-  } else if (query.level === level && query.category === category){
-    return categoryColours[`category.${category}`]
-  } else {
-    return fadeColor(categoryColours[`category.${category}`], '0.1')
-  }
-}
-function determineEndpointColours (query, color, category, level, endpoint) {
-  if (isEmpty(query)) {
-    return color
-  } else if (query.level === level && query.category === category && query.name === endpoint.name){
-    return color
-  } else {
-    return fadeColor(color, '0.1')
-  }
-
-}
-function calculateInitialColor (endpoint, isConformance) {
-  if (endpoint.isTested && isConformance)  {
-    return colors[`category.${endpoint.category}`]
-  } else  if( endpoint.isTested && !isConformance) {
-    var color = colors[`category.${endpoint.category}`]
-    var fadedColor = fadeColor(color, '0.2')
-    return fadedColor
-  } else {
-    return 'rgba(244, 244, 244, 1)'
-  }
-}
 function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject) {
   var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject)
   return orderBy(categories, (category) => category.children.length, ['desc'])
@@ -188,7 +152,7 @@ function fillOutMethodInfo (sofar, endpointsByMethod, category, name, level, que
     var isConformance = checkForConformance(endpoint.test_tags)
     var path = `${name}/${method}`
     var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
-    var initialColor = calculateInitialColor(endpoint, isConformance)
+    var initialColor = calculateInitialColor(endpoint, isConformance, categoryColours)
     sofar[path] = {
       name,
       parentName: category,
@@ -207,75 +171,42 @@ function checkForConformance (test_tags) {
   return includes(tagsAsStrings, 'Conformance')
 }
 
-var colors = {
-  'alpha': 'rgba(230, 25, 75, 1)',
-  'beta': 'rgba(0, 130, 200, 1)',
-  'stable': 'rgba(60, 180, 75, 1)',
-  'unused': 'rgba(255, 255, 255, 1)'
+function determineLevelColours (query, colours, level) {
+  if (isEmpty(query)) {
+    return colours[level]
+  } else if (query.level === level){
+    return colours[level]
+  } else {
+    return fadeColor(colours[level], '0.1')
+  }
 }
+function determineCategoryColours (query, categoryColours, category, level) {
+  if (isEmpty(query)) {
+    return categoryColours[`category.${category}`]
+  } else if (query.level === level && query.category === category){
+    return categoryColours[`category.${category}`]
+  } else {
+    return fadeColor(categoryColours[`category.${category}`], '0.1')
+  }
+}
+function determineEndpointColours (query, color, category, level, endpoint) {
+  if (isEmpty(query)) {
+    return color
+  } else if (query.level === level && query.category === category && query.name === endpoint.name){
+    return color
+  } else {
+    return fadeColor(color, '0.1')
+  }
 
-var categories = [
-  "admissionregistration",
-  "apiextensions",
-  "apiregistration",
-  "apis",
-  "apps",
-  "authentication",
-  "authorization",
-  "autoscaling",
-  "batch",
-  "certificates",
-  "core",
-  "events",
-  "extensions",
-  "logs",
-  "networking",
-  "policy",
-  "rbacAuthorization",
-  "scheduling",
-  "settings",
-  "storage",
-  "version",
-  "auditregistration",
-  "coordination"
-]
-
-var more_colors = [
-  'rgba(183, 28, 28, 1)',
-  'rgba(136, 14, 79, 1)',
-  'rgba(74, 20, 140, 1)',
-  'rgba(49, 27, 146, 1)',
-  'rgba(26, 35, 126, 1)',
-  'rgba(13, 71, 161, 1)',
-  'rgba(1, 87, 155, 1)',
-  'rgba(0, 96, 100, 1)',
-  'rgba(0, 77, 64, 1)',
-  'rgba(27, 94, 32, 1)',
-  'rgba(51, 105, 30, 1)',
-  'rgba(130, 119, 23, 1)',
-  'rgba(245, 127, 23, 1)',
-  'rgba(255, 111, 0, 1)',
-  'rgba(230, 81, 0, 1)',
-  'rgba(191, 54, 12, 1)',
-  'rgba(244, 67, 54, 1)',
-  'rgba(233, 30, 99, 1)',
-  'rgba(156, 39, 176, 1)',
-  'rgba(103, 58, 183, 1)',
-  'rgba(63, 81, 181, 1)',
-  'rgba(33, 150, 243, 1)',
-  'rgba(3, 169, 244, 1)',
-  'rgba(0, 188, 212, 1)',
-  'rgba(0, 150, 136, 1)',
-  'rgba(76, 175, 80, 1)',
-  'rgba(139, 195, 74, 1)',
-  'rgba(205, 220, 57, 1)',
-  'rgba(255, 235, 59, 1)',
-  'rgba(255, 193, 7, 1)',
-  'rgba(255, 152, 0, 1)',
-  'rgba(255, 87, 34, 1)'
-]
-
-for (var catidx = 0; catidx < categories.length; catidx++) {
-  var category = categories[catidx]
-  colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
+}
+function calculateInitialColor (endpoint, isConformance, categoryColours) {
+  if (endpoint.isTested && isConformance)  {
+    return categoryColours[`category.${endpoint.category}`]
+  } else  if( endpoint.isTested && !isConformance) {
+    var color = categoryColours[`category.${endpoint.category}`]
+    var fadedColor = fadeColor(color, '0.2')
+    return fadedColor
+  } else {
+    return 'rgba(244, 244, 244, 1)'
+  }
 }

@@ -608,6 +608,14 @@ tree -d
          }
        }
      ),
+     selectSunburstSorted: createSelector(
+       'selectSunburst',
+       (sunburst) => {
+         var sortedLevels = orderBy(sunburst.children, 'name', 'desc')
+         sunburst.children = sortedLevels
+         return sunburst
+       }
+     ),
      selectLabelStyle: () => {
        return {
          PERCENTAGE: {
@@ -725,11 +733,6 @@ tree -d
        return {
          type: 'CHART_UNLOCKED'
        }
-     },
-     doUnfocusChart: () => {
-       return {
-         type: 'CHART_UNFOCUSED'
-       }
      }
    #+END_SRC
    #+NAME: Sunburst Action Creator Scratch
@@ -762,47 +765,9 @@ tree -d
        }
      },
 **** Helper Functions
+     The helper functions are grooooooss right now.  It feels far too nested, and I am passing along the query object to too many places.  I feel the color addition should e done as a selector possibly and not hae it be nested within here.-
      #+NAME: Sunburst Helper Functions
      #+BEGIN_SRC js :tangle no
-       function determineLevelColours (query, colours, level) {
-         if (isEmpty(query)) {
-           return colours[level]
-         } else if (query.level === level){
-           return colours[level]
-         } else {
-           return fadeColor(colours[level], '0.1')
-         }
-       }
-       function determineCategoryColours (query, categoryColours, category, level) {
-         if (isEmpty(query)) {
-           return categoryColours[`category.${category}`]
-         } else if (query.level === level && query.category === category){
-           return categoryColours[`category.${category}`]
-         } else {
-           return fadeColor(categoryColours[`category.${category}`], '0.1')
-         }
-       }
-       function determineEndpointColours (query, color, category, level, endpoint) {
-         if (isEmpty(query)) {
-           return color
-         } else if (query.level === level && query.category === category && query.name === endpoint.name){
-           return color
-         } else {
-           return fadeColor(color, '0.1')
-         }
-
-       }
-       function calculateInitialColor (endpoint, isConformance) {
-         if (endpoint.isTested && isConformance)  {
-           return colors[`category.${endpoint.category}`]
-         } else  if( endpoint.isTested && !isConformance) {
-           var color = colors[`category.${endpoint.category}`]
-           var fadedColor = fadeColor(color, '0.2')
-           return fadedColor
-         } else {
-           return 'rgba(244, 244, 244, 1)'
-         }
-       }
        function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject) {
          var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject)
          return orderBy(categories, (category) => category.children.length, ['desc'])
@@ -844,7 +809,7 @@ tree -d
            var isConformance = checkForConformance(endpoint.test_tags)
            var path = `${name}/${method}`
            var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
-           var initialColor = calculateInitialColor(endpoint, isConformance)
+           var initialColor = calculateInitialColor(endpoint, isConformance, categoryColours)
            sofar[path] = {
              name,
              parentName: category,
@@ -863,80 +828,45 @@ tree -d
          return includes(tagsAsStrings, 'Conformance')
        }
 
-       var colors = {
-         'alpha': 'rgba(230, 25, 75, 1)',
-         'beta': 'rgba(0, 130, 200, 1)',
-         'stable': 'rgba(60, 180, 75, 1)',
-         'unused': 'rgba(255, 255, 255, 1)'
+       function determineLevelColours (query, colours, level) {
+         if (isEmpty(query)) {
+           return colours[level]
+         } else if (query.level === level){
+           return colours[level]
+         } else {
+           return fadeColor(colours[level], '0.1')
+         }
        }
-
-       var categories = [
-         "admissionregistration",
-         "apiextensions",
-         "apiregistration",
-         "apis",
-         "apps",
-         "authentication",
-         "authorization",
-         "autoscaling",
-         "batch",
-         "certificates",
-         "core",
-         "events",
-         "extensions",
-         "logs",
-         "networking",
-         "policy",
-         "rbacAuthorization",
-         "scheduling",
-         "settings",
-         "storage",
-         "version",
-         "auditregistration",
-         "coordination"
-       ]
-
-       var more_colors = [
-         'rgba(183, 28, 28, 1)',
-         'rgba(136, 14, 79, 1)',
-         'rgba(74, 20, 140, 1)',
-         'rgba(49, 27, 146, 1)',
-         'rgba(26, 35, 126, 1)',
-         'rgba(13, 71, 161, 1)',
-         'rgba(1, 87, 155, 1)',
-         'rgba(0, 96, 100, 1)',
-         'rgba(0, 77, 64, 1)',
-         'rgba(27, 94, 32, 1)',
-         'rgba(51, 105, 30, 1)',
-         'rgba(130, 119, 23, 1)',
-         'rgba(245, 127, 23, 1)',
-         'rgba(255, 111, 0, 1)',
-         'rgba(230, 81, 0, 1)',
-         'rgba(191, 54, 12, 1)',
-         'rgba(244, 67, 54, 1)',
-         'rgba(233, 30, 99, 1)',
-         'rgba(156, 39, 176, 1)',
-         'rgba(103, 58, 183, 1)',
-         'rgba(63, 81, 181, 1)',
-         'rgba(33, 150, 243, 1)',
-         'rgba(3, 169, 244, 1)',
-         'rgba(0, 188, 212, 1)',
-         'rgba(0, 150, 136, 1)',
-         'rgba(76, 175, 80, 1)',
-         'rgba(139, 195, 74, 1)',
-         'rgba(205, 220, 57, 1)',
-         'rgba(255, 235, 59, 1)',
-         'rgba(255, 193, 7, 1)',
-         'rgba(255, 152, 0, 1)',
-         'rgba(255, 87, 34, 1)'
-       ]
-
-       for (var catidx = 0; catidx < categories.length; catidx++) {
-         var category = categories[catidx]
-         colors['category.' + category] = more_colors[(catidx * 3) % more_colors.length]
+       function determineCategoryColours (query, categoryColours, category, level) {
+         if (isEmpty(query)) {
+           return categoryColours[`category.${category}`]
+         } else if (query.level === level && query.category === category){
+           return categoryColours[`category.${category}`]
+         } else {
+           return fadeColor(categoryColours[`category.${category}`], '0.1')
+         }
        }
+       function determineEndpointColours (query, color, category, level, endpoint) {
+         if (isEmpty(query)) {
+           return color
+         } else if (query.level === level && query.category === category && query.name === endpoint.name){
+           return color
+         } else {
+           return fadeColor(color, '0.1')
+         }
 
-
+       }
+       function calculateInitialColor (endpoint, isConformance, categoryColours) {
+         if (endpoint.isTested && isConformance)  {
+           return categoryColours[`category.${endpoint.category}`]
+         } else  if( endpoint.isTested && !isConformance) {
+           var color = categoryColours[`category.${endpoint.category}`]
+           var fadedColor = fadeColor(color, '0.2')
+           return fadedColor
+         } else {
+           return 'rgba(244, 244, 244, 1)'
+         }
+       }
      #+END_SRC
 **** Thoughts on colour
      Every node has a color that renders in our sunburst.  That color can be in two states: bright if it is focused on, and faded if it is not.  Before, we figured out this color in the d3 visualization by tracing through the keypath every time.  What I feel like we could do now is to check in the sunburst selectors whether or not that node is part of the current URL query. If it is, give it a bright color.  If it is not, give it a faded color.
@@ -944,6 +874,8 @@ tree -d
 This means we have to be aware of the node's parent too, because methods and categories are shared across each level.  So you ahve to do a thing of 'are you a part of the path and is your parent also a part of the path, and is your parents.parent a part of the path?  If so, do this color.
 
 I feel this would be easiest with three functions, even though they're kinda similar.  determineLevelColor(level), determineCategoryColor(category), determineEndpointColor(endpoint).  For the level, it just checks whether there is a query and if it's a part of it.  Category checks if there's a query and if it and the level are a part of it.  endpoint the same, but level and category too.
+
+I've now done this, but the functions feel v. fragile to me, like there's a simpler way to go about it that I am just not seeing.  I think the problem is partially that we have a hella nested function by necessity--since we are making a sunburst which is built on nesting, so things are going to feel strangely convoluted inherently?  But it would still be nice to refactor this for simplicity.
 *** Tests Resource
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/tests-resouce.js :noweb yes
@@ -981,6 +913,7 @@ I feel this would be easiest with three functions, even though they're kinda sim
       }
 
     #+END_SRC
+
 *** Tests
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/tests.js :noweb yes
@@ -1369,7 +1302,7 @@ The keypath will have at minimum 2 and at most 4 nodes [root, level, category, m
 
       const SunburstChart = (props) => {
         const {
-          sunburst,
+          sunburstSorted,
           doUpdateQuery
         } = props
 
@@ -1378,7 +1311,7 @@ The keypath will have at minimum 2 and at most 4 nodes [root, level, category, m
             <Sunburst
           hideRootNode
           colorType="literal"
-          data={sunburst}
+          data={sunburstSorted}
           height={500}
           width={500}
           getColor={node => node.color}
@@ -1409,9 +1342,10 @@ The keypath will have at minimum 2 and at most 4 nodes [root, level, category, m
         var parentKeyPath = getKeyPath(node.parent)
         return [...parentKeyPath, nodeKey]
       }
+
       export default connect(
         'selectLabelStyle',
-        'selectSunburst',
+        'selectSunburstSorted',
         'doUpdateQuery',
         SunburstChart
       )
@@ -1451,29 +1385,6 @@ The keypath will have at minimum 2 and at most 4 nodes [root, level, category, m
           </Sunburst>
             </div>
         )
-
-        function determineColor (node) {
-          if (focusPath.length > 0 && !node.checked) {
-            if (!node.color) {
-              // return node.color = node.color
-              node.checked = true
-              return node.color = 'rgba(255,255,255,0.1)'
-            } else if (node.parent && includes(focusPath, node.name) && includes(focusPath, node.parent.data.name)) {
-              node.checked = true
-              var brightColor = fadeColor(node.color, '1')
-              return node.color = brightColor
-              // return node.color = 'rgba(255,218,185,1)'
-            } else {
-              var fadedColor = fadeColor(node.color, '0.1')
-              node.checked = true
-              //         return node.color = 'rgba(255,218,185,1)'
-              return node.color = fadedColor
-
-            }
-          }
-          node.checked = false
-          return node.color
-        }
 
         function handleMouseOver (node, event) {
           if (!chartLocked) {
@@ -1655,6 +1566,7 @@ The keypath will have at minimum 2 and at most 4 nodes [root, level, category, m
      unlockChart: doUnlockChart
      })(MainPage)
    #+END_EXAMPLE
+
 * Glossary
 ** Bundle (<<<bundles>>> | <<<bundle>>>)
    a collection of redux code all organized by some concern or idea.  It's a marked difference from the typical organizing style, where you organize files by what they are (reducers, selectors, etc.).  This, instead, organizes files by their topic.
@@ -1847,12 +1759,14 @@ right: $right_session
 * Tasks                                                            :apisnoop:
 ** DONE Hover over chart adds level, category, and method to url
    CLOSED: [2018-12-11 Tue 10:26]
-** TODO Chart is focused based on the level, category, and method in url
-** TODO Share a link to a chart filtered to an endpoint
+** DONE Chart is focused based on the level, category, and method in url
+   CLOSED: [2018-12-12 Wed 11:07]
+** DONE Share a link to a chart filtered to an endpoint
+   CLOSED: [2018-12-12 Wed 11:07]
   [[https://gitlab.ii.coop/ii/cncf/apisnoop/issues/12][gitlab link]]
   this would be filtered to level, category, endpoint, and method.  iT shoudl show the chart locked and highlighted.
-** TODO Webui loads meaningful chart within seconds
-   SCHEDULED: <2018-12-06 Thu>
+** DONE Webui loads meaningful chart within seconds
+   CLOSED: [2018-12-12 Wed 11:07] SCHEDULED: <2018-12-06 Thu>
   [[https://gitlab.ii.coop/ii/cncf/apisnoop/issues/9][gitlab link]]
   before any data lods, there'll be a chart outline to signify loading.  But the data should still come quickly.
 ** TODO We have distinct dev and prod environments for the client
@@ -1862,20 +1776,20 @@ right: $right_session
 Using Redux DevTools
 Both the debug bundle and redux dev tools are enabled if localStorage.debug is set to something "truthy". In this way you can keep your production apps debuggable, you just have to flip that localStorage.debug flag to enable it. Also beware that running localStorage.debug = false in your browser console won't actually turn it off. This is because LocalStorage serializes everything to strings so the value that's stored is actually the string "false" which... is truthy! So to turn it back off again, you can just do: delete localStorage.debug instead.
 ===
-** TODO [5/14] Future Tasks
+** TODO [8/14] Future Tasks
    - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
    - [X] Hover over Part of Sunburst shows relevant rays highlighted.
    - [X] Hover over Sunburst, see testing percentage update in center.
    - [ ] Click on Useragent, sunburst zooms onto that subset of data.
    - [X] Refactor Chart Selector to not be heavily nested..
-   - [ ] Move colors calculation out of sunburst selector into its own thing.
+   - [X] Move colors calculation out of sunburst selector into its own thing.
    - [ ] Separate sunburst selector thangs from chart interaction thangs (maybe?  may be premature optimization).
    - [X] Remove unused props from app.js
    - [ ] Make each test Sequence an object, instead of an array. or at least ask someone if that's really necessary?  Maybe not necessary.
    - [ ] Improve performance of page load, by only calling a test when needed.
    - [ ] Refactor tests so the entire object isn't being loaded in the client.  That feels way too heavy, and instead you should only load up the testInfo (all the api endpoints being accessed) when there is an active_test, and you display that only on that active test.
-   - [ ] When you click on an endpoint, it adds to the URL so that you can share the URL and have be right on the hovered sunburst with the filtered tests and such.
-   - [ ] add queryString to our arsenal, so you can do a direct url to an endpoint
+   - [X] When you click on an endpoint, it adds to the URL so that you can share the URL and have be right on the hovered sunburst with the filtered tests and such.
+   - [X] add queryString to our arsenal, so you can do a direct url to an endpoint
    - [X] Add logic to API to filter endpoints to only those touched by e2e. We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
 
 ** DONE Share a link to a build and the build loads quickly

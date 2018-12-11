@@ -9,7 +9,7 @@ import {
 
 const SunburstChart = (props) => {
   const {
-    sunburst,
+    sunburstSorted,
     doUpdateQuery
   } = props
 
@@ -18,7 +18,7 @@ const SunburstChart = (props) => {
       <Sunburst
     hideRootNode
     colorType="literal"
-    data={sunburst}
+    data={sunburstSorted}
     height={500}
     width={500}
     getColor={node => node.color}
@@ -49,9 +49,10 @@ function getKeyPath (node) {
   var parentKeyPath = getKeyPath(node.parent)
   return [...parentKeyPath, nodeKey]
 }
+
 export default connect(
   'selectLabelStyle',
-  'selectSunburst',
+  'selectSunburstSorted',
   'doUpdateQuery',
   SunburstChart
 )
