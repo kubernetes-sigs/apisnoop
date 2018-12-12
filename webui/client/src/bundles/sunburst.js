@@ -1,20 +1,14 @@
-
-
 import { fadeColor } from '../lib/utils'
 import { createSelector } from 'redux-bundler'
 import {
-  assign,
   forEach,
-  get,
   includes,
   isEmpty,
   map,
-  mapValues,
   orderBy,
   reduce,
   sortBy,
-  values,
-  without
+  values
 } from 'lodash'
 
 export default {
@@ -77,6 +71,14 @@ export default {
       var sortedLevels = orderBy(sunburst.children, 'name', 'desc')
       sunburst.children = sortedLevels
       return sunburst
+    }
+  ),
+  selectInteriorLabel: createSelector(
+    'selectQueryObject',
+    'selectEndpointsWithTestCoverage',
+    (query, endpoints) => {
+      var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
+      return nameAndCoverageInfo
     }
   ),
   selectLabelStyle: () => {
@@ -209,4 +211,51 @@ function calculateInitialColor (endpoint, isConformance, categoryColours) {
   } else {
     return 'rgba(244, 244, 244, 1)'
   }
+}
+
+function determineNameAndCoverageInfo (query, endpoints) {
+ // check our query to see how far in the path we are.
+ // If a response is null, it means its not a part of the path
+ // therefore, we display the preceding level's info.
+  if (endpoints.stable === undefined) return null
+  if (query.level === undefined) {
+    var name = ''
+    var coverage = endpoints.coverage
+    var endpoint = false
+    var description= ''
+  }else if (query.category === undefined) {
+    name = query.level
+    coverage = endpoints[query.level].coverage
+    endpoint = false
+    description= ''
+  } else if (query.name === undefined) {
+    name = query.category
+    coverage = endpoints[query.level][query.category].coverage
+    endpoint = false
+    description= ''
+  } else {
+    var endpointInQuestion = endpoints[query.level][query.category][query.name]
+    console.log({endpointInQuestion})
+    name = query.name
+    endpoint= true,
+    description= determineDescription(endpoints[query.level][query.category][query.name])
+    var tested = determineTested(endpointInQuestion)
+    coverage = endpointInQuestion.coverage
+  }
+  return {
+    name,
+    ...coverage,
+    endpoint,
+    description,
+    tested
+  }
+}
+
+function determineDescription (endpoint) {
+  var method = Object.keys(endpoint)[0]
+  return endpoint[method].description
+}
+function determineTested (endpoint) {
+  var method = Object.keys(endpoint)[0]
+  return endpoint[method].isTested ? 'Tested' : 'Untested'
 }

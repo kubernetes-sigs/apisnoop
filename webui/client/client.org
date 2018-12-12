@@ -207,8 +207,6 @@ tree -d
     These were locked away inside the sunburst chart, which didn't seem the best, because they were hard to reason about.  I want to make it it's own bundle, that we can then select the final calculations from and use that to set the color for each endpoint.
     #+NAME: Colors bundle
     #+BEGIN_SRC js :tangle ./src/bundles/colours.js
-      import { createSelector } from 'redux-bundler'
-
       export default {
         name: 'colours',
         getReducer: () => {
@@ -525,18 +523,14 @@ tree -d
       import { fadeColor } from '../lib/utils'
       import { createSelector } from 'redux-bundler'
       import {
-        assign,
         forEach,
-        get,
         includes,
         isEmpty,
         map,
-        mapValues,
         orderBy,
         reduce,
         sortBy,
-        values,
-        without
+        values
       } from 'lodash'
 
       export default {
@@ -616,6 +610,14 @@ tree -d
          return sunburst
        }
      ),
+     selectInteriorLabel: createSelector(
+       'selectQueryObject',
+       'selectEndpointsWithTestCoverage',
+       (query, endpoints) => {
+         var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
+         return nameAndCoverageInfo
+       }
+     ),
      selectLabelStyle: () => {
        return {
          PERCENTAGE: {
@@ -640,14 +642,6 @@ tree -d
 
    #+NAME: Sunburst Selectors Scratch
    #+BEGIN_SRC js :tangle no
-     selectFocusPathAsArray: (state) => state.charts.focusedKeyPath
-     selectChartLocked: (state) => state.charts.chartLocked,
-     selectFocusPathAsString: createSelector(
-       'selectFocusPathAsArray',
-       (pathAsArray) => {
-         return pathAsArray.join().replace(/,/g,' / ')
-       }
-     ),
      selectInteriorLabelComponents: createSelector(
        'selectFocusPathAsArray',
        'selectIsEndpointsReady',
@@ -681,44 +675,6 @@ tree -d
          }
        }
      ),
-     selectSunburstByRelease: createSelector(
-       'selectEndpointsByReleaseAndLevelAndCategoryAndNameAndMethod',
-       (endpointsByReleaseAndLevelAndCategoryAndNameAndMethod) => {
-         var dataByRelease = mapValues(endpointsByReleaseAndLevelAndCategoryAndNameAndMethod, (endpointsByLevelAndCategoryAndNameAndMethod, release) => {
-           return {
-             name: 'root',
-             children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
-               return {
-                 name: level,
-                 color: colors[level],
-                 children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod)
-               }
-             })
-           }
-         })
-         return {
-           dataByRelease
-         }
-       }
-     ),
-     selectSunburstByReleaseWithSortedLevel: createSelector(
-       'selectSunburstByRelease',
-       (endpointsByRelease) => {
-         var dataByRelease = endpointsByRelease.dataByRelease
-         var sortedDataByRelease = mapValues(dataByRelease, (release) => {
-           var levels = release.children
-           var sortedLevels = orderBy(levels, 'name', 'desc')
-           release.children = sortedLevels
-           return release
-         })
-         endpointsByRelease.dataByRelease = sortedDataByRelease
-         return endpointsByRelease
-       }
-     ),
-     selectIsSunburstReady: createSelector(
-       'selectIsEndpointsReady',
-       (isEndpointsReady) => isEndpointsReady
-     )
     #+END_SRC
 
 **** Action Creators
@@ -735,35 +691,6 @@ tree -d
        }
      }
    #+END_SRC
-   #+NAME: Sunburst Action Creator Scratch
-   #+BEGIN_SRC :tangle no
-
-   #+END_SRC
-     doFocusChart: (keyPath) => {
-       return function ({ dispatch, getState }) {
-         dispatch({
-           type: 'CHART_FOCUSED',
-           payload: keyPath
-         })
-
-         const state = getState()
-         const {route} = state
-         const { url, params } = route
-         const { level, category, endpoint, method } = params
-         dispatch({
-           type: 'URL_UPDATED',
-           payload: {
-             url: route.url,
-             params: assign({}, route.params, {
-               level,
-               category,
-               endpoint,
-               method
-             })
-           }
-         })
-       }
-     },
 **** Helper Functions
      The helper functions are grooooooss right now.  It feels far too nested, and I am passing along the query object to too many places.  I feel the color addition should e done as a selector possibly and not hae it be nested within here.-
      #+NAME: Sunburst Helper Functions
@@ -867,6 +794,54 @@ tree -d
            return 'rgba(244, 244, 244, 1)'
          }
        }
+
+       function determineNameAndCoverageInfo (query, endpoints) {
+        // check our query to see how far in the path we are.
+        // If a response is null, it means its not a part of the path
+        // therefore, we display the preceding level's info.
+         if (endpoints.stable === undefined) return null
+         if (query.level === undefined) {
+           var name = ''
+           var coverage = endpoints.coverage
+           var endpoint = false
+           var description= ''
+         }else if (query.category === undefined) {
+           name = query.level
+           coverage = endpoints[query.level].coverage
+           endpoint = false
+           description= ''
+         } else if (query.name === undefined) {
+           name = query.category
+           coverage = endpoints[query.level][query.category].coverage
+           endpoint = false
+           description= ''
+         } else {
+           var endpointInQuestion = endpoints[query.level][query.category][query.name]
+           console.log({endpointInQuestion})
+           name = query.name
+           endpoint= true,
+           description= determineDescription(endpoints[query.level][query.category][query.name])
+           var tested = determineTested(endpointInQuestion)
+           coverage = endpointInQuestion.coverage
+         }
+         return {
+           name,
+           ...coverage,
+           endpoint,
+           description,
+           tested
+         }
+       }
+
+       function determineDescription (endpoint) {
+         var method = Object.keys(endpoint)[0]
+         return endpoint[method].description
+       }
+       function determineTested (endpoint) {
+         var method = Object.keys(endpoint)[0]
+         return endpoint[method].isTested ? 'Tested' : 'Untested'
+       }
+
      #+END_SRC
 **** Thoughts on colour
      Every node has a color that renders in our sunburst.  That color can be in two states: bright if it is focused on, and faded if it is not.  Before, we figured out this color in the d3 visualization by tracing through the keypath every time.  What I feel like we could do now is to check in the sunburst selectors whether or not that node is part of the current URL query. If it is, give it a bright color.  If it is not, give it a faded color.
@@ -1287,37 +1262,53 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
     :END:
     For our mouse over we'll use the url bundle, which gives us 'doUpdateQuery'.  We can give it an object and it'l add each part to the query string.  So we'll just iterate over the keypath and assign as needed.
 
-The keypath will have at minimum 2 and at most 4 nodes [root, level, category, method].  So we need to take that array and for each index, if there's something there, add it to an object.  Then we pass that object as our query, which updates the url.  This lets us do a thing where we determine the color of a node based on whether it's path is in the query string.  So we could do something where we take the node's path and make an object, and then compare the values of the two objects?
-
+The keypath will have at minimum 2 and at most 4 nodes [root, level, category, method].  So we need to take that array and for each index, if there's something there, add it to an object.  Then we pass that object as our query, which updates the url.  This lets us do a thing where we determine the color of a node based on whether it's path is in the query string. our updateQuery makes an object for us, so we then just check whether the aspects of the node's path matches values in the queryObject, and then color it appropriately.
     #+NAME: Sunburst
     #+BEGIN_SRC js
       import React from 'react'
-      import { Sunburst } from 'react-vis'
+      import { Sunburst, LabelSeries } from 'react-vis'
       import { connect } from 'redux-bundler-react'
       import {
-        filter,
         get,
         isUndefined,
         pickBy } from 'lodash'
 
       const SunburstChart = (props) => {
         const {
+          interiorLabel,
+          labelStyle,
           sunburstSorted,
           doUpdateQuery
         } = props
 
-        console.log('sunburst!!!')
+        console.log({interiorLabel})
         return (
+            <div id='sunburst'>
+            <button onClick={()=> doUpdateQuery({})}>Clear</button>
             <Sunburst
-          hideRootNode
-          colorType="literal"
-          data={sunburstSorted}
-          height={500}
-          width={500}
-          getColor={node => node.color}
-          onValueMouseOver={handleMouseOver}
+              hideRootNode
+              colorType="literal"
+              data={sunburstSorted}
+              height={500}
+              width={500}
+              getColor={node => node.color}
+              onValueMouseOver={handleMouseOver}
             >
-            </Sunburst>
+            {(interiorLabel && !interiorLabel.endpoint) &&
+             <LabelSeries
+             data={[
+               {x: 0, y: 60, label: interiorLabel.percentage, style: labelStyle.PERCENTAGE},
+               {x: 0, y: 0, label: interiorLabel.ratio, style: labelStyle.FRACTION},
+               {x: 0, y: -20, label: 'total tested', style: labelStyle.PATH}
+             ]} />}
+            {(interiorLabel && interiorLabel.endpoint) &&
+             <LabelSeries
+             data={[
+               {x: 0, y: 0, label: interiorLabel.description, style: labelStyle.DESCRIPTION},
+               {x: 0, y: -20, label: interiorLabel.tested, style: labelStyle.PATH}
+             ]} />}
+          </Sunburst>
+          </div>
         )
         function handleMouseOver (node, event) {
           var path = getKeyPath(node)
@@ -1344,94 +1335,13 @@ The keypath will have at minimum 2 and at most 4 nodes [root, level, category, m
       }
 
       export default connect(
+        'selectInteriorLabel',
         'selectLabelStyle',
         'selectSunburstSorted',
         'doUpdateQuery',
         SunburstChart
       )
     #+END_SRC
-    #+NAME: Sunburst Scratch
-    #+BEGIN_EXAMPLE js
-      import React from 'react'
-      import { Sunburst, LabelSeries } from 'react-vis'
-      import { forEach, get, includes, uniq, without } from 'lodash'
-      import { fadeColor } from '../lib/utils'
-
-      export default function SunburstChart (props) {
-        const {
-          chartLocked,
-          endpoints,
-          focusChart,
-          focusPath,
-          interiorLabel,
-          lockChart,
-          setEndpointTests,
-          sunburst,
-          unfocusChart,
-          unlockChart
-        } = props
-
-        if (sunburst == null) return null
-        return(
-            <div className="sunburst-wrapper">
-            <Sunburst
-          hideRootNode
-          colorType="literal"
-          data={sunburst.data}
-          height={500}
-          width={500}
-          getColor={node => node.color}
-            >
-          </Sunburst>
-            </div>
-        )
-
-        function handleMouseOver (node, event) {
-          if (!chartLocked) {
-            focusChart(getKeyPath(node))
-          }
-        }
-
-        function handleMouseOut () {
-          if (!chartLocked) {
-            unfocusChart()
-          }
-        }
-
-        function handleClick () {
-          if (chartLocked){
-            unlockChart()
-          } else if (!chartLocked && focusPath.length > 3) {
-            var endpointTests = getEndpointTests(focusPath)
-            setEndpointTests(endpointTests)
-            lockChart()
-          } else {
-            lockChart()
-          }
-        }
-
-        function getKeyPath (node) {
-          if (!node.parent) {
-            return ['root'];
-          }
-          var nodeKey = get(node, 'data.name') || get(node, 'name')
-          var parentKeyPath = getKeyPath(node.parent)
-          return [...parentKeyPath, nodeKey]
-        }
-
-        function getEndpointTests (focusPath) {
-          var endpointTests = []
-          var pathSansRoot = without(focusPath, 'root')
-          var lockedEndpoint = get(endpoints, pathSansRoot)
-          forEach(lockedEndpoint, (method) => {
-            for (var test of method.tests) {
-              endpointTests.push(test)
-            }
-          })
-          return uniq(endpointTests)
-        }
-      }
-    #+END_EXAMPLE
 ** Pages
    :PROPERTIES:
    :header-args: :tangle ./src/pages/main-page.js

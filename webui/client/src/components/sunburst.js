@@ -1,30 +1,47 @@
 import React from 'react'
-import { Sunburst } from 'react-vis'
+import { Sunburst, LabelSeries } from 'react-vis'
 import { connect } from 'redux-bundler-react'
 import {
-  filter,
   get,
   isUndefined,
   pickBy } from 'lodash'
 
 const SunburstChart = (props) => {
   const {
+    interiorLabel,
+    labelStyle,
     sunburstSorted,
     doUpdateQuery
   } = props
 
-  console.log('sunburst!!!')
+  console.log({interiorLabel})
   return (
+      <div id='sunburst'>
+      <button onClick={()=> doUpdateQuery({})}>Clear</button>
       <Sunburst
-    hideRootNode
-    colorType="literal"
-    data={sunburstSorted}
-    height={500}
-    width={500}
-    getColor={node => node.color}
-    onValueMouseOver={handleMouseOver}
+        hideRootNode
+        colorType="literal"
+        data={sunburstSorted}
+        height={500}
+        width={500}
+        getColor={node => node.color}
+        onValueMouseOver={handleMouseOver}
       >
-      </Sunburst>
+      {(interiorLabel && !interiorLabel.endpoint) &&
+       <LabelSeries
+       data={[
+         {x: 0, y: 60, label: interiorLabel.percentage, style: labelStyle.PERCENTAGE},
+         {x: 0, y: 0, label: interiorLabel.ratio, style: labelStyle.FRACTION},
+         {x: 0, y: -20, label: 'total tested', style: labelStyle.PATH}
+       ]} />}
+      {(interiorLabel && interiorLabel.endpoint) &&
+       <LabelSeries
+       data={[
+         {x: 0, y: 0, label: interiorLabel.description, style: labelStyle.DESCRIPTION},
+         {x: 0, y: -20, label: interiorLabel.tested, style: labelStyle.PATH}
+       ]} />}
+    </Sunburst>
+    </div>
   )
   function handleMouseOver (node, event) {
     var path = getKeyPath(node)
@@ -51,6 +68,7 @@ function getKeyPath (node) {
 }
 
 export default connect(
+  'selectInteriorLabel',
   'selectLabelStyle',
   'selectSunburstSorted',
   'doUpdateQuery',

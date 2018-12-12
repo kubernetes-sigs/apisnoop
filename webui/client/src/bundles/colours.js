@@ -1,5 +1,3 @@
-import { createSelector } from 'redux-bundler'
-
 export default {
   name: 'colours',
   getReducer: () => {
