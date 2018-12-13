@@ -10,6 +10,7 @@ import releasesIndexResource from './releases-index-resource'
 import routes from './routes'
 import sunburst from './sunburst'
 import testsResource from './tests-resource'
+import tests from './tests'
 
 export default composeBundles(
   colours,
@@ -21,5 +22,6 @@ export default composeBundles(
   releasesIndexResource,
   routes,
   sunburst,
-  testsResource
+  testsResource,
+  tests
 )

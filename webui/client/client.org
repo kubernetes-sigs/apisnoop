@@ -184,6 +184,7 @@ tree -d
        import routes from './routes'
        import sunburst from './sunburst'
        import testsResource from './tests-resource'
+       import tests from './tests'
 
      #+END_SRC
 **** Compose Bundle
@@ -200,7 +201,8 @@ tree -d
          releasesIndexResource,
          routes,
          sunburst,
-         testsResource
+         testsResource,
+         tests
        )
      #+END_SRC
 *** Colours
@@ -526,6 +528,8 @@ tree -d
         forEach,
         includes,
         isEmpty,
+        flatMap,
+        join,
         map,
         orderBy,
         reduce,
@@ -616,6 +620,14 @@ tree -d
        (query, endpoints) => {
          var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
          return nameAndCoverageInfo
+       }
+     ),
+     selectFocusedPath: createSelector(
+       'selectQueryObject',
+       (queryObject) => {
+         var queryValues = flatMap(queryObject)
+         var focusedPath = join(queryValues, ' / ')
+         return focusedPath
        }
      ),
      selectLabelStyle: () => {
@@ -817,9 +829,8 @@ tree -d
            description= ''
          } else {
            var endpointInQuestion = endpoints[query.level][query.category][query.name]
-           console.log({endpointInQuestion})
            name = query.name
-           endpoint= true,
+           endpoint= true
            description= determineDescription(endpoints[query.level][query.category][query.name])
            var tested = determineTested(endpointInQuestion)
            coverage = endpointInQuestion.coverage
@@ -853,7 +864,7 @@ I feel this would be easiest with three functions, even though they're kinda sim
 I've now done this, but the functions feel v. fragile to me, like there's a simpler way to go about it that I am just not seeing.  I think the problem is partially that we have a hella nested function by necessity--since we are making a sunburst which is built on nesting, so things are going to feel strangely convoluted inherently?  But it would still be nice to refactor this for simplicity.
 *** Tests Resource
     :PROPERTIES:
-    :header-args: :tangle ./src/bundles/tests-resouce.js :noweb yes
+    :header-args: :tangle ./src/bundles/tests-resource.js :noweb yes
     :END:
 
     #+NAME: tests resource
@@ -861,18 +872,18 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
       import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
 
       const bundle = createAsyncResourceBundle({
-        name: 'tests',
+        name: 'testsResource',
         getPromise: ({ client, store }) => {
           const currentReleaseName = store.selectCurrentReleaseName()
           return fetchTestsByReleaseName(client, currentReleaseName)
         }
       })
 
-      bundle.reactTestsFetch = createSelector(
-        'selectTestsShouldUpdate',
+      bundle.reactTestsResourceFetch = createSelector(
+        'selectTestsResourceShouldUpdate',
         (shouldUpdate, currentReleaseId) => {
           if (!shouldUpdate) return
-          return { actionCreator: 'doFetchTests' }
+          return { actionCreator: 'doFetchTestsResource' }
         }
       )
 
@@ -893,165 +904,260 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/tests.js :noweb yes
     :END:
+**** Imports and Layout
     #+NAME: Tests Bundle
     #+BEGIN_SRC js
-      /*
-      const { keyBy } = require('lodash')
+      import { createSelector } from 'redux-bundler'
 
-      const initialState = {
-        activeTest: {},
-        byId: {},
-        endpointTests: [],
-        errors: {},
-        isLoading: false,
-        hasLoaded: false
+      export default {
+        name: 'tests',
+        <<Tests Reducer>>,
+        <<Tests Selector>>,
+        <<Tests Action Creators>>
       }
-
-      export default (state = initialState, action = {}) => {
-        switch(action.type) {
-        case 'FETCH_TESTS_PENDING': {
-          return {
-            ...state,
-            isLoading: true
-          }
-        }
-        case 'FETCH_TESTS_FULFILLED': {
-          return {
-            ...state,
-            byId: {
-              ...state.byId,
-              ...keyBy(action.payload.data, '_id')
-            },
-            isLoading: false,
-            hasLoaded: true
-          }
-        }
-        case 'ENDPOINT_TESTS_SET': {
-          return {
-            ...state,
-            endpointTests: action.payload
-          }
-        }
-        case 'NEW_ACTIVE_TEST_CHOSEN': {
-          return {
-            ...state,
-            activeTest: action.payload
-          }
-        }
-        case 'ACTIVE_TEST_CLOSED': {
-          return {
-            ...state,
-            activeTest: {}
-          }
-        }
-        case 'CHART_UNLOCKED': {
-          return {
-            ...state,
-            activeTest: {},
-            endpointTests: []
-          }
-        }
-        case 'ACTIVE_ROUTE_CHANGED': {
-          return {
-            ...state,
-            activeTest: {},
-            endpointTests: []
-          }
-        }
-        default:
-          return state;
-        }
-      }
-      import { createSelector, createStructuredSelector } from 'reselect'
-      import { groupBy, keyBy, mapValues } from 'lodash'
-
-      export function selectTestsById (state) {
-        return state.tests.byId
-      }
-
-      export const selectIsTestsReady = (state) => {
-        return state.tests.hasLoaded
-      }
-
-      export const selectEndpointTests = (state) => {
-        return state.tests.endpointTests
-      }
-
-      export const selectActiveTestRaw = (state) => {
-        return {
-          name: state.tests.activeTest,
-          route: state.routing.release,
-        }
-      }
-
-      export const selectTestsByReleaseAndName = createSelector(
-        selectTestsById,
-        (testsById) => {
-          var testsByRelease = groupBy(testsById, 'release')
-          return mapValues(testsByRelease, testsInRelease => {
-            var testsByName = keyBy(testsInRelease, 'name')
-            return mapValues(testsByName, testInName => {
-              return {
-                name: testInName.name,
-                id: testInName._id,
-                sequence: testInName.sequence
-              }
-            })
-          })
-        }
-      )
-
-      export const selectActiveTestComponents = createStructuredSelector({
-        activeTest: selectActiveTestRaw,
-        tests: selectTestsByReleaseAndName
-      })
-
-      export const selectActiveTest = createSelector(
-        selectActiveTestComponents,
-        (atc) => {
-          if (atc.activeTest.name.length > 0) {
-            var activeTest = atc.tests[atc.activeTest.route][atc.activeTest.name]
-            return activeTest
-          } else {
-            return atc.activeTest.name
-          }
-        }
-      )
-      import { client } from './'
-
-      const url = '/api/v1/tests'
-
-      export function doFetchTests () {
-        return dispatch => {
-          dispatch({
-            type: 'FETCH_TESTS',
-            payload: client.get(url)
-          })
-        }
-      }
-
-      export function doChooseActiveTest (test) {
-        return {
-          type: 'NEW_ACTIVE_TEST_CHOSEN',
-          payload: test
-        }
-      }
-
-      export function doCloseActiveTest (test) {
-        return {
-          type: 'ACTIVE_TEST_CLOSED'
-        }
-      }
-
-      export function doSetEndpointTests (endpointTests) {
-        return {
-          type: 'ENDPOINT_TESTS_SET',
-          payload: endpointTests
-        }
-      }
-      ,*/
-
     #+END_SRC
+
+    #+BEGIN_EXAMPLE js
+  const { keyBy } = require('lodash')
+
+  const initialState = {
+    activeTest: {},
+    byId: {},
+    endpointTests: [],
+    errors: {},
+    isLoading: false,
+    hasLoaded: false
+  }
+
+  export default (state = initialState, action = {}) => {
+    switch(action.type) {
+    case 'FETCH_TESTS_PENDING': {
+      return {
+        ...state,
+        isLoading: true
+      }
+    }
+    case 'FETCH_TESTS_FULFILLED': {
+      return {
+        ...state,
+        byId: {
+          ...state.byId,
+          ...keyBy(action.payload.data, '_id')
+        },
+        isLoading: false,
+        hasLoaded: true
+      }
+    }
+    case 'ENDPOINT_TESTS_SET': {
+      return {
+        ...state,
+        endpointTests: action.payload
+      }
+    }
+    case 'NEW_ACTIVE_TEST_CHOSEN': {
+      return {
+        ...state,
+        activeTest: action.payload
+      }
+    }
+    case 'ACTIVE_TEST_CLOSED': {
+      return {
+        ...state,
+        activeTest: {}
+      }
+    }
+    case 'CHART_UNLOCKED': {
+      return {
+        ...state,
+        activeTest: {},
+        endpointTests: []
+      }
+    }
+    case 'ACTIVE_ROUTE_CHANGED': {
+      return {
+        ...state,
+        activeTest: {},
+        endpointTests: []
+      }
+    }
+    default:
+      return state;
+    }
+  }
+  import { createSelector, createStructuredSelector } from 'reselect'
+  import { groupBy, keyBy, mapValues } from 'lodash'
+
+  export function selectTestsById (state) {
+    return state.tests.byId
+  }
+
+  export const selectIsTestsReady = (state) => {
+    return state.tests.hasLoaded
+  }
+
+  export const selectEndpointTests = (state) => {
+    return state.tests.endpointTests
+  }
+
+  export const selectActiveTestRaw = (state) => {
+    return {
+      name: state.tests.activeTest,
+      route: state.routing.release,
+    }
+  }
+
+  export const selectTestsByReleaseAndName = createSelector(
+    selectTestsById,
+    (testsById) => {
+      var testsByRelease = groupBy(testsById, 'release')
+      return mapValues(testsByRelease, testsInRelease => {
+        var testsByName = keyBy(testsInRelease, 'name')
+        return mapValues(testsByName, testInName => {
+          return {
+            name: testInName.name,
+            id: testInName._id,
+            sequence: testInName.sequence
+          }
+        })
+      })
+    }
+  )
+
+  export const selectActiveTestComponents = createStructuredSelector({
+    activeTest: selectActiveTestRaw,
+    tests: selectTestsByReleaseAndName
+  })
+
+  export const selectActiveTest = createSelector(
+    selectActiveTestComponents,
+    (atc) => {
+      if (atc.activeTest.name.length > 0) {
+        var activeTest = atc.tests[atc.activeTest.route][atc.activeTest.name]
+        return activeTest
+      } else {
+        return atc.activeTest.name
+      }
+    }
+  )
+  import { client } from './'
+
+  const url = '/api/v1/tests'
+
+  export function doFetchTests () {
+    return dispatch => {
+      dispatch({
+        type: 'FETCH_TESTS',
+        payload: client.get(url)
+      })
+    }
+  }
+
+  export function doChooseActiveTest (test) {
+    return {
+      type: 'NEW_ACTIVE_TEST_CHOSEN',
+      payload: test
+    }
+  }
+
+  export function doCloseActiveTest (test) {
+    return {
+      type: 'ACTIVE_TEST_CLOSED'
+    }
+  }
+
+  export function doSetEndpointTests (endpointTests) {
+    return {
+      type: 'ENDPOINT_TESTS_SET',
+      payload: endpointTests
+    }
+  }
+#+END_EXAMPLE
+
+**** Reducer
+     I dont' know how much of the old code we'll really need for this now, so I'm putting just a basic amount into the reducer.
+     #+NAME: Tests Reducer
+     #+BEGIN_SRC js :tangle no
+       getReducer: () => {
+         const initialState = {
+           activeTest: {},
+           activeEndpoint: ''
+         }
+         return (state=initialState, action) => {
+           if (action.type === 'TESTS_REQUESTED_FOR_ENDPOINT') {
+             return {
+               ...state,
+               activeEndpoint: action.payload
+             }
+           }
+           return state
+         }
+       }
+     #+END_SRC
+**** Selector
+     #+NAME: Tests Selector
+     #+BEGIN_SRC js :tangle no
+       selectTestTagsIndex: createSelector(
+         'selectQueryObject',
+         'selectEndpointsWithTestCoverage',
+         (query, endpoints) =>{
+           if (query.name === undefined || endpoints.stable === undefined) return []
+           var queriedEndpoint = endpoints[query.level][query.category][query.name]
+           var sampleMethod = Object.keys(queriedEndpoint)[0]
+           return queriedEndpoint[sampleMethod].test_tags
+         }
+       ),
+       selectActiveEndpointName: (state) => state.tests.activeEndpoint,
+       selectActiveEndpoint: createSelector(
+         'selectEndpointsResource',
+         'selectActiveEndpointName',
+         'selectQueryObject',
+         (endpoints, activeEndpoint, query) => {
+           if (endpoints == null) return null
+           return endpoints.find(endpoint => {
+             return (endpoint.name === query.name) && (endpoint.category === query.category) && (endpoint.level === query.level)
+           })
+         }
+       ),
+       selectActiveTestsIndex: createSelector(
+         'selectActiveEndpoint',
+         'selectTestsResource',
+         (endpoint, testsResource) => {
+           if (endpoint == null || testsResource == null) return null
+           var activeTests = testsResource.filter(test => endpoint.tests.includes(test.name))
+           return activeTests
+         }
+       )
+     #+END_SRC
+     With selectors, the values are given alla t once as soon as  the page starts up.   Which will be before the fetch has returned for our data.  We need to make sure to not try to ask something of the data before it's returned, and so to include the 'if null return null' for both
+
+     We are also taking just the first method in the endpoint....Which means the endpoint is also only showiung in the sunburst for it's own name, and not its methods.  For most of them they will only have a single method, but others do not.  Thed question then is whether each endpoint and method should be shown separately, or whether when you hover over it says how many methods it has and how many of them are tested....the case where an endpoint's put method is tested but its read method is not or some thing like that.  Not sure the best way to tackle this, like what the user would be expecting.
+
+     we want to select the tests from our testsResource based on what's in our active tests
+     #+NAME: tests experiment
+     #+BEGIN_SRC js :tangle no :results output replace drawer
+       var testsResource = [{name: 'fun', testSequ:['goodl','asdlkja']},{name: 'good'}, {name: 'boomao'}]
+       var activeTests = ['good','fun']
+       var filteredList = testsResource.filter(test => activeTests.includes(test.name))
+       console.log(filteredList)
+     #+END_SRC
+
+     #+RESULTS: tests experiment
+     :RESULTS:
+     [ { name: 'fun', testSequ: [ 'goodl', 'asdlkja' ] },
+       { name: 'good' } ]
+     :END:
+
+**** Action Creators
+     #+NAME: Tests Action Creators
+     #+BEGIN_SRC js :tangle no
+       doDisplayEndpointTests: (payload) => ({dispatch}) => {
+         dispatch({
+           type: 'TESTS_REQUESTED_FOR_ENDPOINT',
+           payload: payload
+         })
+       }
+
+     #+END_SRC
 *** Config
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/config.js :noweb yes
@@ -1238,12 +1344,14 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
 
       const SunburstContainer = (props) => {
         const {
-          currentReleaseName
+          currentReleaseName,
+          focusedPath
         } = props
         return (
             <div id='sunburst-segment' className='pa4 flex'>
             <div id='sunburst'>
-            <h2>{currentReleaseName}</h2>
+            <h2>{ currentReleaseName }</h2>
+            <p>{ focusedPath }</p>
             <Sunburst />
             </div>
             </div>
@@ -1252,6 +1360,7 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
 
       export default connect(
         'selectCurrentReleaseName',
+        'selectFocusedPath',
         SunburstContainer
       )
 
@@ -1260,15 +1369,6 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
     :PROPERTIES:
     :header-args: :tangle ./src/components/sunburst.js
     :END:
-    For our mouse over we'll use the url bundle, which gives us 'doUpdateQuery'.  We can give it an object and it'l add each part to the query string.  So we'll just iterate over the keypath and assign as needed.
-
-The keypath will have at minimum 2 and at most 4 nodes [root, level, category, method].  So we need to take that array and for each index, if there's something there, add it to an object.  Then we pass that object as our query, which updates the url.  This lets us do a thing where we determine the color of a node based on whether it's path is in the query string. our updateQuery makes an object for us, so we then just check whether the aspects of the node's path matches values in the queryObject, and then color it appropriately.
-
-I'm changing it up now to now have a click to lock.  I would rather have it be super easy to navigate through and share, and then you only click to reset.  This feels closer to what people would want.
-
-I do this by also just updating the url.  We are trying to maintain a dumb component, who handles no real logic, it just updates the url which drives the new logic which is then represented fresh in the component.
-
-The interior label was a bit tricky to do, and it has some logic put in that i don't fully like.  It's not fully dumb.  This is a thing to revisit later though.
     #+NAME: Sunburst
     #+BEGIN_SRC js
       import React from 'react'
@@ -1284,21 +1384,23 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
           interiorLabel,
           labelStyle,
           sunburstSorted,
+          queryObject,
+          doDisplayEndpointTests,
           doUpdateQuery
         } = props
 
-        console.log({interiorLabel})
         return (
             <div id='sunburst'>
             <button onClick={()=> doUpdateQuery({})}>Clear</button>
             <Sunburst
-              hideRootNode
-              colorType="literal"
-              data={sunburstSorted}
-              height={500}
-              width={500}
-              getColor={node => node.color}
-              onValueMouseOver={handleMouseOver}
+          hideRootNode
+          colorType="literal"
+          data={sunburstSorted}
+          height={500}
+          width={500}
+          getColor={node => node.color}
+          onValueClick={handleMouseClick}
+          onValueMouseOver={handleMouseOver}
             >
             {(interiorLabel && !interiorLabel.endpoint) &&
              <LabelSeries
@@ -1307,14 +1409,14 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
                {x: 0, y: 0, label: interiorLabel.ratio, style: labelStyle.FRACTION},
                {x: 0, y: -20, label: 'total tested', style: labelStyle.PATH}
              ]} />}
-            {(interiorLabel && interiorLabel.endpoint) &&
-             <LabelSeries
-             data={[
-               {x: 0, y: 0, label: interiorLabel.description, style: labelStyle.DESCRIPTION},
-               {x: 0, y: -20, label: interiorLabel.tested, style: labelStyle.PATH}
-             ]} />}
+          {(interiorLabel && interiorLabel.endpoint) &&
+           <LabelSeries
+           data={[
+             {x: 0, y: 0, label: interiorLabel.description, style: labelStyle.DESCRIPTION},
+             {x: 0, y: -20, label: interiorLabel.tested, style: labelStyle.PATH}
+           ]} />}
           </Sunburst>
-          </div>
+            </div>
         )
         function handleMouseOver (node, event) {
           var path = getKeyPath(node)
@@ -1325,6 +1427,11 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
           }
           var query = propertiesWithValue(rawQuery)
           doUpdateQuery(query)
+        }
+        function handleMouseClick (e) {
+          if(e.name === queryObject.name) {
+            doDisplayEndpointTests(e.name)
+          }
         }
       }
 
@@ -1343,11 +1450,127 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
       export default connect(
         'selectInteriorLabel',
         'selectLabelStyle',
+        'selectQueryObject',
         'selectSunburstSorted',
+        'doDisplayEndpointTests',
         'doUpdateQuery',
         SunburstChart
       )
     #+END_SRC
+
+    For our mouse over we'll use the url bundle, which gives us 'doUpdateQuery'.  We can give it an object and it'l add each part to the query string.  So we'll just iterate over the keypath and assign as needed.
+
+The keypath will have at minimum 2 and at most 4 nodes [root, level, category, method].  So we need to take that array and for each index, if there's something there, add it to an object.  Then we pass that object as our query, which updates the url.  This lets us do a thing where we determine the color of a node based on whether it's path is in the query string. our updateQuery makes an object for us, so we then just check whether the aspects of the node's path matches values in the queryObject, and then color it appropriately.
+
+I'm changing it up now to now have a click to lock.  I would rather have it be super easy to navigate through and share, and then you only click to reset.  This feels closer to what people would want.
+
+I do this by also just updating the url.  We are trying to maintain a dumb component, who handles no real logic, it just updates the url which drives the new logic which is then represented fresh in the component.
+
+The interior label was a bit tricky to do, and it has some logic put in that i don't fully like.  It's not fully dumb.  This is a thing to revisit later though.
+*** Test Tags List
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/test-tags-list.js
+    :END:
+    this lists all the test tags that are under an endpoint (or more spefifically, for right now, the first method of that endpoint).
+    #+NAME: test-tags-list
+    #+BEGIN_SRC js
+      import React from 'react'
+      import { connect } from 'redux-bundler-react'
+
+      function TestTag (props) {
+        const { testTag } = props
+        return (
+          <li className='dib'>
+            { testTag }
+          </li>
+        )
+      }
+
+      function TestTagsList (props) {
+        const { testTagsIndex } = props
+
+        if (testTagsIndex == null) return null
+
+        return (
+          <div className="ph3 mt4">
+            <ul className='list'>
+            {testTagsIndex.map(testTag => {
+                return <TestTag testTag={ testTag } />
+              })}
+            </ul>
+          </div>
+        )
+      }
+
+      export default connect(
+        'selectTestTagsIndex',
+        TestTagsList
+      )
+    #+END_SRC
+
+*** Active Tests list
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/active-tests-list.js
+    :END:
+    #+BEGIN_SRC js
+      import React from 'react'
+      import { connect } from 'redux-bundler-react'
+      import { map } from 'lodash'
+
+      function TestItem (props) {
+        const { testItem,
+                currentReleaseName,
+                queryObject,
+                doUpdateQuery } = props
+        return (
+            <li className='dib' key='test_{ testItem._id }'>
+            <a href='#' onClick={()=> handleClick(queryObject, testItem._id)} title="info for { testItem.name }">{ testItem.name }</a>
+            </li>
+        )
+
+        function handleClick (query, id) {
+          doUpdateQuery({
+            ...query,
+            test: id
+          })
+        }
+      }
+
+      function TestList (props) {
+        const {
+          activeTestsIndex,
+          currentReleaseName,
+          queryObject,
+          doUpdateQuery,
+        } = props
+
+        if (activeTestsIndex == null) return null
+
+        return (
+            <div className="ph3 mt4">
+            <ul className='list'>
+            {map(activeTestsIndex, (testItem) => {
+              return <TestItem testItem={ testItem } doUpdateQuery={ doUpdateQuery } queryObject={ queryObject } currentReleaseName={ currentReleaseName }/>
+            })}
+          </ul>
+            </div>
+        )
+      }
+
+
+
+      export default connect(
+        'selectActiveTestsIndex',
+        'selectCurrentReleaseName',
+        'selectQueryObject',
+        'doUpdateQuery',
+        TestList
+      )
+    #+END_SRC
+
+    Since we loading just the info for a particular release, it's far less overhead, so we can do things like add _all_ the tests to our reducer, and then just select the ones that matter to us...but their entire object.   Since this is just a basic filter, it still ends up fast.  Neat!
+
+    When you click on a test it should add it to our query.   Then, the query learns to look for whether there is a Test showing and if so, to display the active test detail.
 ** Pages
    :PROPERTIES:
    :header-args: :tangle ./src/pages/main-page.js
@@ -1359,13 +1582,17 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
 
      import ReleasesList from '../components/releases-list'
      import SunburstContainer from '../components/sunburst-container'
+     import TestTagsList from '../components/test-tags-list'
+     import ActiveTestsList from '../components/active-tests-list'
 
      function MainPage () {
        return (
-           <main id='main-splash' className='min-vh-80 pa4 flex'>
+           <main id='main-splash' className='min-vh-80 pa4 flex flex-column'>
            <h2>You are doing a good job.</h2>
            <ReleasesList />
            <SunburstContainer />
+           <TestTagsList />
+           <ActiveTestsList />
            </main>
        )
      }
@@ -1375,6 +1602,7 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
      )
    #+END_SRC
 
+   Here is a nice example of our improvement in the refactor.  Compare the new page to the old version, and which one feel smore readable.
    #+NAME: old main page
    #+BEGIN_EXAMPLE js
      import { createStructuredSelector } from 'reselect'
@@ -1685,9 +1913,11 @@ right: $right_session
    CLOSED: [2018-12-12 Wed 11:07] SCHEDULED: <2018-12-06 Thu>
   [[https://gitlab.ii.coop/ii/cncf/apisnoop/issues/9][gitlab link]]
   before any data lods, there'll be a chart outline to signify loading.  But the data should still come quickly.
-** NEXT Add path to the top of the sunburst chart
+** DONE Add path to the top of the sunburst chart
+   CLOSED: [2018-12-13 Thu 12:39]
 ** TODO Add Tests to the side of the sunburst chart
-** TODO only load the tests that matter for the release, not all possible tests.
+** DONE only load the tests that matter for the release, not all possible tests.
+   CLOSED: [2018-12-13 Thu 12:39]
 ** TODO [0/7] Overhaul styling:
    - [ ] interior label
    - [ ] releases list

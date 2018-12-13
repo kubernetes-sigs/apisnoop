@@ -11,21 +11,23 @@ const SunburstChart = (props) => {
     interiorLabel,
     labelStyle,
     sunburstSorted,
+    queryObject,
+    doDisplayEndpointTests,
     doUpdateQuery
   } = props
 
-  console.log({interiorLabel})
   return (
       <div id='sunburst'>
       <button onClick={()=> doUpdateQuery({})}>Clear</button>
       <Sunburst
-        hideRootNode
-        colorType="literal"
-        data={sunburstSorted}
-        height={500}
-        width={500}
-        getColor={node => node.color}
-        onValueMouseOver={handleMouseOver}
+    hideRootNode
+    colorType="literal"
+    data={sunburstSorted}
+    height={500}
+    width={500}
+    getColor={node => node.color}
+    onValueClick={handleMouseClick}
+    onValueMouseOver={handleMouseOver}
       >
       {(interiorLabel && !interiorLabel.endpoint) &&
        <LabelSeries
@@ -34,14 +36,14 @@ const SunburstChart = (props) => {
          {x: 0, y: 0, label: interiorLabel.ratio, style: labelStyle.FRACTION},
          {x: 0, y: -20, label: 'total tested', style: labelStyle.PATH}
        ]} />}
-      {(interiorLabel && interiorLabel.endpoint) &&
-       <LabelSeries
-       data={[
-         {x: 0, y: 0, label: interiorLabel.description, style: labelStyle.DESCRIPTION},
-         {x: 0, y: -20, label: interiorLabel.tested, style: labelStyle.PATH}
-       ]} />}
+    {(interiorLabel && interiorLabel.endpoint) &&
+     <LabelSeries
+     data={[
+       {x: 0, y: 0, label: interiorLabel.description, style: labelStyle.DESCRIPTION},
+       {x: 0, y: -20, label: interiorLabel.tested, style: labelStyle.PATH}
+     ]} />}
     </Sunburst>
-    </div>
+      </div>
   )
   function handleMouseOver (node, event) {
     var path = getKeyPath(node)
@@ -52,6 +54,11 @@ const SunburstChart = (props) => {
     }
     var query = propertiesWithValue(rawQuery)
     doUpdateQuery(query)
+  }
+  function handleMouseClick (e) {
+    if(e.name === queryObject.name) {
+      doDisplayEndpointTests(e.name)
+    }
   }
 }
 
@@ -70,7 +77,9 @@ function getKeyPath (node) {
 export default connect(
   'selectInteriorLabel',
   'selectLabelStyle',
+  'selectQueryObject',
   'selectSunburstSorted',
+  'doDisplayEndpointTests',
   'doUpdateQuery',
   SunburstChart
 )

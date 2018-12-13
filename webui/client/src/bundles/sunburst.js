@@ -4,6 +4,8 @@ import {
   forEach,
   includes,
   isEmpty,
+  flatMap,
+  join,
   map,
   orderBy,
   reduce,
@@ -79,6 +81,14 @@ export default {
     (query, endpoints) => {
       var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
       return nameAndCoverageInfo
+    }
+  ),
+  selectFocusedPath: createSelector(
+    'selectQueryObject',
+    (queryObject) => {
+      var queryValues = flatMap(queryObject)
+      var focusedPath = join(queryValues, ' / ')
+      return focusedPath
     }
   ),
   selectLabelStyle: () => {
@@ -235,9 +245,8 @@ function determineNameAndCoverageInfo (query, endpoints) {
     description= ''
   } else {
     var endpointInQuestion = endpoints[query.level][query.category][query.name]
-    console.log({endpointInQuestion})
     name = query.name
-    endpoint= true,
+    endpoint= true
     description= determineDescription(endpoints[query.level][query.category][query.name])
     var tested = determineTested(endpointInQuestion)
     coverage = endpointInQuestion.coverage
