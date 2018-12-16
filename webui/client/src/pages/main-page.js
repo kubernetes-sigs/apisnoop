@@ -5,6 +5,7 @@ import ReleasesList from '../components/releases-list'
 import SunburstContainer from '../components/sunburst-container'
 import TestTagsList from '../components/test-tags-list'
 import ActiveTestsList from '../components/active-tests-list'
+import ActiveTestSequence from '../components/active-test-sequence'
 
 function MainPage () {
   return (
@@ -14,6 +15,7 @@ function MainPage () {
       <SunburstContainer />
       <TestTagsList />
       <ActiveTestsList />
+      <ActiveTestSequence />
       </main>
   )
 }

@@ -23,7 +23,7 @@ function ReleasesList (props) {
 
   return (
     <div className="ph3 mt4">
-      <h2 className="f6 fw6 ttu tracked">Releases</h2>
+      <h2 className="f6 fw6 ttu tracked"> eleases</h2>
       <ul className='list'>
         {releasesIndex.map(release => {
           return <ReleaseItem release={release} />
