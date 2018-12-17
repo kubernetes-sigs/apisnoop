@@ -184,7 +184,7 @@ function checkForConformance (test_tags) {
 }
 
 function determineLevelColours (query, colours, level) {
-  if (isEmpty(query)) {
+  if (query.level === undefined) {
     return colours[level]
   } else if (query.level === level){
     return colours[level]
@@ -193,7 +193,7 @@ function determineLevelColours (query, colours, level) {
   }
 }
 function determineCategoryColours (query, categoryColours, category, level) {
-  if (isEmpty(query)) {
+  if (query.level === undefined) {
     return categoryColours[`category.${category}`]
   } else if (query.level === level && query.category === category){
     return categoryColours[`category.${category}`]
@@ -202,7 +202,7 @@ function determineCategoryColours (query, categoryColours, category, level) {
   }
 }
 function determineEndpointColours (query, color, category, level, endpoint) {
-  if (isEmpty(query)) {
+  if (query.level === undefined) {
     return color
   } else if (query.level === level && query.category === category && query.name === endpoint.name){
     return color
@@ -227,18 +227,18 @@ function determineNameAndCoverageInfo (query, endpoints) {
  // check our query to see how far in the path we are.
  // If a response is null, it means its not a part of the path
  // therefore, we display the preceding level's info.
-  if (endpoints.stable === undefined) return null
-  if (query.level === undefined) {
+  if (endpoints == null || endpoints.stable === undefined) return null // this makes sure the endpoints have loaded.
+  if (query && query.level === undefined) {
     var name = ''
     var coverage = endpoints.coverage
     var endpoint = false
     var description= ''
-  }else if (query.category === undefined) {
+  }else if (query.level && query.category === undefined) {
     name = query.level
     coverage = endpoints[query.level].coverage
     endpoint = false
     description= ''
-  } else if (query.name === undefined) {
+  } else if (query.level && query.category && query.name === undefined) {
     name = query.category
     coverage = endpoints[query.level][query.category].coverage
     endpoint = false
@@ -250,13 +250,6 @@ function determineNameAndCoverageInfo (query, endpoints) {
     description= determineDescription(endpoints[query.level][query.category][query.name])
     var tested = determineTested(endpointInQuestion)
     coverage = endpointInQuestion.coverage
-  }
-  return {
-    name,
-    ...coverage,
-    endpoint,
-    description,
-    tested
   }
 }
 

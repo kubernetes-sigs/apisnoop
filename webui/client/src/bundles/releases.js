@@ -9,7 +9,7 @@ export default {
       (currentReleaseName) => {
         store.doMarkCurrentReleaseAsOutdated()
         store.doMarkEndpointsResourceAsOutdated()
-        store.doMarkTestsAsOutdated()
+        store.doMarkTestsResourceAsOutdated()
       }
     )
   },

@@ -359,11 +359,28 @@ tree -d
       }
      #+END_SRC
 **** Selectors
+    We are making it now so that the endpoints filter on the query at the start.   The key thing is whether or not a zoom is part of the query.  If it is, we filter by whatever depth the zoom is at.
      #+NAME: Endpoints Selectors
      #+BEGIN_SRC js :tangle no
        selectEndpointsById: createSelector(
          'selectEndpointsResource',
-         (endpoints) => keyBy(endpoints, '_id')
+         'selectQueryObject',
+         (endpoints, query) => {
+           if (endpoints == null) return null
+           if (query.zoomed) {
+             if (query.zoomed === 'endpoint') {
+               endpoints = endpoints.filter(endpoint => endpoint.level === query.level && endpoint.category === query.category && endpoint.name === query.name)
+               return keyBy(endpoints, '_id')
+             } else if (query.zoomed === 'category') {
+               endpoints = endpoints.filter(endpoint => endpoint.level === query.level && endpoint.category === query.category)
+               return keyBy(endpoints, '_id')
+             } else if (query.zoomed === 'level') {
+               endpoints = endpoints.filter(endpoint => endpoint.level === query.level)
+               return keyBy(endpoints, '_id')
+             }
+           }
+           return keyBy(endpoints, '_id')
+         }
        ),
        selectEndpointsByLevelAndCategoryAndNameAndMethod: createSelector(
          'selectEndpointsById',
@@ -380,28 +397,28 @@ tree -d
            })
          }
        ),
-        selectEndpointsWithTestCoverage: createSelector(
-          'selectEndpointsById',
-          (endpointsById) => {
-            var endpointsByLevel = groupBy(endpointsById, 'level')
-            var coverage = calculateCoverage(endpointsById)
-            return Object.assign({},{coverage}, mapValues(endpointsByLevel, endpointsInLevel => {
-              var endpointsByCategory = groupBy(endpointsInLevel, 'category')
-              var coverage = calculateCoverage(endpointsInLevel)
-              return Object.assign({}, {coverage}, mapValues(endpointsByCategory, endpointsInCategory => {
-                var endpointsByName = groupBy(endpointsInCategory, 'name')
-                var coverage = calculateCoverage(endpointsInCategory)
-                return Object.assign({}, {coverage}, mapValues(endpointsByName, endpointsInName => {
-                  var methods = keyBy(endpointsInName, 'method')
-                  return mapValues(methods, method => {
-                    var coverage = method.test_tags ? method.test_tags : [] // display empty array if untested, so chart don't break.
-                    return Object.assign({}, {coverage}, method)
-                  })
-                }))
-              }))
-            }))
-          }
-         )
+       selectEndpointsWithTestCoverage: createSelector(
+         'selectEndpointsById',
+         (endpointsById) => {
+           var endpointsByLevel = groupBy(endpointsById, 'level')
+           var coverage = calculateCoverage(endpointsById)
+           return Object.assign({},{coverage}, mapValues(endpointsByLevel, endpointsInLevel => {
+             var endpointsByCategory = groupBy(endpointsInLevel, 'category')
+             var coverage = calculateCoverage(endpointsInLevel)
+             return Object.assign({}, {coverage}, mapValues(endpointsByCategory, endpointsInCategory => {
+               var endpointsByName = groupBy(endpointsInCategory, 'name')
+               var coverage = calculateCoverage(endpointsInCategory)
+               return Object.assign({}, {coverage}, mapValues(endpointsByName, endpointsInName => {
+                 var methods = keyBy(endpointsInName, 'method')
+                 return mapValues(methods, method => {
+                   var coverage = method.test_tags ? method.test_tags : [] // display empty array if untested, so chart don't break.
+                   return Object.assign({}, {coverage}, method)
+                 })
+               }))
+             }))
+           }))
+         }
+       )
      #+END_SRC
 *** Releases Index Resource
     #+NAME: releases-index-resource.js
@@ -451,7 +468,7 @@ tree -d
             (currentReleaseName) => {
               store.doMarkCurrentReleaseAsOutdated()
               store.doMarkEndpointsResourceAsOutdated()
-              store.doMarkTestsAsOutdated()
+              store.doMarkTestsResourceAsOutdated()
             }
           )
         },
@@ -642,44 +659,6 @@ tree -d
        }
      }
     #+END_SRC
-
-   #+NAME: Sunburst Selectors Scratch
-   #+BEGIN_SRC js :tangle no
-     selectInteriorLabelComponents: createSelector(
-       'selectFocusPathAsArray',
-       'selectIsEndpointsReady',
-       'selectEndpointsWithTestCoverage',
-       'selectRelease',
-       (focusPath, isEndpointsReady, endpoints, releaseFromRoute) => ({
-         focusPath, isEndpointsReady, endpoints, releaseFromRoute
-       })
-     ),
-     selectInteriorLabel: createSelector(
-       'selectInteriorLabelComponents',
-       (components) => {
-         const { focusPath, endpoints, isEndpointsReady, releaseFromRoute } = components
-         if (isEndpointsReady) {
-           if (!focusPath.length) {
-             return endpoints[releaseFromRoute]['coverage']
-           } else {
-             var path = (without(focusPath, 'root'))
-             var testedEndpoint = get(endpoints[releaseFromRoute], path)
-             if (testedEndpoint && testedEndpoint.coverage) {
-               return testedEndpoint.coverage
-             } else if (!testedEndpoint) {
-               return {description: 'untested', test_tags: []}
-             } else {
-               var method = Object.keys(testedEndpoint)[0]
-               return {description: testedEndpoint[method]['description'],
-                       test_tags: testedEndpoint[method]['test_tags']
-                      }
-             }
-           }
-         }
-       }
-     ),
-    #+END_SRC
-
 **** Action Creators
    #+NAME: Sunburst Action Creators
    #+BEGIN_SRC js :tangle no
@@ -759,7 +738,7 @@ tree -d
        }
 
        function determineLevelColours (query, colours, level) {
-         if (isEmpty(query)) {
+         if (query.level === undefined) {
            return colours[level]
          } else if (query.level === level){
            return colours[level]
@@ -768,7 +747,7 @@ tree -d
          }
        }
        function determineCategoryColours (query, categoryColours, category, level) {
-         if (isEmpty(query)) {
+         if (query.level === undefined) {
            return categoryColours[`category.${category}`]
          } else if (query.level === level && query.category === category){
            return categoryColours[`category.${category}`]
@@ -777,7 +756,7 @@ tree -d
          }
        }
        function determineEndpointColours (query, color, category, level, endpoint) {
-         if (isEmpty(query)) {
+         if (query.level === undefined) {
            return color
          } else if (query.level === level && query.category === category && query.name === endpoint.name){
            return color
@@ -802,18 +781,18 @@ tree -d
         // check our query to see how far in the path we are.
         // If a response is null, it means its not a part of the path
         // therefore, we display the preceding level's info.
-         if (endpoints.stable === undefined) return null
-         if (query.level === undefined) {
+         if (endpoints == null || endpoints.stable === undefined) return null // this makes sure the endpoints have loaded.
+         if (query && query.level === undefined) {
            var name = ''
            var coverage = endpoints.coverage
            var endpoint = false
            var description= ''
-         }else if (query.category === undefined) {
+         }else if (query.level && query.category === undefined) {
            name = query.level
            coverage = endpoints[query.level].coverage
            endpoint = false
            description= ''
-         } else if (query.name === undefined) {
+         } else if (query.level && query.category && query.name === undefined) {
            name = query.category
            coverage = endpoints[query.level][query.category].coverage
            endpoint = false
@@ -825,13 +804,6 @@ tree -d
            description= determineDescription(endpoints[query.level][query.category][query.name])
            var tested = determineTested(endpointInQuestion)
            coverage = endpointInQuestion.coverage
-         }
-         return {
-           name,
-           ...coverage,
-           endpoint,
-           description,
-           tested
          }
        }
 
@@ -1388,6 +1360,7 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
           getColor={node => node.color}
           onValueClick={handleMouseClick}
           onValueMouseOver={handleMouseOver}
+          onValueMouseOut={handleMouseOut}
             >
             {(interiorLabel && !interiorLabel.endpoint) &&
              <LabelSeries
@@ -1410,15 +1383,27 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
           var rawQuery = {
             level: path[1],
             category: path[2],
-            name: path[3]
+            name: path[3],
+            zoomed: queryObject.zoomed
           }
           var query = propertiesWithValue(rawQuery)
           doUpdateQuery(query)
         }
-        function handleMouseClick (e) {
-          if(e.name === queryObject.name) {
-            doDisplayEndpointTests(e.name)
+        function handleMouseOut (node, event) {
+          doUpdateQuery(zoomed: query.zoomed
+
+
+        function handleMouseClick (node, event) {
+          var depth = ['root', 'level', 'category', 'endpoint']
+          var path = getKeyPath(node)
+          var rawQuery = {
+            level: path[1],
+            category: path[2],
+            name: path[3],
+            zoomed: depth[node.depth]
           }
+          var query = propertiesWithValue(rawQuery)
+          doUpdateQuery(query)
         }
       }
 
@@ -1773,19 +1758,21 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
    a collection of redux code all organized by some concern or idea.  It's a marked difference from the typical organizing style, where you organize files by what they are (reducers, selectors, etc.).  This, instead, organizes files by their topic.
 ** Component (<<<Component>>> | <<<Components>>>)
 Self-contained, presentational parts of our front-end site.  It is what people actually see and interact with on our site.  What is unique is how specific and reusable components are.  Every singular bit of the api should essentially be a component.  We do this because it is easier to build upon, to collaborate with others, to maintain, and to share components across other projects.
+** Pages (<<<page>>> | <<<pages>>>)
+    A collection of components.  Can be thought as the overall layout for a particular subject within our app.  Basically a 'webpage', but that has built-in headers/footers/navigation and so on.
 ** Dynamic Web App (<<<dynamic web app>>>)
 A site whose content and presentation is determined by code that is run when the site is first loaded.  As opposed to a static web site, where the content is already generated and delivered to you from the server when you log on.  The upside is that it allows for a robust site that is tailored to individual visitors, who can navigate around the area quickly and easily.  The downside is that they can be resource heavy, and do not work on browsers that have disabled javascript.
 ** Client-Side (<<<client-side>>>)
 Refers to  code that is run on the client (as opposed to on the server).  The client is most often the web browser.  So a client-side app, if done well, allows for a quick data fetch from the server and then a snappy full-powered web app since all the functionality is being handled by the browser itself
-** <<<static web site>>>
+** Static Web Site (<<<static web site>>>)
 A site whose content is pre-set, and not made based on the actions of the site visitor or their browser.  Original html sites are static (coolguy.website being an example).  Apisnoop is dynamic.  You can see the differenve by viewikng the source code of their index.html files.  coolguy has all the code written directly in the file.  apisnoop has nothing except a javascript file waiting to be run.
-** <<<immutable state>>>
+** Immutable State( <<<immutable state>>> )
 In our context, state refers to the state of the app.  Immutable means that it cannot be changed. So this means, whenever there is any action that should change the state we replace the entire state.  For example: the current state might hold values like the current URL, and that we are currently fetching data and it's pending.  When the data fetch is accomplished, we want to update the state.  We do this not by looking for our 'DATA' value and adjusting it.  Instead, we replace the state entirely, with our new state being the same url but now 'data fetch fulfilled'.
 
 Doing it in this way means we can have a snapshot of the state for every update to it.  If we wanna see what the app looked like before the data was fetched, we can simply go back to the state when it was still pending.  This makes the site easier to debug and easier to maintain.
 
 It is a core principle or [[#arch-redux][redux]], and brought up often when discussing redux apps and functional programming.
-** <<<selector>>> | <<<selectors>>>
+** Selectors (<<<selector>>> | <<<selectors>>>)
 a concept within [[#arch-redux][redux]].  A selector will 'select' data in our redux store, potentially make changes to it, and then give it to our components.  It is a [[arch-redux-bundle][redux bundle]] best practice to never have the componets draw from the redux store directly, and instead always get it from selectors.  This sets up a pattern where the store remains 'dumb', which makes it easier to debug.
 
  For example, let's say in our app we fetch release names from a server and they come to us like this:
@@ -1794,8 +1781,8 @@ a concept within [[#arch-redux][redux]].  A selector will 'select' data in our r
 - release_1.3.1
 
 We want to take these names and display them on the frontpage of the site, but we want them to be sorted, and cleaned up to not have underscores and have relase be capitalized.  We _could_ adjust them as they get added to our store, by doing some quick sort and replace functions in our reducer.  But this will make it harder to reason about later, or compare it to the equivalent files in our server.  Instead, we just want to have raw data in our redux store, have a selector select it, and have the selector do the sorting and cleanup.  This way, if there's an issue with the basic data we check redux.  If there's an issue with sorting or capitalization, we check the selector.  We don't ahve to check some helper function nested inside a reducer store or some other hard to debug thang.
-** <<<Reducer>>> | <<<Reducers>>>
- An immutable object containing the current state of the app.  Driving principle of [[#arch-redux][redux]].  Called a reducer because it takes a number of objects given to it and reduces it down to a single thing.  By object, we mean it in the literal javascript sense...and so the entire state of a complex app can be represented as:
+** Reducers ( <<<Reducer>>> | <<<Reducers>>>)
+An immutable object containing the current state of the app.  Driving principle of [[#arch-redux][redux]].  Called a reducer because it takes a number of objects given to it and reduces it down to a single thing.  By object, we mean it in the literal javascript sense...and so the entire state of a complex app can be represented as:
 
 #+BEGIN_EXAMPLE
 { name: 'something',
@@ -1805,8 +1792,8 @@ We want to take these names and display them on the frontpage of the site, but w
 #+END_EXAMPLE
 
 In other words, we take a lot of complexity and reduce it down to a text object that can be easily updated or replaced. This brings us closer to designing an app as a spreadhseet, where the frontend is just displaying the data in pleasing way, and the backend has a consistent and logical way to add and amend the data.
-** <<<action>>> | <<<actions>>>
-In our context, an object that announces a change in state, along with a payload of data for that change.  Actions are represented as so:
+** Actions ( <<<action>>> | <<<actions>>>)
+  In our context, an object that announces a change in state, along with a payload of data for that change.  Actions are represented as so:
 
 #+NAME: example action
 #+BEGIN_EXAMPLE
@@ -1980,6 +1967,35 @@ What happens if we just remove the other options?  What does that look like?  so
 
 So now we need a 'doUpdateZoom' that takes in the node you clicked on.  Then, update our sunburst selection....or even just our endpoints...yah, filter out the endpoints to just the ones that fit the zoomed click.  If it's a
 
+We can filter the initial endpoints based on the query.  For example, here is a hard-coded version:
+
+So we now have it when you click it records the depth in whioch you clicked and then updates the endpoints to filter dcown to that.  I am doing this by the query, to have evbertyhign happen by the url.  But this sin't actually sueful now, because as soon as yolu8 move the entire filtering vvhagnes andc things go wrong.
+o
+I think we need to do somethiong now where we update our url to show it is zoomed, but we also filter the endpoints as a separate action.  If the endpoints are added to our reducer, then wse just need to change what those are there.  So then when you click on an action, it would filter the endpoints given to us by that action.....Though i kinda wanna not mess those up too much.  I like that it's just a static resource...
+
+But essentiallywe'd have 'doZoomEndpoints' which looks at the depth you're at and the node information (taking the keypath and such) and then filters accordingly (so we are alooking at the right endpoint or category, not all endpoints and categories regardless of level).  Then, when you click clear it clears it out.
+
+The big info we need is the depth of zoom and the
+keypath of the zoom.  Both of these could be added to the reducer.  Then, our selector takes all endpoiunts and looks at store.zoomed and if it is set to anything takes a look at store.zoompath and filters accordingly.  This is the way to do it, I think.  It is not messing with our endpoints...it's only filtering the display of them, based on a click status.
+
+This also allows us to pass along info that wouldn't look good uin the url.  The url can just keep the zoom information.  naaaaah, this doesn't work either, though.  Because it means if we want to share the zoomed in url we wouldn't be able to.  We need to have the current query, plus the zoom, plus the zoom path (for the times when you aren't hovered over a section, but still filtered in)
+
+So it's really zoom filter and the question is...can you pass along an array in yr url query?  let's find out tomorrow!
+
+#+BEGIN_EXAMPLE js
+
+       selectEndpointsById: createSelector(
+         'selectEndpointsResource',
+         (endpoints) => {
+           if (endpoints == null) return null
+           endpoints = endpoints.filter(endpoint => endpoint.level === 'stable' && endpoint.category === 'core')
+           return keyBy(endpoints, '_id')
+         }
+       )
+#+END_EXAMPLE
+
+When you click on a node in the sunburst, it includes the depth of the node, which maps to whether it's a level, category, or endpoint.  When you click, you likely don't want that one part highlighted too....it should _just_ be the zoom until yolu hover over again.  So we can update the query to just 'zoom: depth'
+** TODO pass along a query when you click, that includes zoom depth and an array of the current node path.
 ** TODO document our bundles better within the org file, separate each function into clear and testable things maybe?
 ** TODO [0/7] Overhaul styling:
    - [ ] interior label

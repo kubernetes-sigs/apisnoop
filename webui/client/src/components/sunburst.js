@@ -50,15 +50,23 @@ const SunburstChart = (props) => {
     var rawQuery = {
       level: path[1],
       category: path[2],
-      name: path[3]
+      name: path[3],
+      zoomed: queryObject.zoomed
     }
     var query = propertiesWithValue(rawQuery)
     doUpdateQuery(query)
   }
-  function handleMouseClick (e) {
-    if(e.name === queryObject.name) {
-      doDisplayEndpointTests(e.name)
+  function handleMouseClick (node, event) {
+    var depth = ['root', 'level', 'category', 'endpoint']
+    var path = getKeyPath(node)
+    var rawQuery = {
+      level: path[1],
+      category: path[2],
+      name: path[3],
+      zoomed: depth[node.depth]
     }
+    var query = propertiesWithValue(rawQuery)
+    doUpdateQuery(query)
   }
 }
 
