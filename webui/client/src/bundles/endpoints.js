@@ -15,15 +15,6 @@ export default {
       'selectEndpointsResource',
       (endpoints) => keyBy(endpoints, '_id')
     ),
-    selectEndpointsByNameAndMethod: createSelector(
-      'selectEndpointsResource',
-      (endpoints) => {
-        var endpointsByName = groupBy(endpoints, 'name')
-        return mapValues(endpointsByName, endpointsInName => {
-          return keyBy(endpointsInName, 'method')
-        })
-      }
-    ),
     selectEndpointsByLevelAndCategoryAndNameAndMethod: createSelector(
       'selectEndpointsById',
       (endpointsById) => {
