@@ -7,7 +7,7 @@ function ReleaseItem (props) {
     <li className='dib'>
       <a
         className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink"
-        href={getReleaseUrl(release)}
+        href={getReleaseUrl(release.link)}
         key={release._id}
       >
         {release.name}
@@ -17,13 +17,13 @@ function ReleaseItem (props) {
 }
 
 function ReleasesList (props) {
-  const { releasesIndex } = props
+  const { releasesSigIndexNoE2E } = props
+  var releasesIndex = releasesSigIndexNoE2E
 
   if (releasesIndex == null) return null
-
   return (
     <div className="ph3 mt4">
-      <h2 className="f6 fw6 ttu tracked"> eleases</h2>
+      <h2 className="f6 fw6 ttu tracked"> Releases</h2>
       <ul className='list'>
         {releasesIndex.map(release => {
           return <ReleaseItem release={release} />
@@ -34,10 +34,10 @@ function ReleasesList (props) {
 }
 
 function getReleaseUrl (release) {
-  return `/${release.name}`
+  return `/${release}`
 }
 
 export default connect(
-  'selectReleasesIndex',
+  'selectReleasesSigIndexNoE2E',
   ReleasesList
 )

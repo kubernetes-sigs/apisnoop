@@ -458,7 +458,15 @@ tree -d
     #+NAME: releases.js
     #+BEGIN_SRC js :tangle ./src/bundles/releases.js
       import { createSelector } from 'redux-bundler'
-      import { keyBy } from 'lodash'
+      import {
+        filter,
+        includes,
+        keyBy,
+        map,
+        reject,
+        split,
+        trim
+      } from 'lodash'
 
       export default {
         name: 'releases',
@@ -499,9 +507,117 @@ tree -d
         selectReleasesIndexByName: createSelector(
           'selectReleasesIndex',
           releasesIndex => keyBy(releasesIndex, 'name')
+        ),
+        selectReleasesSigOnly: createSelector(
+          'selectReleasesIndexByName',
+          (releasesIndex) => {
+            if (releasesIndex == null) return null
+            return filter(releasesIndex, (o) => {
+              return includes(o.name.toLowerCase(), 'sig')
+            })
+          }
+        ),
+        selectReleasesConformanceOnly: createSelector(
+          'selectReleasesIndexByName',
+          (releasesIndex) => {
+            if (releasesIndex == null) return null
+            return filter(releasesIndex, (o) => {
+              return includes(o.name.toLowerCase(), 'conformance')
+            })
+          }
+        ),
+        selectReleasesMasterOnly: createSelector(
+          'selectReleasesIndexByName',
+          (releasesIndex) => {
+            if (releasesIndex == null) return null
+            return filter(releasesIndex, (o) => {
+              return includes(o.name.toLowerCase(), 'master')
+            })
+          }
+        ),
+        selectReleasesSigIndexE2E: createSelector(
+          'selectReleasesSigOnly',
+          (sigReleases) => {
+            var e2eOnly = filter(sigReleases, (o) => {
+              return includes(o.name.toLowerCase(), 'e2e')
+            })
+            return map(e2eOnly, (sigRelease) => {
+              var nameWithoutSig = trim(sigRelease.name, 'sig-release_')
+              var shortName = split(nameWithoutSig, '_')[0]
+              return {
+                name: shortName,
+                link:sigRelease.name,
+                _id: sigRelease._id
+              }
+            })
+          }
+        ),
+        selectReleasesSigIndexNoE2E: createSelector(
+          'selectReleasesSigOnly',
+          (sigReleases) => {
+            var noE2E = reject(sigReleases, (o) => {
+              return includes(o.name.toLowerCase(), 'e2e')
+            })
+            return map(noE2E, (sigRelease) => {
+              var nameWithoutSig = trim(sigRelease.name, 'sig-release_')
+              var shortName = split(nameWithoutSig, '_')[0]
+              return {
+                name: shortName,
+                link:sigRelease.name,
+                _id: sigRelease._id
+              }
+            })
+          }
+        ),
+        selectReleasesConformanceIndexNoE2E: createSelector(
+          'selectReleasesConformanceOnly',
+          (conReleases) => {
+            var noE2E = reject(conReleases, (o) => {
+              return includes(o.name.toLowerCase(), 'e2e')
+            })
+            return map(noE2E, (conRelease) => {
+              var nameWithoutCon = trim(conRelease.name, 'conformance_')
+              var shortName = split(nameWithoutCon, '_')[0]
+              return {
+                name: shortName,
+                link: conRelease.name,
+                _id: conRelease._id
+              }
+            })
+          }
+        ),
+        selectReleasesConformanceIndexE2E: createSelector(
+          'selectReleasesConformanceOnly',
+          (conReleases) => {
+            var e2eOnly = filter(conReleases, (o) => {
+              return includes(o.name.toLowerCase(), 'e2e')
+            })
+            return map(e2eOnly, (conRelease) => {
+              var nameWithoutCon = trim(conRelease.name, 'conformance_')
+              var shortName = split(nameWithoutCon, '_')[0]
+              return {
+                name: shortName,
+                link: conRelease.name,
+                _id: conRelease._id
+              }
+            })
+          }
+        ),
+        selectReleasesMasterIndex: createSelector(
+          'selectReleasesMasterOnly',
+          (masterReleases) => {
+            return map(masterReleases, (masterRelease) => {
+              return {
+                name: masterRelease.name,
+                link: masterRelease.name,
+                _id: masterRelease._id
+              }
+            })
+          }
         )
       }
     #+END_SRC
+    What i wanna do is use a selector
 *** Routes
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/routes.js :noweb yes
@@ -588,6 +704,7 @@ tree -d
        }
      }
    #+END_SRC
+
 
 **** Selectors
    #+NAME: Sunburst Selectors
@@ -1293,6 +1410,10 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
     :PROPERTIES:
     :header-args: :tangle ./src/components/releases-list.js
     :END:
+
+    We currently have it set to only show sig releases.  This is just to check that my filter selection worked.  What we can now do is setup some filters for releases....or even just a better header organization...so it shows 'Releases / Sig / Conformance / Mastr' and within each heading is the releases link.  And maybe ones that have e2eOnly could show up below.   That would end up with like 6 lines, but it would be clear enough to start with.
+
+    So what we wanna do is have releaseList be a component, and we pass it along a property for whether we doing sig or what have you.  -
     #+NAME: releases-list
     #+BEGIN_SRC js
       import React from 'react'
@@ -1304,7 +1425,7 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
           <li className='dib'>
             <a
               className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink"
-              href={getReleaseUrl(release)}
+              href={getReleaseUrl(release.link)}
               key={release._id}
             >
               {release.name}
@@ -1314,13 +1435,13 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
       }
 
       function ReleasesList (props) {
-        const { releasesIndex } = props
+        const { releasesSigIndexNoE2E } = props
+        var releasesIndex = releasesSigIndexNoE2E
 
         if (releasesIndex == null) return null
-
         return (
           <div className="ph3 mt4">
-            <h2 className="f6 fw6 ttu tracked"> eleases</h2>
+            <h2 className="f6 fw6 ttu tracked"> Releases</h2>
             <ul className='list'>
               {releasesIndex.map(release => {
                 return <ReleaseItem release={release} />
@@ -1331,11 +1452,11 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
       }
 
       function getReleaseUrl (release) {
-        return `/${release.name}`
+        return `/${release}`
       }
 
       export default connect(
-        'selectReleasesIndex',
+        'selectReleasesSigIndexNoE2E',
         ReleasesList
       )
     #+END_SRC
@@ -2082,9 +2203,20 @@ So it's really zoom filter and the question is...can you pass along an array in 
 #+END_EXAMPLE
 
 When you click on a node in the sunburst, it includes the depth of the node, which maps to whether it's a level, category, or endpoint.  When you click, you likely don't want that one part highlighted too....it should _just_ be the zoom until yolu hover over again.  So we can update the query to just 'zoom: depth'
-** TODO Separate our releases into sig, conformance, master.
+** IN-PROGRESS Separate our releases into sig, conformance, master.
    if you click on sig or conformance, you get the release numbers.  Then, you can choose an 'e2e' only tag too.
    this is to help with the styling later on. The majority of the functionality is here, now we just gotta make it look pretty.  The releases seems like the best way to do that.
+   We can separate based on whether the release name includes any of these keywords.  AS long as we keep our naming standard, this will be fine.  I also added a shortName that was just the release.  The problem this poses is when something is e2ed only because it will have the same release name but have the e2ed part tthat is unclear....so i gotta seperate to _just e2e_ or _without e2e_ before i do the naming stuff.
+
+   What it will look like is:
+   - all Releases
+   - only sig releases
+   - sig releases not e2e,
+   - sig releases e2e only
+   - only conformance releases
+   - conformance releases not e2e,
+   - conformance releases e2e only
+   - master release
 ** TODO [0/7] Overhaul styling:
    - [ ] interior label
    - [ ] releases list
@@ -2111,6 +2243,7 @@ When you click on a node in the sunburst, it includes the depth of the node, whi
 Using Redux DevTools
 Both the debug bundle and redux dev tools are enabled if localStorage.debug is set to something "truthy". In this way you can keep your production apps debuggable, you just have to flip that localStorage.debug flag to enable it. Also beware that running localStorage.debug = false in your browser console won't actually turn it off. This is because LocalStorage serializes everything to strings so the value that's stored is actually the string "false" which... is truthy! So to turn it back off again, you can just do: delete localStorage.debug instead.
 ===
+** TODO re-check how we are grabbing releases.  We aren't using the id, just the name.  Is that alright?
 ** TODO [11/14] Future Tasks
    - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
    - [X] Hover over Part of Sunburst shows relevant rays highlighted.
@@ -2227,3 +2360,10 @@ Both the debug bundle and redux dev tools are enabled if localStorage.debug is s
    CLOSED: [2018-12-13 Thu 18:00]
 ** DONE only load the tests that matter for the release, not all possible tests.
    CLOSED: [2018-12-13 Thu 12:39]
+
+   #+BEGIN_SRC js :result output
+     var lodash = require('../node_modules/lodah')
+
+     console.log(lodash.map)
+
+   #+END_SRC
