@@ -185,6 +185,7 @@ tree -d
        import sunburst from './sunburst'
        import testsResource from './tests-resource'
        import tests from './tests'
+       import zoom from './zoom'
 
      #+END_SRC
 **** Compose Bundle
@@ -202,7 +203,8 @@ tree -d
          routes,
          sunburst,
          testsResource,
-         tests
+         tests,
+         zoom
        )
      #+END_SRC
 *** Colours
@@ -360,23 +362,21 @@ tree -d
      #+END_SRC
 **** Selectors
     We are making it now so that the endpoints filter on the query at the start.   The key thing is whether or not a zoom is part of the query.  If it is, we filter by whatever depth the zoom is at.
+    I am not sure where the zoom object should go.  It's an aspect of our url, but we don't really have a url bundle....maaaaaybe we should?  It would only have a single  item in it though....so that might be premature optimization.  We'll include it here and maybe move it later.
      #+NAME: Endpoints Selectors
      #+BEGIN_SRC js :tangle no
        selectEndpointsById: createSelector(
          'selectEndpointsResource',
-         'selectQueryObject',
-         (endpoints, query) => {
+         'selectZoom',
+         (endpoints, zoom) => {
            if (endpoints == null) return null
-           if (query.zoomed) {
-             if (query.zoomed === 'endpoint') {
-               endpoints = endpoints.filter(endpoint => endpoint.level === query.level && endpoint.category === query.category && endpoint.name === query.name)
-               return keyBy(endpoints, '_id')
-             } else if (query.zoomed === 'category') {
-               endpoints = endpoints.filter(endpoint => endpoint.level === query.level && endpoint.category === query.category)
-               return keyBy(endpoints, '_id')
-             } else if (query.zoomed === 'level') {
-               endpoints = endpoints.filter(endpoint => endpoint.level === query.level)
-               return keyBy(endpoints, '_id')
+           if (zoom) {
+             if (zoom.depth === 'endpoint') {
+               endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category && endpoint.name === zoom.name)
+             } else if (zoom.depth === 'category') {
+               endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category)
+             } else if (zoom.depth === 'level') {
+               endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level)
              }
            }
            return keyBy(endpoints, '_id')
@@ -785,26 +785,26 @@ tree -d
          if (query && query.level === undefined) {
            var name = ''
            var coverage = endpoints.coverage
+           var tested = false
            var endpoint = false
            var description= ''
          }else if (query.level && query.category === undefined) {
            name = query.level
            coverage = endpoints[query.level].coverage
-           endpoint = false
            description= ''
          } else if (query.level && query.category && query.name === undefined) {
            name = query.category
            coverage = endpoints[query.level][query.category].coverage
-           endpoint = false
            description= ''
          } else {
            var endpointInQuestion = endpoints[query.level][query.category][query.name]
            name = query.name
-           endpoint= true
            description= determineDescription(endpoints[query.level][query.category][query.name])
-           var tested = determineTested(endpointInQuestion)
+           tested = determineTested(endpointInQuestion)
            coverage = endpointInQuestion.coverage
+           endpoint = true
          }
+         return {name, coverage, description, tested, coverage}
        }
 
        function determineDescription (endpoint) {
@@ -1117,6 +1117,56 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
        }
 
      #+END_SRC
+*** Zoom
+    :PROPERTIES:
+    :header-args: :tangle ./src/bundles/zoom.js :noweb yes
+    :END:
+**** Imports and Layout
+    #+NAME: Zoom Bundle
+    #+BEGIN_SRC js
+      import { createSelector } from 'redux-bundler'
+      import { split } from 'lodash'
+
+      import { propertiesWithValue } from '../lib/utils'
+
+      export default {
+        name: 'zoom',
+        <<Zoom Selector>>
+      }
+    #+END_SRC
+**** Selector
+     #+NAME: Zoom Selector
+     #+BEGIN_SRC js :tangle no
+       selectZoomArray: createSelector(
+         'selectQueryObject',
+         (query) => {
+           if (query == null) return null
+           if (query.zoomed === undefined) return null
+           return split(query.zoomed, '-')
+         }
+       ),
+       selectZoom: createSelector(
+         'selectZoomArray',
+         (zoomArray) => {
+           if  (zoomArray == null) return null
+           var zoomRaw = {
+             depth: zoomArray[0],
+             level: zoomArray[1],
+             category: zoomArray[2],
+             name: zoomArray[3]
+           }
+           var zoom = propertiesWithValue(zoomRaw)
+           return zoom
+         }
+       )
+     #+END_SRC
+
+     With selectors, the values are given all at once as soon as  the page starts up.   Which will be before the fetch has returned for our data.  We need to make sure to not try to ask something of the data before it's returned, and so to include the 'if null return null' for both
+
+     We are also taking just the first method in the endpoint....Which means the endpoint is also only showiung in the sunburst for it's own name, and not its methods.  For most of them they will only have a single method, but others do not.  Thed question then is whether each endpoint and method should be shown separately, or whether when you hover over it says how many methods it has and how many of them are tested....the case where an endpoint's put method is tested but its read method is not or some thing like that.  Not sure the best way to tackle this, like what the user would be expecting.
+
+     we want to select the tests from our testsResource based on what's in our active tests
+
 *** Config
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/config.js :noweb yes
@@ -1335,8 +1385,10 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
       import { connect } from 'redux-bundler-react'
       import {
         get,
-        isUndefined,
-        pickBy } from 'lodash'
+        join,
+        sortBy } from 'lodash'
+
+      import { propertiesWithValue } from '../lib/utils'
 
       const SunburstChart = (props) => {
         const {
@@ -1360,7 +1412,6 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
           getColor={node => node.color}
           onValueClick={handleMouseClick}
           onValueMouseOver={handleMouseOver}
-          onValueMouseOut={handleMouseOut}
             >
             {(interiorLabel && !interiorLabel.endpoint) &&
              <LabelSeries
@@ -1389,9 +1440,6 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
           var query = propertiesWithValue(rawQuery)
           doUpdateQuery(query)
         }
-        function handleMouseOut (node, event) {
-          doUpdateQuery(zoomed: query.zoomed
-
 
         function handleMouseClick (node, event) {
           var depth = ['root', 'level', 'category', 'endpoint']
@@ -1400,16 +1448,14 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
             level: path[1],
             category: path[2],
             name: path[3],
-            zoomed: depth[node.depth]
           }
           var query = propertiesWithValue(rawQuery)
+          var queryAsArray = sortBy(query, ['level','category','name'])
+          query.zoomed = `${depth[node.depth]}-${join(queryAsArray,'-')}`
           doUpdateQuery(query)
         }
       }
 
-      function propertiesWithValue (obj) {
-        return pickBy(obj, (val) => !isUndefined(val))
-      }
       function getKeyPath (node) {
         if (!node.parent) {
           return ['root'];
@@ -1439,6 +1485,8 @@ I'm changing it up now to now have a click to lock.  I would rather have it be s
 I do this by also just updating the url.  We are trying to maintain a dumb component, who handles no real logic, it just updates the url which drives the new logic which is then represented fresh in the component.
 
 The interior label was a bit tricky to do, and it has some logic put in that i don't fully like.  It's not fully dumb.  This is a thing to revisit later though.
+
+
 *** Test Tags List
     :PROPERTIES:
     :header-args: :tangle ./src/components/test-tags-list.js
@@ -1752,7 +1800,43 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
      unlockChart: doUnlockChart
      })(MainPage)
    #+END_EXAMPLE
+** Utils
+   recurring helper functions
+  #+NAME: Utils
+  #+BEGIN_SRC js :tangle ./src/lib/utils.js
+    import {
+      filter,
+      isUndefined,
+      size,
+      words,
+      pickBy } from 'lodash'
 
+    export function calculateCoverage (endpoints) {
+      var total = size(endpoints)
+      var tested = size(filter(endpoints, ['isTested', true]))
+      var percentage = (100 * tested /total).toPrecision(3)
+
+      return {
+        tested,
+        total,
+        percentage: `${percentage}%`,
+        ratio: `${tested}/${total}`
+      }
+    }
+
+    export function fadeColor (rgba, desiredOpacity) {
+      var rgbaParts = words(rgba, /[^,|^(|^)]+/g)
+      rgbaParts.pop()
+      rgbaParts.push(desiredOpacity)
+      var newRgbaString = rgbaParts.join(',')
+      var newRgba = newRgbaString.replace(/,/,'(') + ')'
+      return newRgba
+    }
+
+    export function propertiesWithValue (obj) {
+      return pickBy(obj, (val) => !isUndefined(val))
+    }
+  #+END_SRC
 * Glossary
 ** Bundle (<<<bundles>>> | <<<bundle>>>)
    a collection of redux code all organized by some concern or idea.  It's a marked difference from the typical organizing style, where you organize files by what they are (reducers, selectors, etc.).  This, instead, organizes files by their topic.
@@ -1949,6 +2033,10 @@ right: $right_session
    CLOSED: [2018-12-17 Mon 12:42]
 ** DONE add back functionality for test,to clear out test query.
    CLOSED: [2018-12-17 Mon 12:43]
+** IN-PROGRESS pass along a query when you click, that includes zoom depth and an array of the current node path.
+    I now have it so when you mouseClick, it saves the level in whikch you clicked and the full path to get you there.  We will then use the zoomed queryObject to act as our filter.  We want to have the filtering of the endpoints be separate from whether or not they are hovered upon.  This will let us share a zoomed in sunburst with highlights.
+
+    The zoom queryObject will be a string we need to break apart.  It will be ~depth-level-category-name~.  if the depth is level, we know there'll only be a single item in the array.  If it's name, we'll know there are three.
 ** NEXT add Zoom function to the sunburst.
    The idea is you can cluick on a level or category and the sunburst makes it so the  root is now that partticular level or category.
    o
@@ -1995,7 +2083,6 @@ So it's really zoom filter and the question is...can you pass along an array in 
 #+END_EXAMPLE
 
 When you click on a node in the sunburst, it includes the depth of the node, which maps to whether it's a level, category, or endpoint.  When you click, you likely don't want that one part highlighted too....it should _just_ be the zoom until yolu hover over again.  So we can update the query to just 'zoom: depth'
-** TODO pass along a query when you click, that includes zoom depth and an array of the current node path.
 ** TODO document our bundles better within the org file, separate each function into clear and testable things maybe?
 ** TODO [0/7] Overhaul styling:
    - [ ] interior label

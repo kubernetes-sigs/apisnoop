@@ -11,6 +11,7 @@ import routes from './routes'
 import sunburst from './sunburst'
 import testsResource from './tests-resource'
 import tests from './tests'
+import zoom from './zoom'
 
 export default composeBundles(
   colours,
@@ -23,5 +24,6 @@ export default composeBundles(
   routes,
   sunburst,
   testsResource,
-  tests
+  tests,
+  zoom
 )

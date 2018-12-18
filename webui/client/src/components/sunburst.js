@@ -3,8 +3,10 @@ import { Sunburst, LabelSeries } from 'react-vis'
 import { connect } from 'redux-bundler-react'
 import {
   get,
-  isUndefined,
-  pickBy } from 'lodash'
+  join,
+  sortBy } from 'lodash'
+
+import { propertiesWithValue } from '../lib/utils'
 
 const SunburstChart = (props) => {
   const {
@@ -56,6 +58,7 @@ const SunburstChart = (props) => {
     var query = propertiesWithValue(rawQuery)
     doUpdateQuery(query)
   }
+
   function handleMouseClick (node, event) {
     var depth = ['root', 'level', 'category', 'endpoint']
     var path = getKeyPath(node)
@@ -63,16 +66,14 @@ const SunburstChart = (props) => {
       level: path[1],
       category: path[2],
       name: path[3],
-      zoomed: depth[node.depth]
     }
     var query = propertiesWithValue(rawQuery)
+    var queryAsArray = sortBy(query, ['level','category','name'])
+    query.zoomed = `${depth[node.depth]}-${join(queryAsArray,'-')}`
     doUpdateQuery(query)
   }
 }
 
-function propertiesWithValue (obj) {
-  return pickBy(obj, (val) => !isUndefined(val))
-}
 function getKeyPath (node) {
   if (!node.parent) {
     return ['root'];

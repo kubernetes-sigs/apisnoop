@@ -13,19 +13,16 @@ export default {
     },
     selectEndpointsById: createSelector(
       'selectEndpointsResource',
-      'selectQueryObject',
-      (endpoints, query) => {
+      'selectZoom',
+      (endpoints, zoom) => {
         if (endpoints == null) return null
-        if (query.zoomed) {
-          if (query.zoomed === 'endpoint') {
-            endpoints = endpoints.filter(endpoint => endpoint.level === query.level && endpoint.category === query.category && endpoint.name === query.name)
-            return keyBy(endpoints, '_id')
-          } else if (query.zoomed === 'category') {
-            endpoints = endpoints.filter(endpoint => endpoint.level === query.level && endpoint.category === query.category)
-            return keyBy(endpoints, '_id')
-          } else if (query.zoomed === 'level') {
-            endpoints = endpoints.filter(endpoint => endpoint.level === query.level)
-            return keyBy(endpoints, '_id')
+        if (zoom) {
+          if (zoom.depth === 'endpoint') {
+            endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category && endpoint.name === zoom.name)
+          } else if (zoom.depth === 'category') {
+            endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category)
+          } else if (zoom.depth === 'level') {
+            endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level)
           }
         }
         return keyBy(endpoints, '_id')

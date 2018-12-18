@@ -231,26 +231,26 @@ function determineNameAndCoverageInfo (query, endpoints) {
   if (query && query.level === undefined) {
     var name = ''
     var coverage = endpoints.coverage
+    var tested = false
     var endpoint = false
     var description= ''
   }else if (query.level && query.category === undefined) {
     name = query.level
     coverage = endpoints[query.level].coverage
-    endpoint = false
     description= ''
   } else if (query.level && query.category && query.name === undefined) {
     name = query.category
     coverage = endpoints[query.level][query.category].coverage
-    endpoint = false
     description= ''
   } else {
     var endpointInQuestion = endpoints[query.level][query.category][query.name]
     name = query.name
-    endpoint= true
     description= determineDescription(endpoints[query.level][query.category][query.name])
-    var tested = determineTested(endpointInQuestion)
+    tested = determineTested(endpointInQuestion)
     coverage = endpointInQuestion.coverage
+    endpoint = true
   }
+  return {name, coverage, description, tested, coverage}
 }
 
 function determineDescription (endpoint) {
