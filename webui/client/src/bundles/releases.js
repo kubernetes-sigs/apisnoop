@@ -87,7 +87,7 @@ export default {
         var shortName = split(nameWithoutSig, '_')[0]
         return {
           name: shortName,
-          link:sigRelease.name,
+          url:sigRelease.name,
           _id: sigRelease._id
         }
       })
@@ -104,7 +104,7 @@ export default {
         var shortName = split(nameWithoutSig, '_')[0]
         return {
           name: shortName,
-          link:sigRelease.name,
+          url:sigRelease.name,
           _id: sigRelease._id
         }
       })
@@ -121,7 +121,7 @@ export default {
         var shortName = split(nameWithoutCon, '_')[0]
         return {
           name: shortName,
-          link: conRelease.name,
+          url: conRelease.name,
           _id: conRelease._id
         }
       })
@@ -138,7 +138,7 @@ export default {
         var shortName = split(nameWithoutCon, '_')[0]
         return {
           name: shortName,
-          link: conRelease.name,
+          url: conRelease.name,
           _id: conRelease._id
         }
       })
@@ -150,7 +150,7 @@ export default {
       return map(masterReleases, (masterRelease) => {
         return {
           name: masterRelease.name,
-          link: masterRelease.name,
+          url: masterRelease.name,
           _id: masterRelease._id
         }
       })

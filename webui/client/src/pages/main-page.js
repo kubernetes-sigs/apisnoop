@@ -1,7 +1,7 @@
 import React from 'react'
 import { connect } from 'redux-bundler-react'
 
-import ReleasesList from '../components/releases-list'
+import ReleasesContainedr from '../components/releases-container'
 import SunburstContainer from '../components/sunburst-container'
 import TestTagsList from '../components/test-tags-list'
 import ActiveTestsList from '../components/active-tests-list'
@@ -11,7 +11,7 @@ function MainPage () {
   return (
       <main id='main-splash' className='min-vh-80 pa4 flex flex-column'>
       <h2>You are doing a good job.</h2>
-      <ReleasesList />
+      <ReleasesContainedr />
       <SunburstContainer />
       <TestTagsList />
       <ActiveTestsList />

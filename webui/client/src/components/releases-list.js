@@ -1,36 +1,57 @@
 import React from 'react'
 import { connect } from 'redux-bundler-react'
 
-function ReleaseItem (props) {
+
+var ReleasesList = (props) => {
+  const {
+    all,
+    e2eOnly,
+    release,
+    urlObject
+  } = props
+
+  if (release == null) return null
+
+  return (
+      <div className="ph3 mt4 mr4">
+      <h3 className="f6 fw6 ttu tracked"> { release }</h3>
+      <ul className='pl0 ml0'>
+      {all.map(releaseItem => {
+          return <ReleaseItem release={ releaseItem } />
+      })}
+      </ul>
+      {e2eOnly && <E2EList release={ e2eOnly } />}
+    </div>
+  )
+
+function E2EList (props) {
   const { release } = props
   return (
-    <li className='dib'>
-      <a
-        className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink"
-        href={getReleaseUrl(release.link)}
-        key={release._id}
-      >
-        {release.name}
-      </a>
-    </li>
+      <ul className="pl0 ml0"> e2e Only:
+        {release.map(releaseItem => <ReleaseItem release={ releaseItem}/>)}
+      </ul>
   )
 }
 
-function ReleasesList (props) {
-  const { releasesSigIndexNoE2E } = props
-  var releasesIndex = releasesSigIndexNoE2E
-
-  if (releasesIndex == null) return null
+function ReleaseItem (props) {
+  const { release } = props
+  var releaseUrl = getReleaseUrl(release.url)
+  var classes="f6 link dim br1 ba ph3 pv2 mb2 mr2 dib mid-gray"
+  if (releaseUrl === urlObject.pathname) {
+    classes = classes + " bg-washed-red"
+  }
   return (
-    <div className="ph3 mt4">
-      <h2 className="f6 fw6 ttu tracked"> Releases</h2>
-      <ul className='list'>
-        {releasesIndex.map(release => {
-          return <ReleaseItem release={release} />
-        })}
-      </ul>
-    </div>
+      <li className='dib'>
+      <a
+    className={ classes }
+    href={getReleaseUrl(release.url)}
+    key={release._id}
+      >
+      {release.name}
+    </a>
+      </li>
   )
+}
 }
 
 function getReleaseUrl (release) {
@@ -38,6 +59,6 @@ function getReleaseUrl (release) {
 }
 
 export default connect(
-  'selectReleasesSigIndexNoE2E',
+  'selectUrlObject',
   ReleasesList
 )
