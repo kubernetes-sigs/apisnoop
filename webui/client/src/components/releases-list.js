@@ -13,8 +13,8 @@ var ReleasesList = (props) => {
   if (release == null) return null
 
   return (
-      <div className="ph3 mt4 mr4">
-      <h3 className="f6 fw6 ttu tracked"> { release }</h3>
+      <div className="mt2 mr5">
+      <h3 className="f3 ttsc tracked"> { release }</h3>
       <ul className='pl0 ml0'>
       {all.map(releaseItem => {
           return <ReleaseItem release={ releaseItem } />
@@ -27,9 +27,11 @@ var ReleasesList = (props) => {
 function E2EList (props) {
   const { release } = props
   return (
-      <ul className="pl0 ml0"> e2e Only:
+      <div>
+      <ul className="pl0 ml0"><span className="ttl f4 i mr2">E2E Only</span>
         {release.map(releaseItem => <ReleaseItem release={ releaseItem}/>)}
       </ul>
+      </div>
   )
 }
 

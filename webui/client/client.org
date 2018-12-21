@@ -463,12 +463,14 @@ tree -d
       import { createSelector } from 'redux-bundler'
       import {
         filter,
+        find,
         includes,
         keyBy,
         map,
         reject,
         split,
-        trim
+        trim,
+        isUndefined
       } from 'lodash'
 
       export default {
@@ -510,6 +512,36 @@ tree -d
         selectReleasesIndexByName: createSelector(
           'selectReleasesIndex',
           releasesIndex => keyBy(releasesIndex, 'name')
+        ),
+        selectCurrentReleaseObjectRaw: createSelector(
+          'selectCurrentReleaseName',
+          'selectReleasesIndexByName',
+          (currentRelease, releasesIndex) =>  {
+            if (releasesIndex == null) return null
+            return find(releasesIndex, (release) => {
+              return includes(release.name.toLowerCase(), currentRelease.toLowerCase())
+            })
+          }
+        ),
+        selectCurrentReleaseObject: createSelector(
+          'selectCurrentReleaseObjectRaw',
+          (rawRelease) => {
+            if (rawRelease == null) return null
+            var nameArr = split(rawRelease.name, '_')
+            if (nameArr.length === 1) {
+              return {
+                version: '',
+                release: nameArr[0],
+                date: ''
+              }
+            }
+            return {
+              version: nameArr[0],
+              release: nameArr[1],
+              date: nameArr[2],
+              e2eOnly: !isUndefined(nameArr[3])
+            }
+          }
         ),
         selectReleasesSigOnly: createSelector(
           'selectReleasesIndexByName',
@@ -644,12 +676,11 @@ tree -d
 **** Imports and Layout
     #+NAME: charts.js
     #+BEGIN_SRC js
-      import { fadeColor } from '../lib/utils'
+      import { fadeColor, propertiesWithValue } from '../lib/utils'
       import { createSelector } from 'redux-bundler'
       import {
         forEach,
         includes,
-        isEmpty,
         flatMap,
         join,
         map,
@@ -658,6 +689,7 @@ tree -d
         sortBy,
         values
       } from 'lodash'
+
 
       export default {
         name: 'charts',
@@ -673,41 +705,12 @@ tree -d
    #+BEGIN_SRC js :tangle no
      getReducer: () => {
        const initialState = {
-         focusedKeyPath: [],
-         chartLocked: false
        }
-
        return (state = initialState, action = {}) => {
-         if (action.type === 'CHART_FOCUSED') {
-           return {
-             ...state,
-             focusedKeyPath: action.payload
-           }
-         }
-         if (action.type === 'CHART_UNFOCUSED') {
-           return {
-             ...state,
-             focusedKeyPath: []
-           }
-         }
-         if (action.type === 'CHART_LOCKED') {
-           return {
-             ...state,
-             chartLocked: true
-           }
-         }
-         if (action.type === 'CHART_UNLOCKED') {
-           return {
-             ...state,
-             chartLocked: false
-           }
-         }
          return state;
        }
      }
    #+END_SRC
-
-
 **** Selectors
    #+NAME: Sunburst Selectors
    #+BEGIN_SRC js :tangle no
@@ -747,9 +750,17 @@ tree -d
      ),
      selectFocusedPath: createSelector(
        'selectQueryObject',
-       (queryObject) => {
-         var queryValues = flatMap(queryObject)
-         var focusedPath = join(queryValues, ' / ')
+       'selectZoom',
+       (query, zoom) => {
+         if (query == null | zoom == null) return null
+         var pathObjectRaw = {
+           level: relevantValue('level', zoom, query),
+           category: relevantValue('category', zoom, query),
+           name: relevantValue('name', zoom, query),
+         }
+         var pathObject = propertiesWithValue(pathObjectRaw)
+         var pathValues = flatMap(pathObject)
+         var focusedPath = join(pathValues, ' / ')
          return focusedPath
        }
      ),
@@ -769,7 +780,9 @@ tree -d
          },
          DESCRIPTION: {
            fontSize: '0.9em',
-           textAnchor: 'middle'
+           fontFamily: 'IBM Plex Mono',
+           textAnchor: 'middle',
+           width: '20px'
          }
        }
      }
@@ -792,6 +805,13 @@ tree -d
      The helper functions are grooooooss right now.  It feels far too nested, and I am passing along the query object to too many places.  I feel the color addition should e done as a selector possibly and not hae it be nested within here.-
      #+NAME: Sunburst Helper Functions
      #+BEGIN_SRC js :tangle no
+       function relevantValue (value, zoom, query) {
+         if (zoom[value] !== undefined) {
+           return zoom[value]
+         }
+         return query[value]
+       }
+
        function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject) {
          var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject)
          return orderBy(categories, (category) => category.children.length, ['desc'])
@@ -898,12 +918,14 @@ tree -d
         // therefore, we display the preceding level's info.
          if (endpoints == null || endpoints.stable === undefined) return null // this makes sure the endpoints have loaded.
          if (query && query.level === undefined) {
+         console.log('it the query no level!', query)
            var name = ''
            var coverage = endpoints.coverage
            var tested = false
            var endpoint = false
            var description= ''
          }else if (query.level && query.category === undefined) {
+         console.log('it the query no category!', query)
            name = query.level
            coverage = endpoints[query.level].coverage
            description= ''
@@ -919,7 +941,7 @@ tree -d
            coverage = endpointInQuestion.coverage
            endpoint = true
          }
-         return {name, coverage, description, tested, coverage}
+         return {name, coverage, description, tested, endpoint}
        }
 
        function determineDescription (endpoint) {
@@ -1176,24 +1198,36 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
      #+BEGIN_SRC js :tangle no
        selectTestTagsIndex: createSelector(
          'selectQueryObject',
+         'selectZoom',
          'selectEndpointsWithTestCoverage',
-         (query, endpoints) =>{
+         (query, zoom, endpoints) =>{
            if (query.name === undefined || endpoints.stable === undefined) return []
-           var queriedEndpoint = endpoints[query.level][query.category][query.name]
-           var sampleMethod = Object.keys(queriedEndpoint)[0]
-           return queriedEndpoint[sampleMethod].test_tags
+           if (zoom && zoom.depth === 'endpoint') {
+             var endpoint = endpoints[zoom.level][zoom.category][zoom.name]
+             var sampleMethod = Object.keys(endpoint)[0]
+           } else {
+             endpoint = endpoints[query.level][query.category][query.name]
+             sampleMethod = Object.keys(endpoint)[0]
+           }
+             return endpoint[sampleMethod].test_tags
          }
        ),
        selectActiveEndpointName: (state) => state.tests.activeEndpoint,
        selectActiveEndpoint: createSelector(
          'selectEndpointsResource',
-         'selectActiveEndpointName',
          'selectQueryObject',
-         (endpoints, activeEndpoint, query) => {
+         'selectZoom',
+         (endpoints, query, zoom) => {
            if (endpoints == null) return null
-           return endpoints.find(endpoint => {
-             return (endpoint.name === query.name) && (endpoint.category === query.category) && (endpoint.level === query.level)
-           })
+           if (zoom && zoom.depth === 'endpoint') {
+             return endpoints.find(endpoint => {
+               return (endpoint.name === zoom.name) && (endpoint.category === zoom.category) && (endpoint.level === zoom.level)
+             })
+           } else {
+             return endpoints.find(endpoint => {
+               return (endpoint.name === query.name) && (endpoint.category === query.category) && (endpoint.level === query.level)
+             })
+           }
          }
        ),
        selectActiveTestsIndex: createSelector(
@@ -1210,7 +1244,7 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
          'selectTestsResource',
          (query, tests) => {
            if (tests == null) return null
-           return tests.find(test => test._id == query.test)
+           return tests.find(test => test._id === query.test)
          }
        )
      #+END_SRC
@@ -1448,8 +1482,8 @@ The Release is an Object structured like so:
       if (release == null) return null
 
       return (
-          <div className="ph3 mt4 mr4">
-          <h3 className="f6 fw6 ttu tracked"> { release }</h3>
+          <div className="mt2 mr5">
+          <h3 className="f3 ttsc tracked"> { release }</h3>
           <ul className='pl0 ml0'>
           {all.map(releaseItem => {
               return <ReleaseItem release={ releaseItem } />
@@ -1462,9 +1496,11 @@ The Release is an Object structured like so:
     function E2EList (props) {
       const { release } = props
       return (
-          <ul className="pl0 ml0"> e2e Only:
+          <div>
+          <ul className="pl0 ml0"><span className="ttl f4 i mr2">E2E Only</span>
             {release.map(releaseItem => <ReleaseItem release={ releaseItem}/>)}
           </ul>
+          </div>
       )
     }
 
@@ -1527,12 +1563,11 @@ The Release is an Object structured like so:
      } = props
 
      return(
-       <section id="releases-container">
-         <h2>Releases</h2>
+       <section id="releases-container" className="pa5">
          <div className='flex items-start justify-start'>
          <ReleasesList release={"Master"} all={releasesMasterIndex} />
-         <ReleasesList release={"Conformance"} all={releasesConformanceIndexNoE2E} e2eOnly={releasesConformanceIndexE2E} />
          <ReleasesList release={"Sig Release"} all={releasesSigIndexNoE2E} e2eOnly={releasesSigIndexE2E} />
+         <ReleasesList release={"Conformance"} all={releasesConformanceIndexNoE2E} e2eOnly={releasesConformanceIndexE2E} />
          </div>
        </section>
      )
@@ -1549,6 +1584,7 @@ The Release is an Object structured like so:
 
  #+END_SRC
 
+
 *** Sunburst Container
     #+NAME: sunburst-container
     #+BEGIN_SRC js :tangle ./src/components/sunburst-container.js
@@ -1556,27 +1592,77 @@ The Release is an Object structured like so:
       import { connect } from 'redux-bundler-react'
 
       import Sunburst from './sunburst'
+      import SunburstHeader from './sunburst-header'
 
       const SunburstContainer = (props) => {
         const {
-          currentReleaseName,
           focusedPath
         } = props
         return (
-            <div id='sunburst-segment' className='pa4 flex'>
-            <div id='sunburst'>
-            <h2>{ currentReleaseName }</h2>
-            <p>{ focusedPath }</p>
+            <div id='sunburst-container' className='pa5 flex flex-column'>
+            <SunburstHeader />
             <Sunburst />
-            </div>
+            <p>{ focusedPath }</p>
             </div>
         )
       }
 
       export default connect(
-        'selectCurrentReleaseName',
         'selectFocusedPath',
         SunburstContainer
+      )
+
+    #+END_SRC
+*** Sunburst Header
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/sunburst-header.js
+    :END:
+    #+NAME: sunburst-header
+    #+BEGIN_SRC js
+      import React from 'react'
+      import { connect } from 'redux-bundler-react'
+
+      const SunburstHeader = (props) => {
+        const {
+          currentReleaseObject
+        } = props
+        var release = currentReleaseObject
+
+        if (release == null) return null
+
+        return (
+            <div id='sunburst-header'>
+            <h2 className='mb1 f1'>
+              <VersionTag version={release.version}/>
+              {release.release }
+              <E2ETag e2eOnly={release.e2eOnly}/>
+            </h2>
+            <p className='ibm-plex-mono f6 mt0 pt0 pl2'>Data Gathered on { release.date}</p>
+            </div>
+        )
+
+        function VersionTag (version) {
+          version = version.version
+          if (version === 'master' || version == null) return null
+          if (version === 'sig-release') {
+            return <span className='light-red mr2'>Sig Release</span>
+          }
+          if (version === 'conformance') {
+            return <span className='light-blue mr2'>Conformance</span>
+          }
+          return null
+        }
+
+        function E2ETag (e2eOnly) {
+          e2eOnly = e2eOnly.e2eOnly
+          if (e2eOnly === true) return <span className='f6 i ml1'>e2e only</span>
+          return null
+        }
+      }
+
+      export default connect(
+        'selectCurrentReleaseObject',
+        SunburstHeader
       )
 
     #+END_SRC
@@ -1602,7 +1688,6 @@ The Release is an Object structured like so:
           labelStyle,
           sunburstSorted,
           queryObject,
-          doDisplayEndpointTests,
           doUpdateQuery
         } = props
 
@@ -1610,29 +1695,29 @@ The Release is an Object structured like so:
             <div id='sunburst'>
             <button onClick={()=> doUpdateQuery({})}>Clear</button>
             <Sunburst
-          hideRootNode
-          colorType="literal"
-          data={sunburstSorted}
-          height={500}
-          width={500}
-          getColor={node => node.color}
-          onValueClick={handleMouseClick}
-          onValueMouseOver={handleMouseOver}
-            >
-            {(interiorLabel && !interiorLabel.endpoint) &&
-             <LabelSeries
-             data={[
-               {x: 0, y: 60, label: interiorLabel.percentage, style: labelStyle.PERCENTAGE},
-               {x: 0, y: 0, label: interiorLabel.ratio, style: labelStyle.FRACTION},
-               {x: 0, y: -20, label: 'total tested', style: labelStyle.PATH}
-             ]} />}
-          {(interiorLabel && interiorLabel.endpoint) &&
-           <LabelSeries
-           data={[
-             {x: 0, y: 0, label: interiorLabel.description, style: labelStyle.DESCRIPTION},
-             {x: 0, y: -20, label: interiorLabel.tested, style: labelStyle.PATH}
-           ]} />}
-          </Sunburst>
+              hideRootNode
+              colorType="literal"
+              data={sunburstSorted}
+              height={600}
+              width={600}
+              getColor={node => node.color}
+              onValueClick={handleMouseClick}
+              onValueMouseOver={handleMouseOver}
+              onValueMouseOut={handleMouseOut}
+                >
+                {(interiorLabel && !interiorLabel.endpoint) &&
+                <LabelSeries
+                  data={[{x: 0, y: 60, label: interiorLabel.coverage.percentage, style: labelStyle.PERCENTAGE},
+                  {x: 0, y: 0, label: interiorLabel.coverage.ratio, style: labelStyle.FRACTION},
+                  {x: 0, y: -20, label: 'total tested', style: labelStyle.PATH}
+                ]} />}
+              {(interiorLabel && interiorLabel.endpoint) &&
+              <LabelSeries
+                data={[
+                  {x: 0, y: 0, label: interiorLabel.description, style: labelStyle.DESCRIPTION},
+                  {x: 0, y: -20, label: interiorLabel.tested, style: labelStyle.PATH}
+                ]} />}
+            </Sunburst>
             </div>
         )
         function handleMouseOver (node, event) {
@@ -1645,6 +1730,10 @@ The Release is an Object structured like so:
           }
           var query = propertiesWithValue(rawQuery)
           doUpdateQuery(query)
+        }
+
+        function handleMouseOut () {
+          doUpdateQuery({zoomed: queryObject.zoomed})
         }
 
         function handleMouseClick (node, event) {
@@ -1660,15 +1749,15 @@ The Release is an Object structured like so:
           query.zoomed = `${depth[node.depth]}-${join(queryAsArray,'-')}`
           doUpdateQuery(query)
         }
-      }
 
-      function getKeyPath (node) {
-        if (!node.parent) {
-          return ['root'];
+        function getKeyPath (node) {
+          if (!node.parent) {
+            return ['root'];
+          }
+          var nodeKey = get(node, 'data.name') || get(node, 'name')
+          var parentKeyPath = getKeyPath(node.parent)
+          return [...parentKeyPath, nodeKey]
         }
-        var nodeKey = get(node, 'data.name') || get(node, 'name')
-        var parentKeyPath = getKeyPath(node.parent)
-        return [...parentKeyPath, nodeKey]
       }
 
       export default connect(
@@ -1676,7 +1765,6 @@ The Release is an Object structured like so:
         'selectLabelStyle',
         'selectQueryObject',
         'selectSunburstSorted',
-        'doDisplayEndpointTests',
         'doUpdateQuery',
         SunburstChart
       )
@@ -1744,12 +1832,11 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
 
       function TestItem (props) {
         const { testItem,
-                currentReleaseName,
                 queryObject,
                 doUpdateQuery } = props
         return (
             <li className='dib' key='test_{ testItem._id }'>
-            <a href='#' onClick={()=> handleClick(queryObject, testItem._id)} title="info for { testItem.name }">{ testItem.name }</a>
+            <a href='#testsamplechangethis' onClick={()=> handleClick(queryObject, testItem._id)} title="info for { testItem.name }">{ testItem.name }</a>
             </li>
         )
 
@@ -1764,7 +1851,6 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
       function TestList (props) {
         const {
           activeTestsIndex,
-          currentReleaseName,
           queryObject,
           doUpdateQuery,
         } = props
@@ -1775,7 +1861,7 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
             <div className="ph3 mt4">
             <ul className='list'>
             {map(activeTestsIndex, (testItem) => {
-              return <TestItem testItem={ testItem } doUpdateQuery={ doUpdateQuery } queryObject={ queryObject } currentReleaseName={ currentReleaseName }/>
+              return <TestItem testItem={ testItem } doUpdateQuery={ doUpdateQuery } queryObject={ queryObject } />
             })}
           </ul>
             </div>
@@ -1786,7 +1872,6 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
 
       export default connect(
         'selectActiveTestsIndex',
-        'selectCurrentReleaseName',
         'selectQueryObject',
         'doUpdateQuery',
         TestList
@@ -1865,6 +1950,7 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
 
     When you click on a test it should add it to our query.   Then, the query learns to look for whether there is a Test showing and if so, to display the active test detail.
 ** Pages
+*** Main Page
    :PROPERTIES:
    :header-args: :tangle ./src/pages/main-page.js
    :END:
@@ -1882,12 +1968,12 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
      function MainPage () {
        return (
            <main id='main-splash' className='min-vh-80 pa4 flex flex-column'>
-           <h2>You are doing a good job.</h2>
            <ReleasesContainedr />
            <SunburstContainer />
            <TestTagsList />
            <ActiveTestsList />
            <ActiveTestSequence />
+           <h2>You are doing a good job.</h2>
            </main>
        )
      }
@@ -2291,7 +2377,8 @@ So it's really zoom filter and the question is...can you pass along an array in 
 #+END_EXAMPLE
 
 When you click on a node in the sunburst, it includes the depth of the node, which maps to whether it's a level, category, or endpoint.  When you click, you likely don't want that one part highlighted too....it should _just_ be the zoom until yolu hover over again.  So we can update the query to just 'zoom: depth'
-** IN-PROGRESS Separate our releases into sig, conformance, master.
+** DONE Separate our releases into sig, conformance, master.
+   CLOSED: [2018-12-20 Thu 14:25]
    if you click on sig or conformance, you get the release numbers.  Then, you can choose an 'e2e' only tag too.
    this is to help with the styling later on. The majority of the functionality is here, now we just gotta make it look pretty.  The releases seems like the best way to do that.
    We can separate based on whether the release name includes any of these keywords.  AS long as we keep our naming standard, this will be fine.  I also added a shortName that was just the release.  The problem this poses is when something is e2ed only because it will have the same release name but have the e2ed part tthat is unclear....so i gotta seperate to _just e2e_ or _without e2e_ before i do the naming stuff.
@@ -2305,18 +2392,19 @@ When you click on a node in the sunburst, it includes the depth of the node, whi
    - conformance releases not e2e,
    - conformance releases e2e only
    - master release
-** TODO [0/7] Overhaul styling:
+** DONE Change our font to IBM Plex Sans
+   CLOSED: [2018-12-21 Fri 11:44]
+** DONE Add More Info to our Sunburst Heading
+   CLOSED: [2018-12-21 Fri 11:44]
+   We could add Refined Name and Date of Pull.  That would look nice!
+** TODO [2/7] Overhaul styling:
    - [ ] interior label
-   - [ ] releases list
+   - [X] releases list
+   - [X] Type
    - [ ] footer always at foot
-   - [ ] Type
    - [ ] clear button
    - [ ] test list
    - [ ] test run
-** TODO Get the label working properly again for the interior of sunburst.
-** TODO get MouseOut to be useful in regards to ou8r testing and such
-   perhaps mouse out always removes all focus, but if you click on an endpoint yolu can see the tests?  i like how it works with the mouseout removing everything but the zoom, but it makes it hard to  then share the tests.
-
 ** TODO document our bundles better within the org file, separate each function into clear and testable things maybe?
 ** TODO refactor helper functions for clarity and to not have them be deeeeeply nested
    [2018-12-12 Wed]
@@ -2455,3 +2543,7 @@ Both the debug bundle and redux dev tools are enabled if localStorage.debug is s
      console.log(lodash.map)
 
    #+END_SRC
+** TODO show tests properly based on endpoint.
+    I want to add something for clicking on an endpoint that locks it in place.  If it's a category or level ikt should zoom, if it's ane dnpoint it should lock.  So it's listenikng in on a zoom query and updating locked to true.  What happens if you click again, then lock should be reset....so on mou8se click the zoom level is set.  When you mouse click again it should unlock...?  What shoudl the interaction be if you8 lock on an endpoint and then hove over another endpoint?  which information do you give?  there is a disagreement over hover-path and such....easiest way would be to zoom in still, and display tests if you are zoomed in on an endpoint....Mouse out would still work, and the tests should display...if endpoint is locked to that endpoint....otherwise to whichever one you are hovered over....
+    So then the question is not settiong this, but whether we can base the tests on the urlQuery of zoomed instead of urlObjectquery....we can do this.
+   if (query.zoomed === endpoint, test is endpoint else test is query.endpoint).

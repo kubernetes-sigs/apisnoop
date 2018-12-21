@@ -1,12 +1,14 @@
 import { createSelector } from 'redux-bundler'
 import {
   filter,
+  find,
   includes,
   keyBy,
   map,
   reject,
   split,
-  trim
+  trim,
+  isUndefined
 } from 'lodash'
 
 export default {
@@ -48,6 +50,36 @@ export default {
   selectReleasesIndexByName: createSelector(
     'selectReleasesIndex',
     releasesIndex => keyBy(releasesIndex, 'name')
+  ),
+  selectCurrentReleaseObjectRaw: createSelector(
+    'selectCurrentReleaseName',
+    'selectReleasesIndexByName',
+    (currentRelease, releasesIndex) =>  {
+      if (releasesIndex == null) return null
+      return find(releasesIndex, (release) => {
+        return includes(release.name.toLowerCase(), currentRelease.toLowerCase())
+      })
+    }
+  ),
+  selectCurrentReleaseObject: createSelector(
+    'selectCurrentReleaseObjectRaw',
+    (rawRelease) => {
+      if (rawRelease == null) return null
+      var nameArr = split(rawRelease.name, '_')
+      if (nameArr.length === 1) {
+        return {
+          version: '',
+          release: nameArr[0],
+          date: ''
+        }
+      }
+      return {
+        version: nameArr[0],
+        release: nameArr[1],
+        date: nameArr[2],
+        e2eOnly: !isUndefined(nameArr[3])
+      }
+    }
   ),
   selectReleasesSigOnly: createSelector(
     'selectReleasesIndexByName',

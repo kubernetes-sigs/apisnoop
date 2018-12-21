@@ -2,25 +2,22 @@ import React from 'react'
 import { connect } from 'redux-bundler-react'
 
 import Sunburst from './sunburst'
+import SunburstHeader from './sunburst-header'
 
 const SunburstContainer = (props) => {
   const {
-    currentReleaseName,
     focusedPath
   } = props
   return (
-      <div id='sunburst-segment' className='pa4 flex'>
-      <div id='sunburst'>
-      <h2>{ currentReleaseName }</h2>
-      <p>{ focusedPath }</p>
+      <div id='sunburst-container' className='pa5 flex flex-column'>
+      <SunburstHeader />
       <Sunburst />
-      </div>
+      <p>{ focusedPath }</p>
       </div>
   )
 }
 
 export default connect(
-  'selectCurrentReleaseName',
   'selectFocusedPath',
   SunburstContainer
 )

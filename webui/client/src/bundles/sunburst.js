@@ -1,9 +1,8 @@
-import { fadeColor } from '../lib/utils'
+import { fadeColor, propertiesWithValue } from '../lib/utils'
 import { createSelector } from 'redux-bundler'
 import {
   forEach,
   includes,
-  isEmpty,
   flatMap,
   join,
   map,
@@ -13,39 +12,13 @@ import {
   values
 } from 'lodash'
 
+
 export default {
   name: 'charts',
   getReducer: () => {
     const initialState = {
-      focusedKeyPath: [],
-      chartLocked: false
     }
-  
     return (state = initialState, action = {}) => {
-      if (action.type === 'CHART_FOCUSED') {
-        return {
-          ...state,
-          focusedKeyPath: action.payload
-        }
-      }
-      if (action.type === 'CHART_UNFOCUSED') {
-        return {
-          ...state,
-          focusedKeyPath: []
-        }
-      }
-      if (action.type === 'CHART_LOCKED') {
-        return {
-          ...state,
-          chartLocked: true
-        }
-      }
-      if (action.type === 'CHART_UNLOCKED') {
-        return {
-          ...state,
-          chartLocked: false
-        }
-      }
       return state;
     }
   },
@@ -85,9 +58,17 @@ export default {
   ),
   selectFocusedPath: createSelector(
     'selectQueryObject',
-    (queryObject) => {
-      var queryValues = flatMap(queryObject)
-      var focusedPath = join(queryValues, ' / ')
+    'selectZoom',
+    (query, zoom) => {
+      if (query == null | zoom == null) return null
+      var pathObjectRaw = {
+        level: relevantValue('level', zoom, query),
+        category: relevantValue('category', zoom, query),
+        name: relevantValue('name', zoom, query),
+      }
+      var pathObject = propertiesWithValue(pathObjectRaw)
+      var pathValues = flatMap(pathObject)
+      var focusedPath = join(pathValues, ' / ')
       return focusedPath
     }
   ),
@@ -107,7 +88,9 @@ export default {
       },
       DESCRIPTION: {
         fontSize: '0.9em',
-        textAnchor: 'middle'
+        fontFamily: 'IBM Plex Mono',
+        textAnchor: 'middle',
+        width: '20px'
       }
     }
   },
@@ -121,6 +104,13 @@ export default {
       type: 'CHART_UNLOCKED'
     }
   }
+}
+
+function relevantValue (value, zoom, query) {
+  if (zoom[value] !== undefined) {
+    return zoom[value]
+  }
+  return query[value]
 }
 
 function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject) {
@@ -229,12 +219,14 @@ function determineNameAndCoverageInfo (query, endpoints) {
  // therefore, we display the preceding level's info.
   if (endpoints == null || endpoints.stable === undefined) return null // this makes sure the endpoints have loaded.
   if (query && query.level === undefined) {
+  console.log('it the query no level!', query)
     var name = ''
     var coverage = endpoints.coverage
     var tested = false
     var endpoint = false
     var description= ''
   }else if (query.level && query.category === undefined) {
+  console.log('it the query no category!', query)
     name = query.level
     coverage = endpoints[query.level].coverage
     description= ''
@@ -250,7 +242,7 @@ function determineNameAndCoverageInfo (query, endpoints) {
     coverage = endpointInQuestion.coverage
     endpoint = true
   }
-  return {name, coverage, description, tested, coverage}
+  return {name, coverage, description, tested, endpoint}
 }
 
 function determineDescription (endpoint) {
