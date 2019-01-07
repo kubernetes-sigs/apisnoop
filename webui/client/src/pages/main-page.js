@@ -12,7 +12,6 @@ function MainPage () {
       <main id='main-splash' className='min-vh-80 pa4 flex flex-column'>
       <ReleasesContainer />
       <SunburstAndSummary />
-      <TestTagsList />
       <ActiveTestsList />
       <ActiveTestSequence />
       </main>
