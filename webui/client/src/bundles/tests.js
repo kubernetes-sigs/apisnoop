@@ -1,4 +1,5 @@
 import { createSelector } from 'redux-bundler'
+import { trim } from 'lodash'
 
 export default {
   name: 'tests',
@@ -17,7 +18,7 @@ export default {
       return state
     }
   },
-  selectTestTagsIndex: createSelector(
+  selectTestTagsIndexRaw: createSelector(
     'selectQueryObject',
     'selectZoom',
     'selectEndpointsWithTestCoverage',
@@ -31,6 +32,15 @@ export default {
         sampleMethod = Object.keys(endpoint)[0]
       }
         return endpoint[sampleMethod].test_tags
+    }
+  ),
+  selectTestTagsIndex: createSelector(
+    'selectTestTagsIndexRaw',
+    (testTagsRaw) => {
+      return testTagsRaw.map(rawTag => {
+        return trim(rawTag, '[]')
+      }
+     )
     }
   ),
   selectActiveEndpointName: (state) => state.tests.activeEndpoint,

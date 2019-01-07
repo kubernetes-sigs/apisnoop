@@ -22,7 +22,7 @@ import React from 'react'
            <span style={{color: levelColours[level]}}>{ level } </span>
            <span style={{color: categoryColours['category.' + category]}}>{ category }</span>
            </p>
-           <p className='f2 mt0 mb3 ttsc'>{ name }</p>
+           <p className='f3 mt0 mb3 ttsc'>{ name }</p>
            <p className='f4 mt0 mb3 i fw2'>{ description }</p>
            <TestsSummary />
            </div>
