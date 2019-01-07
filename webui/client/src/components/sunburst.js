@@ -19,7 +19,7 @@ const SunburstChart = (props) => {
 
   return (
       <div id='sunburst'>
-      <button onClick={()=> doUpdateQuery({})}>Clear</button>
+      <button className='ttsc' onClick={()=> doUpdateQuery({})}>Reset</button>
       <Sunburst
         hideRootNode
         colorType="literal"

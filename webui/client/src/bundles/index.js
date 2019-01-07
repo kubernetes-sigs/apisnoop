@@ -9,6 +9,7 @@ import releases from './releases'
 import releasesIndexResource from './releases-index-resource'
 import routes from './routes'
 import sunburst from './sunburst'
+import summary from './summary'
 import testsResource from './tests-resource'
 import tests from './tests'
 import zoom from './zoom'
@@ -23,6 +24,7 @@ export default composeBundles(
   releasesIndexResource,
   routes,
   sunburst,
+  summary,
   testsResource,
   tests,
   zoom
