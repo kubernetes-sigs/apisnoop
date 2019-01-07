@@ -183,6 +183,7 @@ tree -d
        import releasesIndexResource from './releases-index-resource'
        import routes from './routes'
        import sunburst from './sunburst'
+       import summary from './summary'
        import testsResource from './tests-resource'
        import tests from './tests'
        import zoom from './zoom'
@@ -202,6 +203,7 @@ tree -d
          releasesIndexResource,
          routes,
          sunburst,
+         summary,
          testsResource,
          tests,
          zoom
@@ -962,6 +964,59 @@ This means we have to be aware of the node's parent too, because methods and cat
 I feel this would be easiest with three functions, even though they're kinda similar.  determineLevelColor(level), determineCategoryColor(category), determineEndpointColor(endpoint).  For the level, it just checks whether there is a query and if it's a part of it.  Category checks if there's a query and if it and the level are a part of it.  endpoint the same, but level and category too.
 
 I've now done this, but the functions feel v. fragile to me, like there's a simpler way to go about it that I am just not seeing.  I think the problem is partially that we have a hella nested function by necessity--since we are making a sunburst which is built on nesting, so things are going to feel strangely convoluted inherently?  But it would still be nice to refactor this for simplicity.
+*** Summary
+    :PROPERTIES:
+    :header-args: :tangle ./src/bundles/summary.js :noweb yes
+    :END:
+**** Imports and Layout
+    #+NAME: Summary Bundle
+    #+BEGIN_SRC js
+      import { createSelector } from 'redux-bundler'
+
+      export default {
+        name: 'summary',
+        <<Summary Selector>>
+      }
+    #+END_SRC
+**** Selector
+     #+NAME: Summary Selector
+     #+BEGIN_SRC js :tangle no
+       selectPath: createSelector(
+         'selectActiveEndpoint',
+         'selectQueryObject',
+         'selectZoom',
+         (endpoint, query, zoom) => {
+           var path = {}
+           if (zoom == null) {
+             path = {
+               level: '',
+               category: '',
+               name: ''
+             }
+           } else if (zoom !== null && query.level === undefined) {
+             path = {
+               level: zoom.level,
+               category: zoom.category,
+               name: zoom.name
+             }
+           } else {
+             path = {
+               level: query.level,
+               category: query.category,
+               name: query.name
+             }
+           }
+           return path
+         }
+       )
+     #+END_SRC
+
+     With selectors, the values are given all at once as soon as  the page starts up.   Which will be before the fetch has returned for our data.  We need to make sure to not try to ask something of the data before it's returned, and so to include the 'if null return null' for both
+
+     We are also taking just the first method in the endpoint....Which means the endpoint is also only showiung in the sunburst for it's own name, and not its methods.  For most of them they will only have a single method, but others do not.  Thed question then is whether each endpoint and method should be shown separately, or whether when you hover over it says how many methods it has and how many of them are tested....the case where an endpoint's put method is tested but its read method is not or some thing like that.  Not sure the best way to tackle this, like what the user would be expecting.
+
+     we want to select the tests from our testsResource based on what's in our active tests
+
 *** Tests Resource
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/tests-resource.js :noweb yes
@@ -1237,6 +1292,13 @@ I've now done this, but the functions feel v. fragile to me, like there's a simp
            if (endpoint == null || testsResource == null) return null
            var activeTests = testsResource.filter(test => endpoint.tests.includes(test.name))
            return activeTests
+         }
+       ),
+       selectActiveTestsNumber: createSelector(
+         'selectActiveTestsIndex',
+         (tests) => {
+           if (tests == null) return null
+           return tests.length
          }
        ),
        selectActiveTest: createSelector(
@@ -1584,7 +1646,35 @@ The Release is an Object structured like so:
 
  #+END_SRC
 
+*** Sunburst And Summary
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/sunburst-and-summary.js
+    :END:
+    #+NAME: sunburst-and-summary
+    #+BEGIN_SRC js :tangle ./src/components/sunburst-and-summary.js
+      import React from 'react'
+      import { connect } from 'redux-bundler-react'
 
+      import SunburstContainer from './sunburst-container'
+      import SummaryContainer from './summary-container'
+
+      const SunburstAndSummary = (props) => {
+        return (
+            <section
+              id='summary-and-sunburst'
+              className='flex'
+            >
+            <SunburstContainer />
+            <SummaryContainer />
+          </section>
+        )
+      }
+
+      export default connect(
+        SunburstAndSummary
+      )
+
+    #+END_SRC
 *** Sunburst Container
     #+NAME: sunburst-container
     #+BEGIN_SRC js :tangle ./src/components/sunburst-container.js
@@ -1595,20 +1685,15 @@ The Release is an Object structured like so:
       import SunburstHeader from './sunburst-header'
 
       const SunburstContainer = (props) => {
-        const {
-          focusedPath
-        } = props
         return (
             <div id='sunburst-container' className='pa5 flex flex-column'>
             <SunburstHeader />
             <Sunburst />
-            <p>{ focusedPath }</p>
             </div>
         )
       }
 
       export default connect(
-        'selectFocusedPath',
         SunburstContainer
       )
 
@@ -1632,7 +1717,7 @@ The Release is an Object structured like so:
 
         return (
             <div id='sunburst-header'>
-            <h2 className='mb1 f1'>
+            <h2 className='mb1 mt1 f1'>
               <VersionTag version={release.version}/>
               {release.release }
               <E2ETag e2eOnly={release.e2eOnly}/>
@@ -1704,8 +1789,8 @@ The Release is an Object structured like so:
               onValueClick={handleMouseClick}
               onValueMouseOver={handleMouseOver}
               onValueMouseOut={handleMouseOut}
-                >
-                {(interiorLabel && !interiorLabel.endpoint) &&
+            >
+                {(interiorLabel && interiorLabel.coverage) &&
                 <LabelSeries
                   data={[{x: 0, y: 60, label: interiorLabel.coverage.percentage, style: labelStyle.PERCENTAGE},
                   {x: 0, y: 0, label: interiorLabel.coverage.ratio, style: labelStyle.FRACTION},
@@ -1714,8 +1799,7 @@ The Release is an Object structured like so:
               {(interiorLabel && interiorLabel.endpoint) &&
               <LabelSeries
                 data={[
-                  {x: 0, y: 0, label: interiorLabel.description, style: labelStyle.DESCRIPTION},
-                  {x: 0, y: -20, label: interiorLabel.tested, style: labelStyle.PATH}
+                  {x: 0, y: 0, label: interiorLabel.tested, style: labelStyle.PERCENTAGE},
                 ]} />}
             </Sunburst>
             </div>
@@ -1779,6 +1863,91 @@ I'm changing it up now to now have a click to lock.  I would rather have it be s
 I do this by also just updating the url.  We are trying to maintain a dumb component, who handles no real logic, it just updates the url which drives the new logic which is then represented fresh in the component.
 
 The interior label was a bit tricky to do, and it has some logic put in that i don't fully like.  It's not fully dumb.  This is a thing to revisit later though.
+
+*** Summary Container
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/summary-container.js
+    :END:
+
+    This will hold the right-hand side of ourr sunburst and summary page, detailing the current path we are on and any relevant information about it.
+
+    #+NAME: Summary Container
+    #+BEGIN_SRC js
+           import React from 'react'
+           import { connect } from 'redux-bundler-react'
+
+           import TestsSummary from './tests-summary'
+
+           const SummaryContainer = (props) => {
+             const {
+               activeEndpoint,
+               activeTestsNumber,
+               categoryColours,
+               levelColours,
+               path,
+             } = props
+
+             const level = path.level
+             const category = path.category
+             const name = path.name
+             const description = (activeEndpoint == null) ? '' : activeEndpoint.description
+             return(
+                 <div id='summary-container' className='pa5'>
+                 <p className='f2 mt3 mb3 fw3' style={{color: levelColours[level]}}>{ level }</p>
+                 <p className='f2 mt0 mb3 fw3' style={{color: categoryColours['category.' + category]}}>{ category }</p>
+                 <p className='f2 mt0 mb3 ttsc'>{ name }</p>
+                 <p className='f4 mt0 mb3 i fw2'>{ description }</p>
+                 <TestsSummary />
+                 </div>
+             )
+           }
+      export default connect(
+             'selectActiveEndpoint',
+             'selectActiveTestsNumber',
+             'selectCategoryColours',
+             'selectLevelColours',
+             'selectPath',
+             SummaryContainer
+           )
+
+
+    #+END_SRC
+
+*** Tests Summary
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/tests-summary.js
+    :END:
+    #+BEGIN_SRC js
+      import React from 'react'
+      import { connect } from 'redux-bundler-react'
+
+      const TestsSummary = (props) => {
+        const {
+          activeTestsNumber
+        } = props
+
+        if (activeTestsNumber == null) return null
+
+        if (activeTestsNumber > 0) {
+          return(
+              <p>Covered by <span className="green b">{activeTestsNumber}</span> tests.</p>
+          )
+        }
+
+        if (activeTestsNumber === 0) {
+          return(
+              <p>Untested.</p>
+          )
+        }
+
+      }
+
+      export default connect(
+        'selectActiveTestsNumber',
+        TestsSummary
+      )
+
+    #+END_SRC
 
 *** Test Tags List
     :PROPERTIES:
@@ -1960,7 +2129,7 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
      import { connect } from 'redux-bundler-react'
 
      import ReleasesContainer from '../components/releases-container'
-     import SunburstContainer from '../components/sunburst-container'
+     import SunburstAndSummary from '../components/sunburst-and-summary'
      import TestTagsList from '../components/test-tags-list'
      import ActiveTestsList from '../components/active-tests-list'
      import ActiveTestSequence from '../components/active-test-sequence'
@@ -1968,12 +2137,12 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
      function MainPage () {
        return (
            <main id='main-splash' className='min-vh-80 pa4 flex flex-column'>
+           <h2>You are doing a good job.</h2>
            <ReleasesContainer />
-           <SunburstContainer />
+           <SunburstAndSummary />
            <TestTagsList />
            <ActiveTestsList />
            <ActiveTestSequence />
-           <h2>You are doing a good job.</h2>
            </main>
        )
      }
@@ -2320,6 +2489,63 @@ right: $right_session
 "
 #+END_SRC
 * Tasks                                                            :apisnoop:
+** DONE Add a summary card for information about path and endpoint.
+   CLOSED: [2019-01-07 Mon 16:15]
+** TODO [2/8] Overhaul styling:
+   - [ ] interior label.  This can be fixed by having a summary card, and moviung the path to there.   so the endpoint interior label just says 'tested' or 'untested'
+   - [X] releases list
+   - [X] Type
+   - [ ] footer always at foot
+   - [ ] clear button, name changed to 'RESET'.  Put it inside the sunburst.
+   - [ ] sunburst doesn't jump up and down when hovering between items with tests and without
+   - [ ] There is a summary section to right of chart that includes path and number of tests.
+   - [ ] Tests are styled closer to what's on staging (cleaerly differentiated timestamp, differentiated test-tag, etc)
+     - [ ] test list
+     - [ ] test run
+** TODO when switching bedtween releases, title says 'switching to' until the graph itself has loaded.
+** TODO We have distinct dev and prod environments for the client
+  [[https://gitlab.ii.coop/ii/cncf/apisnoop/issues/11][gitlab link]]
+  interesting note for debugging for production.  Redux dev-tools is built into redux bundle, and can be turned on or off based on if local.storage.debug is set to true or false.  From the  [[https://reduxbundler.com/guides/patterns.html][redux-bundle documentation]]:
+===
+Using Redux DevTools
+Both the debug bundle and redux dev tools are enabled if localStorage.debug is set to something "truthy". In this way you can keep your production apps debuggable, you just have to flip that localStorage.debug flag to enable it. Also beware that running localStorage.debug = false in your browser console won't actually turn it off. This is because LocalStorage serializes everything to strings so the value that's stored is actually the string "false" which... is truthy! So to turn it back off again, you can just do: delete localStorage.debug instead.
+===
+** TODO [0/0] Incoporate 'App Usage' into our  visualization
+There will be a new piece of data, provided by yaml, that says 'here are endpoints, and the number of applications that hit those endpoints.
+   So what we want to be able to see is some sort of flare that shows the number of applications using this endpoint, and also whether that endpoint is tested.  This would let us see 'what is next', by focusing on the endpoints with the most app dependencies that are not yet tested.  So for this we would need to move through the yaml file to get that uinformation and know it's available within the app, and then to find a way to visualize it clearly, so the shape of the sunburst itself helps people figure out how to focus on the next part.
+*** [ ] TODO Parse the yaml file to get the relevant app usage data
+*** [ ] TODO Add this parsed info as an endpoint in our backend database.
+*** [ ] TODO Make the info avaialble to the site, so we can show that each endpoint has information about it's app usage
+   AT the start this could just be a number and a list in the summary.  Like, when you click on an endpouint it says "used by 10 apps" .  This is a minimum example that we have that data corresponding to each endpoint
+*** [ ] TODO Incorporate that information into the shape of the sunburst
+    Similar to how it's tested value determines the endpoints color, to see whether it's application count can determine it's size.  So the highter the numbedr, the longer that endpoint node is.
+*** [ ] TODO Sort the sunburst by App count, in addition to it's current sorting.
+We are currently sortiung by tested/untested, tested by conformance/tested but not by conformance.  We want to keep this, and then also add appcount, so the largedr number of aps show on the left.  This would cause a swooping affect, and so the 'next mission' would be the next highest part of the swoop.
+** TODO re-check how we are grabbing releases.  We aren't using the id, just the name.  Is that alright?
+** TODO document our bundles better within the org file, separate each function into clear and testable things maybe?
+** TODO refactor helper functions for clarity and to not have them be deeeeeply nested
+   [2018-12-12 Wed]
+   [[file:~/ii/apisnoop/webui/client/client.org::Sunburst%20Helper%20Functions][Sunburst Helper Functions]]
+** TODO [11/14] Future Tasks
+   - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
+   - [X] Hover over Part of Sunburst shows relevant rays highlighted.
+   - [X] Hover over Sunburst, see testing percentage update in center.
+   - [ ] Click on Useragent, sunburst zooms onto that subset of data.
+   - [X] Refactor Chart Selector to not be heavily nested..
+   - [X] Move colors calculation out of sunburst selector into its own thing.
+   - [X] Separate sunburst selector thangs from chart interaction thangs (maybe?  may be premature optimization).
+   - [X] Remove unused props from app.js
+   - [X] Improve performance of page load, by only calling a test when needed.
+   - [X] Refactor tests so the entire object isn't being loaded in the client.  That feels way too heavy, and instead you should only load up the testInfo (all the api endpoints being accessed) when there is an active_test, and you display that only on that active test.
+   - [X] When you click on an endpoint, it adds to the URL so that you can share the URL and have be right on the hovered sunburst with the filtered tests and such.
+   - [X] add queryString to our arsenal, so you can do a direct url to an endpoint
+   - [X] Add logic to API to filter endpoints to only those touched by e2e. We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
+   - [ ] add correct a href for each test to work properly.
+** TODO add path as a selector, to remove logic from the summary Container
+   right now it is checking whether we are zoomed or not, and deciding on the path it shows from that.  This could be a selector instead, which would keep our components dumb.  This is an optimization though and can be ignored for _right_ now.
+
+** IDEA Add a test-tag filter for entire sunburst.  So instead of perventage tested, it is percentage tested _by that test_tag_.
+* Progress
 ** DONE Click on test, show test sequence below
    CLOSED: [2018-12-17 Mon 12:42]
 ** DONE add back functionality for test,to clear out test query.
@@ -2397,49 +2623,6 @@ When you click on a node in the sunburst, it includes the depth of the node, whi
 ** DONE Add More Info to our Sunburst Heading
    CLOSED: [2018-12-21 Fri 11:44]
    We could add Refined Name and Date of Pull.  That would look nice!
-** TODO [2/8] Overhaul styling:
-   - [ ] interior label.  This can be fixed by having a summary card, and moviung the path to there.   so the endpoint interior label just says 'tested' or 'untested'
-   - [X] releases list
-   - [X] Type
-   - [ ] footer always at foot
-   - [ ] clear button, name changed to 'RESET'.  Put it inside the sunburst.
-   - [ ] sunburst doesn't jump up and down when hovering between items with tests and without
-   - [ ] There is a summary section to right of chart that includes path and number of tests.
-   - [ ] Tests are styled closer to what's on staging (cleaerly differentiated timestamp, differentiated test-tag, etc)
-     - [ ] test list
-     - [ ] test run
-** TODO when switching bedtween releases, title says 'switching to' until the graph itself has loaded.
-** TODO document our bundles better within the org file, separate each function into clear and testable things maybe?
-** TODO refactor helper functions for clarity and to not have them be deeeeeply nested
-   [2018-12-12 Wed]
-   [[file:~/ii/apisnoop/webui/client/client.org::Sunburst%20Helper%20Functions][Sunburst Helper Functions]]
-** TODO Add a loading interaction between link clicks.  only show title when viz has changed
-   [2018-12-12 Wed]
-   [[file:~/ii/apisnoop/webui/client/client.org::*Tests%20Resource][Tests Resource]]
-** TODO We have distinct dev and prod environments for the client
-  [[https://gitlab.ii.coop/ii/cncf/apisnoop/issues/11][gitlab link]]
-  interesting note for debugging for production.  Redux dev-tools is built into redux bundle, and can be turned on or off based on if local.storage.debug is set to true or false.  From the  [[https://reduxbundler.com/guides/patterns.html][redux-bundle documentation]]:
-===
-Using Redux DevTools
-Both the debug bundle and redux dev tools are enabled if localStorage.debug is set to something "truthy". In this way you can keep your production apps debuggable, you just have to flip that localStorage.debug flag to enable it. Also beware that running localStorage.debug = false in your browser console won't actually turn it off. This is because LocalStorage serializes everything to strings so the value that's stored is actually the string "false" which... is truthy! So to turn it back off again, you can just do: delete localStorage.debug instead.
-===
-** TODO re-check how we are grabbing releases.  We aren't using the id, just the name.  Is that alright?
-** TODO [11/14] Future Tasks
-   - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
-   - [X] Hover over Part of Sunburst shows relevant rays highlighted.
-   - [X] Hover over Sunburst, see testing percentage update in center.
-   - [ ] Click on Useragent, sunburst zooms onto that subset of data.
-   - [X] Refactor Chart Selector to not be heavily nested..
-   - [X] Move colors calculation out of sunburst selector into its own thing.
-   - [X] Separate sunburst selector thangs from chart interaction thangs (maybe?  may be premature optimization).
-   - [X] Remove unused props from app.js
-   - [X] Improve performance of page load, by only calling a test when needed.
-   - [X] Refactor tests so the entire object isn't being loaded in the client.  That feels way too heavy, and instead you should only load up the testInfo (all the api endpoints being accessed) when there is an active_test, and you display that only on that active test.
-   - [X] When you click on an endpoint, it adds to the URL so that you can share the URL and have be right on the hovered sunburst with the filtered tests and such.
-   - [X] add queryString to our arsenal, so you can do a direct url to an endpoint
-   - [X] Add logic to API to filter endpoints to only those touched by e2e. We are showing all.  It'll be faster, and simpler to only be ones whose useragents includes the regex string 'e2e.test'
-   - [ ] add correct a href for each test to work properly.
-
 ** DONE Share a link to a build and the build loads quickly
    CLOSED: [2018-12-11 Tue 09:38]
   [[https://gitlab.ii.coop/ii/cncf/apisnoop/issues/15][issue link]]
@@ -2547,19 +2730,9 @@ Both the debug bundle and redux dev tools are enabled if localStorage.debug is s
      console.log(lodash.map)
 
    #+END_SRC
-** TODO show tests properly based on endpoint.
+** DONE-AND-SHARED show tests properly based on endpoint.
+   CLOSED: [2019-01-07 Mon 14:54]
+   - State "DONE-AND-SHARED" from "TODO"       [2019-01-07 Mon 14:54]
     I want to add something for clicking on an endpoint that locks it in place.  If it's a category or level ikt should zoom, if it's ane dnpoint it should lock.  So it's listenikng in on a zoom query and updating locked to true.  What happens if you click again, then lock should be reset....so on mou8se click the zoom level is set.  When you mouse click again it should unlock...?  What shoudl the interaction be if you8 lock on an endpoint and then hove over another endpoint?  which information do you give?  there is a disagreement over hover-path and such....easiest way would be to zoom in still, and display tests if you are zoomed in on an endpoint....Mouse out would still work, and the tests should display...if endpoint is locked to that endpoint....otherwise to whichever one you are hovered over....
     So then the question is not settiong this, but whether we can base the tests on the urlQuery of zoomed instead of urlObjectquery....we can do this.
    if (query.zoomed === endpoint, test is endpoint else test is query.endpoint).
-** IDEA Add a test-tag filter for entire sunburst.  So instead of perventage tested, it is percentage tested _by that test_tag_.
-** TODO [0/0] Incoporate 'App Usage' into our  visualization
-There will be a new piece of data, provided by yaml, that says 'here are endpoints, and the number of applications that hit those endpoints.
-   So what we want to be able to see is some sort of flare that shows the number of applications using this endpoint, and also whether that endpoint is tested.  This would let us see 'what is next', by focusing on the endpoints with the most app dependencies that are not yet tested.  So for this we would need to move through the yaml file to get that uinformation and know it's available within the app, and then to find a way to visualize it clearly, so the shape of the sunburst itself helps people figure out how to focus on the next part.
-*** [ ] TODO Parse the yaml file to get the relevant app usage data
-*** [ ] TODO Add this parsed info as an endpoint in our backend database.
-*** [ ] TODO Make the info avaialble to the site, so we can show that each endpoint has information about it's app usage
-   AT the start this could just be a number and a list in the summary.  Like, when you click on an endpouint it says "used by 10 apps" .  This is a minimum example that we have that data corresponding to each endpoint
-*** [ ] TODO Incorporate that information into the shape of the sunburst
-    Similar to how it's tested value determines the endpoints color, to see whether it's application count can determine it's size.  So the highter the numbedr, the longer that endpoint node is.
-*** [ ] TODO Sort the sunburst by App count, in addition to it's current sorting.
-We are currently sortiung by tested/untested, tested by conformance/tested but not by conformance.  We want to keep this, and then also add appcount, so the largedr number of aps show on the left.  This would cause a swooping affect, and so the 'next mission' would be the next highest part of the swoop.

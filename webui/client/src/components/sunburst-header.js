@@ -11,7 +11,7 @@ const SunburstHeader = (props) => {
 
   return (
       <div id='sunburst-header'>
-      <h2 className='mb1 f1'>
+      <h2 className='mb1 mt1 f1'>
         <VersionTag version={release.version}/>
         {release.release }
         <E2ETag e2eOnly={release.e2eOnly}/>

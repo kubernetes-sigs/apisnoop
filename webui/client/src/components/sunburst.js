@@ -30,8 +30,8 @@ const SunburstChart = (props) => {
         onValueClick={handleMouseClick}
         onValueMouseOver={handleMouseOver}
         onValueMouseOut={handleMouseOut}
-          >
-          {(interiorLabel && !interiorLabel.endpoint) &&
+      >
+          {(interiorLabel && interiorLabel.coverage) &&
           <LabelSeries
             data={[{x: 0, y: 60, label: interiorLabel.coverage.percentage, style: labelStyle.PERCENTAGE},
             {x: 0, y: 0, label: interiorLabel.coverage.ratio, style: labelStyle.FRACTION},
@@ -40,8 +40,7 @@ const SunburstChart = (props) => {
         {(interiorLabel && interiorLabel.endpoint) &&
         <LabelSeries
           data={[
-            {x: 0, y: 0, label: interiorLabel.description, style: labelStyle.DESCRIPTION},
-            {x: 0, y: -20, label: interiorLabel.tested, style: labelStyle.PATH}
+            {x: 0, y: 0, label: interiorLabel.tested, style: labelStyle.PERCENTAGE},
           ]} />}
       </Sunburst>
       </div>

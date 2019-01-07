@@ -60,6 +60,13 @@ export default {
       return activeTests
     }
   ),
+  selectActiveTestsNumber: createSelector(
+    'selectActiveTestsIndex',
+    (tests) => {
+      if (tests == null) return null
+      return tests.length
+    }
+  ),
   selectActiveTest: createSelector(
     'selectQueryObject',
     'selectTestsResource',
