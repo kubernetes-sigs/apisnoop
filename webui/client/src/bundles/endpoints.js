@@ -5,9 +5,16 @@ import { calculateCoverage } from '../lib/utils.js'
 export default {
   name: 'endpoints',
     getReducer: () => {
-      const initialState = {}
-    
-      return (state = initialState, action = {}) => {
+      const initialState = {
+        activeEndpoint: ''
+      }
+      return (state=initialState, action) => {
+        if (action.type === 'TESTS_REQUESTED_FOR_ENDPOINT') {
+          return {
+            ...state,
+            activeEndpoint: action.payload
+          }
+        }
         return state
       }
     },
@@ -63,6 +70,24 @@ export default {
             }))
           }))
         }))
+      }
+    ),
+    selectActiveEndpointName: (state) => state.tests.activeEndpoint,
+    selectActiveEndpoint: createSelector(
+      'selectEndpointsResource',
+      'selectQueryObject',
+      'selectZoom',
+      (endpoints, query, zoom) => {
+        if (endpoints == null) return null
+        if (zoom && zoom.depth === 'endpoint') {
+          return endpoints.find(endpoint => {
+            return (endpoint.name === zoom.name) && (endpoint.category === zoom.category) && (endpoint.level === zoom.level)
+          })
+        } else {
+          return endpoints.find(endpoint => {
+            return (endpoint.name === query.name) && (endpoint.category === query.category) && (endpoint.level === query.level)
+          })
+        }
       }
     )
 }
