@@ -18,31 +18,6 @@ export default {
       return state
     }
   },
-  selectTestTagsIndexRaw: createSelector(
-    'selectQueryObject',
-    'selectZoom',
-    'selectEndpointsWithTestCoverage',
-    (query, zoom, endpoints) =>{
-      if (query.name === undefined || endpoints.stable === undefined) return []
-      if (zoom && zoom.depth === 'endpoint') {
-        var endpoint = endpoints[zoom.level][zoom.category][zoom.name]
-        var sampleMethod = Object.keys(endpoint)[0]
-      } else {
-        endpoint = endpoints[query.level][query.category][query.name]
-        sampleMethod = Object.keys(endpoint)[0]
-      }
-        return endpoint[sampleMethod].test_tags
-    }
-  ),
-  selectTestTagsIndex: createSelector(
-    'selectTestTagsIndexRaw',
-    (testTagsRaw) => {
-      return testTagsRaw.map(rawTag => {
-        return trim(rawTag, '[]')
-      }
-     )
-    }
-  ),
   selectActiveEndpointName: (state) => state.tests.activeEndpoint,
   selectActiveEndpoint: createSelector(
     'selectEndpointsResource',
@@ -59,6 +34,23 @@ export default {
           return (endpoint.name === query.name) && (endpoint.category === query.category) && (endpoint.level === query.level)
         })
       }
+    }
+  ),
+  selectTestTagsIndexRaw: createSelector(
+    'selectActiveEndpoint',
+    (endpoint) =>{
+        if (endpoint == null) return null
+        return endpoint.test_tags
+    }
+  ),
+  selectTestTagsIndex: createSelector(
+    'selectTestTagsIndexRaw',
+    (testTagsRaw) => {
+      if (testTagsRaw == null) return null
+      return testTagsRaw.map(rawTag => {
+        return trim(rawTag, '[]')
+      }
+     )
     }
   ),
   selectActiveTestsIndex: createSelector(
