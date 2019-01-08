@@ -50,8 +50,8 @@ function SequenceStep (props) {
   return (
       <li className='' key='test_{ testItem._id }'>
       <span className='fw2 i mid-gray mr2'>{ step.timestamp}</span>
-      <span className='mr1 ml1' style={{color: levelColours[step.level]}}>{step.level}</span>
-      <span className='mr1 ml1' style={{color: categoryColours['category.' + step.category] }}>{step.category}</span>
+      <span className='mr1 ml1 fw2' style={{color: levelColours[step.level]}}>{step.level}</span>
+      <span className='mr1 ml1 fw2' style={{color: categoryColours['category.' + step.category] }}>{step.category}</span>
       <span className='mr1 ml1 fw3 ttsc'> {step.endpoint}</span>
       </li>
   )

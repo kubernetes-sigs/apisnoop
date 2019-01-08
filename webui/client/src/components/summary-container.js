@@ -5,8 +5,8 @@ import React from 'react'
 
      const SummaryContainer = (props) => {
        const {
+         currentReleaseShouldUpdate,
          activeEndpoint,
-         activeTestsNumber,
          categoryColours,
          levelColours,
          path,
@@ -16,6 +16,8 @@ import React from 'react'
        const category = path.category
        const name = path.name
        const description = (activeEndpoint == null) ? '' : activeEndpoint.description
+
+       if (currentReleaseShouldUpdate == null || currentReleaseShouldUpdate === true) return null
        return(
            <div id='summary-container' className='pa5'>
            <p className='f2 mt3 mb3 fw3'>
@@ -30,7 +32,7 @@ import React from 'react'
      }
 export default connect(
        'selectActiveEndpoint',
-       'selectActiveTestsNumber',
+       'selectCurrentReleaseShouldUpdate',
        'selectCategoryColours',
        'selectLevelColours',
        'selectPath',

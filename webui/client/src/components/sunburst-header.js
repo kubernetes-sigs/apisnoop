@@ -3,15 +3,18 @@ import { connect } from 'redux-bundler-react'
 
 const SunburstHeader = (props) => {
   const {
-    currentReleaseObject
+    currentReleaseObject,
+    currentReleaseIsLoading,
+    currentReleaseShouldUpdate
   } = props
   var release = currentReleaseObject
 
   if (release == null) return null
 
   return (
-      <div id='sunburst-header'>
-      <h2 className='mb1 mt1 f1'>
+      <div id='sunburst-header' className='relative'>
+      {(currentReleaseShouldUpdate || currentReleaseIsLoading) && <p className='i fw2 absolute top-0'>Switching To...</p>}
+      <h2 className='mb1 mt4 pt2 f1'>
         <VersionTag version={release.version}/>
         {release.release }
         <E2ETag e2eOnly={release.e2eOnly}/>
@@ -41,5 +44,7 @@ const SunburstHeader = (props) => {
 
 export default connect(
   'selectCurrentReleaseObject',
+  'selectCurrentReleaseIsLoading',
+  'selectCurrentReleaseShouldUpdate',
   SunburstHeader
 )

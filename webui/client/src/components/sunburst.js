@@ -17,9 +17,9 @@ const SunburstChart = (props) => {
     doUpdateQuery
   } = props
 
+
   return (
       <div id='sunburst'>
-      <button className='ttsc' onClick={()=> doUpdateQuery({})}>Reset</button>
       <Sunburst
         hideRootNode
         colorType="literal"
@@ -42,6 +42,7 @@ const SunburstChart = (props) => {
           data={[
             {x: 0, y: 0, label: interiorLabel.tested, style: labelStyle.PERCENTAGE},
           ]} />}
+      <button className='ttsc' onClick={()=> doUpdateQuery({})}>Reset</button>
       </Sunburst>
       </div>
   )

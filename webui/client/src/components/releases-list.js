@@ -7,10 +7,13 @@ var ReleasesList = (props) => {
     all,
     e2eOnly,
     release,
+    releasesIndexShouldUpdate,
     urlObject
   } = props
 
   if (release == null) return null
+
+  if (releasesIndexShouldUpdate) return null
 
   return (
       <div className="mt2 mr5">
@@ -62,5 +65,6 @@ function getReleaseUrl (release) {
 
 export default connect(
   'selectUrlObject',
+  'selectReleasesIndexShouldUpdate',
   ReleasesList
 )

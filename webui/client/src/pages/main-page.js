@@ -3,7 +3,6 @@ import { connect } from 'redux-bundler-react'
 
 import ReleasesContainer from '../components/releases-container'
 import SunburstAndSummary from '../components/sunburst-and-summary'
-import TestTagsList from '../components/test-tags-list'
 import ActiveTestsList from '../components/active-tests-list'
 import ActiveTestSequence from '../components/active-test-sequence'
 
