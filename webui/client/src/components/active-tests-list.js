@@ -9,8 +9,8 @@ function TestItem (props) {
     doUpdateQuery } = props
 
   return (
-      <li className='mb3'key='test_{ testItem._id }'>
-      <a className='link gray' href='#test_{testItem._id}' onClick={()=> handleClick(queryObject, testItem._id)} title={'info for ' + testItem.name}>{ testItem.name }</a>
+      <li className='mb3 dim'key='test_{ testItem._id }'>
+      <button className='but-no-style link mid-gray magic-pointer' onClick={()=> handleClick(queryObject, testItem._id)} title={'info for ' + testItem.name}>{ testItem.name }</button>
       </li>
   )
 
@@ -34,7 +34,7 @@ function TestList (props) {
   if (activeTestsIndex == null) return null
   if (activeTest !== undefined) return null
   return (
-      <div id="tests-list" className='min-vh-100'>
+      <div id='tests-list' className='tests-section min-vh-100 mt4'>
       <h2 className='f1'>Tests for <span className='fw2'>{path.level} / {path.category} / {path.name} </span></h2>
       <ul className='list pl0'>
       {map(activeTestsIndex, (testItem) => {

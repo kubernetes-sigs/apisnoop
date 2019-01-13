@@ -15,7 +15,7 @@ function ActiveTestSequence (props) {
   if (activeTest== null) return null
 
   return (
-      <div className="">
+      <div id='test-sequence' className="mt4 tests-section">
       <h2>Sequence For <span className='fw2'>{ activeTest.name }</span></h2>
       <button onClick={handleClick}>Back</button>
       <ul className='list'>

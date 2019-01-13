@@ -18,8 +18,8 @@ const TestsSummary = (props) => {
         </div>
     )
   function handleClick () {
-    var tests = document.querySelector('#tests-list')
-    console.log('tests', tests)
+    var tests = document.querySelector('.tests-section')
+    if (tests == null) return null
     tests.scrollIntoView()
   }
   }
