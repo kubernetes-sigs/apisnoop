@@ -14,8 +14,14 @@ const TestsSummary = (props) => {
         <div id='tests-summary'>
         <p>Covered by <span className="green b">{activeTestsNumber}</span> tests.</p>
         <TestTagsList />
+        <button onClick={handleClick} className='but-no-style link magic-pointer blue'>Go To Tests</button>
         </div>
     )
+  function handleClick () {
+    var tests = document.querySelector('#tests-list')
+    console.log('tests', tests)
+    tests.scrollIntoView()
+  }
   }
 
   if (activeTestsNumber === 0) {

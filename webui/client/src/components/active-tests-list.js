@@ -34,7 +34,7 @@ function TestList (props) {
   if (activeTestsIndex == null) return null
   if (activeTest !== undefined) return null
   return (
-      <div className="">
+      <div id="tests-list" className='min-vh-80'>
       <h2 className='f1'>Tests for <span className='fw2'>{path.level} / {path.category} / {path.name} </span></h2>
       <ul className='list pl0'>
       {map(activeTestsIndex, (testItem) => {
