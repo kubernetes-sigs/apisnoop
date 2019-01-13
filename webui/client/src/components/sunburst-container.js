@@ -6,7 +6,7 @@ import SunburstHeader from './sunburst-header'
 
 const SunburstContainer = (props) => {
   return (
-      <div id='sunburst-container' className='pa5 flex flex-column'>
+      <div id='sunburst-container' className='flex flex-column mr4'>
       <SunburstHeader />
       <Sunburst />
       </div>

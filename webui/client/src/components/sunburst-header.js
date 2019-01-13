@@ -14,7 +14,7 @@ const SunburstHeader = (props) => {
   return (
       <div id='sunburst-header' className='relative'>
       {(currentReleaseShouldUpdate || currentReleaseIsLoading) && <p className='i fw2 absolute top-0'>Switching To...</p>}
-      <h2 className='mb1 mt4 pt2 f1'>
+      <h2 className='mb1 mt1 pt4 f1'>
         <VersionTag version={release.version}/>
         {release.release }
         <E2ETag e2eOnly={release.e2eOnly}/>

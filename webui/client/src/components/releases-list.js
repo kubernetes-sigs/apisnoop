@@ -16,8 +16,8 @@ var ReleasesList = (props) => {
   if (releasesIndexShouldUpdate) return null
 
   return (
-      <div className="mt2 mr5">
-      <h3 className="f3 ttsc tracked"> { release }</h3>
+      <div className="mr4">
+      <h3 className="f3 mt0 ttsc tracked"> { release }</h3>
       <ul className='pl0 ml0'>
       {all.map(releaseItem => {
           return <ReleaseItem release={ releaseItem } />

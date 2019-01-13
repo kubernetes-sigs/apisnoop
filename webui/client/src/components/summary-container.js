@@ -19,8 +19,8 @@ import React from 'react'
 
        if (currentReleaseShouldUpdate == null || currentReleaseShouldUpdate === true) return null
        return(
-           <div id='summary-container' className='pa5'>
-           <p className='f2 mt3 mb3 fw3'>
+           <div id='summary-container' className=''>
+           <p className='f2 mt1 pt4 mb3 fw3'>
            <span style={{color: levelColours[level]}}>{ level } </span>
            <span style={{color: categoryColours['category.' + category]}}>{ category }</span>
            </p>

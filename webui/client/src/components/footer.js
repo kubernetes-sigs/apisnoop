@@ -1,7 +1,7 @@
 import React from 'react'
 
 export default () => (
-    <footer className='absolute bottom-0 w-100 flex flex-column flex-row-ns pt2 pb2 h3 pl4 pr4 items-center justify-between bg-black black shadow-3'>
+    <footer className='w-100 flex flex-column flex-row-ns pt2 pb2 h3 pl4 pr4 items-center justify-between bg-black black shadow-3'>
     <div id='logo' className= 'flex flex-wrap items-center justify-center'>
     <a className='contain bg-cncf bg-center h-100 w4' href='https://cncf.io' title='leads to external cncf homepage'>
     <span className='o-0'>cncf</span>

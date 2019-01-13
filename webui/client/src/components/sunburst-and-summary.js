@@ -8,7 +8,7 @@ const SunburstAndSummary = (props) => {
   return (
       <section
         id='summary-and-sunburst'
-        className='flex'
+        className='flex mb4 mt4'
       >
       <SunburstContainer />
       <SummaryContainer />

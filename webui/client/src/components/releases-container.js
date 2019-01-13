@@ -13,7 +13,7 @@ function ReleasesContainer (props) {
   } = props
 
   return(
-    <section id="releases-container" className="pa5">
+    <section id="releases-container" className="">
       <div className='flex items-start justify-start'>
       <ReleasesList release={"Master"} all={releasesMasterIndex} />
       <ReleasesList release={"Sig Release"} all={releasesSigIndexNoE2E} e2eOnly={releasesSigIndexE2E} />

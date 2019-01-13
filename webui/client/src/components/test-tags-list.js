@@ -17,7 +17,7 @@ function TestTagsList (props) {
   if (testTagsIndex.length === 0) return null
 
   return (
-    <div className="ph3 mt4">
+    <div className="mt4 pl0">
       <p>Tests are coming from:</p>
       <ul className='list pl0 ml0'>
       {testTagsIndex.map(testTag => {

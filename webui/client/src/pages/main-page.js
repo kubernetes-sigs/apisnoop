@@ -8,7 +8,7 @@ import ActiveTestSequence from '../components/active-test-sequence'
 
 function MainPage () {
   return (
-      <main id='main-splash' className='min-vh-80 pa4 flex flex-column'>
+      <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
       <ReleasesContainer />
       <SunburstAndSummary />
       <ActiveTestsList />
