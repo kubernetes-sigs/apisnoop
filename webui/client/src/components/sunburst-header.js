@@ -19,7 +19,9 @@ const SunburstHeader = (props) => {
         {release.release }
         <E2ETag e2eOnly={release.e2eOnly}/>
       </h2>
+      {(release.release !== 'master') &&
       <p className='ibm-plex-mono f6 mt0 pt0 pl2'>Data Gathered on { release.date}</p>
+      }
       </div>
   )
 
