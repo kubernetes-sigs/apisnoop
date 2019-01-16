@@ -1,7 +1,7 @@
 #+NAME: APISnoop WebUI Client
 #+AUTHOR: Zach Mandeville
 #+EMAIL: zz@ii.coop
-#+TODO: IDEA(i) TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(i) | DONE(d) DONE-AND-SHARED(!)
+#+TODO: IDEA(i) TODO(t) NEXT(n) IN-PROGRESS(p) BLOCKED(b) | DONE(d) DONE-AND-SHARED(!)
 #+PROPERTY: header-args :dir (file-name-directory buffer-file-name)
 #+XPROPERTY: header-args:shell :results silent
 #+XPROPERTY: header-args:shell :exports code
@@ -385,7 +385,7 @@ tree -d
            if (endpoints == null) return null
            if (zoom) {
              if (zoom.depth === 'endpoint') {
-               endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category && endpoint.name === zoom.name)
+               endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category)
              } else if (zoom.depth === 'category') {
                endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category)
              } else if (zoom.depth === 'level') {
@@ -393,6 +393,18 @@ tree -d
              }
            }
            return keyBy(endpoints, '_id')
+         }
+       ),
+       selectZoomedEndpoint: createSelector(
+         'selectEndpointsResource',
+         'selectZoom',
+         (endpoints,zoom) => {
+           if (endpoints == null) return null
+           if (zoom == null | zoom === undefined) return null
+           if (zoom.depth === 'endpoint') {
+             var zoomedEndpoint = endpoints.find(endpoint => endpoint.name === zoom.name)
+             return zoomedEndpoint
+           }
          }
        ),
        selectEndpointsByLevelAndCategoryAndNameAndMethod: createSelector(
@@ -750,14 +762,15 @@ tree -d
        'selectLevelColours',
        'selectCategoryColours',
        'selectQueryObject',
-       (endpointsByLevelAndCategoryAndNameAndMethod, levelColours, categoryColours, queryObject) => {
+       'selectZoomedEndpoint',
+       (endpointsByLevelAndCategoryAndNameAndMethod, levelColours, categoryColours, queryObject, zoomedEndpoint) => {
          return {
            name: 'root',
            children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
              return {
                name: level,
                color: determineLevelColours(queryObject, levelColours, level),
-               children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject)
+               children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
              }
            })
          }
@@ -834,6 +847,9 @@ tree -d
    #+END_SRC
 **** Helper Functions
      The helper functions are grooooooss right now.  It feels far too nested, and I am passing along the query object to too many places.  I feel the color addition should e done as a selector possibly and not hae it be nested within here.-
+
+     This is gross for how many nested functions there are, and that weird confusion between query and zoom.  Is there a better way to handle this?  Essentially, we wanna be able to zoom into a category, and still have the colors and endpoints show based on the query....but when we are zoomed into an endpoint, then there shouldn't be any query happening....it should be noted as 'locked on'.  This whole section smells awful, and would be good to have another set of javascripter eyes on it.
+
      #+NAME: Sunburst Helper Functions
      #+BEGIN_SRC js :tangle no
        function relevantValue (value, zoom, query) {
@@ -843,23 +859,23 @@ tree -d
          return query[value]
        }
 
-       function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject) {
-         var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject)
+       function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
+         var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
          return orderBy(categories, (category) => category.children.length, ['desc'])
        }
 
-       function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject) {
+       function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
          return map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
            return {
              name: category,
              color: determineCategoryColours(queryObject, categoryColours, category, level),
-             children: endpointsSortedByConformance(endpointsByNameAndMethod, category, level, queryObject, categoryColours)
+             children: endpointsSortedByConformance(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint)
            }
          })
        }
 
-       function endpointsSortedByConformance (endpointsByNameAndMethod, category, level, queryObject, categoryColours) {
-         var endpoints = createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours)
+       function endpointsSortedByConformance (endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint) {
+         var endpoints = createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint)
          var sortedEndpoints = sortBy(endpoints, [
            (endpoint) => endpoint.tested === 'untested', (endpoint) => endpoint.isConformance !== 'conformance',
            (endpoint) => endpoint.testTagCount
@@ -867,18 +883,18 @@ tree -d
          return sortedEndpoints
        }
 
-       function createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours) {
+       function createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint) {
          return values(reduce(
            endpointsByNameAndMethod,
            (sofar, endpointsByMethod, name) => {
-             sofar = fillOutMethodInfo(sofar, endpointsByMethod, category, name, level, queryObject, categoryColours)
+             sofar = fillOutMethodInfo(sofar, endpointsByMethod, category, name, level, queryObject, categoryColours, zoomedEndpoint)
              return sofar
            },
            {}
          ))
        }
 
-       function fillOutMethodInfo (sofar, endpointsByMethod, category, name, level, queryObject, categoryColours) {
+       function fillOutMethodInfo (sofar, endpointsByMethod, category, name, level, queryObject, categoryColours, zoomedEndpoint) {
          forEach(endpointsByMethod, (endpoint, method) => {
            var { isTested } = endpoint
            var isConformance = checkForConformance(endpoint.test_tags)
@@ -892,7 +908,7 @@ tree -d
              tested: isTested ? 'tested' : 'untested',
              isConformance: isConformance ? "conformance" : "not conformance",
              size,
-             color: isTested ? determineEndpointColours(queryObject, initialColor, category, level, endpoint) : 'rgba(244,244,244, 1)',
+             color: isTested ? determineEndpointColours(queryObject, initialColor, category, level, endpoint, zoomedEndpoint) : 'rgba(244,244,244, 1)',
            }
          })
          return sofar
@@ -921,15 +937,21 @@ tree -d
            return fadeColor(categoryColours[`category.${category}`], '0.1')
          }
        }
-       function determineEndpointColours (query, color, category, level, endpoint) {
-         if (query.level === undefined) {
+       function determineEndpointColours (query, color, category, level, endpoint, zoomedEndpoint) {
+         if (zoomedEndpoint != null && zoomedEndpoint !== undefined) {
+           if (zoomedEndpoint.name === endpoint.name) {
+             return fadeColor(color, '0.7')
+           } else {
+             return fadeColor(color, '0.1')
+           }
+         }
+         else if (query.level === undefined) {
            return color
          } else if (query.level === level && query.category === category && query.name === endpoint.name){
            return color
          } else {
            return fadeColor(color, '0.1')
          }
-
        }
        function calculateInitialColor (endpoint, isConformance, categoryColours) {
          if (endpoint.isTested && isConformance)  {
@@ -2560,6 +2582,15 @@ right: $right_session
 "
 #+END_SRC
 * Tasks                                                            :apisnoop:
+** DONE-AND-SHARED When you click on an endpoint, it has different viz than level and category
+   CLOSED: [2019-01-17 Thu 11:55]
+   - State "DONE-AND-SHARED" from "IN-PROGRESS" [2019-01-17 Thu 11:55]
+  [[https://github.com/cncf/apisnoop/issues/55][github link]]
+   What we are doing now is having an onMouseClick for the sunburst.  When you click it updates the zoom section of our Url Query.  This contains the zoom depth and the full path to get there (as zooming might be a different path then the current mouseover)
+
+   Then, we have a zoom selector that listens to that query and constructs an object from it.  This object is passed to our endpoint selector, which decides which endpoints ot give to the sunburst.  It filters by the current zoom object...so if we are zoomed to the level/core, then those are the only endpoints shown in the sunburst.  If we are filtered to level/core/endpointX then that's literally the only endpoint given to the entire sunburst...This is why it has a strange zoomed in view.
+
+   So the immediate fix is to remove the endpoint filter when zoomed to an endpoint.  We still track the zoomin', but keep all endpoints up to level and category.  What this won't handle is mouse over stuff...so we can't lock into the current thang.
 ** TODO [0/0] Incoporate 'App Usage' into our  visualization
 There will be a new piece of data, provided by yaml, that says 'here are endpoints, and the number of applications that hit those endpoints.
    So what we want to be able to see is some sort of flare that shows the number of applications using this endpoint, and also whether that endpoint is tested.  This would let us see 'what is next', by focusing on the endpoints with the most app dependencies that are not yet tested.  So for this we would need to move through the yaml file to get that uinformation and know it's available within the app, and then to find a way to visualize it clearly, so the shape of the sunburst itself helps people figure out how to focus on the next part.
@@ -2591,6 +2622,7 @@ We are currently sortiung by tested/untested, tested by conformance/tested but n
    [2018-12-12 Wed]
    [[file:~/ii/apisnoop/webui/client/client.org::Sunburst%20Helper%20Functions][Sunburst Helper Functions]]
 ** IDEA document our bundles better within the org file, separate each function into clear and testable things maybe?
+
 * Progress
 ** DONE Click on test, show test sequence below
    CLOSED: [2018-12-17 Mon 12:42]

@@ -25,7 +25,7 @@ export default {
         if (endpoints == null) return null
         if (zoom) {
           if (zoom.depth === 'endpoint') {
-            endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category && endpoint.name === zoom.name)
+            endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category)
           } else if (zoom.depth === 'category') {
             endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category)
           } else if (zoom.depth === 'level') {
@@ -33,6 +33,18 @@ export default {
           }
         }
         return keyBy(endpoints, '_id')
+      }
+    ),
+    selectZoomedEndpoint: createSelector(
+      'selectEndpointsResource',
+      'selectZoom',
+      (endpoints,zoom) => {
+        if (endpoints == null) return null
+        if (zoom == null | zoom === undefined) return null
+        if (zoom.depth === 'endpoint') {
+          var zoomedEndpoint = endpoints.find(endpoint => endpoint.name === zoom.name)
+          return zoomedEndpoint
+        }
       }
     ),
     selectEndpointsByLevelAndCategoryAndNameAndMethod: createSelector(

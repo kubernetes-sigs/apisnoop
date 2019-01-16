@@ -27,14 +27,15 @@ export default {
     'selectLevelColours',
     'selectCategoryColours',
     'selectQueryObject',
-    (endpointsByLevelAndCategoryAndNameAndMethod, levelColours, categoryColours, queryObject) => {
+    'selectZoomedEndpoint',
+    (endpointsByLevelAndCategoryAndNameAndMethod, levelColours, categoryColours, queryObject, zoomedEndpoint) => {
       return {
         name: 'root',
         children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
           return {
             name: level,
             color: determineLevelColours(queryObject, levelColours, level),
-            children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject)
+            children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
           }
         })
       }
@@ -113,23 +114,23 @@ function relevantValue (value, zoom, query) {
   return query[value]
 }
 
-function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject) {
-  var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject)
+function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
+  var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
   return orderBy(categories, (category) => category.children.length, ['desc'])
 }
 
-function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject) {
+function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
   return map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
     return {
       name: category,
       color: determineCategoryColours(queryObject, categoryColours, category, level),
-      children: endpointsSortedByConformance(endpointsByNameAndMethod, category, level, queryObject, categoryColours)
+      children: endpointsSortedByConformance(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint)
     }
   })
 }
 
-function endpointsSortedByConformance (endpointsByNameAndMethod, category, level, queryObject, categoryColours) {
-  var endpoints = createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours)
+function endpointsSortedByConformance (endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint) {
+  var endpoints = createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint)
   var sortedEndpoints = sortBy(endpoints, [
     (endpoint) => endpoint.tested === 'untested', (endpoint) => endpoint.isConformance !== 'conformance',
     (endpoint) => endpoint.testTagCount
@@ -137,18 +138,18 @@ function endpointsSortedByConformance (endpointsByNameAndMethod, category, level
   return sortedEndpoints
 }
 
-function createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours) {
+function createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint) {
   return values(reduce(
     endpointsByNameAndMethod,
     (sofar, endpointsByMethod, name) => {
-      sofar = fillOutMethodInfo(sofar, endpointsByMethod, category, name, level, queryObject, categoryColours)
+      sofar = fillOutMethodInfo(sofar, endpointsByMethod, category, name, level, queryObject, categoryColours, zoomedEndpoint)
       return sofar
     },
     {}
   ))
 }
 
-function fillOutMethodInfo (sofar, endpointsByMethod, category, name, level, queryObject, categoryColours) {
+function fillOutMethodInfo (sofar, endpointsByMethod, category, name, level, queryObject, categoryColours, zoomedEndpoint) {
   forEach(endpointsByMethod, (endpoint, method) => {
     var { isTested } = endpoint
     var isConformance = checkForConformance(endpoint.test_tags)
@@ -162,7 +163,7 @@ function fillOutMethodInfo (sofar, endpointsByMethod, category, name, level, que
       tested: isTested ? 'tested' : 'untested',
       isConformance: isConformance ? "conformance" : "not conformance",
       size,
-      color: isTested ? determineEndpointColours(queryObject, initialColor, category, level, endpoint) : 'rgba(244,244,244, 1)',
+      color: isTested ? determineEndpointColours(queryObject, initialColor, category, level, endpoint, zoomedEndpoint) : 'rgba(244,244,244, 1)',
     }
   })
   return sofar
@@ -191,15 +192,21 @@ function determineCategoryColours (query, categoryColours, category, level) {
     return fadeColor(categoryColours[`category.${category}`], '0.1')
   }
 }
-function determineEndpointColours (query, color, category, level, endpoint) {
-  if (query.level === undefined) {
+function determineEndpointColours (query, color, category, level, endpoint, zoomedEndpoint) {
+  if (zoomedEndpoint != null && zoomedEndpoint !== undefined) {
+    if (zoomedEndpoint.name === endpoint.name) {
+      return fadeColor(color, '0.7')
+    } else {
+      return fadeColor(color, '0.1')
+    }
+  }
+  else if (query.level === undefined) {
     return color
   } else if (query.level === level && query.category === category && query.name === endpoint.name){
     return color
   } else {
     return fadeColor(color, '0.1')
   }
-
 }
 function calculateInitialColor (endpoint, isConformance, categoryColours) {
   if (endpoint.isTested && isConformance)  {
