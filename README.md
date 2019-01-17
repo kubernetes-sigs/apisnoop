@@ -1,3 +1,5 @@
+[![Deploy status](https://img.shields.io/badge/dynamic/json.svg?url=https://api.netlify.com/api/v1/sites/apisnoop.cncf.ci/deploys&label=netlify+deploy&query=$[0].state&colorB=blue&logo=Netlify)](https://app.netlify.com/sites/apisnoop/deploys)
+
 # APISnoop
 
 Snooping on the Kubernetes OpenAPI communications
