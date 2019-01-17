@@ -19,11 +19,13 @@ function TestTagsList (props) {
   return (
     <div className="mt4 pl0">
       <p>Tests are coming from:</p>
+      <div className="scrollbox">
       <ul className='list pl0 ml0'>
       {testTagsIndex.map(testTag => {
           return <TestTag testTag={ testTag } />
         })}
       </ul>
+    </div>
     </div>
   )
 }
