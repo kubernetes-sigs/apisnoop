@@ -1,32 +1,19 @@
 import React from 'react'
-import ReactDOM from 'react-dom'
+import { render } from 'react-dom'
 import './index.css'
 
-import {Provider} from 'react-redux'
+import { Provider } from 'redux-bundler-react'
 
+import App from './components/app'
+import createStore from './bundles'
 
-import App from './components/App'
-import {doUpdateUrl} from './actions/routing'
-import store from './store.js'
-import registerServiceWorker from './lib/service-workers'
+var store = createStore()
 
+document.title = 'APISnoop | ' // + store.getState().routing.release
 
-window.addEventListener('popstate', () => {
-  store.dispatch(doUpdateUrl(window.location.pathname))
-})
-
-store.subscribe(() => {
-  const { pathname } = store.getState().routing
-  if (window.location.pathname !== pathname) {
-    window.history.pushState(null, '', pathname)
-  }
-})
-
-document.title = 'APISnoop | ' + store.getState().routing.release
-ReactDOM.render(
+render(
     <Provider store={store}>
-    <App />
-    </Provider>,
-  document.getElementById('root')
+     <App />
+     </Provider>,
+   document.getElementById('root')
 )
-registerServiceWorker()

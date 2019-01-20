@@ -1,34 +1,70 @@
-import React, { Component } from 'react'
+import React from 'react'
+import { connect } from 'redux-bundler-react'
 
-class ReleasesList extends Component {
-  constructor (props) {
-    super(props)
-    this.optionsList = this.optionsList.bind(this)
-  }
 
-  optionsList (options) {
-    return options.map(option => {
-      return(
-          <a
-            className="f6 ml1 mr1 grow no-underline br-pill ba ph2 pv2 mb2 dib pink"
-            href={option}
-            key={`release_${option}`}
-          >
-          {option}
-        </a>
-      )
-    })
-  }
+var ReleasesList = (props) => {
+  const {
+    all,
+    e2eOnly,
+    release,
+    releasesIndexShouldUpdate,
+    urlObject
+  } = props
 
-  render () {
-    return (
-        <div className="ph3 mt4">
-        <h1 className="f6 fw6 ttu tracked">Releases</h1>
-        {this.optionsList(this.props.releases)}
-        </div>
-    )
-  }
+  if (release == null) return null
+
+  if (releasesIndexShouldUpdate) return null
+
+  return (
+      <div className="mr4">
+      <h3 className="f3 mt0 ttsc tracked"> { release }</h3>
+      <ul className='pl0 ml0'>
+      {all.map(releaseItem => {
+          return <ReleaseItem release={ releaseItem } />
+      })}
+      </ul>
+      {e2eOnly && <E2EList release={ e2eOnly } />}
+    </div>
+  )
+
+function E2EList (props) {
+  const { release } = props
+  return (
+      <div>
+      <ul className="pl0 ml0"><span className="ttl f4 i mr2">E2E Only</span>
+        {release.map(releaseItem => <ReleaseItem release={ releaseItem}/>)}
+      </ul>
+      </div>
+  )
 }
 
+function ReleaseItem (props) {
+  const { release } = props
+  var releaseUrl = getReleaseUrl(release.url)
+  var classes="f6 link dim br1 ba ph3 pv2 mb2 mr2 dib mid-gray"
+  if (releaseUrl === urlObject.pathname) {
+    classes = classes + " bg-washed-red"
+  }
+  return (
+      <li className='dib'>
+      <a
+    className={ classes }
+    href={getReleaseUrl(release.url)}
+    key={release._id}
+      >
+      {release.name}
+    </a>
+      </li>
+  )
+}
+}
 
-export default ReleasesList
+function getReleaseUrl (release) {
+  return `/${release}`
+}
+
+export default connect(
+  'selectUrlObject',
+  'selectReleasesIndexShouldUpdate',
+  ReleasesList
+)

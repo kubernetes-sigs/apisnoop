@@ -1,3 +1,5 @@
+[![Deploy status](https://img.shields.io/badge/dynamic/json.svg?url=https://api.netlify.com/api/v1/sites/apisnoop.cncf.ci/deploys&label=netlify+deploy&query=$[0].state&colorB=blue&logo=Netlify)](https://app.netlify.com/sites/apisnoop/deploys)
+
 # APISnoop
 
 Snooping on the Kubernetes OpenAPI communications
@@ -7,7 +9,7 @@ Snooping on the Kubernetes OpenAPI communications
 ### Why?
 Our initial goal is to provide a useful indicator as to which Kubernetes APIs are used the most and don't yet have conformance tests. This is specifically to ensure we are testing APIs that are relevant, rather than just hitting all the endpoints. Our K8s API consumer/user journeys are an important model to drive this prioritization, in addition to providing insight into _how_ the APIs are being used.
 
-Our currently rough output is the most promising visualazion of how api groups endpoints and verbs are used today. The APISnoop Visualization presents in very clear terms how poor our current coverage actually is. Our high level graph shows our stable API's are mostly untested (the grey sections of the outer ring).
+Our currently rough output is the most promising visualization of how api groups endpoints and verbs are used today. The APISnoop Visualization presents in very clear terms how poor our current coverage actually is. Our high level graph shows our stable API's are mostly untested (the grey sections of the outer ring).
 
 [![e2e_sunburst_screenshot.png](docs/images/e2e_sunburst_screenshot.png "A Sunburst of unhit API endpoints during a Sonobouy e2e run")](http://apisnoop.cncf.io/sunburst/index.html)
 
