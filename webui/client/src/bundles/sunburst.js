@@ -226,14 +226,12 @@ function determineNameAndCoverageInfo (query, endpoints) {
  // therefore, we display the preceding level's info.
   if (endpoints == null || endpoints.stable === undefined) return null // this makes sure the endpoints have loaded.
   if (query && query.level === undefined) {
-  console.log('it the query no level!', query)
     var name = ''
     var coverage = endpoints.coverage
     var tested = false
     var endpoint = false
     var description= ''
   }else if (query.level && query.category === undefined) {
-  console.log('it the query no category!', query)
     name = query.level
     coverage = endpoints[query.level].coverage
     description= ''

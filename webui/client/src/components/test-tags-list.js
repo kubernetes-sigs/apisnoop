@@ -4,7 +4,7 @@ import { connect } from 'redux-bundler-react'
 function TestTag (props) {
   const { testTag } = props
   return (
-    <li className='dib ttsc mr2 mb2 ph2 pv1 mid-gray'>
+    <li className='dib tal ttsc mr2 mb2 ph2 pv1 mid-gray'>
       { testTag }
     </li>
   )
