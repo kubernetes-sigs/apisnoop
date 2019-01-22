@@ -1,0 +1,535 @@
+#+TITLE: Squid in a Can Setup
+#+AUTHOR: Hippie Hacker
+#+EMAIL: hh@ii.coop
+#+CREATOR: ii.coop
+#+DATE: 17th of January, 2019
+#+PROPERTY: header-args:shell :results output code verbatim replace
+#+PROPERTY: header-args:shell+ :dir (symbol-value 'org-file-dir)
+#+PROPERTY: header-args:tmate  :socket (symbol-value 'socket)
+#+PROPERTY: header-args:tmate+ :session (concat (user-login-name) ":" (nth 4 (org-heading-components)))
+#+PROPERTY: header-args:tmate+ :prologue (concat "cd " org-file-dir "\n")
+#+STARTUP: showeverything
+* Where does helm go
+
+#+BEGIN_SRC shell :epilogue " | grep CNAME | grep -v \\;"
+  dig CNAME kubernetes-charts.storage.googleapis.com \
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+kubernetes-charts.storage.googleapis.com. 3501 IN CNAME	storage.l.googleusercontent.com.
+#+END_SRC
+
+Looks like it's a CNAME to storage.l.googleusercontent.com
+* helm-gcs
+
+Lets setup our own GCS bucket and see what kind of logs we can create
+
+#+BEGIN_SRC tmate
+ gcloud config configurations activate apisnoop
+#+END_SRC
+
+#+BEGIN_SRC tmate
+  helm plugin install https://github.com/viglesiasce/helm-gcs.git --version v0.2.0
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+export PROJECT=$(gcloud info --format='value(config.project)')
+echo $PROJECT
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+
+apisnoop
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+gsutil mb gs://$PROJECT-helm-repo
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+Creating gs://apisnoop-helm-repo/...
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+helm gcs init gs://$PROJECT-helm-repo
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+Copying file:///home/hh/.helm/plugins/helm-gcs.git/etc/index.yaml [Content-Type=application/octet-stream]...
+/ [0 files][    0.0 B/   15.0 B]                                                / [1 files][   15.0 B/   15.0 B]                                                -
+Operation completed over 1 objects/15.0 B.
+Repository initialized...
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+  helm create test-chart
+  helm package test-chart
+  helm gcs push test-chart-0.1.0.tgz gs://$PROJECT-helm-repo
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+Creating test-chart
+Successfully packaged chart and saved it to: /home/hh/apisnoop/dev/helm-charts/test-chart-0.1.0.tgz
+Copying file:///tmp/tmp.W17vvBSFre/repo/index.yaml [Content-Type=application/octet-stream]...
+/ [0 files][    0.0 B/  398.0 B]                                                / [1 files][  398.0 B/  398.0 B]                                                -
+Operation completed over 1 objects/398.0 B.
+Copying file:///tmp/tmp.W17vvBSFre/repo/test-chart-0.1.0.tgz [Content-Type=application/x-tar]...
+/ [0 files][    0.0 B/  2.6 KiB]                                                / [1 files][  2.6 KiB/  2.6 KiB]                                                -
+Operation completed over 1 objects/2.6 KiB.
+Repository initialized...
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+helm repo add gcs-repo gs://$PROJECT-helm-repo
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+"gcs-repo" has been added to your repositories
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+helm search gcs-repo
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+NAME               	CHART VERSION	APP VERSION	DESCRIPTION
+gcs-repo/test-chart	0.1.0        	1.0        	A Helm chart for Kubernetes
+#+END_SRC
+
+* turn on logging
+#+BEGIN_SRC shell :session "1"
+gsutil logging get gs://$PROJECT-helm-repo
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+gs://apisnoop-helm-repo/ has no logging configuration.
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+gsutil mb gs://$PROJECT-helm-repo-logs
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+Creating gs://apisnoop-helm-repo-logs/...
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+gsutil acl ch -g cloud-storage-analytics@google.com:W gs://$PROJECT-helm-repo-logs
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+Updated ACL on gs://apisnoop-helm-repo-logs/
+#+END_SRC
+
+Let's leave access logs public.
+
+#+BEGIN_SRC shell :session "1" :noeval t
+#gsutil defacl set project-private gs://$PROJECT-helm-repo-logs
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+gsutil logging set on -b gs://$PROJECT-helm-repo-logs gs://$PROJECT-helm-repo
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+Enabling logging on gs://apisnoop-helm-repo/...
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+gsutil acl ch -u AllUsers:R gs://$PROJECT-helm-repo
+gsutil iam ch allUsers:objectViewer gs://$PROJECT-helm-repo
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+Updated ACL on gs://apisnoop-helm-repo/
+#+END_SRC
+
+
+The index.yaml is generated with gs://bucket-name/ urls.
+We downloaded, changed to https://*/bucket-name/package-0.1.tgz
+* No Direct Access to the Logs
+:PROPERTIES:
+:header-args:shell+: :exports both
+:END:
+
+#+BEGIN_SRC shell :session "1"
+gsutil acl ch -u AllUsers:R gs://$PROJECT-helm-repo-logs
+gsutil iam ch allUsers:objectViewer gs://$PROJECT-helm-repo-logs
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+No changes to gs://apisnoop-helm-repo-logs/
+No changes made to gs://apisnoop-helm-repo-logs/
+#+END_SRC
+
+The kubernetes-charts GCS bucket logs to kubernetes-charts-logging.
+However hh@ii.coop does not have access to the logging bucket.
+
+#+BEGIN_SRC shell
+gsutil logging get gs://kubernetes-charts | jq .
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+{
+  "logBucket": "kubernetes-charts-logging",
+  "logObjectPrefix": "kubernetes-charts"
+}
+#+END_SRC
+
+#+BEGIN_SRC shell
+gsutil ls  gs://kubernetes-charts-logging \
+  2>&1 | cat
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+  AccessDeniedException: 403 hh@ii.coop does not have storage.objects.list access
+  to kubernetes-charts-logging.
+#+END_SRC
+
+* iterate
+
+Probably need to let this run for a couple hours to generate logs:
+
+From [[https://cloud.google.com/storage/docs/access-logs]]
+
+ - Usage logs are generated hourly when there is activity to report in the
+   monitored bucket. Usage logs are typically created 15 minutes after the end
+   of the hour.
+
+#+BEGIN_SRC tmate
+  export PROJECT=$(gcloud info --format='value(config.project)')
+  echo $PROJECT
+  cd /tmp
+  while [ 1 ] ; do
+    rm -rf ~/.helm
+    helm init --client-only
+    helm repo add apisnoop https://storage.googleapis.com/apisnoop-helm-repo/
+    helm search apisnoop
+    helm fetch apisnoop/test-chart
+    rm -rf /tmp/test-chart*
+  done
+#+END_SRC
+
+* log_bucket
+
+#+BEGIN_SRC tmate
+  export PROJECT=$(gcloud info --format='value(config.project)')
+  watch gsutil ls gs://$PROJECT-helm-repo-logs
+#+END_SRC
+
+#+BEGIN_SRC shell :session "1"
+  gsutil ls gs://$PROJECT-helm-repo-logs
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_22_00_00_00b616ec531bcb2075_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_22_00_00_01b616ec531bcb2075_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_22_00_00_02b616ec531bcb2075_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_22_00_00_03b616ec531bcb2075_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_22_00_00_04b616ec531bcb2075_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_22_00_00_05b616ec531bcb2075_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_22_00_00_06b616ec531bcb2075_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_22_00_00_07b616ec531bcb2075_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_23_00_00_00bba08d0c96977cc6_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_23_00_00_01bba08d0c96977cc6_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_23_00_00_02bba08d0c96977cc6_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_23_00_00_03bba08d0c96977cc6_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_23_00_00_04bba08d0c96977cc6_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_23_00_00_05bba08d0c96977cc6_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_23_00_00_06bba08d0c96977cc6_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_21_23_00_00_07bba08d0c96977cc6_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_22_00_00_00_007c8e40e37a408fa5_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_22_00_00_00_017c8e40e37a408fa5_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_22_00_00_00_027c8e40e37a408fa5_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_22_00_00_00_037c8e40e37a408fa5_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_22_00_00_00_047c8e40e37a408fa5_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_22_00_00_00_057c8e40e37a408fa5_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_22_00_00_00_067c8e40e37a408fa5_v0
+gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage_2019_01_22_00_00_00_077c8e40e37a408fa5_v0
+#+END_SRC
+
+* BigQuery
+  :PROPERTIES:
+  :header-args:shell+: :session (nth 4 (org-heading-components))
+  :END:
+
+#+BEGIN_SRC shell
+bq ls
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+datasetId
+ -----------------
+  storageanalysis
+#+END_SRC
+
+
+#+BEGIN_SRC shell
+bq mk storageanalysis
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+Dataset 'apisnoop:storageanalysis' successfully created.
+#+END_SRC
+
+#+BEGIN_SRC shell
+bq ls
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+datasetId
+ -----------------
+  storageanalysis
+#+END_SRC
+
+#+BEGIN_SRC shell
+wget -q http://storage.googleapis.com/pub/cloud_storage_usage_schema_v0.json
+ls -la cloud_storage_usage_schema_v0.json | cat
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+
+-rw-r--r-- 1 hh hh 1379 Jun 19  2012 cloud_storage_usage_schema_v0.json
+#+END_SRC
+
+
+#+NAME load snoop logs
+#+BEGIN_SRC tmate
+bq load --skip_leading_rows=1 storageanalysis.usage \
+  gs://apisnoop-helm-repo-logs/apisnoop-helm-repo_usage* \
+  ./cloud_storage_usage_schema_v0.json
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+
+> Waiting on bqjob_r775c8cc068a9b148_00000168733d6f7b_1 ... (0s) Current status: RUNNING                                                                                      Waiting on bqjob_r775c8cc068a9b148_00000168733d6f7b_1 ... (2s) Current status: RUNNING                                                                                      Waiting on bqjob_r775c8cc068a9b148_00000168733d6f7b_1 ... (3s) Current status: RUNNING                                                                                      Waiting on bqjob_r775c8cc068a9b148_00000168733d6f7b_1 ... (5s) Current status: RUNNING                                                                                      Waiting on bqjob_r775c8cc068a9b148_00000168733d6f7b_1 ... (5s) Current status: DONE
+#+END_SRC
+
+#+BEGIN_SRC shell
+bq show -j bqjob_r775c8cc068a9b148_00000168733d6f7b_1
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+Job apisnoop:bqjob_r775c8cc068a9b148_00000168733d6f7b_1
+
+  Job Type    State      Start Time      Duration   User Email   Bytes Processed   Bytes Billed   Billing Tier   Labels
+ ---------- --------- ----------------- ---------- ------------ ----------------- -------------- -------------- --------
+  load       SUCCESS   22 Jan 14:47:13   0:00:06    hh@ii.coop
+#+END_SRC
+
+#+BEGIN_SRC shell :async yes
+echo $(date)
+while [ 1 ] ; do date ; sleep 1 ; done
+echo $(date)
+#+END_SRC
+
+#+RESULTS:
+: 20a4428b9f8cab461ee030d9849278a1
+
+* AuditLogs
+
+ :results_switches ":tangle no :noweb-ref tmpdir"
+
+#+NAME: tangle
+#+BEGIN_SRC shell :wrap "SRC yaml :noweb-ref iampolicy"
+gcloud projects get-iam-policy apisnoop
+#+END_SRC
+
+#+RESULTS: tangle
+#+BEGIN_SRC yaml :noweb-ref iampolicy
+bindings:
+- members:
+  - user:devan@ii.coop
+  role: roles/compute.admin
+- members:
+  - serviceAccount:service-840466421052@compute-system.iam.gserviceaccount.com
+  role: roles/compute.serviceAgent
+- members:
+  - user:devan@ii.coop
+  role: roles/container.admin
+- members:
+  - serviceAccount:service-840466421052@container-engine-robot.iam.gserviceaccount.com
+  role: roles/container.serviceAgent
+- members:
+  - serviceAccount:840466421052-compute@developer.gserviceaccount.com
+  - serviceAccount:840466421052@cloudservices.gserviceaccount.com
+  - serviceAccount:service-840466421052@containerregistry.iam.gserviceaccount.com
+  role: roles/editor
+- members:
+  - serviceAccount:service-840466421052@firebase-rules.iam.gserviceaccount.com
+  role: roles/firebaserules.system
+- members:
+  - user:devan@ii.coop
+  role: roles/iam.roleAdmin
+- members:
+  - user:devan@ii.coop
+  role: roles/iam.serviceAccountAdmin
+- members:
+  - user:devan@ii.coop
+  role: roles/iam.serviceAccountKeyAdmin
+- members:
+  - user:devan@ii.coop
+  - user:hh@ii.coop
+  role: roles/owner
+- members:
+  - serviceAccount:binderhub@apisnoop.iam.gserviceaccount.com
+  - user:devan@ii.coop
+  role: roles/storage.admin
+etag: BwWAAt9lbRU=
+version: 1
+#+END_SRC
+
+#+BEGIN_SRC yaml :noweb yes :tangle iam.yaml
+auditConfigs:
+- auditLogConfigs:
+  - logType: ADMIN_READ
+  - logType: DATA_READ
+  - logType: DATA_WRITE
+  service: storage.googleapis.com
+<<iampolicy>>
+#+END_SRC
+
+#+BEGIN_SRC shell
+gcloud projects set-iam-policy apisnoop iam.yaml
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_SRC shell
+auditConfigs:
+- auditLogConfigs:
+  - logType: ADMIN_READ
+  - logType: DATA_READ
+  - logType: DATA_WRITE
+  service: storage.googleapis.com
+bindings:
+- members:
+  - user:devan@ii.coop
+  role: roles/compute.admin
+- members:
+  - serviceAccount:service-840466421052@compute-system.iam.gserviceaccount.com
+  role: roles/compute.serviceAgent
+- members:
+  - user:devan@ii.coop
+  role: roles/container.admin
+- members:
+  - serviceAccount:service-840466421052@container-engine-robot.iam.gserviceaccount.com
+  role: roles/container.serviceAgent
+- members:
+  - serviceAccount:840466421052-compute@developer.gserviceaccount.com
+  - serviceAccount:840466421052@cloudservices.gserviceaccount.com
+  - serviceAccount:service-840466421052@containerregistry.iam.gserviceaccount.com
+  role: roles/editor
+- members:
+  - serviceAccount:service-840466421052@firebase-rules.iam.gserviceaccount.com
+  role: roles/firebaserules.system
+- members:
+  - user:devan@ii.coop
+  role: roles/iam.roleAdmin
+- members:
+  - user:devan@ii.coop
+  role: roles/iam.serviceAccountAdmin
+- members:
+  - user:devan@ii.coop
+  role: roles/iam.serviceAccountKeyAdmin
+- members:
+  - user:devan@ii.coop
+  - user:hh@ii.coop
+  role: roles/owner
+- members:
+  - serviceAccount:binderhub@apisnoop.iam.gserviceaccount.com
+  - user:devan@ii.coop
+  role: roles/storage.admin
+etag: BwWAAuqCplg=
+version: 1
+#+END_SRC
+
+[[https://cloud.google.com/storage/docs/audit-logs]]
+
+[[https://console.cloud.google.com/iam-admin/audit?project=apisnoop]]
+
+#+NAME: verify
+#+BEGIN_SRC shell :wrap "SRC json :noweb-ref iampolicy"
+gcloud projects get-iam-policy apisnoop -o json
+#+END_SRC
+
+#+RESULTS: verify
+#+BEGIN_SRC json :noweb-ref iampolicy
+#+END_SRC
+
+
+* logging
+
+[[https://cloud.google.com/logging/docs/reference/tools/gcloud-logging]]
+
+#+NAME: read only storage bigquery and audit access
+#+BEGIN_SRC shell
+gcloud iam roles list | grep -i viewer\\\|user | grep logging\\\|storage\\\|bigquery\\\|audit
+#+END_SRC
+
+#+RESULTS: read only storage bigquery and audit access
+#+BEGIN_SRC shell
+name: roles/bigquery.dataViewer
+name: roles/bigquery.jobUser
+name: roles/bigquery.metadataViewer
+name: roles/bigquery.readSessionUser
+name: roles/bigquery.user
+name: roles/logging.privateLogViewer
+name: roles/logging.viewer
+name: roles/storage.objectViewer
+#+END_SRC
+
+#+BEGIN_SRC tmate
+gcloud logging sinks list
+#+END_SRC
+
+#+BEGIN_SRC tmate
+gcloud logging resource-descriptors list --filter="type=bucket_name"
+# --filter="type:instance"
+#+END_SRC
+
+
+#+BEGIN_SRC tmate
+gcloud logging resource-descriptors list | grep gcs
+# --filter="type:instance"
+#+END_SRC
+
+#+BEGIN_SRC tmate
+gcloud iam list-grantable-roles
+#+END_SRC
+*** Footer
+# Local Variables:
+# eval: (set (make-local-variable 'org-file-dir) (file-name-directory buffer-file-name))
+# eval: (set (make-local-variable 'user-buffer) (concat user-login-name "." (file-name-base buffer-file-name)))
+# eval: (set (make-local-variable 'socket) (concat "/tmp/" user-buffer ".iisocket"))
+# eval: (set (make-local-variable 'select-enable-clipboard) t)
+# eval: (set (make-local-variable 'select-enable-primary) t)
+# eval: (set (make-local-variable 'start-tmate-command) (concat "tmate -S " socket " new-session -s " user-login-name " -n main \"tmate wait tmate-ready && tmate display -p '#{tmate_ssh}' | xclip -i -sel p -f | xclip -i -sel c; bash --login\""))
+# eval: (xclip-mode 1)
+# eval: (gui-select-text start-tmate-command)
+# org-babel-tmate-session-prefix: ""
+# org-babel-tmate-default-window-name: "main"
+# org-confirm-babel-evaluate: nil
+# org-use-property-inheritance: t
+# End:
