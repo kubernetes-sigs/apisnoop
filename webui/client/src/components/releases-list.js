@@ -32,8 +32,9 @@ var ReleasesList = (props) => {
     const { release } = props
     return (
         <div>
-        <ul className="pl0 ml0"><span className="ttl f4 i mr2">E2E Only</span>
-        {release.map(releaseItem => <ReleaseItem release={ releaseItem}/>)}
+        <ul className="pl0 ml0">
+          <span className="ttl f4 i mr2">E2E Only</span>
+            {release.map(e2eOnlyReleaseItem => <ReleaseItem release={ e2eOnlyReleaseItem}/>)}
       </ul>
         </div>
     )
