@@ -1,12 +1,19 @@
-export default {
-  name: 'filter',
-  getReducer: () => {
-    const initialState = {
-      filter: 'batch'
-    }
-    return (state=initialState, action) => {
-      return state
-    }
-  },
-  selectFilter:  (state) => state.filter.filter
-}
+import { createSelector } from 'redux-bundler'
+  export default {
+    name: 'filter',
+    getReducer: () => {
+      const initialState = {
+      }
+      return (state=initialState, action) => {
+        return state
+      }
+    },
+    selectFilter: createSelector(
+      'selectQueryObject',
+      (query) => {
+        if (query == null) return null
+        if (query.filter == null | query.filter === undefined) return null
+        return query.filter
+      }
+    )
+  }

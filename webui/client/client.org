@@ -6,8 +6,6 @@
 #+XPROPERTY: header-args:shell :results silent
 #+XPROPERTY: header-args:shell :exports code
 #+XPROPERTY: header-args:shell :wrap "SRC text"
-#+PROPERTY: header-args:tmate :socket "/tmp/.zz-left.isocket"
-#+PROPERTY: header-args:tmate :session api:main
 #+PROPERTY: header-args:js :results silent
 
 * Understanding our Webui
@@ -391,6 +389,7 @@
 **** Imports and Layout
     #+NAME: Filter Bundle
     #+BEGIN_SRC js
+    import { createSelector } from 'redux-bundler'
       export default {
         name: 'filter',
         <<Filter Reducer>>,
@@ -403,7 +402,6 @@
      #+BEGIN_SRC js :tangle no
        getReducer: () => {
          const initialState = {
-           filter: 'batch'
          }
          return (state=initialState, action) => {
            return state
@@ -413,7 +411,14 @@
 **** Selectors
      #+NAME: Filter Selectors
      #+BEGIN_SRC js :tangle no
-     selectFilter:  (state) => state.filter.filter
+       selectFilter: createSelector(
+         'selectQueryObject',
+         (query) => {
+           if (query == null) return null
+           if (query.filter == null | query.filter === undefined) return null
+           return query.filter
+         }
+       )
      #+END_SRC
 
 *** Releases Index Resource
@@ -1381,7 +1386,7 @@ The Release is an Object structured like so:
       const {
         all,
         e2eOnly,
-        filter,
+        queryObject,
         release,
         releasesIndexShouldUpdate,
         urlObject
@@ -1396,51 +1401,54 @@ The Release is an Object structured like so:
           <h3 className="f3 mt0 ttsc tracked"> { release }</h3>
           <ul className='pl0 ml0'>
           {all.map(releaseItem => {
-              return <ReleaseItem release={ releaseItem } filter={filter}/>
+            return <ReleaseItem release={ releaseItem } queryObject={queryObject}/>
           })}
-          </ul>
+        </ul>
           {e2eOnly && <E2EList release={ e2eOnly } />}
         </div>
       )
 
-    function E2EList (props) {
-      const { release } = props
-      return (
-          <div>
-          <ul className="pl0 ml0"><span className="ttl f4 i mr2">E2E Only</span>
+      function E2EList (props) {
+        const { release } = props
+        return (
+            <div>
+            <ul className="pl0 ml0"><span className="ttl f4 i mr2">E2E Only</span>
             {release.map(releaseItem => <ReleaseItem release={ releaseItem}/>)}
           </ul>
-          </div>
-      )
-    }
-
-    function ReleaseItem (props) {
-      const { release } = props
-      var releaseUrl = getReleaseUrl(release.url)
-      var classes="f6 link dim br1 ba ph3 pv2 mb2 mr2 dib mid-gray"
-      if (releaseUrl === urlObject.pathname) {
-        classes = classes + " bg-washed-red"
+            </div>
+        )
       }
-      return (
-          <li className='dib'>
-          <a
-        className={ classes }
-        href={getReleaseUrl(release.url) + '?filter=' + filter}
-        key={release._id}
-          >
-          {release.name}
-        </a>
-          </li>
-      )
-    }
+
+      function ReleaseItem (props) {
+        const { release } = props
+        var releaseUrl = getReleaseUrl(release.url)
+        var classes="f6 link dim br1 ba ph3 pv2 mb2 mr2 dib mid-gray"
+        if (releaseUrl === urlObject.pathname) {
+          classes = classes + " bg-washed-red"
+        }
+        return (
+            <li className='dib'>
+            <a
+          className={ classes }
+          href={getReleaseUrl(release.url, queryObject)}
+          key={release._id}
+            >
+            {release.name}
+          </a>
+            </li>
+        )
+      }
     }
 
-    function getReleaseUrl (release) {
-      return `/${release}`
+    function getReleaseUrl (release, queryObject) {
+      if (queryObject == null || queryObject.filter === undefined) {
+        return `/${release}`
+      }
+      return `/${release}?filter=${queryObject.filter}`
     }
 
     export default connect(
-      'selectFilter',
+      'selectQueryObject',
       'selectUrlObject',
       'selectReleasesIndexShouldUpdate',
       ReleasesList
@@ -1665,18 +1673,29 @@ The Release is an Object structured like so:
         function handleMouseOver (node, event) {
           var path = getKeyPath(node)
           var rawQuery = {
-            ...queryObject,
             level: path[1],
             category: path[2],
             name: path[3],
-            zoomed: queryObject.zoomed
           }
           var query = propertiesWithValue(rawQuery)
+          if (queryObject.zoomed) {
+            query.zoomed = queryObject.zoomed
+          }
+          if (queryObject.filter) {
+            query.filter = queryObject.filter
+          }
           doUpdateQuery(query)
         }
 
         function handleMouseOut () {
-          doUpdateQuery({filter: queryObject.filter, zoomed: queryObject.zoomed})
+          var query = {}
+          if (queryObject.filter) {
+            query.filter = queryObject.filter
+          }
+          if (queryObject.zoomed) {
+            query.zoomed = queryObject.zoomed
+          }
+          doUpdateQuery(query)
         }
 
         function handleMouseClick (node, event) {
@@ -1691,6 +1710,9 @@ The Release is an Object structured like so:
           var query = propertiesWithValue(rawQuery)
           var queryAsArray = sortBy(query, ['level','category','name'])
           query.zoomed = `${depth[node.depth]}-${join(queryAsArray,'-')}`
+          if (queryObject.filter) {
+            query.filter = queryObject.filter
+          }
           doUpdateQuery(query)
         }
 

@@ -6,7 +6,7 @@ var ReleasesList = (props) => {
   const {
     all,
     e2eOnly,
-    filter,
+    queryObject,
     release,
     releasesIndexShouldUpdate,
     urlObject
@@ -21,51 +21,54 @@ var ReleasesList = (props) => {
       <h3 className="f3 mt0 ttsc tracked"> { release }</h3>
       <ul className='pl0 ml0'>
       {all.map(releaseItem => {
-          return <ReleaseItem release={ releaseItem } filter={filter}/>
+        return <ReleaseItem release={ releaseItem } queryObject={queryObject}/>
       })}
-      </ul>
+    </ul>
       {e2eOnly && <E2EList release={ e2eOnly } />}
     </div>
   )
 
-function E2EList (props) {
-  const { release } = props
-  return (
-      <div>
-      <ul className="pl0 ml0"><span className="ttl f4 i mr2">E2E Only</span>
+  function E2EList (props) {
+    const { release } = props
+    return (
+        <div>
+        <ul className="pl0 ml0"><span className="ttl f4 i mr2">E2E Only</span>
         {release.map(releaseItem => <ReleaseItem release={ releaseItem}/>)}
       </ul>
-      </div>
-  )
-}
-
-function ReleaseItem (props) {
-  const { release } = props
-  var releaseUrl = getReleaseUrl(release.url)
-  var classes="f6 link dim br1 ba ph3 pv2 mb2 mr2 dib mid-gray"
-  if (releaseUrl === urlObject.pathname) {
-    classes = classes + " bg-washed-red"
+        </div>
+    )
   }
-  return (
-      <li className='dib'>
-      <a
-    className={ classes }
-    href={getReleaseUrl(release.url) + '?filter=' + filter}
-    key={release._id}
-      >
-      {release.name}
-    </a>
-      </li>
-  )
-}
+
+  function ReleaseItem (props) {
+    const { release } = props
+    var releaseUrl = getReleaseUrl(release.url)
+    var classes="f6 link dim br1 ba ph3 pv2 mb2 mr2 dib mid-gray"
+    if (releaseUrl === urlObject.pathname) {
+      classes = classes + " bg-washed-red"
+    }
+    return (
+        <li className='dib'>
+        <a
+      className={ classes }
+      href={getReleaseUrl(release.url, queryObject)}
+      key={release._id}
+        >
+        {release.name}
+      </a>
+        </li>
+    )
+  }
 }
 
-function getReleaseUrl (release) {
-  return `/${release}`
+function getReleaseUrl (release, queryObject) {
+  if (queryObject == null || queryObject.filter === undefined) {
+    return `/${release}`
+  }
+  return `/${release}?filter=${queryObject.filter}`
 }
 
 export default connect(
-  'selectFilter',
+  'selectQueryObject',
   'selectUrlObject',
   'selectReleasesIndexShouldUpdate',
   ReleasesList

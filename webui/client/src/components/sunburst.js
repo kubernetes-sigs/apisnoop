@@ -49,18 +49,29 @@ const SunburstChart = (props) => {
   function handleMouseOver (node, event) {
     var path = getKeyPath(node)
     var rawQuery = {
-      ...queryObject,
       level: path[1],
       category: path[2],
       name: path[3],
-      zoomed: queryObject.zoomed
     }
     var query = propertiesWithValue(rawQuery)
+    if (queryObject.zoomed) {
+      query.zoomed = queryObject.zoomed
+    }
+    if (queryObject.filter) {
+      query.filter = queryObject.filter
+    }
     doUpdateQuery(query)
   }
 
   function handleMouseOut () {
-    doUpdateQuery({filter: queryObject.filter, zoomed: queryObject.zoomed})
+    var query = {}
+    if (queryObject.filter) {
+      query.filter = queryObject.filter
+    }
+    if (queryObject.zoomed) {
+      query.zoomed = queryObject.zoomed
+    }
+    doUpdateQuery(query)
   }
 
   function handleMouseClick (node, event) {
@@ -75,6 +86,9 @@ const SunburstChart = (props) => {
     var query = propertiesWithValue(rawQuery)
     var queryAsArray = sortBy(query, ['level','category','name'])
     query.zoomed = `${depth[node.depth]}-${join(queryAsArray,'-')}`
+    if (queryObject.filter) {
+      query.filter = queryObject.filter
+    }
     doUpdateQuery(query)
   }
 
