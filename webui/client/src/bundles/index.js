@@ -5,6 +5,7 @@ import config from './config'
 import currentReleaseResource from './current-release-resource'
 import endpointsResource from './endpoints-resource'
 import endpoints from './endpoints'
+import filter from './filter'
 import releases from './releases'
 import releasesIndexResource from './releases-index-resource'
 import routes from './routes'
@@ -20,6 +21,7 @@ export default composeBundles(
   currentReleaseResource,
   endpointsResource,
   endpoints,
+  filter,
   releases,
   releasesIndexResource,
   routes,
