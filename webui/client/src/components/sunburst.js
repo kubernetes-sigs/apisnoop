@@ -42,7 +42,7 @@ const SunburstChart = (props) => {
      data={[
        {x: 0, y: 0, label: interiorLabel.tested, style: labelStyle.PERCENTAGE},
      ]} />}
-      <button className='ttsc' onClick={()=> doUpdateQuery({})}>Reset</button>
+      <button className='ttsc' onClick={handleReset}>Reset</button>
       </Sunburst>
       </div>
   )
@@ -90,6 +90,14 @@ const SunburstChart = (props) => {
       query.filter = queryObject.filter
     }
     doUpdateQuery(query)
+  }
+
+  function handleReset () {
+    if (queryObject.filter) {
+      doUpdateQuery({filter: queryObject.filter})
+    } else {
+      doUpdateQuery({})
+    }
   }
 
   function getKeyPath (node) {
