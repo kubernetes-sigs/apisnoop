@@ -2,7 +2,7 @@ export default {
   name: 'filter',
   getReducer: () => {
     const initialState = {
-      filter: 'namespace'
+      filter: 'batch'
     }
     return (state=initialState, action) => {
       return state

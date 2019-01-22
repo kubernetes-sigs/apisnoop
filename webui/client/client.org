@@ -241,15 +241,21 @@
 **** Imports and Layout
     #+NAME: endpoints bundle layout
     #+BEGIN_SRC js
-    import { createSelector } from 'redux-bundler'
-    import { groupBy, keyBy, mapValues } from 'lodash'
-    import { calculateCoverage } from '../lib/utils.js'
+      import { createSelector } from 'redux-bundler'
+      import {
+          groupBy,
+          includes,
+          keyBy,
+          mapValues,
+          toLower} from 'lodash'
 
-    export default {
-      name: 'endpoints',
-        <<Endpoints Reducers>>,
-        <<Endpoints Selectors>>
-    }
+      import { calculateCoverage } from '../lib/utils.js'
+
+      export default {
+        name: 'endpoints',
+          <<Endpoints Reducers>>,
+          <<Endpoints Selectors>>
+      }
     #+END_SRC
 **** Reducers
      #+NAME: Endpoints Reducers
@@ -274,8 +280,19 @@
     I am not sure where the zoom object should go.  It's an aspect of our url, but we don't really have a url bundle....maaaaaybe we should?  It would only have a single  item in it though....so that might be premature optimization.  We'll include it here and maybe move it later.
      #+NAME: Endpoints Selectors
      #+BEGIN_SRC js :tangle no
+       selectFilteredEndpoints: createSelector(
+           'selectEndpointsResource',
+           'selectFilter',
+           (endpoints, filter) => {
+               if (endpoints == null) return null
+               if (filter) {
+                   endpoints = endpoints.filter(endpoint => includes(toLower(endpoint.name), toLower(filter)))
+               }
+               return endpoints
+           }
+       ),
        selectEndpointsById: createSelector(
-         'selectEndpointsResource',
+         'selectFilteredEndpoints',
          'selectZoom',
          (endpoints, zoom) => {
            if (endpoints == null) return null
@@ -374,11 +391,12 @@
       }
     #+END_SRC
 **** Reducer
+     TODO: the filter is hard-coded, and then gets added to the query object.  This is wrong.  We want no filter by default, and then a way to carry it across different releases if it is set.  So there must be some way to determine it based on the current queryObject.
      #+NAME: Filter Reducer
      #+BEGIN_SRC js :tangle no
        getReducer: () => {
          const initialState = {
-           filter: 'namespace'
+           filter: 'batch'
          }
          return (state=initialState, action) => {
            return state
@@ -1346,8 +1364,6 @@ The Release is an Object structured like so:
 }
 #+END_EXAMPLE
 
-- TODO For the Master one, we shouldn't even show a header.  It should just say 'Master' as a Button.  Feels Redundant Otherwise.
-
   #+NAME: releases-list
     #+BEGIN_SRC js
     import React from 'react'
@@ -1358,6 +1374,7 @@ The Release is an Object structured like so:
       const {
         all,
         e2eOnly,
+        filter,
         release,
         releasesIndexShouldUpdate,
         urlObject
@@ -1372,7 +1389,7 @@ The Release is an Object structured like so:
           <h3 className="f3 mt0 ttsc tracked"> { release }</h3>
           <ul className='pl0 ml0'>
           {all.map(releaseItem => {
-              return <ReleaseItem release={ releaseItem } />
+              return <ReleaseItem release={ releaseItem } filter={filter}/>
           })}
           </ul>
           {e2eOnly && <E2EList release={ e2eOnly } />}
@@ -1401,7 +1418,7 @@ The Release is an Object structured like so:
           <li className='dib'>
           <a
         className={ classes }
-        href={getReleaseUrl(release.url)}
+        href={getReleaseUrl(release.url) + '?filter=' + filter}
         key={release._id}
           >
           {release.name}
@@ -1416,6 +1433,7 @@ The Release is an Object structured like so:
     }
 
     export default connect(
+      'selectFilter',
       'selectUrlObject',
       'selectReleasesIndexShouldUpdate',
       ReleasesList
@@ -1640,6 +1658,7 @@ The Release is an Object structured like so:
         function handleMouseOver (node, event) {
           var path = getKeyPath(node)
           var rawQuery = {
+            ...queryObject,
             level: path[1],
             category: path[2],
             name: path[3],
@@ -1650,7 +1669,7 @@ The Release is an Object structured like so:
         }
 
         function handleMouseOut () {
-          doUpdateQuery({zoomed: queryObject.zoomed})
+          doUpdateQuery({filter: queryObject.filter, zoomed: queryObject.zoomed})
         }
 
         function handleMouseClick (node, event) {
@@ -1660,6 +1679,7 @@ The Release is an Object structured like so:
             level: path[1],
             category: path[2],
             name: path[3],
+            filter: queryObject.filter
           }
           var query = propertiesWithValue(rawQuery)
           var queryAsArray = sortBy(query, ['level','category','name'])
@@ -2228,12 +2248,22 @@ Kinda used interchangable with state, and short for redux store.  It refers to t
 
 I feel like this filter should be added before we get to the releases.  The use case I am imagining is that a member of the 'Disk' storage group wants to use APISnoop, and see how their covedrage has increased over releases.  So they filter everything to 'disk', then check 1.9, 1.10, 1.11, etc.  It would be annoying to switch release and hit the filter everytime.  If there's a filter added, it should show until someone has x'ed out the filter.
 
-- [2/5] Method To Explore and Build This:
+- [5/5] Method To Explore and Build This:
   - [X] Add a new bundle for filter
   - [X] Set a reducer for this filter that has some hardcoded name in by default.  Let's not do regex yet, just letters.
-  - [ ] Add that reducer value to our url.
-  - [ ] Show that url value no matter what release they are on.
-  - [ ] filter the endpoints by this filter.
+  - [X] Add that reducer value to our url.
+  - [X] Show that url value no matter what release they are on.
+  - [X] filter the endpoints by this filter.
+
+So the first exploration works, but we need to make it actually usable:
+- [0/4] Steps towards actual usability:
+  - [ ] The filter can be set from the front-end.
+  - [ ] You can type whatever you want, press enter, and see that as the set filter.
+  - [ ] You can remove the filter you've set.
+  - [ ] Typing in a new filter replaces the one you've set.
+- [0/3] Steps towards sharability:
+  - [ ] you can set multiple filters.
+  - [ ] You can add and remove individual filters
 
 ** TODO [0/0] Incoporate 'App Usage' into,  our  visualization
 There will be a new piece of data, provided by yaml, that says 'here are endpoints, and the number of applications that hit those endpoints.

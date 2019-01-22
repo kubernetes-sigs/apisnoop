@@ -49,6 +49,7 @@ const SunburstChart = (props) => {
   function handleMouseOver (node, event) {
     var path = getKeyPath(node)
     var rawQuery = {
+      ...queryObject,
       level: path[1],
       category: path[2],
       name: path[3],
@@ -59,7 +60,7 @@ const SunburstChart = (props) => {
   }
 
   function handleMouseOut () {
-    doUpdateQuery({zoomed: queryObject.zoomed})
+    doUpdateQuery({filter: queryObject.filter, zoomed: queryObject.zoomed})
   }
 
   function handleMouseClick (node, event) {
@@ -69,6 +70,7 @@ const SunburstChart = (props) => {
       level: path[1],
       category: path[2],
       name: path[3],
+      filter: queryObject.filter
     }
     var query = propertiesWithValue(rawQuery)
     var queryAsArray = sortBy(query, ['level','category','name'])

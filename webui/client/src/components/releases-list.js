@@ -6,6 +6,7 @@ var ReleasesList = (props) => {
   const {
     all,
     e2eOnly,
+    filter,
     release,
     releasesIndexShouldUpdate,
     urlObject
@@ -20,7 +21,7 @@ var ReleasesList = (props) => {
       <h3 className="f3 mt0 ttsc tracked"> { release }</h3>
       <ul className='pl0 ml0'>
       {all.map(releaseItem => {
-          return <ReleaseItem release={ releaseItem } />
+          return <ReleaseItem release={ releaseItem } filter={filter}/>
       })}
       </ul>
       {e2eOnly && <E2EList release={ e2eOnly } />}
@@ -49,7 +50,7 @@ function ReleaseItem (props) {
       <li className='dib'>
       <a
     className={ classes }
-    href={getReleaseUrl(release.url)}
+    href={getReleaseUrl(release.url) + '?filter=' + filter}
     key={release._id}
       >
       {release.name}
@@ -64,6 +65,7 @@ function getReleaseUrl (release) {
 }
 
 export default connect(
+  'selectFilter',
   'selectUrlObject',
   'selectReleasesIndexShouldUpdate',
   ReleasesList

@@ -1,5 +1,11 @@
 import { createSelector } from 'redux-bundler'
-import { groupBy, keyBy, mapValues } from 'lodash'
+import {
+    groupBy,
+    includes,
+    keyBy,
+    mapValues,
+    toLower} from 'lodash'
+
 import { calculateCoverage } from '../lib/utils.js'
 
 export default {
@@ -18,8 +24,19 @@ export default {
         return state
       }
     },
+    selectFilteredEndpoints: createSelector(
+        'selectEndpointsResource',
+        'selectFilter',
+        (endpoints, filter) => {
+            if (endpoints == null) return null
+            if (filter) {
+                endpoints = endpoints.filter(endpoint => includes(toLower(endpoint.name), toLower(filter)))
+            }
+            return endpoints
+        }
+    ),
     selectEndpointsById: createSelector(
-      'selectEndpointsResource',
+      'selectFilteredEndpoints',
       'selectZoom',
       (endpoints, zoom) => {
         if (endpoints == null) return null
