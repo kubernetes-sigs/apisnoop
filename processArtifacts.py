@@ -31,7 +31,7 @@ def main(folder):
         if minor != '13':
             branch = "release-"+major+'.'+minor
         else:
-            commit = metadata['version'].split('+')[-1]
+            commit = metadata['revision'].split('+')[-1]
             # branch = 'master'
             branch = commit
         ts = datetime.fromtimestamp(finished['timestamp'])
