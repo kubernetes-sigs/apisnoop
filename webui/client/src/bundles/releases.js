@@ -112,6 +112,15 @@ export default {
       })
     }
   ),
+  selectReleasesIndexSorted: createSelector(
+    'selectReleasesSigIndex',
+    (releases) => {
+      if (releases == null) return null
+      return releases.sort((a, b) => {
+        return a.name.localeCompare(b.name, undefined, {numeric: true})
+      })
+    }
+  ),
   selectReleasesMasterIndex: createSelector(
     'selectReleasesMasterOnly',
     (masterReleases) => {
