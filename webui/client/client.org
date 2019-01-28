@@ -468,7 +468,6 @@
         includes,
         keyBy,
         map,
-        reject,
         split,
         trim,
         isUndefined
@@ -553,15 +552,6 @@
             })
           }
         ),
-        selectReleasesConformanceOnly: createSelector(
-          'selectReleasesIndexByName',
-          (releasesIndex) => {
-            if (releasesIndex == null) return null
-            return filter(releasesIndex, (o) => {
-              return includes(o.name.toLowerCase(), 'conformance')
-            })
-          }
-        ),
         selectReleasesMasterOnly: createSelector(
           'selectReleasesIndexByName',
           (releasesIndex) => {
@@ -571,70 +561,16 @@
             })
           }
         ),
-        selectReleasesSigIndexE2E: createSelector(
+        selectReleasesSigIndex: createSelector(
           'selectReleasesSigOnly',
           (sigReleases) => {
-            var e2eOnly = filter(sigReleases, (o) => {
-              return includes(o.name.toLowerCase(), 'e2e')
-            })
-            return map(e2eOnly, (sigRelease) => {
+            return map(sigReleases, (sigRelease) => {
               var nameWithoutSig = trim(sigRelease.name, 'sig-release_')
               var shortName = split(nameWithoutSig, '_')[0]
               return {
                 name: shortName,
                 url:sigRelease.name,
                 _id: sigRelease._id
-              }
-            })
-          }
-        ),
-        selectReleasesSigIndexNoE2E: createSelector(
-          'selectReleasesSigOnly',
-          (sigReleases) => {
-            var noE2E = reject(sigReleases, (o) => {
-              return includes(o.name.toLowerCase(), 'e2e')
-            })
-            return map(noE2E, (sigRelease) => {
-              var nameWithoutSig = trim(sigRelease.name, 'sig-release_')
-              var shortName = split(nameWithoutSig, '_')[0]
-              return {
-                name: shortName,
-                url:sigRelease.name,
-                _id: sigRelease._id
-              }
-            })
-          }
-        ),
-        selectReleasesConformanceIndexNoE2E: createSelector(
-          'selectReleasesConformanceOnly',
-          (conReleases) => {
-            var noE2E = reject(conReleases, (o) => {
-              return includes(o.name.toLowerCase(), 'e2e')
-            })
-            return map(noE2E, (conRelease) => {
-              var nameWithoutCon = trim(conRelease.name, 'conformance_')
-              var shortName = split(nameWithoutCon, '_')[0]
-              return {
-                name: shortName,
-                url: conRelease.name,
-                _id: conRelease._id
-              }
-            })
-          }
-        ),
-        selectReleasesConformanceIndexE2E: createSelector(
-          'selectReleasesConformanceOnly',
-          (conReleases) => {
-            var e2eOnly = filter(conReleases, (o) => {
-              return includes(o.name.toLowerCase(), 'e2e')
-            })
-            return map(e2eOnly, (conRelease) => {
-              var nameWithoutCon = trim(conRelease.name, 'conformance_')
-              var shortName = split(nameWithoutCon, '_')[0]
-              return {
-                name: shortName,
-                url: conRelease.name,
-                _id: conRelease._id
               }
             })
           }
@@ -1456,9 +1392,11 @@ k*** Selector
     :PROPERTIES:
     :header-args: :tangle ./src/components/releases-container.js
     :END:
-    We currently have it set to only show sig releases.  This is just to check that my filter selection worked.  What we can now do is setup some filters for releases....or even just a better header organization...so it shows 'Releases / Sig / Conformance / Mastr' and within each heading is the releases link.  And maybe ones that have e2eOnly could show up below.   That would end up with like 6 lines, but it would be clear enough to start with.
 
-    So what we wanna do is have releaseList be a component, and we pass it along a property for whether we doing sig or what have you.  -
+    We originally had the releases split by 'Master', 'Sig Release', and 'Conformance Release'.  This was based off the file names.  These file names are not accurate for what the releases really are, and will be constricting in the future.  We are now settiung it to just be 'Master' and 'Releases'.
+
+The 'Releases' section are still all titled with a sig prefix, so our sigReleases selector still holds.  We will need to revisit this later though when we update our files.
+
  #+NAME: Releases Container
  #+BEGIN_SRC js
    import React from 'react'
@@ -1468,29 +1406,22 @@ k*** Selector
 
    function ReleasesContainer (props) {
      const {
-       releasesConformanceIndexE2E,
-       releasesConformanceIndexNoE2E,
-       releasesSigIndexE2E,
-       releasesSigIndexNoE2E,
+       releasesSigIndex,
        releasesMasterIndex
      } = props
 
      return(
        <section id="releases-container" className="">
          <div className='flex items-start justify-start'>
-         <ReleasesList release={"Master"} all={releasesMasterIndex} />
-         <ReleasesList release={"Sig Release"} all={releasesSigIndexNoE2E} e2eOnly={releasesSigIndexE2E} />
-         <ReleasesList release={"Conformance"} all={releasesConformanceIndexNoE2E} e2eOnly={releasesConformanceIndexE2E} />
+         <ReleasesList grouping={"Master"} releases={releasesMasterIndex} />
+         <ReleasesList grouping={"Releases"} releases={releasesSigIndex} />
          </div>
        </section>
      )
    }
 
    export default connect(
-   "selectReleasesConformanceIndexE2E",
-     "selectReleasesConformanceIndexNoE2E",
-     "selectReleasesSigIndexE2E",
-     "selectReleasesSigIndexNoE2E",
+     "selectReleasesSigIndex",
      "selectReleasesMasterIndex",
      ReleasesContainer
    )
@@ -1520,82 +1451,68 @@ The Release is an Object structured like so:
 
 #+NAME: releases-list
 #+BEGIN_SRC js
-import React from 'react'
-import { connect } from 'redux-bundler-react'
+  import React from 'react'
+  import { connect } from 'redux-bundler-react'
 
 
-var ReleasesList = (props) => {
-  const {
-    all,
-    e2eOnly,
-    queryObject,
-    release,
-    releasesIndexShouldUpdate,
-    urlObject
-  } = props
+  var ReleasesList = (props) => {
+    const {
+      releases,
+      queryObject,
+      grouping,
+      releasesIndexShouldUpdate,
+      urlObject
+    } = props
 
-  if (release == null) return null
+    if (grouping == null) return null
 
-  if (releasesIndexShouldUpdate) return null
+    if (releasesIndexShouldUpdate) return null
 
-  return (
-      <div className="mr4">
-      <h3 className="f3 mt0 ttsc tracked"> { release }</h3>
-      <ul className='pl0 ml0'>
-      {all.map(releaseItem => {
-        return <ReleaseItem release={ releaseItem } queryObject={queryObject}/>
-      })}
-    </ul>
-      {e2eOnly && <E2EList release={ e2eOnly } />}
-    </div>
-  )
-
-  function E2EList (props) {
-    const { release } = props
     return (
-        <div>
-        <ul className="pl0 ml0">
-          <span className="ttl f4 i mr2">E2E Only</span>
-            {release.map(e2eOnlyReleaseItem => <ReleaseItem release={ e2eOnlyReleaseItem}/>)}
+        <div className="mr4">
+        <h3 className="f3 mt0 ttsc tracked"> { grouping }</h3>
+        <ul className='pl0 ml0'>
+        {releases.map(releaseItem => {
+          return <ReleaseItem release={ releaseItem } queryObject={queryObject}/>
+        })}
       </ul>
-        </div>
+      </div>
     )
-  }
 
-  function ReleaseItem (props) {
-    const { release } = props
-    var releaseUrl = getReleaseUrl(release.url)
-    var classes="f6 link dim br1 ba ph3 pv2 mb2 mr2 dib mid-gray"
-    if (releaseUrl === urlObject.pathname) {
-      classes = classes + " bg-washed-red"
+    function ReleaseItem (props) {
+      const { release } = props
+      var releaseUrl = getReleaseUrl(release.url)
+      var classes="f6 link dim br1 ba ph3 pv2 mb2 mr2 dib mid-gray"
+      if (releaseUrl === urlObject.pathname) {
+        classes = classes + " bg-washed-red"
+      }
+      return (
+          <li className='dib'>
+          <a
+        className={ classes }
+        href={getReleaseUrl(release.url, queryObject)}
+        key={release._id}
+          >
+          {release.name}
+        </a>
+          </li>
+      )
     }
-    return (
-        <li className='dib'>
-        <a
-      className={ classes }
-      href={getReleaseUrl(release.url, queryObject)}
-      key={release._id}
-        >
-        {release.name}
-      </a>
-        </li>
-    )
   }
-}
 
-function getReleaseUrl (release, queryObject) {
-  if (queryObject == null || queryObject.filter === undefined) {
-    return `/${release}`
+  function getReleaseUrl (release, queryObject) {
+    if (queryObject == null || queryObject.filter === undefined) {
+      return `/${release}`
+    }
+    return `/${release}?filter=${queryObject.filter}`
   }
-  return `/${release}?filter=${queryObject.filter}`
-}
 
-export default connect(
-  'selectQueryObject',
-  'selectUrlObject',
-  'selectReleasesIndexShouldUpdate',
-  ReleasesList
-)
+  export default connect(
+    'selectQueryObject',
+    'selectUrlObject',
+    'selectReleasesIndexShouldUpdate',
+    ReleasesList
+  )
 #+END_SRC
 *** Sunburst And Summary
     :PROPERTIES:
@@ -2263,14 +2180,17 @@ Kinda used interchangable with state, and short for redux store.  It refers to t
   All the data, properties, truths, and so on of the app at this moment in time.  Similar to your emotional, personal, physical state.
 
 * Tasks                                                            :apisnoop:
-** NEXT Remove 'E2E Only' from releases list
+** DONE Remove 'E2E Only' from releases list
+   CLOSED: [2019-01-29 Tue 10:02]
   [[https://github.com/cncf/apisnoop/issues/80][github ticket 80]]
+** DONE Drop Conformance Section from Releases List
+   CLOSED: [2019-01-29 Tue 10:02]
+  [[https://github.com/cncf/apisnoop/issues/79][github 79]]
+** DONE Remove Name Sig from Release Index Title
+   CLOSED: [2019-01-29 Tue 10:02]
+  [[https://github.com/cncf/apisnoop/issues/78][github issue 78]]
 ** TODO when you click on a section of sunburst, that zoom holds across releases
   [[https://github.com/cncf/apisnoop/issues/74][github issue 74]]
-** TODO Drop Conformance Section from Releases List
-  [[https://github.com/cncf/apisnoop/issues/79][github 79]]
-** TODO Remove Name Sig from Release Index Title
-  [[https://github.com/cncf/apisnoop/issues/78][github issue 78]]
 ** TODO Releases Should Always be sorted Numerically
   [[https://github.com/cncf/apisnoop/issues/76][github issue 76]]
 ** TODO

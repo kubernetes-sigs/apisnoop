@@ -4,41 +4,27 @@ import { connect } from 'redux-bundler-react'
 
 var ReleasesList = (props) => {
   const {
-    all,
-    e2eOnly,
+    releases,
     queryObject,
-    release,
+    grouping,
     releasesIndexShouldUpdate,
     urlObject
   } = props
 
-  if (release == null) return null
+  if (grouping == null) return null
 
   if (releasesIndexShouldUpdate) return null
 
   return (
       <div className="mr4">
-      <h3 className="f3 mt0 ttsc tracked"> { release }</h3>
+      <h3 className="f3 mt0 ttsc tracked"> { grouping }</h3>
       <ul className='pl0 ml0'>
-      {all.map(releaseItem => {
+      {releases.map(releaseItem => {
         return <ReleaseItem release={ releaseItem } queryObject={queryObject}/>
       })}
     </ul>
-      {e2eOnly && <E2EList release={ e2eOnly } />}
     </div>
   )
-
-  function E2EList (props) {
-    const { release } = props
-    return (
-        <div>
-        <ul className="pl0 ml0">
-          <span className="ttl f4 i mr2">E2E Only</span>
-            {release.map(e2eOnlyReleaseItem => <ReleaseItem release={ e2eOnlyReleaseItem}/>)}
-      </ul>
-        </div>
-    )
-  }
 
   function ReleaseItem (props) {
     const { release } = props

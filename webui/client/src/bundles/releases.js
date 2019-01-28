@@ -5,7 +5,6 @@ import {
   includes,
   keyBy,
   map,
-  reject,
   split,
   trim,
   isUndefined
@@ -90,15 +89,6 @@ export default {
       })
     }
   ),
-  selectReleasesConformanceOnly: createSelector(
-    'selectReleasesIndexByName',
-    (releasesIndex) => {
-      if (releasesIndex == null) return null
-      return filter(releasesIndex, (o) => {
-        return includes(o.name.toLowerCase(), 'conformance')
-      })
-    }
-  ),
   selectReleasesMasterOnly: createSelector(
     'selectReleasesIndexByName',
     (releasesIndex) => {
@@ -108,70 +98,16 @@ export default {
       })
     }
   ),
-  selectReleasesSigIndexE2E: createSelector(
+  selectReleasesSigIndex: createSelector(
     'selectReleasesSigOnly',
     (sigReleases) => {
-      var e2eOnly = filter(sigReleases, (o) => {
-        return includes(o.name.toLowerCase(), 'e2e')
-      })
-      return map(e2eOnly, (sigRelease) => {
+      return map(sigReleases, (sigRelease) => {
         var nameWithoutSig = trim(sigRelease.name, 'sig-release_')
         var shortName = split(nameWithoutSig, '_')[0]
         return {
           name: shortName,
           url:sigRelease.name,
           _id: sigRelease._id
-        }
-      })
-    }
-  ),
-  selectReleasesSigIndexNoE2E: createSelector(
-    'selectReleasesSigOnly',
-    (sigReleases) => {
-      var noE2E = reject(sigReleases, (o) => {
-        return includes(o.name.toLowerCase(), 'e2e')
-      })
-      return map(noE2E, (sigRelease) => {
-        var nameWithoutSig = trim(sigRelease.name, 'sig-release_')
-        var shortName = split(nameWithoutSig, '_')[0]
-        return {
-          name: shortName,
-          url:sigRelease.name,
-          _id: sigRelease._id
-        }
-      })
-    }
-  ),
-  selectReleasesConformanceIndexNoE2E: createSelector(
-    'selectReleasesConformanceOnly',
-    (conReleases) => {
-      var noE2E = reject(conReleases, (o) => {
-        return includes(o.name.toLowerCase(), 'e2e')
-      })
-      return map(noE2E, (conRelease) => {
-        var nameWithoutCon = trim(conRelease.name, 'conformance_')
-        var shortName = split(nameWithoutCon, '_')[0]
-        return {
-          name: shortName,
-          url: conRelease.name,
-          _id: conRelease._id
-        }
-      })
-    }
-  ),
-  selectReleasesConformanceIndexE2E: createSelector(
-    'selectReleasesConformanceOnly',
-    (conReleases) => {
-      var e2eOnly = filter(conReleases, (o) => {
-        return includes(o.name.toLowerCase(), 'e2e')
-      })
-      return map(e2eOnly, (conRelease) => {
-        var nameWithoutCon = trim(conRelease.name, 'conformance_')
-        var shortName = split(nameWithoutCon, '_')[0]
-        return {
-          name: shortName,
-          url: conRelease.name,
-          _id: conRelease._id
         }
       })
     }
