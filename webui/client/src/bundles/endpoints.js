@@ -30,7 +30,8 @@ export default {
       (endpoints, filter) => {
         if (endpoints == null) return null
         if (filter) {
-          endpoints = endpoints.filter(endpoint => includes(toLower(endpoint.name), toLower(filter)))
+          var filterAsRegexp = new RegExp(filter)
+          endpoints = endpoints.filter(endpoint => filterAsRegexp.test(endpoint.name))
         }
         return endpoints
       }
