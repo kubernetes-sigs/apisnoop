@@ -2,12 +2,11 @@
 #+AUTHOR: Hippie Hacker
 #+EMAIL: hh@ii.coop
 #+CREATOR: ii.coop
-#+DATE: 17th of January, 2019
-#+PROPERTY: header-args:shell :results output code verbatim replace
+#+DATE: 29th of January, 2019
+#+PROPERTY: header-args:shell  :results output code verbatim replace
 #+PROPERTY: header-args:shell+ :dir (symbol-value 'org-file-dir)
-#+PROPERTY: header-args:shell  :prologue "exec 2>&1\nbq query -n 2000 --nouse_legacy_sql  <<EOF\n"
-#+PROPERTY: header-args:shell+ :epilogue "\nEOF\n:\n"
-#+PROPERTY: header-args:shell+ :results output verbatim src replace
+#+PROPERTY: header-args:shell+ :prologue "set -x\nERRFILE=`mktemp`\nexec 2>$ERRFILE\nbq query -n 2000 --nouse_legacy_sql  <<EOF | tail +2"
+#+PROPERTY: header-args:shell+ :epilogue "EOF\n:\ngrep -q DONE $ERRFILE || cat $ERRFILE\nrm $ERRFILE"
 #+PROPERTY: header-args:shell+ :exports both
 #+PROPERTY: header-args:shell+ :wrap "SRC org"
 #+PROPERTY: header-args:tmate  :socket (symbol-value 'socket)
@@ -99,238 +98,200 @@ EOF
 
 The exec + : ensure that stderr is captured, and the ~bq~ and params feed the text to big query.
 
-* Test
-
 * Exploring new raw bucket
+** 30 minutes checkins from gsutil from AWS
+If we inspect a all traffic for a day to the artifactory chart, we'll notice
+that every 30 minutes, we get two hits from apitools gsutil/4.35
 
-If we inspect a all traffic for a day to the artifactory chart, we'll notice that every 30 minutes, we get two hits from apitools gsutil/4.35
-This resource is getting hit 96 times in 30 minute blocks, all from the same blocks at ec2.
+This resource is getting hit 96 times in 30 minute blocks, all from the same
+blocks at ec2.
+*** The raw logs
+
+Looking at only artifactory, we note that it's user-agent is gsutil and there is a checkin every 30 minutes.
 
 #+NAME: Check resource artifactory
 #+BEGIN_SRC shell
-SELECT timestamp,
-       protopayload_auditlog.requestMetadata.callerIp AS callerIp,
-       # authorizationInfo.resource AS resource,
-       protopayload_auditlog.requestMetadata.callerSuppliedUserAgent
-FROM kubernetes_charts_raw_access_logs.cloudaudit_googleapis_com_data_access_20190127,
-     UNNEST(protopayload_auditlog.authorizationInfo) AS authorizationInfo
-WHERE authorizationInfo.resource LIKE '%artifactory-5.2.1.tgz'
-ORDER BY timestamp
+  SELECT distinct(timestamp),
+         protopayload_auditlog.requestMetadata.callerIp AS callerIp,
+         # authorizationInfo.resource AS resource,
+         protopayload_auditlog.requestMetadata.callerSuppliedUserAgent
+  FROM kubernetes_charts_raw_access_logs.cloudaudit_googleapis_com_data_access_20190127,
+       UNNEST(protopayload_auditlog.authorizationInfo) AS authorizationInfo
+  WHERE authorizationInfo.resource LIKE '%artifactory-5.2.1.tgz'
+  ORDER BY timestamp
 #+END_SRC
 
 #+RESULTS: Check resource artifactory
 #+BEGIN_SRC org
-Waiting on bqjob_r1c5d32434b86b86c_000001689720deb5_1 ... (0s) Current status: DONE
 +---------------------+----------------+---------------------------------------------------------------------------------------------------+
 |      timestamp      |    callerIp    |                                      callerSuppliedUserAgent                                      |
 +---------------------+----------------+---------------------------------------------------------------------------------------------------+
 | 2019-01-27 00:26:48 | 3.86.90.146    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 00:26:48 | 3.86.90.146    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 00:56:35 | 3.93.5.115     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 00:56:35 | 3.93.5.115     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 01:26:45 | 54.210.249.122 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 01:26:45 | 54.210.249.122 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 01:56:06 | 107.22.37.135  | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 01:56:06 | 107.22.37.135  | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 02:28:59 | 3.81.69.16     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 02:28:59 | 3.81.69.16     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 02:56:25 | 3.92.209.178   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 02:56:25 | 3.92.209.178   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 03:26:08 | 3.81.74.126    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 03:26:08 | 3.81.74.126    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 03:56:10 | 54.226.75.141  | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 03:56:10 | 54.226.75.141  | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 04:26:33 | 52.90.236.30   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 04:26:33 | 52.90.236.30   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 04:56:20 | 3.80.57.237    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 04:56:20 | 3.80.57.237    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 05:28:09 | 3.92.179.48    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 05:28:09 | 3.92.179.48    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 05:56:16 | 54.196.8.2     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 05:56:16 | 54.196.8.2     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 06:26:18 | 3.80.208.123   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 06:26:18 | 3.80.208.123   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 06:56:34 | 3.90.151.202   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 06:56:34 | 3.90.151.202   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 07:26:33 | 54.205.127.253 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 07:26:33 | 54.205.127.253 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 07:56:22 | 54.165.5.175   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 07:56:22 | 54.165.5.175   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 08:26:51 | 3.87.40.15     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 08:26:51 | 3.87.40.15     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 08:56:09 | 3.82.106.103   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 08:56:09 | 3.82.106.103   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 09:27:14 | 3.90.252.201   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 09:27:14 | 3.90.252.201   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 09:56:09 | 18.212.127.199 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 09:56:09 | 18.212.127.199 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 10:26:26 | 34.207.117.30  | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 10:26:26 | 34.207.117.30  | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 10:56:23 | 54.163.222.128 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 10:56:23 | 54.163.222.128 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 11:26:14 | 3.80.57.237    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 11:26:14 | 3.80.57.237    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 11:56:21 | 3.85.203.138   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 11:56:21 | 3.85.203.138   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 12:26:11 | 52.90.211.8    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 12:26:11 | 52.90.211.8    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 12:56:10 | 52.55.58.22    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 12:56:10 | 52.55.58.22    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 13:26:12 | 3.89.90.181    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 13:26:12 | 3.89.90.181    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 13:56:07 | 54.163.222.128 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 13:56:07 | 54.163.222.128 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 14:26:34 | 34.201.125.108 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 14:26:34 | 34.201.125.108 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 14:56:26 | 3.93.79.53     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 14:56:26 | 3.93.79.53     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 15:26:12 | 54.166.63.51   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 15:26:12 | 54.166.63.51   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 15:56:24 | 3.90.5.55      | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 15:56:24 | 3.90.5.55      | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 16:26:11 | 3.80.209.124   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 16:26:11 | 3.80.209.124   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 16:56:14 | 3.84.148.124   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 16:56:14 | 3.84.148.124   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 17:26:32 | 34.228.241.101 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 17:26:32 | 34.228.241.101 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 17:56:30 | 3.92.54.162    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 17:56:30 | 3.92.54.162    | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 18:26:55 | 3.81.55.97     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 18:26:55 | 3.81.55.97     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 18:57:20 | 54.82.228.46   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 18:57:20 | 54.82.228.46   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 19:26:21 | 52.201.249.233 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 19:26:21 | 52.201.249.233 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 19:56:23 | 3.81.55.97     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 19:56:23 | 3.81.55.97     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 20:26:18 | 3.81.55.97     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 20:26:18 | 3.81.55.97     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 20:56:11 | 52.73.113.41   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 20:56:11 | 52.73.113.41   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 21:26:54 | 3.86.104.1     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 21:26:54 | 3.86.104.1     | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 21:56:36 | 18.234.102.157 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 21:56:36 | 18.234.102.157 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 22:26:14 | 3.92.217.181   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 22:26:14 | 3.92.217.181   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 22:56:29 | 52.73.113.41   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 22:56:29 | 52.73.113.41   | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 23:26:31 | 18.212.229.207 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 23:26:31 | 18.212.229.207 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 23:56:48 | 100.25.218.150 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 | 2019-01-27 23:56:48 | 100.25.218.150 | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
 +---------------------+----------------+---------------------------------------------------------------------------------------------------+
 #+END_SRC
 
-#+RESULTS:
-#+BEGIN_SRC org
-Waiting on bqjob_r3714d37de6865220_00000168971bbd2e_1 ... (0s) Current status: DONE
-+---------------------+------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------+
-|      timestamp      |                                   resource                                   |                                      callerSuppliedUserAgent                                      |
-+---------------------+------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------+
-| 2019-01-27 00:26:48 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 00:26:48 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 00:56:35 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 00:56:35 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 01:26:45 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 01:26:45 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 01:56:06 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 01:56:06 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 02:28:59 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 02:28:59 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 02:56:25 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 02:56:25 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 03:26:08 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 03:26:08 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 03:56:10 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 03:56:10 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 04:26:33 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 04:26:33 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 04:56:20 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 04:56:20 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 05:28:09 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 05:28:09 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 05:56:16 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 05:56:16 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 06:26:18 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 06:26:18 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 06:56:34 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 06:56:34 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 07:26:33 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 07:26:33 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 07:56:22 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 07:56:22 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 08:26:51 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 08:26:51 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 08:56:09 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 08:56:09 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 09:27:14 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 09:27:14 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 09:56:09 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 09:56:09 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 10:26:26 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 10:26:26 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 10:56:23 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 10:56:23 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 11:26:14 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 11:26:14 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 11:56:21 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 11:56:21 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 12:26:11 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 12:26:11 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 12:56:10 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 12:56:10 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 13:26:12 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 13:26:12 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 13:56:07 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 13:56:07 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 14:26:34 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 14:26:34 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 14:56:26 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 14:56:26 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 15:26:12 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 15:26:12 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 15:56:24 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 15:56:24 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 16:26:11 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 16:26:11 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 16:56:14 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 16:56:14 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 17:26:32 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 17:26:32 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 17:56:30 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 17:56:30 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 18:26:55 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 18:26:55 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 18:57:20 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 18:57:20 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 19:26:21 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 19:26:21 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 19:56:23 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 19:56:23 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 20:26:18 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 20:26:18 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 20:56:11 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 20:56:11 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 21:26:54 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 21:26:54 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 21:56:36 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 21:56:36 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 22:26:14 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 22:26:14 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 22:56:29 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 22:56:29 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 23:26:31 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 23:26:31 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 23:56:48 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-| 2019-01-27 23:56:48 | projects/_/buckets/kubernetes-charts-incubator/objects/artifactory-5.2.1.tgz | apitools gsutil/4.35 Python/2.7.13 (linux2) google-cloud-sdk/229.0.0 analytics/disabled,gzip(gfe) |
-+---------------------+------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------+
+*** Checking what the IPs are
+#+NAME: distinct IPS
+#+BEGIN_SRC shell
+SELECT distinct(protopayload_auditlog.requestMetadata.callerIp) AS callerIp
+FROM kubernetes_charts_raw_access_logs.cloudaudit_googleapis_com_data_access_20190127,
+     UNNEST(protopayload_auditlog.authorizationInfo) AS authorizationInfo
+WHERE authorizationInfo.resource LIKE '%artifactory-5.2.1.tgz'
+GROUP BY callerIp
+ORDER BY callerIp
 #+END_SRC
 
-Getting a summary of the resource request patterns
+#+RESULTS: distinct IPS
+#+BEGIN_SRC org
+  +----------------+
+  |    callerIp    |
+  +----------------+
+  | 100.25.218.150 |
+  | 107.22.37.135  |
+  | 18.212.127.199 |
+  | 18.212.229.207 |
+  | 18.234.102.157 |
+  | 3.80.208.123   |
+  | 3.80.209.124   |
+  | 3.80.57.237    |
+  | 3.81.55.97     |
+  | 3.81.69.16     |
+  | 3.81.74.126    |
+  | 3.82.106.103   |
+  | 3.84.148.124   |
+  | 3.85.203.138   |
+  | 3.86.104.1     |
+  | 3.86.90.146    |
+  | 3.87.40.15     |
+  | 3.89.90.181    |
+  | 3.90.151.202   |
+  | 3.90.252.201   |
+  | 3.90.5.55      |
+  | 3.92.179.48    |
+  | 3.92.209.178   |
+  | 3.92.217.181   |
+  | 3.92.54.162    |
+  | 3.93.5.115     |
+  | 3.93.79.53     |
+  | 34.201.125.108 |
+  | 34.207.117.30  |
+  | 34.228.241.101 |
+  | 52.201.249.233 |
+  | 52.55.58.22    |
+  | 52.73.113.41   |
+  | 52.90.211.8    |
+  | 52.90.236.30   |
+  | 54.163.222.128 |
+  | 54.165.5.175   |
+  | 54.166.63.51   |
+  | 54.196.8.2     |
+  | 54.205.127.253 |
+  | 54.210.249.122 |
+  | 54.226.75.141  |
+  | 54.82.228.46   |
+  +----------------+
+#+END_SRC
 
-#+NAME Get resource count
+#+NAME: Discinct IP lookups
+#+BEGIN_EXAMPLE
+  27.183.208.18.in-addr.arpa. 299	IN	PTR	ec2-18-208-183-27.compute-1.amazonaws.com.
+  58.109.209.18.in-addr.arpa. 299	IN	PTR	ec2-18-209-109-58.compute-1.amazonaws.com.
+  200.47.209.18.in-addr.arpa. 299	IN	PTR	ec2-18-209-47-200.compute-1.amazonaws.com.
+  97.144.212.18.in-addr.arpa. 299	IN	PTR	ec2-18-212-144-97.compute-1.amazonaws.com.
+  173.152.212.18.in-addr.arpa. 299 IN	PTR	ec2-18-212-152-173.compute-1.amazonaws.com.
+  38.172.215.18.in-addr.arpa. 299	IN	PTR	ec2-18-215-172-38.compute-1.amazonaws.com.
+  124.62.234.18.in-addr.arpa. 299	IN	PTR	ec2-18-234-62-124.compute-1.amazonaws.com.
+  42.111.121.3.in-addr.arpa. 299	IN	PTR	ec2-3-121-111-42.eu-central-1.compute.amazonaws.com.
+  251.94.80.3.in-addr.arpa. 299	IN	PTR	ec2-3-80-94-251.compute-1.amazonaws.com.
+  103.121.84.3.in-addr.arpa. 299	IN	PTR	ec2-3-84-121-103.compute-1.amazonaws.com.
+  23.162.86.3.in-addr.arpa. 299	IN	PTR	ec2-3-86-162-23.compute-1.amazonaws.com.
+  33.188.87.3.in-addr.arpa. 299	IN	PTR	ec2-3-87-188-33.compute-1.amazonaws.com.
+  24.201.89.3.in-addr.arpa. 299	IN	PTR	ec2-3-89-201-24.compute-1.amazonaws.com.
+  104.155.90.3.in-addr.arpa. 299	IN	PTR	ec2-3-90-155-104.compute-1.amazonaws.com.
+  34.174.90.3.in-addr.arpa. 299	IN	PTR	ec2-3-90-174-34.compute-1.amazonaws.com.
+  122.243.90.3.in-addr.arpa. 299	IN	PTR	ec2-3-90-243-122.compute-1.amazonaws.com.
+  219.41.90.3.in-addr.arpa. 299	IN	PTR	ec2-3-90-41-219.compute-1.amazonaws.com.
+  20.5.90.3.in-addr.arpa.	299	IN	PTR	ec2-3-90-5-20.compute-1.amazonaws.com.
+  158.59.90.3.in-addr.arpa. 299	IN	PTR	ec2-3-90-59-158.compute-1.amazonaws.com.
+  151.82.92.3.in-addr.arpa. 299	IN	PTR	ec2-3-92-82-151.compute-1.amazonaws.com.
+  38.1.93.3.in-addr.arpa.	299	IN	PTR	ec2-3-93-1-38.compute-1.amazonaws.com.
+  95.204.203.34.in-addr.arpa. 299	IN	PTR	ec2-34-203-204-95.compute-1.amazonaws.com.
+  92.53.204.34.in-addr.arpa. 299	IN	PTR	ec2-34-204-53-92.compute-1.amazonaws.com.
+  108.93.204.34.in-addr.arpa. 299	IN	PTR	ec2-34-204-93-108.compute-1.amazonaws.com.
+  24.93.204.34.in-addr.arpa. 299	IN	PTR	ec2-34-204-93-24.compute-1.amazonaws.com.
+  129.31.224.34.in-addr.arpa. 299	IN	PTR	ec2-34-224-31-129.compute-1.amazonaws.com.
+  138.182.172.35.in-addr.arpa. 299 IN	PTR	ec2-35-172-182-138.compute-1.amazonaws.com.
+  45.137.174.35.in-addr.arpa. 299	IN	PTR	ec2-35-174-137-45.compute-1.amazonaws.com.
+  112.212.201.52.in-addr.arpa. 299 IN	PTR	ec2-52-201-212-112.compute-1.amazonaws.com.
+  197.207.23.52.in-addr.arpa. 299	IN	PTR	ec2-52-23-207-197.compute-1.amazonaws.com.
+  231.254.71.52.in-addr.arpa. 299	IN	PTR	ec2-52-71-254-231.compute-1.amazonaws.com.
+  75.160.87.52.in-addr.arpa. 299	IN	PTR	ec2-52-87-160-75.compute-1.amazonaws.com.
+  60.12.90.52.in-addr.arpa. 299	IN	PTR	ec2-52-90-12-60.compute-1.amazonaws.com.
+  182.242.157.54.in-addr.arpa. 299 IN	PTR	ec2-54-157-242-182.compute-1.amazonaws.com.
+  80.35.158.54.in-addr.arpa. 299	IN	PTR	ec2-54-158-35-80.compute-1.amazonaws.com.
+  48.103.159.54.in-addr.arpa. 299	IN	PTR	ec2-54-159-103-48.compute-1.amazonaws.com.
+  170.108.198.54.in-addr.arpa. 299 IN	PTR	ec2-54-198-108-170.compute-1.amazonaws.com.
+  74.25.208.54.in-addr.arpa. 299	IN	PTR	ec2-54-208-25-74.compute-1.amazonaws.com.
+  75.13.209.54.in-addr.arpa. 299	IN	PTR	ec2-54-209-13-75.compute-1.amazonaws.com.
+  12.200.209.54.in-addr.arpa. 299	IN	PTR	ec2-54-209-200-12.compute-1.amazonaws.com.
+  148.124.234.54.in-addr.arpa. 299 IN	PTR	ec2-54-234-124-148.compute-1.amazonaws.com.
+  53.56.242.54.in-addr.arpa. 299	IN	PTR	ec2-54-242-56-53.compute-1.amazonaws.com.
+  224.162.87.54.in-addr.arpa. 299	IN	PTR	ec2-54-87-162-224.compute-1.amazonaws.com.
+  61.80.88.54.in-addr.arpa. 299	IN	PTR	ec2-54-88-80-61.compute-1.amazonaws.com.
+  172.69.89.54.in-addr.arpa. 299	IN	PTR	ec2-54-89-69-172.compute-1.amazonaws.com.
+  167.118.91.54.in-addr.arpa. 299	IN	PTR	ec2-54-91-118-167.compute-1.amazonaws.com.
+#+END_EXAMPLE
+
+** Getting a summary of the resource request patterns
+
+#+NAME: Get resource count
 #+BEGIN_SRC shell
 SELECT DISTINCT authorizationInfo.resource AS resource,
                 COUNT(authorizationInfo.resource) AS count
@@ -340,9 +301,8 @@ GROUP BY authorizationInfo.resource
 ORDER BY count DESC, resource
 #+END_SRC
 
-#+RESULTS:
-#+BEGIN_EXAMPLE
-
+#+RESULTS: Get resource count
+#+BEGIN_SRC org
 +-----------------------------------------------------------------------------------------------------------------------+---------+
 |                                                       resource                                                        |  count  |
 +-----------------------------------------------------------------------------------------------------------------------+---------+
@@ -673,12 +633,11 @@ ORDER BY count DESC, resource
 | projects/_/buckets/kubernetes-charts-logging/objects/kubernetes-charts-incubator_storage_2019_01_25_08_00_00_03349_v0 |       4 |
 | projects/_/buckets/kubernetes-charts-logging/objects/kubernetes-charts_storage_2019_01_25_08_00_00_0a7e6_v0           |       4 |
 +-----------------------------------------------------------------------------------------------------------------------+---------+
-#+END_EXAMPLE
+#+END_SRC
 
+** Looking for the top requests and the useragent
 
-Looking for the top requests and the useragent
-
-#+NAME Top IP hits with userAgent
+#+NAME: Top IP hits with userAgent
 #+BEGIN_SRC shell
 SELECT DISTINCT protopayload_auditlog.requestMetadata.callerIp AS callerIp,
                 COUNT(protopayload_auditlog.requestMetadata.callerIp) AS count,
@@ -688,9 +647,8 @@ GROUP BY protopayload_auditlog.requestMetadata.callerIp, protopayload_auditlog.r
 ORDER BY count DESC, callerIp
 #+END_SRC
 
-#+RESULTS:
-#+BEGIN_EXAMPLE
-
+#+RESULTS: Top IP hits with userAgent
+#+BEGIN_SRC org
 +-------------------------------------+-------+---------------------------------------------------------------------------------------------------+
 |              callerIp               | count |                                      callerSuppliedUserAgent                                      |
 +-------------------------------------+-------+---------------------------------------------------------------------------------------------------+
@@ -2695,9 +2653,7 @@ ORDER BY count DESC, callerIp
 | 104.248.132.89                      |    30 | git/2.17.1,gzip(gfe)                                                                              |
 | 104.248.141.167                     |    30 | git/2.17.1,gzip(gfe)                                                                              |
 +-------------------------------------+-------+---------------------------------------------------------------------------------------------------+
-#+END_EXAMPLE
-
-
+#+END_SRC
 
 * Big Query Notes for Kubernetes Charts
 
@@ -4498,6 +4454,7 @@ projects/_/buckets/kubernetes-charts/objects/index.yaml:properties      <<< Inte
 # org-babel-tmate-session-prefix: ""
 # org-babel-tmate-default-window-name: "main"
 # eval: (require (quote ob-shell))
+# eval: (require (quote ob-async))
 # org-confirm-babel-evaluate: nil
 # org-use-property-inheritance: t
 # End:
