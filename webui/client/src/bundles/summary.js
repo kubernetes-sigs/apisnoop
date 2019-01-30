@@ -8,7 +8,7 @@ export default {
     'selectZoom',
     (endpoint, query, zoom) => {
       var path = {}
-      if (zoom == null) {
+      if (zoom == null && query.level === undefined) {
         path = {
           level: '',
           category: '',

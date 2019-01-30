@@ -42,7 +42,7 @@ const SunburstChart = (props) => {
      data={[
        {x: 0, y: 0, label: interiorLabel.tested, style: labelStyle.PERCENTAGE},
      ]} />}
-      <button className='ttsc' onClick={()=> doUpdateQuery({})}>Reset</button>
+      <button className='ttsc' onClick={handleReset}>Reset</button>
       </Sunburst>
       </div>
   )
@@ -52,14 +52,26 @@ const SunburstChart = (props) => {
       level: path[1],
       category: path[2],
       name: path[3],
-      zoomed: queryObject.zoomed
     }
     var query = propertiesWithValue(rawQuery)
+    if (queryObject.zoomed) {
+      query.zoomed = queryObject.zoomed
+    }
+    if (queryObject.filter) {
+      query.filter = queryObject.filter
+    }
     doUpdateQuery(query)
   }
 
   function handleMouseOut () {
-    doUpdateQuery({zoomed: queryObject.zoomed})
+    var query = {}
+    if (queryObject.filter) {
+      query.filter = queryObject.filter
+    }
+    if (queryObject.zoomed) {
+      query.zoomed = queryObject.zoomed
+    }
+    doUpdateQuery(query)
   }
 
   function handleMouseClick (node, event) {
@@ -69,11 +81,23 @@ const SunburstChart = (props) => {
       level: path[1],
       category: path[2],
       name: path[3],
+      filter: queryObject.filter
     }
     var query = propertiesWithValue(rawQuery)
     var queryAsArray = sortBy(query, ['level','category','name'])
     query.zoomed = `${depth[node.depth]}-${join(queryAsArray,'-')}`
+    if (queryObject.filter) {
+      query.filter = queryObject.filter
+    }
     doUpdateQuery(query)
+  }
+
+  function handleReset () {
+    if (queryObject.filter) {
+      doUpdateQuery({filter: queryObject.filter})
+    } else {
+      doUpdateQuery({})
+    }
   }
 
   function getKeyPath (node) {

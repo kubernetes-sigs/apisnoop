@@ -5,29 +5,22 @@ import ReleasesList from './releases-list'
 
 function ReleasesContainer (props) {
   const {
-    releasesConformanceIndexE2E,
-    releasesConformanceIndexNoE2E,
-    releasesSigIndexE2E,
-    releasesSigIndexNoE2E,
+    releasesIndexSorted,
     releasesMasterIndex
   } = props
 
   return(
     <section id="releases-container" className="">
       <div className='flex items-start justify-start'>
-      <ReleasesList release={"Master"} all={releasesMasterIndex} />
-      <ReleasesList release={"Sig Release"} all={releasesSigIndexNoE2E} e2eOnly={releasesSigIndexE2E} />
-      <ReleasesList release={"Conformance"} all={releasesConformanceIndexNoE2E} e2eOnly={releasesConformanceIndexE2E} />
+      <ReleasesList grouping={"Master"} releases={releasesMasterIndex} />
+      <ReleasesList grouping={"Releases"} releases={releasesIndexSorted} />
       </div>
     </section>
   )
 }
 
 export default connect(
-"selectReleasesConformanceIndexE2E",
-  "selectReleasesConformanceIndexNoE2E",
-  "selectReleasesSigIndexE2E",
-  "selectReleasesSigIndexNoE2E",
+  "selectReleasesIndexSorted",
   "selectReleasesMasterIndex",
   ReleasesContainer
 )
