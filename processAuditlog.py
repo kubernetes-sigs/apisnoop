@@ -209,7 +209,7 @@ def get_count_results(count_tree):
     return r
 
 
-def generate_coverage_report(openapi_spec, audit_log):
+def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
 
     endpoints = generate_endpoints_tree(openapi_spec)
     new_endpoints = generate_new_endpoints_tree(openapi_spec)
@@ -223,6 +223,7 @@ def generate_coverage_report(openapi_spec, audit_log):
     unknown_urls = {}
     unknown_url_methods = {}
     for event in audit_log:
+        # import ipdb; ipdb.set_trace(context=60)
         spec_entry = find_openapi_entry(openapi_spec, event)
         uri = event['requestURI']
         method = event['method']
@@ -281,7 +282,7 @@ def generate_coverage_report(openapi_spec, audit_log):
                     tests[test_name] = {}
                 if test_name not in test_sequences.keys():
                     test_sequences[test_name] = []
-                test_sequences[test_name].append([event['timestamp'],
+                test_sequences[test_name].append([event['requestReceivedTimestamp'],
                                                   level, category, method, op])
                 if op not in tests[test_name].keys():
                     tests[test_name][op] = {}
@@ -310,7 +311,12 @@ def generate_coverage_report(openapi_spec, audit_log):
 
         else:
             # Only look at e2e for now, skip anything else
-            continue
+            # 10 and 11 don't have user agents, so... sadface
+            # import ipdb; ipdb.set_trace(context=60)
+            if not user_agent_available:
+              pass
+            else:
+              continue
 
         agent = event.get('userAgent', ' ').split(' ')[0]
         if agent not in useragents.keys():
@@ -397,23 +403,28 @@ def main():
         print("Invalid filename given")
         usage_and_exit()
     branch_or_tag = sys.argv[2]
-    openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
-    openapi_spec = load_openapi_spec(openapi_uri)
-    audit_log = load_audit_log(filename)
-    report = generate_coverage_report(openapi_spec, audit_log)
-    # import ipdb; ipdb.set_trace(context=60)
     auditpath = os.path.dirname(filename)
     metadata = file_to_json(auditpath + '/artifacts/metadata.json')
     finished = file_to_json(auditpath + '/finished.json')
     semver = finished['version'].split('v')[1].split('-')[0]
     major = semver.split('.')[0]
     minor = semver.split('.')[1]
-    if minor != '13':
+
+    user_agent_available = True
+    if int(minor) < 12:
+        user_agent_available = False
+
+    if minor != '14':
         branch = "release-"+major+'.'+minor
     else:
-        commit = metadata['version'].split('+')[-1]
+        commit = metadata['revision'].split('+')[-1]
         # branch = 'master'
         branch = commit
+    openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
+    openapi_spec = load_openapi_spec(openapi_uri)
+    audit_log = load_audit_log(filename)
+    report = generate_coverage_report(openapi_spec, audit_log, user_agent_available)
+    # import ipdb; ipdb.set_trace(context=60)
     output_path = sys.argv[3]
     open(output_path, 'w').write(
         json.dumps(report))
