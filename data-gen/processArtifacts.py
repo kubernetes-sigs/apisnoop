@@ -1,3 +1,5 @@
+#! /usr/bin/env python
+
 import json
 try:
     from urllib.request import urlopen, urlretrieve
@@ -16,6 +18,13 @@ def file_to_json(filename):
     data = content.encode('ascii')
     return json.loads(data)
 
+# Find the absolute path to a file, no matter if this script is being run from 
+# root of apisnoop folder or from within data-gen
+def path_to(filename):
+    for root, dirs, files in os.walk(r'./'):
+        for name in files:
+            if name == filename:
+                return os.path.abspath(os.path.join(root, name))
 
 @click.command()
 @click.argument('folder')
@@ -42,12 +51,13 @@ def main(folder):
             type = 'conformance'
         else:
             type = 'sig-release'
+        auditLogPath = path_to("processAuditlog.py")
         audit_name = type + '_' + semver + '_' + str(ts.date()) + '_e2e-only'
         outfile = folder + '/processed-audits/' + audit_name + ".json"
         outdb = folder + '/' + audit_name + ".sqlite"
         print("(")
         print(
-            ' '.join(["python", "processAuditlog.py",
+            ' '.join(["python", auditLogPath,
                       auditfile, branch, outfile])
         )
         print(")&")
