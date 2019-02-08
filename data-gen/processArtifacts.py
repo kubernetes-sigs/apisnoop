@@ -18,7 +18,7 @@ def file_to_json(filename):
     data = content.encode('ascii')
     return json.loads(data)
 
-# Find the absolute path to a file, no matter if this script is being run from 
+# Find the absolute path to a file, no matter if this script is being run from
 # root of apisnoop folder or from within data-gen
 def path_to(filename):
     for root, dirs, files in os.walk(r'./'):
@@ -52,8 +52,8 @@ def main(infolder,outfolder):
         else:
             type = 'sig-release'
         auditLogPath = path_to("processAuditlog.py")
-        audit_folder = auditpath.split('/')[2]
-        audit_job = auditpath.split('/')[3]
+        audit_folder = auditpath.split('/')[-2]
+        audit_job = auditpath.split('/')[-1]
         audit_name = type + '_' + semver + '_' + str(ts.date())
         # import ipdb; ipdb.set_trace(context=15)
         job_outfolder = outfolder + '/' + audit_folder + '/' + audit_job + '/'
