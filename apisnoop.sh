@@ -18,7 +18,8 @@ This utility can fetch and process Kubernetes audit logs.
       Defaults can be overwritten with optional arguments.
 
 Parameters:
-  --fetch [source] [cache] [destination] Download datasets listed in file.
+  --all [source] [cache] [destination] Download and Process based on sources.yaml
+  --install           Installs python dependencies
   --update-sources    Check for latest successful jobs and update sources.yaml
   --update-cache      Download raw audit-logs based on sources.yaml
   --process-cache     Process raw audit-logs and save apiusage results to disk
@@ -29,15 +30,8 @@ EOF
 
 if [ $# -eq 0 ]; then
   print_help
-elif [ $1 = "--all" ]; then
-  echo "Installing necessary dependendies"
+elif [ $1 = "--install" ]; then
   pip install -r ./data-gen/requirements.txt
-  echo "Fetching latest artifacts"
-  ./data-gen/downloadArtifacts.py ${2:-$DEFAULT_SOURCE} ${3:-$DEFAULT_CACHE}
-  echo "Generating shell script to process artifacts"
-  ./data-gen/processArtifacts.py ${3:-$DEFAULT_CACHE} ${4:-$DEFAULT_DEST} > ./data-gen/processArtifacts.sh
-  echo "Processing Artifacts"
-  bash ./data-gen/processArtifacts.sh
 elif [ $1 = "--update-sources" ]; then
   ./data-gen/updateSources.py ./data-gen/sources.yaml
 elif [ $1 = "--update-cache" ]; then
@@ -51,8 +45,15 @@ elif [ $1 = "--upload-apiusage" ]; then
 elif [ $1 = "--download-apiusage" ]; then
   mkdir -p $DEFAULT_DEST
   gsutil -m cp -R -n $DEFAULT_GCS_PREFIX $DEFAULT_DEST
-elif [ $1 = "--install" ]; then
+elif [ $1 = "--all" ]; then
+  echo "Installing necessary dependendies"
   pip install -r ./data-gen/requirements.txt
+  echo "Fetching latest artifacts"
+  ./data-gen/downloadArtifacts.py ${2:-$DEFAULT_SOURCE} ${3:-$DEFAULT_CACHE}
+  echo "Generating shell script to process artifacts"
+  ./data-gen/processArtifacts.py ${3:-$DEFAULT_CACHE} ${4:-$DEFAULT_DEST} > ./data-gen/processArtifacts.sh
+  echo "Processing Artifacts"
+  bash ./data-gen/processArtifacts.sh
 else
   echo $1 is not a valid flag.  Did you mean --fetch, --update or --process?
 fi
