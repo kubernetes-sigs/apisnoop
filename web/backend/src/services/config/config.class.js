@@ -15,22 +15,9 @@ function populateReleases (app, dir)  {
         var fileName = processedAudits[i]
         var releaseJson = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
         var releaseData = JSON.parse(releaseJson)
-        addEntryToReleaseService(app, fileName, releaseData)
         addEntryToEndpointService(app, fileName, releaseData)
         addEntryToTestService(app, fileName, releaseData)
         addEntryToUseragentsService(app, fileName, releaseData)
-    }
-}
-
-// I think we will not need this soon.
-async function addEntryToReleaseService (app, fileName, releaseData) {
-    var service = app.service('/api/v1/releases')
-    var name = fileName.replace('.json', '')
-    var existingEntry = await service.find({query:{name}})
-    if (existingEntry.length === 0) {
-        service.create({name: name, data: releaseData})
-    } else {
-        service.update(existingEntry[0]._id, {name: name, data: releaseData})
     }
 }
 
