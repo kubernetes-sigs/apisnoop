@@ -21,10 +21,11 @@ Parameters:
   --all [source] [cache] [destination] Download and Process based on sources.yaml
   --install           Installs python dependencies
   --update-sources    Check for latest successful jobs and update sources.yaml
-  --update-cache      Download raw audit-logs based on sources.yaml
-  --process-cache     Process raw audit-logs and save apiusage results to disk
+  --update-cache [source] [cache] Download raw audit-logs based on sources.yaml
+  --process-cache [cache] [destination] Process raw audit-logs and save apiusage results to disk
   --upload-apiusage   Upload apiusage results to a gcs bucket
   --download-apiusage Download apiusage results from gcs bucket
+  --all  runs all scripts except --download-apiusage in their necessary order.
 EOF
 }
 
