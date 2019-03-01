@@ -73,93 +73,113 @@ We only have a single method here, which is setup.  We don't want this to be an 
      #+NAME: Define populateReleases
      #+BEGIN_SRC js :tangle no
        function populateReleases (app, dir)  {
-         var processedAudits = fs.readdirSync(dir)
-         for (var i = 0; i < processedAudits.length; i++) {
-           var fileName = processedAudits[i]
-           var releaseJson = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
-           var releaseData = JSON.parse(releaseJson)
-           addEntryToReleaseService(app, fileName, releaseData)
-           addEntryToEndpointService(app, fileName, releaseData)
-           addEntryToTestService(app, fileName, releaseData)
-         }
+           var processedAudits = fs.readdirSync(dir)
+           for (var i = 0; i < processedAudits.length; i++) {
+               var fileName = processedAudits[i]
+               var releaseJson = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
+               var releaseData = JSON.parse(releaseJson)
+               addEntryToReleaseService(app, fileName, releaseData)
+               addEntryToEndpointService(app, fileName, releaseData)
+               addEntryToTestService(app, fileName, releaseData)
+               addEntryToUseragentsService(app, fileName, releaseData)
+           }
        }
 
        // I think we will not need this soon.
        async function addEntryToReleaseService (app, fileName, releaseData) {
-         var service = app.service('/api/v1/releases')
-         var name = fileName.replace('.json', '')
-         var existingEntry = await service.find({query:{name}})
-         if (existingEntry.length === 0) {
-           service.create({name: name, data: releaseData})
-         } else {
-           service.update(existingEntry[0]._id, {name: name, data: releaseData})
-         }
+           var service = app.service('/api/v1/releases')
+           var name = fileName.replace('.json', '')
+           var existingEntry = await service.find({query:{name}})
+           if (existingEntry.length === 0) {
+               service.create({name: name, data: releaseData})
+           } else {
+               service.update(existingEntry[0]._id, {name: name, data: releaseData})
+           }
        }
 
        async function addEntryToEndpointService (app, fileName, releaseData) {
-         var service = app.service('/api/v1/endpoints')
-         var release = fileName.replace('.json', '')
-         var endpointNames = Object.keys(releaseData.endpoints)
-         var tests = releaseData.tests
-         for (var endpointName of endpointNames) {
-           var endpointMethods = Object.keys(releaseData.endpoints[endpointName])
-
-           for (var endpointMethod of endpointMethods) {
-             var rawEndpoint = releaseData.endpoints[endpointName][endpointMethod]
-             var endpoint = {
-               name: endpointName,
-               method: endpointMethod,
-               release: release,
-               level: rawEndpoint.level,
-               test_tags: rawEndpoint.test_tags,
-               tests: rawEndpoint.tests,
-               description: rawEndpoint.desc,
-               path: rawEndpoint.path,
-               category: rawEndpoint.cat,
-               isTested: rawEndpoint.counter > 0
-             }
-             // An endpoint is unique by name, release, method.
-             var existingEntry = await service.find({
-               query:{
-                 name: endpoint.name,
-                 method: endpoint.method,
-                 release: endpoint.release
+           var service = app.service('/api/v1/endpoints')
+           var release = fileName.replace('.json', '')
+           var endpointNames = Object.keys(releaseData.endpoints)
+           var tests = releaseData.tests
+           for (var endpointName of endpointNames) {
+               var endpointMethods = Object.keys(releaseData.endpoints[endpointName])
+               for (var endpointMethod of endpointMethods) {
+                   var rawEndpoint = releaseData.endpoints[endpointName][endpointMethod]
+                   var endpoint = {
+                       name: endpointName,
+                       method: endpointMethod,
+                       release: release,
+                       level: rawEndpoint.level,
+                       test_tags: rawEndpoint.test_tags,
+                       tests: rawEndpoint.tests,
+                       description: rawEndpoint.desc,
+                       path: rawEndpoint.path,
+                       category: rawEndpoint.cat,
+                       isTested: rawEndpoint.counter > 0
+                   }
+                   // An endpoint is unique by name, release, method.
+                   var uniqueQuery = {
+                       name: endpoint.name,
+                       method: endpoint.method,
+                       release: endpoint.release
+                   }
+                   addOrUpdateEntry(service, endpoint, uniqueQuery)
                }
-             })
-             if (existingEntry.length === 0) {
-               await service.create(endpoint)
-             } else {
-               await service.update(existingEntry[0]._id, endpoint)
-             }
            }
-         }
        }
 
        async function addEntryToTestService (app, fileName, releaseData) {
-         var service = app.service('/api/v1/tests')
-         var release = fileName.replace('.json', '')
-         var testNames = Object.keys(releaseData.test_sequences)
-         for (var testName of testNames) {
-           var testSequence = releaseData.test_sequences[testName]
-           var test = {
-             name: testName,
-             sequence: testSequence,
-             release: release
+           var service = app.service('/api/v1/tests')
+           var release = fileName.replace('.json', '')
+           var testNames = Object.keys(releaseData.test_sequences)
+           for (var testName of testNames) {
+               var testSequence = releaseData.test_sequences[testName]
+               var test = {
+                   name: testName,
+                   sequence: testSequence,
+                   release: release
+               }
+               // An test is unique by testName and Release.
+               var uniqueQuery = {
+                   name: test.name,
+                   release: test.release
+               }
+               addOrUpdateEntry(service, test, uniqueQuery)
            }
-           // An test is unique by testName and Release.
-           var existingEntry = await service.find({
-             query:{
-               name: test.name,
-               release: test.release
-             }
-           })
-           if (existingEntry.length === 0) {
-             await service.create(test)
-           } else {
-             await service.update(existingEntry[0]._id, test)
-           }
-         }
        }
+
+       async function addEntryToUseragentsService (app, fileName, releaseData) {
+           var service = app.service('/api/v1/useragents')
+           var release = fileName.replace('.json', '')
+           var useragents = Object.keys(releaseData.useragents)
+           for (var useragentEntry of useragents) {
+               var touchedEndpoints = releaseData
+               var touchedEndpoints = releaseData.useragents[useragentEntry]
+               var useragent = {
+                   name: useragentEntry,
+                   endpoints: touchedEndpoints,
+                   release: release
+               }
+               // A useragent is unique by Name and Release.
+               var uniqueQuery = {
+                   name: useragent.name,
+                   release: useragent.release
+               }
+               addOrUpdateEntry(service, useragent, uniqueQuery)
+           }
+       }
+
+       async function addOrUpdateEntry (service, entry, uniqueQuery) {
+           var existingEntry = await service.find({query:uniqueQuery})
+           if (existingEntry.length === 0) {
+               await service.create(entry)
+           } else {
+               await service.update(existingEntry[0]._id, entry)
+           }
+       }
+
+
 
      #+END_SRC
 
