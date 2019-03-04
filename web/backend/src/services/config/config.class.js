@@ -37,7 +37,7 @@ function getBucketJobReleaseFrom (fileName) {
   return {
     bucket: fileNameArr[1],
     job: fileNameArr[2],
-    release: fileNameArr[1] + "/" + fileNameArr[2]
+    release: fileNameArr[1] + "_" + fileNameArr[2]
   }
 }
 
