@@ -26,10 +26,19 @@ function populateReleases (app, dir)  {
       var metadata = JSON.parse(metadataJson)
       var bucketJobRelease = getBucketJobReleaseFrom(fileName)
       addEntryToEndpointService(app, releaseData, bucketJobRelease)
-      addEntryToTestService(app, releaseData, metadata)
-      addEntryToUseragentsService(app, releaseData, metadata)
+      addEntryToTestService(app, releaseData, bucketJobRelease)
+      addEntryToUseragentsService(app, releaseData, bucketJobRelease)
     }
   })
+}
+
+function getBucketJobReleaseFrom (fileName) {
+  fileNameArr = fileName.split('/')
+  return {
+    bucket: fileNameArr[1],
+    job: fileNameArr[2],
+    release: fileNameArr[1] + "/" + fileNameArr[2]
+  }
 }
 
 async function addEntryToEndpointService (app, releaseData, bucketJobRelease) {
@@ -63,26 +72,16 @@ async function addEntryToEndpointService (app, releaseData, bucketJobRelease) {
     }
 }
 
-function getBucketJobReleaseFrom (fileName) {
-  fileNameArr = fileName.split('/')
-  return {
-    bucket: fileNameArr[1],
-    job: fileNameArr[2],
-    release: fileNameArr[1] + "/" + fileNameArr[2]
-  }
-}
-
-
-
-async function addEntryToTestService (app, releaseData, metadata) {
+async function addEntryToTestService (app, releaseData, bucketJobRelease) {
     var service = app.service('/api/v1/tests')
     var testNames = Object.keys(releaseData.test_sequences)
     for (var testName of testNames) {
         var testSequence = releaseData.test_sequences[testName]
         var test = {
             name: testName,
-            sequence: testSequence,
-            release: metadata["job-version"]
+          sequence: testSequence,
+          ...bucketJobRelease
+
         }
         // An test is unique by testName and Release.
         var uniqueQuery = {
@@ -93,7 +92,7 @@ async function addEntryToTestService (app, releaseData, metadata) {
     }
 }
 
-async function addEntryToUseragentsService (app, releaseData, metadata) {
+async function addEntryToUseragentsService (app, releaseData, bucketJobRelease) {
     var service = app.service('/api/v1/useragents')
     var useragents = Object.keys(releaseData.useragents)
     for (var useragentEntry of useragents) {
@@ -102,7 +101,7 @@ async function addEntryToUseragentsService (app, releaseData, metadata) {
         var useragent = {
             name: useragentEntry,
             endpoints: touchedEndpoints,
-            release: metadata["job-version"]
+            ...bucketJobRelease
         }
         // A useragent is unique by Name and Release.
         var uniqueQuery = {
