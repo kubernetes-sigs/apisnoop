@@ -2,13 +2,8 @@ import { createSelector } from 'redux-bundler'
 import {
   filter,
   find,
-  includes,
   keyBy,
-  map,
-  sortBy,
-  split,
-  isUndefined
-} from 'lodash'
+  sortBy} from 'lodash'
 
 export default {
   name: 'releases',
