@@ -1,14 +1,12 @@
 
 
-const cleanReleaseData = require('../../hooks/clean-release-data');
-
 module.exports = {
   before: {
     all: [],
     find: [],
     get: [],
-    create: [cleanReleaseData()],
-    update: [cleanReleaseData()],
+    create: [],
+    update: [],
     patch: [],
     remove: []
   },

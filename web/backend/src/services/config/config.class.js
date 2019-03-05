@@ -34,7 +34,18 @@ function populateEndpointsAndTestsAndUseragents (app, opts, dir) {
 }
 
 function populateReleases (app, opts, dir) {
-  console.log('release Stuff Goes Here')
+  glob("**/metadata.json", opts, (err, processedAudits) => {
+    for (var i = 0; i < processedAudits.length; i++) {
+      var fileName = processedAudits[i]
+      var metadataJson = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
+      var metadata = JSON.parse(metadataJson)
+      var finishedFile = fileName.replace('metadata.json', 'finished.json')
+      var finishedJson = fs.readFileSync(`${dir}/${finishedFile}`, 'utf-8')
+      var finishedData = JSON.parse(finishedJson)
+      var bucketJobRelease = getBucketJobReleaseFrom(fileName)
+      addEntryToReleasesService(app, metadata, finishedData, bucketJobRelease)
+    }
+  })
 }
 
 function getBucketJobReleaseFrom (fileName) {
@@ -115,6 +126,21 @@ async function addEntryToUseragentsService (app, releaseData, bucketJobRelease) 
     }
     addOrUpdateEntry(service, useragent, uniqueQuery)
   }
+}
+
+async function addEntryToReleasesService (app, metadata, finishedData, bucketJobRelease) {
+  var service = app.service('/api/v1/releases')
+  var release = {
+    ...metadata,
+    ...finishedData,
+    ...bucketJobRelease
+  }
+  // Release is unique by bucket, job, and timestamp
+  var uniqueQuery = {
+    bucket: release.bucket,
+    timestamp: release.timestamp
+  }
+  addOrUpdateEntry(service, release, uniqueQuery)
 }
 
 async function addOrUpdateEntry (service, entry, uniqueQuery) {
