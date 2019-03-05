@@ -7,7 +7,6 @@ import {
   map,
   sortBy,
   split,
-  trim,
   isUndefined
 } from 'lodash'
 

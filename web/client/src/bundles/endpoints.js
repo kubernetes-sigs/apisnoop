@@ -1,10 +1,8 @@
 import { createSelector } from 'redux-bundler'
 import {
     groupBy,
-    includes,
     keyBy,
-    mapValues,
-    toLower} from 'lodash'
+    mapValues} from 'lodash'
 
 import { calculateCoverage } from '../lib/utils.js'
 
