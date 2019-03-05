@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 const fs = require('fs')
 const glob = require('glob')
+const dayjs = require('dayjs')
 
 class Service {
   constructor (options) {
@@ -134,7 +135,9 @@ async function addEntryToReleasesService (app, metadata, finishedData, bucketJob
     name: bucketJobRelease.release,
     ...metadata,
     ...finishedData,
-    ...bucketJobRelease
+    ...bucketJobRelease,
+    release_short: metadata["job-version"].split("+")[0],
+    gathered_datetime: dayjs(finishedData.timestamp * 1000).format('YYYY-MM-DD, HH:mm:ss')
   }
   // Release is unique by bucket, job, and timestamp
   var uniqueQuery = {

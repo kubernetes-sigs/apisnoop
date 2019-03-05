@@ -40,7 +40,7 @@ var ReleasesList = (props) => {
       href={getReleaseUrl(release.release, queryObject)}
       key={release._id}
         >
-        {release.name}
+        {release.release_short}
       </a>
         </li>
     )

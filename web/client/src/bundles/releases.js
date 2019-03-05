@@ -91,25 +91,13 @@ export default {
       }
     }
   ),
-  selectReleasesMasterOnly: createSelector(
+  selectReleasesIndexMasterOnly: createSelector(
     'selectReleasesIndexByName',
     'selectMasterRelease',
     (releasesIndex, masterRelease) => {
       if (releasesIndex == null) return null
       return filter(releasesIndex, (release) => {
         return release.name === masterRelease.name
-      })
-    }
-  ),
-  selectReleasesMasterIndex: createSelector(
-    'selectReleasesMasterOnly',
-    (masterReleases) => {
-      return map(masterReleases, (masterRelease) => {
-        return {
-          name: masterRelease.name,
-          url: masterRelease.name,
-          _id: masterRelease._id
-        }
       })
     }
   ),
