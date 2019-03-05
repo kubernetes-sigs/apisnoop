@@ -19,12 +19,5 @@ bundle.reactReleasesIndexFetch = createSelector(
 export default bundle
 
 function fetchReleasesIndex (client) {
-  return client.service('releases').find({
-    query: {
-      $select: [
-        'name',
-        '_id'
-      ]
-    }
-  })
+  return client.service('releases').find()
 }

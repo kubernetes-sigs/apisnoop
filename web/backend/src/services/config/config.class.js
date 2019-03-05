@@ -131,6 +131,7 @@ async function addEntryToUseragentsService (app, releaseData, bucketJobRelease) 
 async function addEntryToReleasesService (app, metadata, finishedData, bucketJobRelease) {
   var service = app.service('/api/v1/releases')
   var release = {
+    name: bucketJobRelease.release,
     ...metadata,
     ...finishedData,
     ...bucketJobRelease

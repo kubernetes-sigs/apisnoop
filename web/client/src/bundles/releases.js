@@ -5,6 +5,7 @@ import {
   includes,
   keyBy,
   map,
+  sortBy,
   split,
   trim,
   isUndefined
@@ -29,10 +30,21 @@ export default {
       return state;
     }
   },
+  selectMasterRelease: createSelector(
+    'selectReleasesIndex',
+    (releasesIndex) => {
+      if (releasesIndex == null) return null
+      var masterBucket = releasesIndex.filter(release => release.bucket.includes("gci-gce"))
+      var masterBucketSorted = sortBy(masterBucket, (job) => parseInt(job.job))
+      return masterBucketSorted[0]
+    }
+  ),
   selectCurrentReleaseName: createSelector(
     'selectRouteParams',
-    (routeParams) => {
-      return routeParams.releaseName || 'master'
+    'selectMasterRelease',
+    (routeParams, masterRelease) => {
+      if (masterRelease == null) return null
+      return routeParams.releaseName || masterRelease.name
     }
   ),
   selectCurrentReleaseId: createSelector(
@@ -80,44 +92,12 @@ export default {
       }
     }
   ),
-  selectReleasesSigOnly: createSelector(
-    'selectReleasesIndexByName',
-    (releasesIndex) => {
-      if (releasesIndex == null) return null
-      return filter(releasesIndex, (o) => {
-        return includes(o.name.toLowerCase(), 'sig')
-      })
-    }
-  ),
   selectReleasesMasterOnly: createSelector(
     'selectReleasesIndexByName',
     (releasesIndex) => {
       if (releasesIndex == null) return null
       return filter(releasesIndex, (o) => {
         return includes(o.name.toLowerCase(), 'master')
-      })
-    }
-  ),
-  selectReleasesSigIndex: createSelector(
-    'selectReleasesSigOnly',
-    (sigReleases) => {
-      return map(sigReleases, (sigRelease) => {
-        var nameWithoutSig = trim(sigRelease.name, 'sig-release_')
-        var shortName = split(nameWithoutSig, '_')[0]
-        return {
-          name: shortName,
-          url:sigRelease.name,
-          _id: sigRelease._id
-        }
-      })
-    }
-  ),
-  selectReleasesIndexSorted: createSelector(
-    'selectReleasesSigIndex',
-    (releases) => {
-      if (releases == null) return null
-      return releases.sort((a, b) => {
-        return a.name.localeCompare(b.name, undefined, {numeric: true})
       })
     }
   ),
