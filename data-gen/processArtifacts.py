@@ -5,8 +5,8 @@ try:
     from urllib.request import urlopen, urlretrieve
 except Exception as e:
     from urllib import urlopen, urlretrieve
-#import datetime
 import os
+from shutil import copyfile
 import click
 import glob
 import subprocess
@@ -18,7 +18,7 @@ def file_to_json(filename):
     data = content.encode('ascii')
     return json.loads(data)
 
-# Find the absolute path to a file, no matter if this script is being run from 
+# Find the absolute path to a file, no matter if this script is being run from
 # root of apisnoop folder or from within data-gen
 def path_to(filename):
     for root, dirs, files in os.walk(r'./'):
@@ -27,10 +27,10 @@ def path_to(filename):
                 return os.path.abspath(os.path.join(root, name))
 
 @click.command()
-@click.argument('folder')
-def main(folder):
-    print("mkdir -p " + folder + "/processed-audits")
-    for auditfile in glob.glob(folder + '/*/*/*audit*log'):
+@click.argument('infolder')
+@click.argument('outfolder')
+def main(infolder,outfolder):
+    for auditfile in glob.glob(infolder + '/*/*/*audit*log'):
         auditpath = os.path.dirname(auditfile)
         metadata = file_to_json(auditpath + '/artifacts/metadata.json')
         finished = file_to_json(auditpath + '/finished.json')
@@ -52,13 +52,21 @@ def main(folder):
         else:
             type = 'sig-release'
         auditLogPath = path_to("processAuditlog.py")
-        audit_name = type + '_' + semver + '_' + str(ts.date()) + '_e2e-only'
-        outfile = folder + '/processed-audits/' + audit_name + ".json"
-        outdb = folder + '/' + audit_name + ".sqlite"
+        audit_folder = auditpath.split('/')[-2]
+        audit_job = auditpath.split('/')[-1]
+        audit_name = type + '_' + semver + '_' + str(ts.date())
+        # import ipdb; ipdb.set_trace(context=15)
+        job_outfolder = outfolder + '/' + audit_folder + '/' + audit_job + '/'
+        os.makedirs(job_outfolder)
+        copyfile(auditpath + '/artifacts/metadata.json',
+                 job_outfolder + "/metadata.json")
+        copyfile(auditpath + '/finished.json',
+                 job_outfolder + "/finished.json")
+        processed_outfile = job_outfolder + "/apisnoop.json"
         print("(")
         print(
             ' '.join(["python", auditLogPath,
-                      auditfile, branch, outfile])
+                      auditfile, branch, processed_outfile])
         )
         print(")&")
         # print("(")
