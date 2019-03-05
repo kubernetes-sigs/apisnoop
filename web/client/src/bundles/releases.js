@@ -93,10 +93,11 @@ export default {
   ),
   selectReleasesMasterOnly: createSelector(
     'selectReleasesIndexByName',
-    (releasesIndex) => {
+    'selectMasterRelease',
+    (releasesIndex, masterRelease) => {
       if (releasesIndex == null) return null
-      return filter(releasesIndex, (o) => {
-        return includes(o.name.toLowerCase(), 'master')
+      return filter(releasesIndex, (release) => {
+        return release.name === masterRelease.name
       })
     }
   ),
@@ -109,6 +110,16 @@ export default {
           url: masterRelease.name,
           _id: masterRelease._id
         }
+      })
+    }
+  ),
+  selectReleasesIndexSansMaster: createSelector(
+    'selectReleasesIndexByName',
+    'selectMasterRelease',
+    (releasesIndex, masterRelease) => {
+      if (releasesIndex == null) return null
+      return filter(releasesIndex, (release) => {
+        return release.name !== masterRelease.name
       })
     }
   )

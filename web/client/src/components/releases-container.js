@@ -5,7 +5,7 @@ import ReleasesList from './releases-list'
 
 function ReleasesContainer (props) {
   const {
-    releasesIndexSorted,
+    releasesIndexSansMaster,
     releasesMasterIndex
   } = props
 
@@ -13,14 +13,14 @@ function ReleasesContainer (props) {
     <section id="releases-container" className="">
       <div className='flex items-start justify-start'>
       <ReleasesList grouping={"Master"} releases={releasesMasterIndex} />
-      <ReleasesList grouping={"Releases"} releases={releasesIndexSorted} />
+      <ReleasesList grouping={"Releases"} releases={releasesIndexSansMaster} />
       </div>
     </section>
   )
 }
 
 export default connect(
-  "selectReleasesIndexSorted",
+  "selectReleasesIndexSansMaster",
   "selectReleasesMasterIndex",
   ReleasesContainer
 )
