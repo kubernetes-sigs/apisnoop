@@ -8,8 +8,7 @@ module.exports = function (app) {
   const paginate = app.get('paginate');
 
   const options = {
-    Model,
-    paginate
+    Model
   };
 
   // Initialize our service with any options it requires
