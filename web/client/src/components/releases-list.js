@@ -37,10 +37,10 @@ var ReleasesList = (props) => {
         <li className='dib'>
         <a
       className={ classes }
-      href={getReleaseUrl(release.url, queryObject)}
+      href={getReleaseUrl(release.release, queryObject)}
       key={release._id}
         >
-        {release.name}
+        {release.release_short}
       </a>
         </li>
     )

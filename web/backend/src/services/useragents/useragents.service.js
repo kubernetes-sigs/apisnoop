@@ -1,7 +1,7 @@
-// Initializes the `tests` service on path `/api/v1/tests`
+// Initializes the `useragents` service on path `/api/v1/useragents`
 const createService = require('feathers-nedb');
-const createModel = require('../../models/tests.model');
-const hooks = require('./tests.hooks');
+const createModel = require('../../models/useragents.model');
+const hooks = require('./useragents.hooks');
 
 module.exports = function (app) {
   const Model = createModel(app);
@@ -12,10 +12,10 @@ module.exports = function (app) {
   };
 
   // Initialize our service with any options it requires
-  app.use('/api/v1/tests', createService(options));
+  app.use('/api/v1/useragents', createService(options));
 
   // Get our initialized service so that we can register hooks
-  const service = app.service('api/v1/tests');
+  const service = app.service('api/v1/useragents');
 
   service.hooks(hooks);
 };

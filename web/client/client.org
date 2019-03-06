@@ -242,10 +242,8 @@
       import { createSelector } from 'redux-bundler'
       import {
           groupBy,
-          includes,
           keyBy,
-          mapValues,
-          toLower} from 'lodash'
+          mapValues} from 'lodash'
 
       import { calculateCoverage } from '../lib/utils.js'
 
@@ -446,14 +444,7 @@
       export default bundle
 
       function fetchReleasesIndex (client) {
-        return client.service('releases').find({
-          query: {
-            $select: [
-              'name',
-              '_id'
-            ]
-          }
-        })
+        return client.service('releases').find()
       }
     #+END_SRC
 *** Releases
@@ -466,13 +457,8 @@
       import {
         filter,
         find,
-        includes,
         keyBy,
-        map,
-        split,
-        trim,
-        isUndefined
-      } from 'lodash'
+        sortBy} from 'lodash'
 
       export default {
         name: 'releases',
@@ -493,10 +479,21 @@
             return state;
           }
         },
+        selectMasterRelease: createSelector(
+          'selectReleasesIndex',
+          (releasesIndex) => {
+            if (releasesIndex == null) return null
+            var masterBucket = releasesIndex.filter(release => release.bucket.includes("gci-gce"))
+            var masterBucketSorted = sortBy(masterBucket, (job) => parseInt(job.job))
+            return masterBucketSorted[0]
+          }
+        ),
         selectCurrentReleaseName: createSelector(
           'selectRouteParams',
-          (routeParams) => {
-            return routeParams.releaseName || 'master'
+          'selectMasterRelease',
+          (routeParams, masterRelease) => {
+            if (masterRelease == null) return null
+            return routeParams.releaseName || masterRelease.name
           }
         ),
         selectCurrentReleaseId: createSelector(
@@ -514,90 +511,46 @@
           'selectReleasesIndex',
           releasesIndex => keyBy(releasesIndex, 'name')
         ),
-        selectCurrentReleaseObjectRaw: createSelector(
+        selectCurrentReleaseObject: createSelector(
           'selectCurrentReleaseName',
           'selectReleasesIndexByName',
-          (currentRelease, releasesIndex) =>  {
+          (currentReleaseName, releasesIndex) =>  {
             if (releasesIndex == null) return null
             return find(releasesIndex, (release) => {
-              return includes(release.name.toLowerCase(), currentRelease.toLowerCase())
+              return release.name  === currentReleaseName
             })
           }
         ),
-        selectCurrentReleaseObject: createSelector(
-          'selectCurrentReleaseObjectRaw',
-          (rawRelease) => {
-            if (rawRelease == null) return null
-            var nameArr = split(rawRelease.name, '_')
-            if (nameArr.length === 1) {
-              return {
-                version: '',
-                release: nameArr[0],
-                date: ''
-              }
-            }
-            return {
-              version: nameArr[0],
-              release: nameArr[1],
-              date: nameArr[2],
-              e2eOnly: !isUndefined(nameArr[3])
-            }
-          }
-        ),
-        selectReleasesSigOnly: createSelector(
+        selectCurrentReleaseSpyglassLink: createSelector(
+          'selectCurrentReleaseObject',
+          (currentRelease) => {
+            if (currentRelease == null) return null
+            var bucketJobPath = currentRelease.name.replace('_', '/')
+            var spyglassBase = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/'
+            return spyglassBase + bucketJobPath
+          }),
+        selectReleasesIndexMasterOnly: createSelector(
           'selectReleasesIndexByName',
-          (releasesIndex) => {
+          'selectMasterRelease',
+          (releasesIndex, masterRelease) => {
             if (releasesIndex == null) return null
-            return filter(releasesIndex, (o) => {
-              return includes(o.name.toLowerCase(), 'sig')
+            return filter(releasesIndex, (release) => {
+              return release.name === masterRelease.name
             })
           }
         ),
-        selectReleasesMasterOnly: createSelector(
+        selectReleasesIndexSansMaster: createSelector(
           'selectReleasesIndexByName',
-          (releasesIndex) => {
+          'selectMasterRelease',
+          (releasesIndex, masterRelease) => {
             if (releasesIndex == null) return null
-            return filter(releasesIndex, (o) => {
-              return includes(o.name.toLowerCase(), 'master')
-            })
-          }
-        ),
-        selectReleasesSigIndex: createSelector(
-          'selectReleasesSigOnly',
-          (sigReleases) => {
-            return map(sigReleases, (sigRelease) => {
-              var nameWithoutSig = trim(sigRelease.name, 'sig-release_')
-              var shortName = split(nameWithoutSig, '_')[0]
-              return {
-                name: shortName,
-                url:sigRelease.name,
-                _id: sigRelease._id
-              }
-            })
-          }
-        ),
-        selectReleasesIndexSorted: createSelector(
-          'selectReleasesSigIndex',
-          (releases) => {
-            if (releases == null) return null
-            return releases.sort((a, b) => {
-              return a.name.localeCompare(b.name, undefined, {numeric: true})
-            })
-          }
-        ),
-        selectReleasesMasterIndex: createSelector(
-          'selectReleasesMasterOnly',
-          (masterReleases) => {
-            return map(masterReleases, (masterRelease) => {
-              return {
-                name: masterRelease.name,
-                url: masterRelease.name,
-                _id: masterRelease._id
-              }
+            return filter(releasesIndex, (release) => {
+              return release.name !== masterRelease.name
             })
           }
         )
       }
+
     #+END_SRC
 *** Routes
     :PROPERTIES:
@@ -889,6 +842,7 @@
            coverage = endpoints[query.level][query.category].coverage
            description= ''
          } else {
+           console.log({endpoints, query})
            var endpointInQuestion = endpoints[query.level][query.category][query.name]
            name = query.name
            description= determineDescription(endpoints[query.level][query.category][query.name])
@@ -1416,23 +1370,23 @@ The 'Releases' section are still all titled with a sig prefix, so our sigRelease
 
    function ReleasesContainer (props) {
      const {
-       releasesIndexSorted,
-       releasesMasterIndex
+       releasesIndexMasterOnly,
+       releasesIndexSansMaster
      } = props
 
      return(
        <section id="releases-container" className="">
          <div className='flex items-start justify-start'>
-         <ReleasesList grouping={"Master"} releases={releasesMasterIndex} />
-         <ReleasesList grouping={"Releases"} releases={releasesIndexSorted} />
+         <ReleasesList grouping={"Master"} releases={releasesIndexMasterOnly} />
+         <ReleasesList grouping={"Releases"} releases={releasesIndexSansMaster} />
          </div>
        </section>
      )
    }
 
    export default connect(
-     "selectReleasesIndexSorted",
-     "selectReleasesMasterIndex",
+     "selectReleasesIndexMasterOnly",
+     "selectReleasesIndexSansMaster",
      ReleasesContainer
    )
 
@@ -1442,22 +1396,34 @@ The 'Releases' section are still all titled with a sig prefix, so our sigRelease
     :PROPERTIES:
     :header-args: :tangle ./src/components/releases-list.js
     :END:
-We are being passed three arguments:
-- release :: the Name of the release type, which we use for a header.  A string.
+We are being passed a big chunk of data for releases, drawing from the metadata and finished JSON's generated in the apisnoop.sh script.
 
-- all :: all the releases that are not e2eOnly.  For Master this will be the only one given.  An Object
-
-- e2eOnly :: Releases filtered to just show e2e tests.  Master won't have this.  This should also be a subset within.  So we need something like "if (e2eOnly && E2EList". An Object
-
-The Release is an Object structured like so:
-#+NAME: Example Release
-#+BEGIN_EXAMPLE js
-{
-  name: '1.13.0',
-  url: 'conformance_1.13.0_2018-11-02_e2e-only',
-  _id: 'AI82329231671'
-}
+#+EXAMPLE: Sample Releases info
+#+BEGIN_EXAMPLE
+  name	"ci-kubernetes-e2e-gce-cos-k8sstable2-default_1814"
+  job-version	"v1.11.8-beta.0.8+7ee1441c1ed1de"
+  master_os_image	"cos-stable-65-10323-64-0"
+  node_os_image	"cos-stable-65-10323-64-0"
+  revision	"v1.11.8-beta.0.8+7ee1441c1ed1de"
+  timestamp	1549341765
+  version	"v1.11.8-beta.0.8+7ee1441c1ed1de"
+  result	"SUCCESS"
+  passed	true
+  metadata
+  node_os_image	"cos-stable-65-10323-64-0"
+  infra-commit	"6fe6319c1"
+  master_os_image	"cos-stable-65-10323-64-0"
+  job-version	"v1.11.8-beta.0.8+7ee1441c1ed1de"
+  pod	"8edf9e3d-28fa-11e9-9ab9-0a580a6c025d"
+  revision	"v1.11.8-beta.0.8+7ee1441c1ed1de"
+  bucket	"ci-kubernetes-e2e-gce-cos-k8sstable2-default"
+  job	"1814"
+  release	"ci-kubernetes-e2e-gce-cos-k8sstable2-default_1814"
+  release_short	"v1.11.8-beta.0.8"
+  gathered_datetime	"2019-02-05, 04:42:45"
+  _id	"SW3EHQPZpeVw3WUv"
 #+END_EXAMPLE
+
 
 #+NAME: releases-list
 #+BEGIN_SRC js
@@ -1500,10 +1466,10 @@ The Release is an Object structured like so:
           <li className='dib'>
           <a
         className={ classes }
-        href={getReleaseUrl(release.url, queryObject)}
+        href={getReleaseUrl(release.release, queryObject)}
         key={release._id}
           >
-          {release.name}
+          {release.release_short}
         </a>
           </li>
       )
@@ -1582,58 +1548,45 @@ The Release is an Object structured like so:
     :END:
     #+NAME: sunburst-header
     #+BEGIN_SRC js
-      import React from 'react'
-      import { connect } from 'redux-bundler-react'
+           import React from 'react'
+           import { connect } from 'redux-bundler-react'
 
-      const SunburstHeader = (props) => {
-        const {
-          currentReleaseObject,
-          currentReleaseIsLoading,
-          currentReleaseShouldUpdate
-        } = props
-        var release = currentReleaseObject
+           const SunburstHeader = (props) => {
+             const {
+               currentReleaseObject,
+               currentReleaseIsLoading,
+               currentReleaseShouldUpdate,
+               currentReleaseSpyglassLink
+             } = props
+             var release = currentReleaseObject
 
-        if (release == null) return null
+             if (release == null) return null
 
-        return (
-            <div id='sunburst-header' className='relative'>
-            {(currentReleaseShouldUpdate || currentReleaseIsLoading) && <p className='i fw2 absolute top-0'>Switching To...</p>}
-            <h2 className='mb1 mt1 pt4 f1'>
-              <VersionTag version={release.version}/>
-              {release.release }
-              <E2ETag e2eOnly={release.e2eOnly}/>
-            </h2>
-            {(release.release !== 'master') &&
-            <p className='ibm-plex-mono f6 mt0 pt0 pl2'>Data Gathered on { release.date}</p>
-            }
-            </div>
-        )
+             return (
+                 <div id='sunburst-header' className='relative'>
+                 {(currentReleaseShouldUpdate || currentReleaseIsLoading) && <p className='i fw2 absolute top-0'>Switching To...</p>}
+                 <h2 className='mb1 mt1 pt4 f1'>
+                 {release.release_short }
+                 </h2>
+                 <p className='ibm-plex-mono f6 mt0 pt0 pl2'>from job {release.job} in {release.bucket}</p>
+                 <p className='ibm-plex-mono f6 mt0 pt0 pl2'>Data Gathered on {release.gathered_datetime}</p>
+                 <a
+                  href={currentReleaseSpyglassLink}
+                  title='job information on spyglass'
+                  target='_blank'
+                  rel='noopener noreferrer'
+                 >See Job on Spyglass</a>
+                 </div>
+             )
+           }
 
-        function VersionTag (version) {
-          version = version.version
-          if (version === 'master' || version == null) return null
-          if (version === 'sig-release') {
-            return <span className='light-red mr2'>Sig Release</span>
-          }
-          if (version === 'conformance') {
-            return <span className='light-blue mr2'>Conformance</span>
-          }
-          return null
-        }
-
-        function E2ETag (e2eOnly) {
-          e2eOnly = e2eOnly.e2eOnly
-          if (e2eOnly === true) return <span className='f6 i ml1'>e2e only</span>
-          return null
-        }
-      }
-
-      export default connect(
-        'selectCurrentReleaseObject',
-        'selectCurrentReleaseIsLoading',
-        'selectCurrentReleaseShouldUpdate',
-        SunburstHeader
-      )
+           export default connect(
+             'selectCurrentReleaseObject',
+             'selectCurrentReleaseIsLoading',
+             'selectCurrentReleaseShouldUpdate',
+             'selectCurrentReleaseSpyglassLink',
+             SunburstHeader
+           )
 
     #+END_SRC
 *** Sunburst
@@ -1675,7 +1628,7 @@ The Release is an Object structured like so:
           onValueMouseOver={handleMouseOver}
           onValueMouseOut={handleMouseOut}
             >
-            {(interiorLabel && interiorLabel.coverage) &&
+            {(interiorLabel && interiorLabel.coverage && interiorLabel.coverage.tested) &&
              <LabelSeries
              data={[{x: 0, y: 60, label: interiorLabel.coverage.percentage, style: labelStyle.PERCENTAGE},
                     {x: 0, y: 0, label: interiorLabel.coverage.ratio, style: labelStyle.FRACTION},
@@ -2069,7 +2022,7 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
      import React from 'react'
      import { connect } from 'redux-bundler-react'
 
-     import FilterContainer from '../components/filter-container'
+     // import FilterContainer from '../components/filter-container' # a regex filter for endpoints.
      import ReleasesContainer from '../components/releases-container'
      import SunburstAndSummary from '../components/sunburst-and-summary'
      import ActiveTestsList from '../components/active-tests-list'
@@ -2188,7 +2141,6 @@ A function that creates an action.  They are written as 'doThisAction', so in th
 Kinda used interchangable with state, and short for redux store.  It refers to the big object containing the entire state of the app.
 ** State (<<<State>>>)
   All the data, properties, truths, and so on of the app at this moment in time.  Similar to your emotional, personal, physical state.
-* Filter (<<<filter>>>)
 
 * Tasks                                                            :apisnoop:
 ** DONE Remove 'E2E Only' from releases list

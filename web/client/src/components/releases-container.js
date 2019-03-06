@@ -5,22 +5,22 @@ import ReleasesList from './releases-list'
 
 function ReleasesContainer (props) {
   const {
-    releasesIndexSorted,
-    releasesMasterIndex
+    releasesIndexMasterOnly,
+    releasesIndexSansMaster
   } = props
 
   return(
     <section id="releases-container" className="">
       <div className='flex items-start justify-start'>
-      <ReleasesList grouping={"Master"} releases={releasesMasterIndex} />
-      <ReleasesList grouping={"Releases"} releases={releasesIndexSorted} />
+      <ReleasesList grouping={"Master"} releases={releasesIndexMasterOnly} />
+      <ReleasesList grouping={"Releases"} releases={releasesIndexSansMaster} />
       </div>
     </section>
   )
 }
 
 export default connect(
-  "selectReleasesIndexSorted",
-  "selectReleasesMasterIndex",
+  "selectReleasesIndexMasterOnly",
+  "selectReleasesIndexSansMaster",
   ReleasesContainer
 )

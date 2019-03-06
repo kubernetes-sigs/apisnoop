@@ -31,7 +31,7 @@ const SunburstChart = (props) => {
     onValueMouseOver={handleMouseOver}
     onValueMouseOut={handleMouseOut}
       >
-      {(interiorLabel && interiorLabel.coverage) &&
+      {(interiorLabel && interiorLabel.coverage && interiorLabel.coverage.tested) &&
        <LabelSeries
        data={[{x: 0, y: 60, label: interiorLabel.coverage.percentage, style: labelStyle.PERCENTAGE},
               {x: 0, y: 0, label: interiorLabel.coverage.ratio, style: labelStyle.FRACTION},

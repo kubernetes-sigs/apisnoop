@@ -2,13 +2,8 @@ import { createSelector } from 'redux-bundler'
 import {
   filter,
   find,
-  includes,
   keyBy,
-  map,
-  split,
-  trim,
-  isUndefined
-} from 'lodash'
+  sortBy} from 'lodash'
 
 export default {
   name: 'releases',
@@ -29,10 +24,21 @@ export default {
       return state;
     }
   },
+  selectMasterRelease: createSelector(
+    'selectReleasesIndex',
+    (releasesIndex) => {
+      if (releasesIndex == null) return null
+      var masterBucket = releasesIndex.filter(release => release.bucket.includes("gci-gce"))
+      var masterBucketSorted = sortBy(masterBucket, (job) => parseInt(job.job))
+      return masterBucketSorted[0]
+    }
+  ),
   selectCurrentReleaseName: createSelector(
     'selectRouteParams',
-    (routeParams) => {
-      return routeParams.releaseName || 'master'
+    'selectMasterRelease',
+    (routeParams, masterRelease) => {
+      if (masterRelease == null) return null
+      return routeParams.releaseName || masterRelease.name
     }
   ),
   selectCurrentReleaseId: createSelector(
@@ -50,86 +56,41 @@ export default {
     'selectReleasesIndex',
     releasesIndex => keyBy(releasesIndex, 'name')
   ),
-  selectCurrentReleaseObjectRaw: createSelector(
+  selectCurrentReleaseObject: createSelector(
     'selectCurrentReleaseName',
     'selectReleasesIndexByName',
-    (currentRelease, releasesIndex) =>  {
+    (currentReleaseName, releasesIndex) =>  {
       if (releasesIndex == null) return null
       return find(releasesIndex, (release) => {
-        return includes(release.name.toLowerCase(), currentRelease.toLowerCase())
+        return release.name  === currentReleaseName
       })
     }
   ),
-  selectCurrentReleaseObject: createSelector(
-    'selectCurrentReleaseObjectRaw',
-    (rawRelease) => {
-      if (rawRelease == null) return null
-      var nameArr = split(rawRelease.name, '_')
-      if (nameArr.length === 1) {
-        return {
-          version: '',
-          release: nameArr[0],
-          date: ''
-        }
-      }
-      return {
-        version: nameArr[0],
-        release: nameArr[1],
-        date: nameArr[2],
-        e2eOnly: !isUndefined(nameArr[3])
-      }
-    }
-  ),
-  selectReleasesSigOnly: createSelector(
+  selectCurrentReleaseSpyglassLink: createSelector(
+    'selectCurrentReleaseObject',
+    (currentRelease) => {
+      if (currentRelease == null) return null
+      var bucketJobPath = currentRelease.name.replace('_', '/')
+      var spyglassBase = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/'
+      return spyglassBase + bucketJobPath
+    }),
+  selectReleasesIndexMasterOnly: createSelector(
     'selectReleasesIndexByName',
-    (releasesIndex) => {
+    'selectMasterRelease',
+    (releasesIndex, masterRelease) => {
       if (releasesIndex == null) return null
-      return filter(releasesIndex, (o) => {
-        return includes(o.name.toLowerCase(), 'sig')
+      return filter(releasesIndex, (release) => {
+        return release.name === masterRelease.name
       })
     }
   ),
-  selectReleasesMasterOnly: createSelector(
+  selectReleasesIndexSansMaster: createSelector(
     'selectReleasesIndexByName',
-    (releasesIndex) => {
+    'selectMasterRelease',
+    (releasesIndex, masterRelease) => {
       if (releasesIndex == null) return null
-      return filter(releasesIndex, (o) => {
-        return includes(o.name.toLowerCase(), 'master')
-      })
-    }
-  ),
-  selectReleasesSigIndex: createSelector(
-    'selectReleasesSigOnly',
-    (sigReleases) => {
-      return map(sigReleases, (sigRelease) => {
-        var nameWithoutSig = trim(sigRelease.name, 'sig-release_')
-        var shortName = split(nameWithoutSig, '_')[0]
-        return {
-          name: shortName,
-          url:sigRelease.name,
-          _id: sigRelease._id
-        }
-      })
-    }
-  ),
-  selectReleasesIndexSorted: createSelector(
-    'selectReleasesSigIndex',
-    (releases) => {
-      if (releases == null) return null
-      return releases.sort((a, b) => {
-        return a.name.localeCompare(b.name, undefined, {numeric: true})
-      })
-    }
-  ),
-  selectReleasesMasterIndex: createSelector(
-    'selectReleasesMasterOnly',
-    (masterReleases) => {
-      return map(masterReleases, (masterRelease) => {
-        return {
-          name: masterRelease.name,
-          url: masterRelease.name,
-          _id: masterRelease._id
-        }
+      return filter(releasesIndex, (release) => {
+        return release.name !== masterRelease.name
       })
     }
   )

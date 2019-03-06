@@ -1,7 +1,7 @@
 import React from 'react'
 import { connect } from 'redux-bundler-react'
 
-import FilterContainer from '../components/filter-container'
+// import FilterContainer from '../components/filter-container' # a regex filter for endpoints.
 import ReleasesContainer from '../components/releases-container'
 import SunburstAndSummary from '../components/sunburst-and-summary'
 import ActiveTestsList from '../components/active-tests-list'
