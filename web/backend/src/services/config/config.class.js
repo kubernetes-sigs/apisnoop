@@ -28,7 +28,7 @@ function populateEndpointsAndTestsAndUseragents (app, opts, dir) {
       var fileName = processedAudits[i]
       var releaseJson = fs.readFileSync(`${dir}/${fileName}`, 'utf-8')
       var releaseData = JSON.parse(releaseJson)
-      var bucketJobRelease = getBucketJobReleaseFrom(fileName)
+      var bucketJobRelease = getBucketJobRelease(fileName)
       addEntryToEndpointService(app, releaseData, bucketJobRelease)
       addEntryToTestService(app, releaseData, bucketJobRelease)
       addEntryToUseragentsService(app, releaseData, bucketJobRelease)
@@ -45,13 +45,13 @@ function populateReleases (app, opts, dir) {
       var finishedFile = fileName.replace('metadata.json', 'finished.json')
       var finishedJson = fs.readFileSync(`${dir}/${finishedFile}`, 'utf-8')
       var finishedData = JSON.parse(finishedJson)
-      var bucketJobRelease = getBucketJobReleaseFrom(fileName)
+      var bucketJobRelease = getBucketJobRelease(fileName)
       addEntryToReleasesService(app, metadata, finishedData, bucketJobRelease)
     }
   })
 }
 
-function getBucketJobReleaseFrom (fileName) {
+function getBucketJobRelease (fileName) {
   fileNameArr = fileName.split('/')
   return {
     bucket: fileNameArr[1],
@@ -90,7 +90,6 @@ async function addEntryToEndpointService (app, releaseData, bucketJobRelease) {
     }
   }
 }
-
 async function addEntryToTestService (app, releaseData, bucketJobRelease) {
   var service = app.service('/api/v1/tests')
   var testNames = Object.keys(releaseData.test_sequences)
@@ -149,6 +148,7 @@ async function addEntryToReleasesService (app, metadata, finishedData, bucketJob
   addOrUpdateEntry(service, release, uniqueQuery)
 }
 
+
 async function addOrUpdateEntry (service, entry, uniqueQuery) {
   var existingEntry = await service.find({query:uniqueQuery})
   if (existingEntry.length === 0) {
@@ -157,9 +157,6 @@ async function addOrUpdateEntry (service, entry, uniqueQuery) {
     await service.update(existingEntry[0]._id, entry)
   }
 }
-
-
-
 
 module.exports = function (options) {
   return new Service(options);
