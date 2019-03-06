@@ -24,31 +24,28 @@ This deals with the backend for apisnoop.cncf.io.
 * The Code
 ** Setting up our API Initially
 **** Generating the Services
-     We will be using the processed data provided by the audit-log review to generate an api path for us to traverse.  Each build will have its own data, which will include the tags in it, the agents in it, and a sunburst path.
+
+     We generated all the services using the [[https://github.com/feathersjs/cli][feathers js CLI]] and their default options given.  Doing this creates a service, hooks, a test boilerplate, and more.  We aren't touching the majority of these files yet.  Most of our work is done within the config service, explained below.
+
 ** Services
    (**NOTE**: for each service, make sure paginate is turned off.  In the future I should do this automatically.)
 *** Introduction
-
-Services refer to the different paths of our api, and the various jobs and manipulation we do to the data being fed through these paths.  They act as gatekeeepers to our various db's, so we aren't doing a bunch of db queries from all over the code and potentially causing strange behavior and hard to track errors.  Throug these, we have a consistent and reliable way to ask for and give data to our server: talk to the relevant service and have them do the work for you.
-
-We generate a service using feathers cli.  This creates a number of files for us and makes sure the service is known to the entire backend.  Which is to say that there will be a number of file changes made when we make a new service, but the files within this section only refer to the core code we are writing.
+Services refer to the different paths of our api, and the various jobs and manipulation we do to the data being fed through these paths.  They act as gatekeeepers to our various db's, so we aren't doing a bunch of db queries from all over the code and potentially causing strange behavior and hard to track errors.  Through these, we have a consistent and reliable way to ask for and give data to our front-end client.
 **** Service Definitions
    We have four services now.
  - Config :: Handles the initial setup (reading json files from disk and distributing the file to the proper Releases service, performing any cleanup as necessary).
- - Releases ::  the heart of our data, has all the info we need by release and we use this for our presentational components in the front end..
- - Endpoints :: all the endpoints as taken from the releases, organized with the releases name
- - Tests :: all the tests form the releases organded by id and the releases name
+ - Releases ::  The releases/bucket/jobs available to us (from running our apisnoop script with =--download-apiusage=).  Holds all the metadata about the release.
+ - Endpoints :: all the endpoints as taken from the release.  This service is the heart of our sunburst chart.
+ - Tests :: all the tests from m the releases organized by id and the releases name.
 *** Config
     :PROPERTIES:
     :header-args: :noweb yes :tangle ./src/services/config/config.class.js
     :END:
    The config is run whenever the server starts up, and takes JSON files placed in =data-gen/processed= and generates paths from the data held within.
 
+The core file in this processed folder is  =apisnoop.json=.  This lists all the endpoints and whether they're tested and the attached tests and useragents and so on.
 
-   The core of what we want is in apisnoop.json.  This lists all the endpoints and whether they're tested and the attached tests and useragents and so on.  It does _not_ include the release it is a part of, though.  This is held in =metadata.json=.  We need this info, because we organize all our sunbursts and such around the release.
-
-   We use glob to search within our =data-gen/processed= folder, and it returns a list of filenames all with the full path after processed.  So we could take this path, and replace apisnoop.json with metadata.json, then pull the release info from there and append that as the release in the endpoints and so on.  It's a tad bit convoluted, but would at least make sure we are grabbing the info from within the file instead of the file name.
-
+   We use glob to search within our =data-gen/processed= folder, and it returns a list of filenames all with the full path after processed.   In this way, we can contin8ually expand our buckets and jobs, and the server will work the same.
 
 **** Overall Layout
      #+NAME: config.class.js layout
@@ -58,13 +55,15 @@ We generate a service using feathers cli.  This creates a number of files for us
        const glob = require('glob')
        const dayjs = require('dayjs')
 
+       var dataFolder = '../../data-gen/processed'
+
        class Service {
          constructor (options) {
            this.options = options || {};
          }
 
          async setup (app, params) {
-           populateAPI(app,'../../data-gen/processed')
+           populateAPI(app, dataFolder)
          }
        }
        <<Define populateAPI>>
@@ -76,7 +75,8 @@ We generate a service using feathers cli.  This creates a number of files for us
        module.exports.Service = Service;
     #+END_SRC
 
-     We only have a single method here, which is setup.  We don't want this to be an accessible path, we are just using it to run through commands when the server first starts up.  In this case, we run a command that looks in a directory for processed JSons and puts each file into its own entry in our releases api path.
+     We only have a single method for our service here, which is setup.  We don't want config to be an accessible path, as we are just using it at the start to populate our actual paths.
+
 
 **** Define populateAPI
      This is our main set of functions for bringing in the data from our jsons into the api.  originally we had it set to a specific folder, and knowing the exact files we were looking for.  But now, we need to glob anything starting within =../../data-gen/processed/=

@@ -3,13 +3,15 @@ const fs = require('fs')
 const glob = require('glob')
 const dayjs = require('dayjs')
 
+var dataFolder = '../../data-gen/processed'
+
 class Service {
   constructor (options) {
     this.options = options || {};
   }
 
   async setup (app, params) {
-    populateAPI(app,'../../data-gen/processed')
+    populateAPI(app, dataFolder)
   }
 }
 function populateAPI (app, dir)  {
