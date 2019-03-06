@@ -66,6 +66,14 @@ export default {
       })
     }
   ),
+  selectCurrentReleaseSpyglassLink: createSelector(
+    'selectCurrentReleaseObject',
+    (currentRelease) => {
+      if (currentRelease == null) return null
+      var bucketJobPath = currentRelease.name.replace('_', '/')
+      var spyglassBase = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/'
+      return spyglassBase + bucketJobPath
+    }),
   selectReleasesIndexMasterOnly: createSelector(
     'selectReleasesIndexByName',
     'selectMasterRelease',

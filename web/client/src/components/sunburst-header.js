@@ -5,7 +5,8 @@ const SunburstHeader = (props) => {
   const {
     currentReleaseObject,
     currentReleaseIsLoading,
-    currentReleaseShouldUpdate
+    currentReleaseShouldUpdate,
+    currentReleaseSpyglassLink
   } = props
   var release = currentReleaseObject
 
@@ -19,6 +20,12 @@ const SunburstHeader = (props) => {
       </h2>
       <p className='ibm-plex-mono f6 mt0 pt0 pl2'>from job {release.job} in {release.bucket}</p>
       <p className='ibm-plex-mono f6 mt0 pt0 pl2'>Data Gathered on {release.gathered_datetime}</p>
+      <a
+       href={currentReleaseSpyglassLink}
+       title='job information on spyglass'
+       target='_blank'
+       rel='noopener noreferrer'
+      >See Job on Spyglass</a>
       </div>
   )
 }
@@ -27,5 +34,6 @@ export default connect(
   'selectCurrentReleaseObject',
   'selectCurrentReleaseIsLoading',
   'selectCurrentReleaseShouldUpdate',
+  'selectCurrentReleaseSpyglassLink',
   SunburstHeader
 )
