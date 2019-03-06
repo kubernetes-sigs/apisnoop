@@ -1,42 +1,92 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
+
+# Our main command line script
+APISNOOP_SOURCE=${APISNOOP_SOURCE:-"./data-gen/sources.yaml"}
+APISNOOP_CACHE=${APISNOOP_CACHE:-"./data-gen/cache"}
+APISNOOP_DEST=${APISNOOP_DEST:-"./data-gen/processed"}
+APISNOOP_GCS_PREFIX=${APISNOOP_GCS_PREFIX:-"gs://apisnoop/dev/"}
 
 print_help() {
 	cat << EOF
 Usage: apisnoop [parameters]
 This utility can fetch and process Kubernetes audit logs.
+      By default:
+        source is $APISNOOP_SOURCE
+        cache is $APISNOOP_CACHE
+        destination is $APISNOOP_DEST
+        gcs_prefix is $APISNOOP_GCS_PREFIX
+      Defaults can be overwritten with optional arguments.
 
 Parameters:
-  --fetch [source] [destination] Download datasets listed in file. 
-				 By default:
-				    source is ./data-gen/sources.yaml 
-				    destination is ./data-gen/data.
-				 Both defaults can be overwritten with optional arguments.
+=======
+  --all [source] [cache] [destination] Download and Process based on sources.yaml
+  --install           Installs python dependencies
+  --update-sources    Check for latest successful jobs and update sources.yaml
+  --update-cache      Download raw audit-logs based on sources.yaml
+  --process-cache     Process raw audit-logs and save apiusage results to disk
+  --upload-apiusage   Upload apiusage results to a gcs bucket
+  --download-apiusage Download apiusage results from gcs bucket
 
-  --process           Process datasets
+Enironment Variables:
+=======
+
+  APISNOOP_SOURCE      Current value: ${APISNOOP_SOURCE}
+  APISNOOP_CACHE       Current value: ${APISNOOP_CACHE}
+  APISNOOP_DEST        Current value: ${APISNOOP_DEST}
+  APISNOOP_GCS_PREFIX  Current value: ${APISNOOP_GCS_PREFIX}
+
+
 EOF
 }
 
-# Our main command line script
-DEFAULT_SOURCE="./data-gen/sources.yaml"
-DEFAULT_DEST="./data-gen/data"
+install_reqs() {
+  pip install -r ./data-gen/requirements.txt
+}
+
+update_sources() {
+  ./data-gen/updateSources.py ./data-gen/sources.yaml
+}
+
+update_cache() {
+  ./data-gen/downloadArtifacts.py "${2:-$APISNOOP_SOURCE}" "${3:-$APISNOOP_CACHE}"
+}
+
+process_cache() {
+  ./data-gen/processArtifacts.py "${2:-$APISNOOP_CACHE}" "${3:-$APISNOOP_DEST}" > ./data-gen/processArtifacts.sh
+  bash ./data-gen/processArtifacts.sh
+}
+
+upload_apiusage() {
+  cd "$APISNOOP_DEST" || exit
+  gsutil -m cp -R -n ./ "$APISNOOP_GCS_PREFIX"
+}
+
+download_apiusage() {
+  mkdir -p "$APISNOOP_DEST"
+  gsutil -m cp -R -n "$APISNOOP_GCS_PREFIX" "$APISNOOP_DEST"
+}
+
 if [ $# -eq 0 ]; then
   print_help
-elif [ $1 = "--all" ]; then
-  echo "Installing necessary dependendies"
-  pip install -r ./data-gen/requirements.txt	
+elif [ "$1" = "--install" ]; then
+  install_reqs
+elif [ "$1" = "--update-sources" ]; then
+  update_sources "$@"
+elif [ "$1" = "--update-cache" ]; then
+  update_cache "$@"
+elif [ "$1" = "--process-cache" ]; then
+  process_cache "$@"
+elif [ "$1" = "--upload-apiusage" ]; then
+  upload_apiusage "$@"
+elif [ "$1" = "--download-apiusage" ]; then
+  download_apiusage "$@"
+elif [ "$1" = "--all" ]; then
+  echo "Installing necessary dependencies"
+  install_reqs
   echo "Fetching latest artifacts"
-  ./data-gen/downloadArtifacts.py ${2:-$DEFAULT_SOURCE} ${3:-$DEFAULT_DEST}
-  echo "Generating shell script to process artifacts"
-  ./data-gen/processArtifacts.py ${2:-$DEFAULT_DEST} > ./data-gen/processArtifacts.sh
+  update_cache "$@"
   echo "Processing Artifacts"
-  bash ./data-gen/processArtifacts.sh
-elif [ $1 = "--fetch" ]; then
-  ./data-gen/downloadArtifacts.py ${2:-$DEFAULT_SOURCE} ${3:-$DEFAULT_DEST}
-elif [ $1 = "--process" ]; then
-  ./data-gen/processArtifacts.py ${2:-$DEFAULT_DEST} > ./data-gen/processArtifacts.sh
-  bash ./data-gen/processArtifacts.sh
-elif [ $1 = "--install" ]; then
-  pip install -r ./data-gen/requirements.txt	
+  process_cache "$@"
 else
-  echo $1 is not a valid flag.  Did you mean --fetch or --process?
+  echo "$1" is not a valid flag.  Did you mean --fetch, --update or --process?
 fi
