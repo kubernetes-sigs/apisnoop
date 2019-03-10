@@ -140,7 +140,8 @@ async function addEntryToReleasesService (app, metadata, finishedData, bucketJob
     ...finishedData,
     ...bucketJobRelease,
     release_short: metadata["job-version"].split("+")[0],
-    gathered_datetime: dayjs(finishedData.timestamp * 1000).format('YYYY-MM-DD, HH:mm:ss')
+    gathered_datetime: dayjs(finishedData.timestamp * 1000).format('YYYY-MM-DD, HH:mm:ss'),
+    version: finishedData["version"].match(/v(.*?)-/)[1]
   }
   // Release is unique by bucket, job, and timestamp
   var uniqueQuery = {
