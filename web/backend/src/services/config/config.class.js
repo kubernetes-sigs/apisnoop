@@ -14,6 +14,7 @@ class Service {
     populateAPI(app, dataFolder)
   }
 }
+
 function populateAPI (app, dir)  {
   var globOpts = {
     cwd: dir
@@ -53,10 +54,11 @@ function populateReleases (app, opts, dir) {
 
 function getBucketJobRelease (fileName) {
   fileNameArr = fileName.split('/')
+  console.log(fileNameArr)
   return {
-    bucket: fileNameArr[1],
-    job: fileNameArr[2],
-    release: fileNameArr[1] + "_" + fileNameArr[2]
+    bucket: fileNameArr[0],
+    job: fileNameArr[1],
+    release: fileNameArr[0] + "_" + fileNameArr[1]
   }
 }
 
