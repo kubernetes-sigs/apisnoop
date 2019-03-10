@@ -5,7 +5,7 @@ APISNOOP_SOURCE=${APISNOOP_SOURCE:-"./data-gen/sources.yaml"}
 APISNOOP_CACHE=${APISNOOP_CACHE:-"./data-gen/cache"}
 APISNOOP_DEST=${APISNOOP_DEST:-"./data-gen/processed"}
 APISNOOP_GCS_PREFIX=${APISNOOP_GCS_PREFIX:-"gs://apisnoop/dev/"}
-APISNOOP_PATH=${APSNOOP_PATH:-"./data-gen"}
+APISNOOP_PATH=${APISNOOP_PATH:-"./data-gen"}
 print_help() {
 	cat << EOF
 Usage: apisnoop [parameters]
