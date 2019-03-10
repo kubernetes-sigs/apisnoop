@@ -3,7 +3,8 @@ import {
   filter,
   find,
   keyBy,
-  sortBy} from 'lodash'
+  sortBy,
+  trim} from 'lodash'
 
 export default {
   name: 'releases',
@@ -73,7 +74,8 @@ export default {
       var bucketJobPath = currentRelease.name.replace('_', '/')
       var spyglassBase = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/'
       return spyglassBase + bucketJobPath
-    }),
+    }
+  ),
   selectCurrentReleaseAPISnoopLink: createSelector(
     'selectCurrentReleaseSpyglassLink',
     (spyglassLink) => {
@@ -81,7 +83,8 @@ export default {
       var spyglassBase = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/'
       var APISnoopBase = 'gs://apisnoop/dev/'
       return spyglassLink.replace(spyglassBase, APISnoopBase)
-  }),
+    }
+  ),
   selectReleasesIndexMasterOnly: createSelector(
     'selectReleasesIndexByName',
     'selectMasterRelease',
@@ -99,6 +102,15 @@ export default {
       if (releasesIndex == null) return null
       return filter(releasesIndex, (release) => {
         return release.name !== masterRelease.name
+      })
+    }
+  ),
+  selectReleasesIndexSorted: createSelector(
+    'selectReleasesIndexSansMaster',
+    (releasesIndex) => {
+      if (releasesIndex == null) return null
+      return releasesIndex.sort((a, b) => {
+        return a.version.localeCompare(b.version, undefined, {numeric: true})
       })
     }
   )
