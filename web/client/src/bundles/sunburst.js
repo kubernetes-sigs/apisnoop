@@ -240,7 +240,6 @@ function determineNameAndCoverageInfo (query, endpoints) {
     coverage = endpoints[query.level][query.category].coverage
     description= ''
   } else {
-    console.log({endpoints, query})
     var endpointInQuestion = endpoints[query.level][query.category][query.name]
     name = query.name
     description= determineDescription(endpoints[query.level][query.category][query.name])
