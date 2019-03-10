@@ -74,6 +74,14 @@ export default {
       var spyglassBase = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/'
       return spyglassBase + bucketJobPath
     }),
+  selectCurrentReleaseAPISnoopLink: createSelector(
+    'selectCurrentReleaseSpyglassLink',
+    (spyglassLink) => {
+      if (spyglassLink== null) return null
+      var spyglassBase = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/'
+      var APISnoopBase = 'gs://apisnoop/dev/'
+      return spyglassLink.replace(spyglassBase, APISnoopBase)
+  }),
   selectReleasesIndexMasterOnly: createSelector(
     'selectReleasesIndexByName',
     'selectMasterRelease',
