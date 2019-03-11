@@ -88,5 +88,6 @@ elif [ "$1" = "--all" ]; then
   echo "Processing Artifacts"
   process_cache "$@"
 else
-  echo "$1" is not a valid flag.  Did you mean --fetch, --update or --process?
+  echo "$1 is not a valid flag."
+  print_help
 fi

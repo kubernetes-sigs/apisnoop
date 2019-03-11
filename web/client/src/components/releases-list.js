@@ -20,7 +20,7 @@ var ReleasesList = (props) => {
       <h3 className="f3 mt0 ttsc tracked"> { grouping }</h3>
       <ul className='pl0 ml0'>
       {releases.map(releaseItem => {
-        return <ReleaseItem release={ releaseItem } queryObject={queryObject}/>
+        return <ReleaseItem release={ releaseItem } key={releaseItem._id} queryObject={queryObject}/>
       })}
     </ul>
     </div>
@@ -36,11 +36,11 @@ var ReleasesList = (props) => {
     return (
         <li className='dib'>
         <a
-      className={ classes }
-      href={getReleaseUrl(release.release, queryObject)}
-      key={release._id}
+          className={ classes }
+          href={getReleaseUrl(release.release, queryObject)}
+          title={release.version}
         >
-        {release.release_short}
+        {release.version}
       </a>
         </li>
     )
