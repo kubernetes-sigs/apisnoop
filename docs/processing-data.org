@@ -1,0 +1,103 @@
+ #+TITLE: Processing Data
+ #+AUTHOR: Zach Mandeville
+
+* Summary of Data Flow
+  Apisnoop is a tool for analyzing the audit logs from kubernetes testing jobs and displaying a visualization of this analysis online.
+
+As such, the code (and our process) is divided into two major aspects:
+  - gathering and processing data
+  - displaying the data through our web app
+
+This document outlines the general flow for both and how to use our tools to analyze and display your own k8s audit logs.
+**Note:** This is still an exploratory project, and we are actively working to make the process simpler.  This documentation, like the code, is a work in progress and will be updated as our flow strengthens.
+
+** Gathering and Processing Data
+ The steps for our data flow are as follows:
+ - Update our sources.yaml file -which details which audit logs to draw from and where they're located- so that it contains the most recent jobs.
+ - Download the raw logs specified in the =sources.yaml= to a local =cache/= folder.
+ - Process  the logs in our =cache= to produce new, apisnoop-ready JSON files and store them in =cache/processed=
+ - Upload these processed logs to APISnoop's GCS bucket, so they can be consumed by our webapp
+
+   We have a helper script in the root of our repo called =apisnoop.sh= which runs through each of these steps, or individual ones as specified.  To process the data on your own, it is best to run the script (detailed below).
+
+** Displaying the Data online
+   Our webapp consists of a backend server and frontend client.  The process for displaying the data is as follows:
+- Download our processed files from the GCS bucket to the local =data-gen/processed= folder within the backend server.
+- Consume all files within =data-gen/processed= to populate the backend API, slightly adjusting or combining some of the data to be easier for the frontend to use.
+- When someone visits the site, ping the backend based on whichever release has been requested and display the endpoints, tests, and metadata for that release.
+
+Our helper script, =apisnoop.sh= handles the download of the processed files.   The rest of the steps are built into the server and client.
+* Our helper script
+  When in the root of our repo, you can run =./apisnoop.sh= to get our helper script.  Running =./apisnoop --help= will displays the arguments you can do.  It is best to read that, as it will have the most up-to-date info.
+
+There are a couple caveats:
+
+- The locations we draw our audit logs are hardcoded as:
+  - gcsweb = "https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/"
+  - storage = "https://storage.googleapis.com/kubernetes-jenkins/logs/"
+- The backend is held in this repo at =web/backend= and it is hardcoded to expect the data it needs to be in =data-gen/processed=
+- The frontend displays, for each release, a link to the spyglass for the log, and a link to apisnoop's processed JSON. The link for the processed json is hardcoded to point to apisnoop's own gcs bucket.
+
+*  Developing apisnoop
+
+  The code for gathering and processing the data is held within =data-gen=.
+
+#+begin_example
+data-gen
+├── downloadArtifacts.py
+├── downloadAudits
+├── lib
+│   ├── __init__.py
+│   └── parsers.py
+├── processArtifacts.py
+├── processArtifacts.sh
+├── processAuditlog.py
+├── README.md
+├── requirements.txt
+├── sources.yaml
+└── updateSources.py
+
+1 directory, 11 files
+#+end_example
+
+Our helper script simply runs the proper .py scripts held here.  You can get a better orientation for the flow by checking out =apisnoop.sh= and seeing which files are run for which arguments.
+
+The backend and client are both held in =web=.
+
+#+RESULTS:
+#+begin_example
+- web
+- ├── backend
+- │   ├── config
+- │   ├── data
+- │   │   └── audit-logs
+- │   ├── public
+- │   ├── src
+- │   │   ├── hooks
+- │   │   ├── middleware
+- │   │   ├── models
+- │   │   └── services
+- │   │       ├── config
+- │   │       ├── endpoints
+- │   │       ├── releases
+- │   │       ├── tests
+- │   │       └── useragents
+- │   └── test
+- │       ├── hooks
+- │       └── services
+- ├── client
+- │   ├── public
+- │   │   └── fonts
+- │   └── src
+- │       ├── bundles
+- │       ├── components
+- │       ├── css
+- │       ├── lib
+- │       └── pages
+- └── config
+- 28 directories
+#+end_example
+
+  Both are written in Javascript, with feathers being used for the backend and react/redux-bundler for the frontend.  Both =web/backend= and =web/client= contain their own .org files that go into greater detail on the architecture and setup process.
+
+The data portion is contained within =data-gen= and run with our shell script =apisnoop.sh=
