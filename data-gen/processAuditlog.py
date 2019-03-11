@@ -310,14 +310,16 @@ def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
                     #     sb_method['test_tags'].append(tag)
 
         else:
-            # Only look at e2e for now, skip anything else
-            # 10 and 11 don't have user agents, so... sadface
-            # import ipdb; ipdb.set_trace(context=60)
-            if not user_agent_available:
-              pass
-            else:
-              continue
+            # IF we hit here, this is NOT an e2e.test user agent
+            if user_agent_available: # 12 and higher
+              pass # go on to user agent processing (e2e only)
+              # continue # do no further processing (e2e + other)
+            else: # 11 and lower
+              # Only look at e2e for now, skip anything else
+              pass #(log everything)
+              # continue # stop here
 
+        endpoints[op][method]["counter"] += 1
         agent = event.get('userAgent', ' ').split(' ')[0]
         if agent not in useragents.keys():
             useragents[agent] = {}
@@ -327,7 +329,6 @@ def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
             useragents[agent][op][method] = {
                 "counter": 0
             }
-        endpoints[op][method]["counter"] += 1
         useragents[agent][op][method]["counter"] += 1
         # sunburst[level][category][path][method]['counter'] += 1
         # if agent not in sb_method['agents']:
