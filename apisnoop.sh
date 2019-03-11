@@ -44,7 +44,7 @@ install_reqs() {
 }
 
 update_sources() {
-  "${APISNOOP_PATH}"/updateSources.py "${APISNOOP_SOURCES}
+  "${APISNOOP_PATH}"/updateSources.py "${APISNOOP_SOURCES}"
 }
 
 update_cache() {
