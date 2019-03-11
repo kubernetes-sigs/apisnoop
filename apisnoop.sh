@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 
 # Our main command line script
-APISNOOP_SOURCE=${APISNOOP_SOURCE:-"./data-gen/sources.yaml"}
+APISNOOP_SOURCES=${APISNOOP_SOURCES:-"./data-gen/sources.yaml"}
 APISNOOP_CACHE=${APISNOOP_CACHE:-"./data-gen/cache"}
 APISNOOP_DEST=${APISNOOP_DEST:-"./data-gen/processed"}
 APISNOOP_GCS_PREFIX=${APISNOOP_GCS_PREFIX:-"gs://apisnoop/dev/"}
@@ -44,11 +44,11 @@ install_reqs() {
 }
 
 update_sources() {
-  "${APISNOOP_PATH}"/updateSources.py "${APISNOOP_PATH}"/sources.yaml
+  "${APISNOOP_PATH}"/updateSources.py "${APISNOOP_SOURCES}
 }
 
 update_cache() {
-  "${APISNOOP_PATH}"/downloadArtifacts.py "${2:-$APISNOOP_SOURCE}" "${3:-$APISNOOP_CACHE}"
+  "${APISNOOP_PATH}"/downloadArtifacts.py "${2:-$APISNOOP_SOURCES}" "${3:-$APISNOOP_CACHE}"
 }
 
 process_cache() {
