@@ -16,7 +16,7 @@ import glob
 
 k8s = "https://k8s-testgrid.appspot.com/"
 gubernator = "https://gubernator.k8s.io/build/kubernetes-jenkins/logs/"
-gcsweb = "http://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/"
+gcsweb = "https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/"
 storage = "https://storage.googleapis.com/kubernetes-jenkins/logs/"
 
 
@@ -93,7 +93,7 @@ def main(sources,dest):
                     soup = get_html(artifacts_url)
                     master_link = soup.find(href=re.compile("master"))
                     master_soup = get_html(
-                        "http://gcsweb.k8s.io" + master_link['href'])
+                        "https://gcsweb.k8s.io" + master_link['href'])
                     log_links = master_soup.find_all(
                         href=re.compile("audit.log"))
                     for link in log_links:
