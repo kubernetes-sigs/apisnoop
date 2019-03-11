@@ -81,8 +81,8 @@ export default {
     (spyglassLink) => {
       if (spyglassLink== null) return null
       var spyglassBase = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/'
-      var APISnoopBase = 'gs://apisnoop/dev/'
-      return spyglassLink.replace(spyglassBase, APISnoopBase)
+      var APISnoopBase = 'https://storage.googleapis.com/apisnoop/dev/'
+      return spyglassLink.replace(spyglassBase, APISnoopBase) + "/apisnoop.json"
     }
   ),
   selectReleasesIndexMasterOnly: createSelector(
