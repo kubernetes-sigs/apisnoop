@@ -1,11 +1,11 @@
 #!/usr/bin/env sh
 
 # Our main command line script
-APISNOOP_SOURCE=${APISNOOP_SOURCE:-"./data-gen/sources.yaml"}
+APISNOOP_SOURCES=${APISNOOP_SOURCES:-"./data-gen/sources.yaml"}
 APISNOOP_CACHE=${APISNOOP_CACHE:-"./data-gen/cache"}
 APISNOOP_DEST=${APISNOOP_DEST:-"./data-gen/processed"}
 APISNOOP_GCS_PREFIX=${APISNOOP_GCS_PREFIX:-"gs://apisnoop/dev/"}
-
+APISNOOP_PATH=${APISNOOP_PATH:-"./data-gen"}
 print_help() {
 	cat << EOF
 Usage: apisnoop [parameters]
@@ -40,20 +40,20 @@ EOF
 }
 
 install_reqs() {
-  pip install -r ./data-gen/requirements.txt
+  pip install -r "${APISNOOP_PATH}"/requirements.txt
 }
 
 update_sources() {
-  ./data-gen/updateSources.py ./data-gen/sources.yaml
+  "${APISNOOP_PATH}"/updateSources.py "${APISNOOP_SOURCES}"
 }
 
 update_cache() {
-  ./data-gen/downloadArtifacts.py "${2:-$APISNOOP_SOURCE}" "${3:-$APISNOOP_CACHE}"
+  "${APISNOOP_PATH}"/downloadArtifacts.py "${2:-$APISNOOP_SOURCES}" "${3:-$APISNOOP_CACHE}"
 }
 
 process_cache() {
-  ./data-gen/processArtifacts.py "${2:-$APISNOOP_CACHE}" "${3:-$APISNOOP_DEST}" > ./data-gen/processArtifacts.sh
-  bash ./data-gen/processArtifacts.sh
+  "${APISNOOP_PATH}"/processArtifacts.py "${2:-$APISNOOP_CACHE}" "${3:-$APISNOOP_DEST}" > "${APISNOOP_PATH}"/processArtifacts.sh
+  bash "${APISNOOP_PATH}"/processArtifacts.sh
 }
 
 upload_apiusage() {
