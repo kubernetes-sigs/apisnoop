@@ -8,20 +8,6 @@ import { calculateCoverage } from '../lib/utils.js'
 
 export default {
   name: 'endpoints',
-    getReducer: () => {
-      const initialState = {
-        activeEndpoint: ''
-      }
-      return (state=initialState, action) => {
-        if (action.type === 'TESTS_REQUESTED_FOR_ENDPOINT') {
-          return {
-            ...state,
-            activeEndpoint: action.payload
-          }
-        }
-        return state
-      }
-    },
     selectFilteredEndpoints: createSelector(
       'selectEndpointsResource',
       'selectFilter',
