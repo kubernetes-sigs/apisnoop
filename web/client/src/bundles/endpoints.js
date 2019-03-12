@@ -93,7 +93,6 @@ export default {
             }))
         }
     ),
-    selectActiveEndpointName: (state) => state.tests.activeEndpoint,
     selectActiveEndpoint: createSelector(
         'selectEndpointsResource',
         'selectQueryObject',
