@@ -50,12 +50,5 @@ export default {
       if (tests == null) return null
       return tests.find(test => test._id === query.test)
     }
-  ),
-  doDisplayEndpointTests: (payload) => ({dispatch}) => {
-    dispatch({
-      type: 'TESTS_REQUESTED_FOR_ENDPOINT',
-      payload: payload
-    })
-  }
-  
+  )
 }
