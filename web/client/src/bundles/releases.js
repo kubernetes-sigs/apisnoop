@@ -3,8 +3,7 @@ import {
   filter,
   find,
   keyBy,
-  sortBy,
-  trim} from 'lodash'
+  sortBy} from 'lodash'
 
 export default {
   name: 'releases',

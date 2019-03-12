@@ -41,7 +41,7 @@ export default {
         'rgba(255, 193, 7, 1)',
         'rgba(255, 152, 0, 1)',
         'rgba(255, 87, 34, 1)'
-
+    
       ],
       categories: [
         "admissionregistration",
@@ -82,4 +82,5 @@ export default {
     }
     return colours
   }
+  
 }

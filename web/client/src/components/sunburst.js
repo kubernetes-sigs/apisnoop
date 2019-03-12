@@ -42,8 +42,8 @@ const SunburstChart = (props) => {
      data={[
        {x: 0, y: 0, label: interiorLabel.tested, style: labelStyle.PERCENTAGE},
      ]} />}
-      <button className='ttsc' onClick={handleReset}>Reset</button>
       </Sunburst>
+      <button className='ttsc' onClick={handleReset}>Reset</button>
       </div>
   )
   function handleMouseOver (node, event) {
