@@ -26,9 +26,7 @@ export default {
         (endpoints, zoom) => {
             if (endpoints == null) return null
             if (zoom) {
-              if (zoom.depth === 'endpoint') {
-                endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category)
-              } else if (zoom.depth === 'category') {
+              if (zoom.depth === 'endpoint' || zoom.depth === 'category') {
                 endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category)
               } else if (zoom.depth === 'level') {
                 endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level)
