@@ -392,19 +392,72 @@
     #+END_SRC
 **** Tests Layout
      #+NAME: Endpoints Tests Setup
-     #+BEGIN_SRC js :tangle no
+     #+BEGIN_SRC js :tangle ./src/bundles/endpoints.test.js
        import { Selector } from 'redux-testkit'
        import {composeBundlesRaw} from 'redux-bundler'
        import endpoints from './endpoints.js'
+       import endpointsSample from '../test_resources/endpoints.json'
 
        const store = composeBundlesRaw(endpoints)
 
        describe('Endpoints Selectors', () => {
-         <<selectLevelColours Test>>
-         <<selectCategoryColours Test>>
+         <<selectFilteredEndpoints Tests>>
+       //   <<selectFilteredAndZoomedEndpoints Tests>>,
+       //   <<selectZoomedEndpoint Tests>>,
+       //   <<selectEndpointsById Tests>>,
+       //   <<selectEndpointsByLevelAndCategoryAndNameAndMethod Tests>>,
+       //   <<selectEndpointsWithTestCoverage Tests>>,
+       //   <<selectActiveEndpoint Tests>>
        })
      #+END_SRC
 **** selectFilteredEndpoints
+
+     *Endpoints Filter -> Endpoints*
+     /given all endpoints and a set filter, return only the endpoints that match that filter./
+
+     We are doing a basic regex search, so we can perform a similar search using =jq= to get our proper results, and then use that to create our expected results
+     #+NAME: APIG Filter
+     #+BEGIN_SRC shell :dir ./src/test_resources :results output :tangle no
+     echo "APIG";cat ./endpoints.json | jq 'map(select(.name | match("APIG"))) | length'
+     echo "CORE";cat ./endpoints.json | jq 'map(select(.name | match("CORE"))) | length'
+     echo "Core";cat ./endpoints.json | jq 'map(select(.name | match("Core"))) | length'
+     echo "Rbac";cat ./endpoints.json | jq 'map(select(.name | match("Rbac"))) | length'
+     echo "Rzach";cat ./endpoints.json | jq 'map(select(.name | match("Rzach"))) | length'
+     #+END_SRC
+     #+RESULTS: APIG Filter
+     #+begin_example
+     APIG
+     1
+     CORE
+     0
+     Core
+     7
+     Rbac
+     4
+     Rzach
+     0
+     #+end_example
+
+     We use this as inspiration for our tests
+
+     #+NAME: selectFilteredEndpoints Tests
+     #+BEGIN_SRC js :tangle no
+       it('regex filters should return proper number of results', () => {
+         var expectedLength = {
+          APIG: 1,
+          CORE: 0,
+          Core: 7,
+          Rbac: 4,
+          Rzach: 0
+         }
+         var filterResult = endpoints.selectFilteredEndpoints.resultFunc
+         expect(filterResult(endpointsSample, /APIG/).length).toEqual(expectedLength.APIG)
+         expect(filterResult(endpointsSample, /CORE/).length).toEqual(expectedLength.CORE)
+         expect(filterResult(endpointsSample, /Core/).length).toEqual(expectedLength.Core)
+         expect(filterResult(endpointsSample, /Rbac/).length).toEqual(expectedLength.Rbac)
+         expect(filterResult(endpointsSample, /Rzach/).length).toEqual(expectedLength.Rzach)
+       })
+     #+END_SRC
 
      #+NAME: selectFilteredEndpoints
      #+BEGIN_SRC js :tangle no
@@ -423,6 +476,55 @@
      #+END_SRC
 
 **** selectFilteredAndZoomedEndpoints
+     *FilteredEndpoints  Zoom -> Endpoints*
+     _Given a set of endpoints, and a zoom level and location, return endpoints whose location matches the zoom._
+     Zoom is an object with {depth, level, category, endpoint} that is derived from a mouseclick on the sunburst.
+     Depth is which ring (level, category,endpoint) was clicked.  The ...location is the node path leading to that depth (e.g. clicking on level only shows the exact level, clicking on an endpoint shows the endpoint, the category it is a part of, and the level it is in.)
+
+     I can test this with =jq= first, and use the results to populate the expected Lengths
+     #+BEGIN_SRC shell :dir ./src/test_resources :results output :tangle no
+       cat ./endpoints.json | jq length
+       cat ./endpoints.json | jq 'map(select((.level == "stable") and (.category == "core") and (.name == "deleteCoreV1Namespace")))| length'
+     #+END_SRC
+
+     #+NAME: selectFilteredAndZoomedEndpoints Tests
+     #+BEGIN_SRC js :tangle no
+       it('endpoints available should match current zoom depth and location', () => {
+         // How many endpoints zoom should return
+         var expectedLength = {
+           toLevel: 13,
+           toCategory: 7,
+           toEndpoint: 1
+           none: 21
+         }
+
+       // Setup our Zooms
+       })
+       var toLevel = {
+         level: "stable",
+         depth: "level"
+       }
+
+       var toCategory = {
+         category: "core",
+         level: "stable",
+         depth: "category"
+       }
+
+       var toEndpoint = {
+         level: "stable",
+         category: "core",
+         endpoint: "deleteCoreV1Namespace",
+         depth: "endpoint"
+       }
+
+       var filterResult = endpoints.selectFilteredAndZoomedEndpoints.resultFunc
+       expect(filterResult(endpointsSample, toLevel).length).toEqual(expectedLength.toLevel)
+       expect(filterResult(endpointsSample, toCategory).length).toEqual(expectedLength.toCategory)
+       expect(filterResult(endpointsSample, toEndpoint).length).toEqual(expectedLength.toEndpoint)
+       expect(filterResult(endpointsSample).length).toEqual(expectedLength.none)
+     #+END_SRC
+
      #+NAME: selectFilteredAndZoomedEndpoints
      #+BEGIN_SRC js :tangle no
        selectFilteredAndZoomedEndpoints: createSelector(
