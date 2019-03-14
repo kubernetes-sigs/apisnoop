@@ -6,10 +6,39 @@
 #+XPROPERTY: header-args:shell :results silent
 #+XPROPERTY: header-args:shell :exports code
 #+XPROPERTY: header-args:shell :wrap "SRC text"
-#+PROPERTY: header-args:js :results silent
+#+PROPERTY: header-args:js :results silent :noweb yes
 
-* Understanding our Webui
+* Understanding our Client
   This is a web-based visual interface to the data curation and manipulation we are doing as the APISnoop project.  The purpose is to display previously unseen connections between the testing coverage of kubernetes, and the people and communities these various parts of kubernetes matter to.
+* Architecture
+  The frontend is written with React and Redux (via redux-bundler).  The visualization for the sunburst is done with react-vis, a d3 library for react.
+** React
+  React allows for a dynamic site built out of a servies of discrete components.  So our site with a header, a list of releases, a sunburst, and a list of tests will have header, sunburst, release list, and test list components.  This allows for someone on the team to work on a single component individually without affecting the rest of the site.  It also allows for reusability: for example, if we wanted to have three different filters in our site - for test tags, useragents, and regex-- we can do this with a single filter component given three different variables.  It speeds up frontend development while maintaining consistent style.
+** Redux
+  Redux is a state-management tool which allows for one simple, immutable, trackable state.  It holds all the business-logic of the app, and any data or manipulation of data the app requires.  Said simply, it is sort of the backend server inside the front-end, but a server that runs as a single, parsale object.
+** Connecting to the Backend
+   We do not communicate with the backend much, and the majority of the code to handle it is in our [[*Config][Config Bundle]] and in our *Resource bundles.  Whenever someone changes the release, it triggers a fetch of data to the backend listed in the config file.  Our Endpoints resource fetches all endpoints from that release, our Test Resource bundle fetches all tests, etc.   There's a nice synergy between this frontend iand Feathers, where feathers has a built-in connector we can use for these fetches...but it's simple enough that the config file could be refactored to something new and it wouldn't affect the rest of the code that much.
+
+   The majority of the work in the code is handled by selectors, which continuously filter down the data based on the current url paramaters.
+
+** Our Design Philosophy
+  In our [[index.js]] file we connect the entire React site to Redux, which allows for every component to have access to whichever parts of the state they need.
+
+  This allows for a consistent philosophy for how new features and components are built:
+*** React should be dumb.
+    No react component should do anything fancy.  It should only present the data it is given and nothing more.  There should be no internal state that a component has to manage.
+
+ There will be times when you need to handle mouse or keyboard events.  When this happens, the eventHandler should update redux with what happened and let redux manage how to handle it, and update the data react presents.
+*** Redux should be boring
+If the redux store feels like one big spreadsheet, then we are doing a good job.  There shouldn't be multiple manipulations of the state to manage, or nested logic that you have to travel through to understand how the app got to where it was.  Instead, we hold raw data in a nice clear, mostly untouched column, and then filter or combine that data as necessary-- like macros in an excel sheet.
+*** The URL guides all
+    To make redux as boring as possible we follow a basic flow where events on a react component change the current url, and redux determines the data to give components based on the current url.  This makes it easy to share specific configurations of apisnoop with others, but also makes a clean process for building out new features...a new feature essentially is an added url query paramter.
+*** Coding should be pleasant
+    I refactor the code often with this philosophy in mind.  I want the overall flow of the app to be clear to future me and to whoever else we collaborate with.  Super clever(and super obscure) functions are avoided, and things that no longer server a clear purpose are pruned.  I also try to reduce the amount of boilerplate needed (or abstract it within this org file), so the focus can just be on the functions and components.
+*** Our work should support learning
+    I refactor the org file more often than the code, to help future developers learn what it is we're doing and why. No important things should be held in a conversational memory, but instead linked and explained here.  The risk with this is verbosity.  So cleaning up sentence structure and explanations is as important as refactoring code.
+
+The downside of this is that apisnoop developers should be doing it from within the org file--but the strengths are strong enough to make this worthwhile I think.
 * The Code
 ** index.js
    :PROPERTIES:
@@ -44,18 +73,26 @@
    :PROPERTIES:
    :header-args: :tangle ./public/_redirects
    :END:
-   This will live in our public folder, and makes it so that when the site is deployed on netlify, all url's given will work--as they'll point back to our index.html page which will dynamically route them.
+
+   This lives in our public folder, and makes it so that when the site is deployed on netlify, all url's given will work--as they'll point back to our index.html page which will dynamically route them.
+
    #+NAME: _redirects
    #+BEGIN_SRC yaml
      /*    /index.html   200
    #+END_SRC
 ** Bundle
 *** Understanding Bundles
+**** What they Are
    Another way of thinking of these are 'concerns'.  As we add functionality, it will come in the form of a bundle.  This bundle will define:
  - the state as related to this concern (reducers),
  - How we manipulate and then give the data in the state to our components (the selectors),
  - How we listen for conditions in the state that would trigger actions to happen (the reactors),
  - The actions that change the state (Actions)
+**** How they're written in this org file
+     To help future us, we strive to define each function within a bundle by its inputs, purpose, and tests.  By defining these first, we can better understand how to build out the function.  This requires a little bit of org boilerplate, as some of this is code and some of this is org, and the snippets of code belong in different files.  So at the start of the bundle we setup our bundle layout and our testing layout.  As we add new selectors, we weave them into the layout before writing them in their own code block.
+
+A good example of this can be found in our Colours bundle.
+
 *** Index
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/index.js
@@ -147,12 +184,10 @@
        })
      #+END_SRC
 
-
 ****  Colours Reducer
 
-     Action -> ColourState
-     Colorstate is an Object.  Action is an object containing action type and payload.
-     Receives any actions and returns the initial Colourstate.
+     **Action -> ColourState**
+    Receives any actions and, no matter its payload, returns the initial Colourstate.
 
      #+NAME: Colours Initial State
      #+BEGIN_SRC js :tangle no
@@ -250,8 +285,8 @@
      #+END_SRC
 
 ****  selectLevelColours
-     ColourState -> Colours
-     Given the ColourState return the level colours from the Colourstate
+     ◊ColourState -> ◊LevelColours
+     Given the ColourState return the LevelColours from the Colourstate
      Colours is an object structured as {level_name: rgba code}
 
      #+NAME: selectLevelColours Test
@@ -274,7 +309,7 @@
 
 ****  selectCategoryColours
 
-     ColourState -> CategoryColours
+     ◊ColourState -> ◊CategoryColours
      Given the state, return object mapping categories to their colours
      CategoryColours is an object structured as {category.name : rgbaColor}
 
@@ -366,7 +401,6 @@
     Our endpoints resource manages all the endpoints, grabbing and storing them for whatever is the current release.  This means we don't have to have an endpoint reducer.  Everything we do is just selecting and filtering from that list.
 
     We are making it now so that the endpoints filter on the query at the start.   The key thing is whether or not a zoom is part of the query.  If it is, we filter by whatever depth the zoom is at.
-    I am not sure where the zoom object should go.  It's an aspect of our url, but we don't really have a url bundle....maaaaaybe we should?  It would only have a single  item in it though....so that might be premature optimization.  We'll include it here and maybe move it later.
 
 ****  Imports and Layout
     #+NAME: endpoints bundle layout
@@ -412,10 +446,11 @@
      #+END_SRC
 **** selectFilteredEndpoints
 
-     *Endpoints Filter -> Endpoints*
+     *◊EndpointsFilter -> ◊Endpoints*
      /given all endpoints and a set filter, return only the endpoints that match that filter./
 
      We are doing a basic regex search, so we can perform a similar search using =jq= to get our proper results, and then use that to create our expected results
+
      #+NAME: APIG Filter
      #+BEGIN_SRC shell :dir ./src/test_resources :results output :tangle no
      echo "APIG";cat ./endpoints.json | jq 'map(select(.name | match("APIG"))) | length'
@@ -476,10 +511,10 @@
      #+END_SRC
 
 **** selectFilteredAndZoomedEndpoints
-     *FilteredEndpoints  Zoom -> Endpoints*
+     *◊Endpoints  ◊Zoom -> ◊Endpoints*
      _Given a set of endpoints, and a zoom level and location, return endpoints whose location matches the zoom._
-     Zoom is an object with {depth, level, category, endpoint} that is derived from a mouseclick on the sunburst.
-     Depth is which ring (level, category,endpoint) was clicked.  The ...location is the node path leading to that depth (e.g. clicking on level only shows the exact level, clicking on an endpoint shows the endpoint, the category it is a part of, and the level it is in.)
+     These endpoints may be filtered down, which does not change their structure, just the amount of entries being given to the selector
+
      If the depth is endpoint, we don't want to zoom into just that endpoint as it makes the sunburst look like a big donut.  So We only zoom into category.
 
      I can test this with =jq= first, and use the results to populate the expected Lengths
@@ -1382,7 +1417,7 @@ k*** Selector
 
       // TODO add envify as browserify transform
       const config = {
-        backendUrl: process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api/v1'
+        backendUrl: process.env.REACT_APP_BACKEND_URL || 'http://localhost:3030/api/v1'
       }
 
       export default {
@@ -2417,61 +2452,236 @@ A function that creates an action.  They are written as 'doThisAction', so in th
 Kinda used interchangable with state, and short for redux store.  It refers to the big object containing the entire state of the app.
 ** State (<<<State>>>)
   All the data, properties, truths, and so on of the app at this moment in time.  Similar to your emotional, personal, physical state.
+* Data Definitions
+** LevelCololurs (<<<◊LevelColours>>>)
+   LevelColours is an Object.
+   It is the base colours attached to the four levels of our sunburst: Alpha, Beta, Stable, and Unused.
+   #+NAME: LevelColours Example
+   #+BEGIN_EXAMPLE js
+     {
+       alpha: 'rgba(230, 25, 75, 1)',
+       beta: 'rgba(0, 130, 200, 1)',
+       stable: 'rgba(60, 180, 75, 1)',
+       unused: 'rgba(255, 255, 255, 1)'
+     }
+   #+END_EXAMPLE
+** ColourState (<<<◊ColourState>>>)
+
+   Colourstate is an Object, consisting of colours, moreColours, and categories.
+   It is used to set the colours of the various levels, categories, and endpoints throughout the site.
+
+     #+NAME: ColourState Example
+     #+BEGIN_Example
+       const initialState = {
+         colours: {
+           'alpha': 'rgba(230, 25, 75, 1)',
+           'beta': 'rgba(0, 130, 200, 1)',
+           'stable': 'rgba(60, 180, 75, 1)',
+           'unused': 'rgba(255, 255, 255, 1)'
+         },
+         moreColours: [
+           'rgba(183, 28, 28, 1)',
+           'rgba(136, 14, 79, 1)',
+           'rgba(74, 20, 140, 1)',
+           'rgba(49, 27, 146, 1)',
+           'rgba(26, 35, 126, 1)',
+           'rgba(13, 71, 161, 1)',
+           'rgba(1, 87, 155, 1)',
+           'rgba(0, 96, 100, 1)',
+           'rgba(0, 77, 64, 1)',
+           'rgba(27, 94, 32, 1)',
+           'rgba(51, 105, 30, 1)',
+           'rgba(130, 119, 23, 1)',
+           'rgba(245, 127, 23, 1)',
+           'rgba(255, 111, 0, 1)',
+           'rgba(230, 81, 0, 1)',
+           'rgba(191, 54, 12, 1)',
+           'rgba(244, 67, 54, 1)',
+           'rgba(233, 30, 99, 1)',
+           'rgba(156, 39, 176, 1)',
+           'rgba(103, 58, 183, 1)',
+           'rgba(63, 81, 181, 1)',
+           'rgba(33, 150, 243, 1)',
+           'rgba(3, 169, 244, 1)',
+           'rgba(0, 188, 212, 1)',
+           'rgba(0, 150, 136, 1)',
+           'rgba(76, 175, 80, 1)',
+           'rgba(139, 195, 74, 1)',
+           'rgba(205, 220, 57, 1)',
+           'rgba(255, 235, 59, 1)',
+           'rgba(255, 193, 7, 1)',
+           'rgba(255, 152, 0, 1)',
+           'rgba(255, 87, 34, 1)'
+
+         ],
+         categories: [
+           "admissionregistration",
+           "apiextensions",
+           "apiregistration",
+           "apis",
+           "apps",
+           "authentication",
+           "authorization",
+           "autoscaling",
+           "batch",
+           "certificates",
+           "core",
+           "events",
+           "extensions",
+           "logs",
+           "networking",
+           "policy",
+           "rbacAuthorization",
+           "scheduling",
+           "settings",
+           "storage",
+           "version",
+           "auditregistration",
+           "coordination"
+         ]
+       }
+     #+END_EXAMPLE
+** CategoryColours (<<<◊CategoryColours>>>)
+   CategoryColours is an object, holding all categories mapped to moreColours from our ColourState
+
+   #+NAME: CategoryColours Example
+   #+BEGIN_SRC js
+     {
+       'category.admissionregistration': 'rgba(183, 28, 28, 1)',
+       'category.apiextensions': 'rgba(49, 27, 146, 1)',
+       'category.apiregistration': 'rgba(1, 87, 155, 1)',
+       'category.apis': 'rgba(27, 94, 32, 1)',
+       'category.apps': 'rgba(245, 127, 23, 1)',
+       'category.authentication': 'rgba(191, 54, 12, 1)',
+       'category.authorization': 'rgba(156, 39, 176, 1)',
+       'category.autoscaling': 'rgba(33, 150, 243, 1)',
+       'category.batch': 'rgba(0, 150, 136, 1)',
+       'category.certificates': 'rgba(205, 220, 57, 1)',
+       'category.core': 'rgba(255, 152, 0, 1)',
+       'category.events': 'rgba(136, 14, 79, 1)',
+       'category.extensions': 'rgba(26, 35, 126, 1)',
+       'category.logs': 'rgba(0, 96, 100, 1)',
+       'category.networking': 'rgba(51, 105, 30, 1)',
+       'category.policy': 'rgba(255, 111, 0, 1)',
+       'category.rbacAuthorization': 'rgba(244, 67, 54, 1)',
+       'category.scheduling': 'rgba(103, 58, 183, 1)',
+       'category.settings': 'rgba(3, 169, 244, 1)',
+       'category.storage': 'rgba(76, 175, 80, 1)',
+       'category.version': 'rgba(255, 235, 59, 1)',
+       'category.auditregistration': 'rgba(255, 87, 34, 1)',
+       'category.coordination': 'rgba(74, 20, 140, 1)'
+     }
+   #+END_SRC
+** EndpointsFilter (<<<◊EndpointsFilter>>>)
+   EndpointsFilter is a Regular Expression.
+   It is a segment of text that we test to see whether it is present in an Endpoints' name.
+** Endpoints (<<<◊Endpoints>>>)
+   Endpoints is an object, consisting of entries from our =/endpoints= API path.
+   #+NAME: Endpoints Definition Example
+   #+BEGIN_EXAMPLE
+   [
+     {
+       "name": "readCoreV1NamespaceStatus",
+       "method": "get",
+       "level": "stable",
+       "test_tags": [],
+       "tests": [],
+       "description": "read status of the specified Namespace",
+       "path": "/api/v1/namespaces/{name}/status",
+       "category": "core",
+       "isTested": false,
+       "bucket": "9058",
+       "job": "apisnoop.json",
+       "release": "9058_apisnoop.json",
+       "_id": "6OBwAVYGdU2tOKE8"
+     },
+     {
+       "name": "readCoreV1NamespacedPersistentVolumeClaimStatus",
+       "method": "get",
+       "level": "stable",
+       "test_tags": [],
+       "tests": [],
+       "description": "read status of the specified PersistentVolumeClaim",
+       "path": "/api/v1/namespaces/{namespace}/persistentvolumeclaims/{name}/status",
+       "category": "core",
+       "isTested": false,
+       "bucket": "ci-kubernetes-e2e-gce-cos-k8sstable3-default",
+       "job": "460",
+       "release": "ci-kubernetes-e2e-gce-cos-k8sstable3-default_460",
+       "_id": "6P78EQLmPvD27Ls7"
+     },
+     {
+       "name": "listCoreV1NamespacedEvent",
+       "method": "watch",
+       "level": "stable",
+       "test_tags": [],
+       "tests": [],
+       "description": "list or watch objects of kind Event",
+       "path": "/api/v1/namespaces/{namespace}/events",
+       "category": "core",
+       "isTested": false,
+       "bucket": "34681",
+       "job": "apisnoop.json",
+       "release": "34681_apisnoop.json",
+       "_id": "6PGRw4iDxJrA4QaS"
+     },
+     {
+       "name": "listSettingsV1alpha1NamespacedPodPreset",
+       "method": "get",
+       "level": "alpha",
+       "test_tags": [],
+       "tests": [],
+       "description": "list or watch objects of kind PodPreset",
+       "path": "/apis/settings.k8s.io/v1alpha1/namespaces/{namespace}/podpresets",
+       "category": "settings",
+       "isTested": true,
+       "bucket": "1814",
+       "job": "apisnoop.json",
+       "release": "1814_apisnoop.json",
+       "_id": "6PxTDVRO9ZhOsmXz"
+     }
+   ]
+   #+END_EXAMPLE
+** Zoom (<<<◊Zoom>>>)
+     Zoom is an object derived from a mouseclick on our sunburst.
+     It may consist of:
+     - level :: the first ring of the sunburst
+     - category :: an item from the second ring of the sunburst, but whose parent ring is the set level.
+     - endpoint :: an item from the third ring, whose parent ring is the set category.
+     - depth :: the ring in which the mouse was clicked.
+
+ You can determine the zoom location by seeing the depth and section clicked and tracing the parents of that selection.  And so clicking on a category will give you {category, level, depth} and clicking on level would only give you {level, depth}.
+
+#+Name: Zoom Definition Example
+#+BEGIN_EXAMPLE
+  {
+    level: "stable",
+    category: "core",
+    endpoint: "deleteCoreV1Namespace",
+    depth: "endpoint"
+  }
+#+END_EXAMPLE
 
 * Tasks                                                            :apisnoop:
-** DONE Remove 'E2E Only' from releases list
-   CLOSED: [2019-01-29 Tue 10:02]
-  [[https://github.com/cncf/apisnoop/issues/80][github ticket 80]]
-** DONE Drop Conformance Section from Releases List
-   CLOSED: [2019-01-29 Tue 10:02]
-  [[https://github.com/cncf/apisnoop/issues/79][github 79]]
-** DONE Remove Name Sig from Release Index Title
-   CLOSED: [2019-01-29 Tue 10:02]
-  [[https://github.com/cncf/apisnoop/issues/78][github issue 78]]
-** DONE Releases Should Always be sorted Numerically
-   CLOSED: [2019-01-29 Tue 10:30]
-   02d32e
-  [[https://github.com/cncf/apisnoop/issues/76][github issue 76]]
-** DONE Be Able to filter all endpoints by some regular expression
-   CLOSED: [2019-01-29 Tue 12:09]
-  [[https://github.com/cncf/apisnoop/issues/67][github link]]
-  When talking to Chris, I got a bit more context.  Right now, we can filter by whether an endpoint is part of the selected level,category, endpoint name.  We can also select endpoints by release.  There may be a time when you want to see all of a certain kind of endpoint, but they don't fit neatly into one of these.  For example, maybe you want to see all endpoints that have to do with namespace, or disk, or storage.  Regardless of what release they are in, or whether they're tested or not, all that matters is that they are part of storage.  One way we could do this is by checking the endpoint's name to see if it includes storage, or namespace, or disk.  This would at least be clear enough to the user that we are filtering by whatever text they've entered.
-
-I feel like this filter should be added before we get to the releases.  The use case I am imagining is that a member of the 'Disk' storage group wants to use APISnoop, and see how their covedrage has increased over releases.  So they filter everything to 'disk', then check 1.9, 1.10, 1.11, etc.  It would be annoying to switch release and hit the filter everytime.  If there's a filter added, it should show until someone has x'ed out the filter.
-
-- [5/5] Method To Explore and Build This:
-  - [X] Add a new bundle for filter
-  - [X] Set a reducer for this filter that has some hardcoded name in by default.  Let's not do regex yet, just letters.
-  - [X] Add that reducer value to our url.
-  - [X] Show that url value no matter what release they are on.
-  - [X] filter the endpoints by this filter.
-
-So the first exploration works, but we need to make it actually usable:
-- [4/4] Steps towards actual usability:
-  - [X] The filter can be set from the front-end.
-  - [X] You can type whatever you want, press enter, and see that as the set filter.
-  - [X] You can remove the filter you've set.
-  - [X] Typing in a new filter replaces the one you've set.
 ** TODO The filter should work on level category, endpoint
   [[https://github.com/cncf/apisnoop/issues/75][github issue 75]]
 ** TODO when you click on a section of sunburst, that zoom holds across releases
   [[https://github.com/cncf/apisnoop/issues/74][github issue 74]]
-** TODO [0/0] Incoporate 'App Usage' into,  our  visualization
-There will be a new piece of data, provided by yaml, that says 'here are endpoints, and the number of applications that hit those endpoints.
-   So what we want to be able to see is some sort of flare that shows the number of applications using this endpoint, and also whether that endpoint is tested.  This would let us see 'what is next', by focusing on the endpoints with the most app dependencies that are not yet tested.  So for this we would need to move through the yaml file to get that uinformation and know it's available within the app, and then to find a way to visualize it clearly, so the shape of the sunburst itself helps people figure out how to focus on the next part.
-*** [ ] TODO Parse the yaml file to get the relevant app usage data
-*** [ ] TODO Add this parsed info as an endpoint in our backend database.
-*** [ ] TODO Make the info avaialble to the site, so we can show that each endpoint has information about it's app usage
+** TODO [0/3] Incoporate 'App Usage' into,  our  visualization
+- [ ] TODO Parse the yaml file to get the relevant app usage data
+- [ ] TODO Add this parsed info as an endpoint in our backend database.
+- [ ] TODO Make the info avaialble to the site, so we can show that each endpoint has information about it's app usage
    AT the start this could just be a number and a list in the summary.  Like, when you click on an endpoint it says "used by 10 apps" .  This is a minimum example that we have that data corresponding to each endpoint
 *** [ ] TODO Incorporate that information into the shape of the sunburst
     Similar to how it's tested value determines the endpoints color, to see whether it's application count can determine it's size.  So the highter the numbedr, the longer that endpoint node is.
 *** [ ] TODO Sort the sunburst by App count, in addition to it's current sorting.
 We are currently sortiung by tested/untested, tested by conformance/tested but not by conformance.  We want to keep this, and then also add appcount, so the largedr number of aps show on the left.  This would cause a swooping affect, and so the 'next mission' would be the next highest part of the swoop.
-** IDEA [12/14] Future Tasks
+There will be a new piece of data, provided by yaml, that says 'here are endpoints, and the number of applications that hit those endpoints.
+   So what we want to be able to see is some sort of flare that shows the number of applications using this endpoint, and also whether that endpoint is tested.  This would let us see 'what is next', by focusing on the endpoints with the most app dependencies that are not yet tested.  So for this we would need to move through the yaml file to get that uinformation and know it's available within the app, and then to find a way to visualize it clearly, so the shape of the sunburst itself helps people figure out how to focus on the next part.
+** IDEA [12/13] Future Tasks
    - [ ]  Integrate user interaction with sunburst (filter by UserAgent).  This'll test our hypothesis that we can manipulate the data far quicker than before.
    - [X] Hover over Part of Sunburst shows relevant rays highlighted.
    - [X] Hover over Sunburst, see testing percentage update in center.
-   - [ ] Click on Useragent, sunburst zooms onto that subset of data.
    - [X] Refactor Chart Selector to not be heavily nested..
    - [X] Move colors calculation out of sunburst selector into its own thing.
    - [X] Separate sunburst selector thangs from chart interaction thangs (maybe?  may be premature optimization).
@@ -2487,7 +2697,8 @@ We are currently sortiung by tested/untested, tested by conformance/tested but n
    [2018-12-12 Wed]
    [[file:~/ii/apisnoop/webui/client/client.org::Sunburst%20Helper%20Functions][Sunburst Helper Functions]]
 ** IDEA document our bundles better within the org file, separate each function into clear and testable things maybe?
-** TODO The test tags box is a fixed height, with indication that there's more test tags to see if the content overflows
+** DONE The test tags box is a fixed height, with indication that there's more test tags to see if the content overflows
+   CLOSED: [2019-03-13 Wed 23:21]
    I wanna try to do it based with pure css and this now 7 year old blog post [[https://stackoverflow.com/questions/9333379/check-if-an-elements-content-is-overflowing][so: check if an elmeent's content is overflowing]]
    So i'ma add the following code to the test tags box and just see how it looks
    #+BEGIN_EXAMPLE css
@@ -2522,7 +2733,40 @@ We are currently sortiung by tested/untested, tested by conformance/tested but n
      }
    #+END_EXAMPLE
 
-* Progress
+* Progress :ARCHIVE:
+** DONE Remove 'E2E Only' from releases list
+   CLOSED: [2019-01-29 Tue 10:02]
+  [[https://github.com/cncf/apisnoop/issues/80][github ticket 80]]
+** DONE Drop Conformance Section from Releases List
+   CLOSED: [2019-01-29 Tue 10:02]
+  [[https://github.com/cncf/apisnoop/issues/79][github 79]]
+** DONE Remove Name Sig from Release Index Title
+   CLOSED: [2019-01-29 Tue 10:02]
+  [[https://github.com/cncf/apisnoop/issues/78][github issue 78]]
+** DONE Releases Should Always be sorted Numerically
+   CLOSED: [2019-01-29 Tue 10:30]
+   02d32e
+  [[https://github.com/cncf/apisnoop/issues/76][github issue 76]]
+** DONE Be Able to filter all endpoints by some regular expression
+   CLOSED: [2019-01-29 Tue 12:09]
+  [[https://github.com/cncf/apisnoop/issues/67][github link]]
+  When talking to Chris, I got a bit more context.  Right now, we can filter by whether an endpoint is part of the selected level,category, endpoint name.  We can also select endpoints by release.  There may be a time when you want to see all of a certain kind of endpoint, but they don't fit neatly into one of these.  For example, maybe you want to see all endpoints that have to do with namespace, or disk, or storage.  Regardless of what release they are in, or whether they're tested or not, all that matters is that they are part of storage.  One way we could do this is by checking the endpoint's name to see if it includes storage, or namespace, or disk.  This would at least be clear enough to the user that we are filtering by whatever text they've entered.
+
+I feel like this filter should be added before we get to the releases.  The use case I am imagining is that a member of the 'Disk' storage group wants to use APISnoop, and see how their covedrage has increased over releases.  So they filter everything to 'disk', then check 1.9, 1.10, 1.11, etc.  It would be annoying to switch release and hit the filter everytime.  If there's a filter added, it should show until someone has x'ed out the filter.
+
+- [5/5] Method To Explore and Build This:
+  - [X] Add a new bundle for filter
+  - [X] Set a reducer for this filter that has some hardcoded name in by default.  Let's not do regex yet, just letters.
+  - [X] Add that reducer value to our url.
+  - [X] Show that url value no matter what release they are on.
+  - [X] filter the endpoints by this filter.
+
+So the first exploration works, but we need to make it actually usable:
+- [4/4] Steps towards actual usability:
+  - [X] The filter can be set from the front-end.
+  - [X] You can type whatever you want, press enter, and see that as the set filter.
+  - [X] You can remove the filter you've set.
+  - [X] Typing in a new filter replaces the one you've set.
 ** DONE Click on test, show test sequence below
    CLOSED: [2018-12-17 Mon 12:42]
 ** DONE add back functionality for test,to clear out test query.
