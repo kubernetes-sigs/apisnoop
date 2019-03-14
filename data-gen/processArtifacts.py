@@ -37,7 +37,7 @@ def main(infolder,outfolder):
         semver = finished['version'].split('v')[1].split('-')[0]
         major = semver.split('.')[0]
         minor = semver.split('.')[1]
-        if minor != '14':
+        if minor != '15':
             branch = "release-"+major+'.'+minor
         else:
             commit = metadata['revision'].split('+')[-1]

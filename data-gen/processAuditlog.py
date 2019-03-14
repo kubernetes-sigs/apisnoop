@@ -415,7 +415,7 @@ def main():
     if int(minor) < 12:
         user_agent_available = False
 
-    if minor != '14':
+    if minor != '15':
         branch = "release-"+major+'.'+minor
     else:
         commit = metadata['revision'].split('+')[-1]
