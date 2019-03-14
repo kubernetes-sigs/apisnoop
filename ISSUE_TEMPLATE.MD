@@ -1,5 +1,8 @@
-```cucumber
-GIVEN
-WHEN
-THEN
+```feature
+Given
+And
+When
+And
+Then
+And
 ```
