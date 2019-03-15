@@ -3,7 +3,7 @@ const fs = require('fs')
 const glob = require('glob')
 const dayjs = require('dayjs')
 
-var dataFolder = '../../data-gen/processed'
+var dataFolder = 'data-gen/processed'
 
 class Service {
   constructor (options) {
