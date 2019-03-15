@@ -8,12 +8,16 @@ import {
 export function calculateCoverage (endpoints) {
   var total = size(endpoints)
   var tested = size(filter(endpoints, ['isTested', true]))
-  var percentage = (100 * tested /total).toPrecision(3)
+  var percentage = (total, tested) => {
+    if (!tested && !total) return 'No Endpoints'
+    var percentageNumber = (100 * tested /total).toPrecision(3)
+    return `${percentageNumber}%`
+    }
 
   return {
     tested,
     total,
-    percentage: `${percentage}%`,
+    percentage: percentage(total, tested),
     ratio: `${tested}/${total}`
   }
 }
