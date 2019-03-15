@@ -719,7 +719,7 @@ A good example of this can be found in our Colours bundle.
      #+END_SRC
 **** selectZoomedEndpoint
      *◊Endpoints  ◊Zoom -> ◊Endpoint*
-     _When the Zoom contains a depth of endpoint, return the endpoint at the zoom's location._
+     _When the Zoom contains a depth of endpoint, return the endpoint at the zoom's location matching on endpoint's name._
 
      I realize with this, that it doesn't account for endpoints that have the same name, but may be a part of a different level or category.  Does that ever come up?
 
@@ -1167,24 +1167,10 @@ A good example of this can be found in our Colours bundle.
        'selectQueryObject',
        'selectEndpointsWithTestCoverage',
        (query, endpoints) => {
+         if(endpoints == null) return null
          var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
+         console.log(nameAndCoverageInfo)
          return nameAndCoverageInfo
-       }
-     ),
-     selectFocusedPath: createSelector(
-       'selectQueryObject',
-       'selectZoom',
-       (query, zoom) => {
-         if (query == null | zoom == null) return null
-         var pathObjectRaw = {
-           level: relevantValue('level', zoom, query),
-           category: relevantValue('category', zoom, query),
-           name: relevantValue('name', zoom, query),
-         }
-         var pathObject = propertiesWithValue(pathObjectRaw)
-         var pathValues = flatMap(pathObject)
-         var focusedPath = join(pathValues, ' / ')
-         return focusedPath
        }
      ),
      selectLabelStyle: () => {
@@ -1224,7 +1210,7 @@ A good example of this can be found in our Colours bundle.
        }
      }
    #+END_SRC
-****  Helper Functions
+***  Helper Functions
      The helper functions are grooooooss right now.  It feels far too nested, and I am passing along the query object to too many places.  I feel the color addition should e done as a selector possibly and not hae it be nested within here.-
 
      This is gross for how many nested functions there are, and that weird confusion between query and zoom.  Is there a better way to handle this?  Essentially, we wanna be able to zoom into a category, and still have the colors and endpoints show based on the query....but when we are zoomed into an endpoint, then there shouldn't be any query happening....it should be noted as 'locked on'.  This whole section smells awful, and would be good to have another set of javascripter eyes on it.
@@ -2133,7 +2119,6 @@ We are being passed a big chunk of data for releases, drawing from the metadata 
           doUpdateQuery
         } = props
 
-
         return (
             <div id='sunburst'>
             <Sunburst
@@ -2147,17 +2132,17 @@ We are being passed a big chunk of data for releases, drawing from the metadata 
           onValueMouseOver={handleMouseOver}
           onValueMouseOut={handleMouseOut}
             >
-            {(interiorLabel && interiorLabel.coverage && interiorLabel.coverage.tested) &&
-             <LabelSeries
-             data={[{x: 0, y: 60, label: interiorLabel.coverage.percentage, style: labelStyle.PERCENTAGE},
-                    {x: 0, y: 0, label: interiorLabel.coverage.ratio, style: labelStyle.FRACTION},
-                    {x: 0, y: -20, label: 'total tested', style: labelStyle.PATH}
-                   ]} />}
           {(interiorLabel && interiorLabel.endpoint) &&
            <LabelSeries
            data={[
              {x: 0, y: 0, label: interiorLabel.tested, style: labelStyle.PERCENTAGE},
            ]} />}
+           {(interiorLabel && interiorLabel.coverage) &&
+             <LabelSeries
+             data={[{x: 0, y: 60, label: interiorLabel.coverage.percentage, style: labelStyle.PERCENTAGE},
+                    {x: 0, y: 0, label: interiorLabel.coverage.ratio, style: labelStyle.FRACTION},
+                    {x: 0, y: -20, label: 'total tested', style: labelStyle.PATH}
+                   ]} />}
             </Sunburst>
             <button className='ttsc' onClick={handleReset}>Reset</button>
             </div>
@@ -2267,11 +2252,12 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
           categoryColours,
           levelColours,
           path,
+          queryObject
         } = props
 
-        const level = path.level
-        const category = path.category
-        const name = path.name
+        const level = queryObject.level || ''
+        const category = queryObject.category || ''
+        const name = queryObject.name || ''
         const description = (activeEndpoint == null) ? '' : activeEndpoint.description
 
         if (currentReleaseShouldUpdate == null || currentReleaseShouldUpdate === true) return null
@@ -2293,6 +2279,7 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
         'selectCategoryColours',
         'selectLevelColours',
         'selectPath',
+        'selectQueryObject',
         SummaryContainer
       )
 
@@ -2568,38 +2555,42 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
    recurring helper functions
   #+NAME: Utils
   #+BEGIN_SRC js :tangle ./src/lib/utils.js
-    import {
-      filter,
-      isUndefined,
-      size,
-      words,
-      pickBy } from 'lodash'
+        import {
+          filter,
+          isUndefined,
+          size,
+          words,
+          pickBy } from 'lodash'
 
-    export function calculateCoverage (endpoints) {
-      var total = size(endpoints)
-      var tested = size(filter(endpoints, ['isTested', true]))
-      var percentage = (100 * tested /total).toPrecision(3)
+        export function calculateCoverage (endpoints) {
+          var total = size(endpoints)
+          var tested = size(filter(endpoints, ['isTested', true]))
+          var percentage = (total, tested) => {
+            if (!tested && !total) return 'No Endpoints'
+            var percentageNumber = (100 * tested /total).toPrecision(3)
+            return `${percentageNumber}%`
+            }
 
-      return {
-        tested,
-        total,
-        percentage: `${percentage}%`,
-        ratio: `${tested}/${total}`
-      }
-    }
+          return {
+            tested,
+            total,
+            percentage: percentage(total, tested),
+            ratio: `${tested}/${total}`
+          }
+        }
 
-    export function fadeColor (rgba, desiredOpacity) {
-      var rgbaParts = words(rgba, /[^,|^(|^)]+/g)
-      rgbaParts.pop()
-      rgbaParts.push(desiredOpacity)
-      var newRgbaString = rgbaParts.join(',')
-      var newRgba = newRgbaString.replace(/,/,'(') + ')'
-      return newRgba
-    }
+        export function fadeColor (rgba, desiredOpacity) {
+          var rgbaParts = words(rgba, /[^,|^(|^)]+/g)
+          rgbaParts.pop()
+          rgbaParts.push(desiredOpacity)
+          var newRgbaString = rgbaParts.join(',')
+          var newRgba = newRgbaString.replace(/,/,'(') + ')'
+          return newRgba
+        }
 
-    export function propertiesWithValue (obj) {
-      return pickBy(obj, (val) => !isUndefined(val))
-    }
+        export function propertiesWithValue (obj) {
+          return pickBy(obj, (val) => !isUndefined(val))
+        }
   #+END_SRC
 * Glossary
 ** Bundle (<<<bundles>>> | <<<bundle>>>)
@@ -2785,9 +2776,10 @@ Kinda used interchangable with state, and short for redux store.  It refers to t
    It is a segment of text that we test to see whether it is present in an Endpoints' name.
 ** Endpoints (<<<◊Endpoints>>>)
    Endpoints is an array, consisting of multiple ◊Endpoint objects
+
    #+NAME: Endpoints Definition Example
-   #+BEGIN_EXAMPLE
-   [
+   #+BEGIN_SRC js :var name="var sample =" :tangle no
+[
      {
        "name": "readCoreV1NamespaceStatus",
        "method": "get",
@@ -2849,7 +2841,8 @@ Kinda used interchangable with state, and short for redux store.  It refers to t
        "_id": "6PxTDVRO9ZhOsmXz"
      }
    ]
-   #+END_EXAMPLE
+   #+END_SRC
+
 ** Endpoint (<<<◊Endpoint>>>)
    An endpoint is an object, representing a single entry from the =/endpoints= path of our API
    #+NAME: Endpoint Definition Example

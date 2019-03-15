@@ -4,7 +4,7 @@ import axios from 'axios'
 
 // TODO add envify as browserify transform
 const config = {
-  backendUrl: process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api/v1'
+  backendUrl: process.env.REACT_APP_BACKEND_URL || 'http://localhost:3030/api/v1'
 }
 
 export default {

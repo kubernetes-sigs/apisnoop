@@ -10,11 +10,12 @@ const SummaryContainer = (props) => {
     categoryColours,
     levelColours,
     path,
+    queryObject
   } = props
 
-  const level = path.level
-  const category = path.category
-  const name = path.name
+  const level = queryObject.level || ''
+  const category = queryObject.category || ''
+  const name = queryObject.name || ''
   const description = (activeEndpoint == null) ? '' : activeEndpoint.description
 
   if (currentReleaseShouldUpdate == null || currentReleaseShouldUpdate === true) return null
@@ -36,5 +37,6 @@ export default connect(
   'selectCategoryColours',
   'selectLevelColours',
   'selectPath',
+  'selectQueryObject',
   SummaryContainer
 )

@@ -17,7 +17,6 @@ const SunburstChart = (props) => {
     doUpdateQuery
   } = props
 
-
   return (
       <div id='sunburst'>
       <Sunburst
@@ -31,17 +30,17 @@ const SunburstChart = (props) => {
     onValueMouseOver={handleMouseOver}
     onValueMouseOut={handleMouseOut}
       >
-      {(interiorLabel && interiorLabel.coverage && interiorLabel.coverage.tested) &&
-       <LabelSeries
-       data={[{x: 0, y: 60, label: interiorLabel.coverage.percentage, style: labelStyle.PERCENTAGE},
-              {x: 0, y: 0, label: interiorLabel.coverage.ratio, style: labelStyle.FRACTION},
-              {x: 0, y: -20, label: 'total tested', style: labelStyle.PATH}
-             ]} />}
     {(interiorLabel && interiorLabel.endpoint) &&
      <LabelSeries
      data={[
        {x: 0, y: 0, label: interiorLabel.tested, style: labelStyle.PERCENTAGE},
      ]} />}
+     {(interiorLabel && interiorLabel.coverage) &&
+       <LabelSeries
+       data={[{x: 0, y: 60, label: interiorLabel.coverage.percentage, style: labelStyle.PERCENTAGE},
+              {x: 0, y: 0, label: interiorLabel.coverage.ratio, style: labelStyle.FRACTION},
+              {x: 0, y: -20, label: 'total tested', style: labelStyle.PATH}
+             ]} />}
       </Sunburst>
       <button className='ttsc' onClick={handleReset}>Reset</button>
       </div>

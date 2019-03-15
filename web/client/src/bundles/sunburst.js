@@ -53,24 +53,10 @@ export default {
     'selectQueryObject',
     'selectEndpointsWithTestCoverage',
     (query, endpoints) => {
+      if(endpoints == null) return null
       var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
+      console.log(nameAndCoverageInfo)
       return nameAndCoverageInfo
-    }
-  ),
-  selectFocusedPath: createSelector(
-    'selectQueryObject',
-    'selectZoom',
-    (query, zoom) => {
-      if (query == null | zoom == null) return null
-      var pathObjectRaw = {
-        level: relevantValue('level', zoom, query),
-        category: relevantValue('category', zoom, query),
-        name: relevantValue('name', zoom, query),
-      }
-      var pathObject = propertiesWithValue(pathObjectRaw)
-      var pathValues = flatMap(pathObject)
-      var focusedPath = join(pathValues, ' / ')
-      return focusedPath
     }
   ),
   selectLabelStyle: () => {
