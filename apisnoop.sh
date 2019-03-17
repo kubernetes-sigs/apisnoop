@@ -64,6 +64,7 @@ upload_apiusage() {
 download_apiusage() {
   mkdir -p "$APISNOOP_DEST"
   gsutil -m cp -R -n "$APISNOOP_GCS_PREFIX" "$APISNOOP_DEST"
+  mv "$APISNOOP_DEST"/*/* "$APISNOOP_DEST"
 }
 
 if [ $# -eq 0 ]; then
