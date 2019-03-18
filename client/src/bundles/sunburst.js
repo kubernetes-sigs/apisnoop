@@ -1,10 +1,8 @@
-import { fadeColor, propertiesWithValue } from '../lib/utils'
+import { fadeColor } from '../lib/utils'
 import { createSelector } from 'redux-bundler'
 import {
   forEach,
   includes,
-  flatMap,
-  join,
   map,
   orderBy,
   reduce,
@@ -15,13 +13,6 @@ import {
 
 export default {
   name: 'charts',
-  getReducer: () => {
-    const initialState = {
-    }
-    return (state = initialState, action = {}) => {
-      return state;
-    }
-  },
   selectSunburst: createSelector(
     'selectEndpointsByLevelAndCategoryAndNameAndMethod',
     'selectLevelColours',
@@ -55,7 +46,6 @@ export default {
     (query, endpoints) => {
       if(endpoints == null) return null
       var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
-      console.log(nameAndCoverageInfo)
       return nameAndCoverageInfo
     }
   ),
@@ -80,24 +70,7 @@ export default {
         width: '20px'
       }
     }
-  },
-  doLockChart: () => {
-    return {
-      type: 'CHART_LOCKED'
-    }
-  },
-  doUnlockChart: () => {
-    return {
-      type: 'CHART_UNLOCKED'
-    }
   }
-}
-
-function relevantValue (value, zoom, query) {
-  if (zoom[value] !== undefined) {
-    return zoom[value]
-  }
-  return query[value]
 }
 
 function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {

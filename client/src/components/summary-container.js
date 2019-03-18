@@ -9,7 +9,6 @@ const SummaryContainer = (props) => {
     activeEndpoint,
     categoryColours,
     levelColours,
-    path,
     queryObject
   } = props
 
