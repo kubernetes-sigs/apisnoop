@@ -63,7 +63,9 @@ upload_apiusage() {
 
 download_apiusage() {
   mkdir -p "$APISNOOP_DEST"
-  gsutil -m cp -R -n "$APISNOOP_GCS_PREFIX" "$APISNOOP_DEST"
+  cat "$APISNOOP_SOURCES" | \
+   yq -r '."sig-release"[] | to_entries[] | "\(.key)/\(.value[0])"' | \
+   while read bucket; do gsutil -m cp -R -n "${APISNOOP_GCS_PREFIX}"$bucket "$APISNOOP_DEST"; done
   mv "$APISNOOP_DEST"/*/* "$APISNOOP_DEST"
 }
 
