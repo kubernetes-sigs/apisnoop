@@ -4,7 +4,7 @@ import endpoints from './endpoints.js'
 import endpointsSample from '../test_resources/endpoints.json'
 
 const store = composeBundlesRaw(endpoints)
- var smallEndpointsSample =    [
+ var smallEndpointsSample = [
        {
          "name": "readCoreV1NamespaceStatus",
          "method": "get",
@@ -66,6 +66,7 @@ const store = composeBundlesRaw(endpoints)
          "_id": "6PxTDVRO9ZhOsmXz"
        }
      ]
+ 
  var smallEndpointsObjectSample = {
      "6OBwAVYGdU2tOKE8": {
        "name": "readCoreV1NamespaceStatus",
@@ -235,7 +236,4 @@ describe('Endpoints Selectors', () => {
   })
   
   
-//   
-//   
-//   
 })

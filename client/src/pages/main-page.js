@@ -8,7 +8,7 @@ import ActiveTestsList from '../components/active-tests-list'
 import ActiveTestSequence from '../components/active-test-sequence'
 
 function MainPage () {
-  return (
+    return (
       <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
       {/*<FilterContainer />*/}
       <ReleasesContainer />
@@ -16,9 +16,9 @@ function MainPage () {
       <ActiveTestsList />
       <ActiveTestSequence />
       </main>
-  )
+    )
 }
 
 export default connect(
-  MainPage
+    MainPage
 )
