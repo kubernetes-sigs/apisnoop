@@ -859,7 +859,6 @@ A good example of this can be found in our Colours bundle.
        )
      #+END_SRC
 
-
 *** Filter
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/filter.js :noweb yes
@@ -1550,11 +1549,15 @@ k*** Selector
 ****  Layout
     #+NAME: Useragents bundle
     #+BEGIN_SRC js
-      export default {
-        name: 'useragents',
-        <<Useragents Reducer>>,
-        <<selectUseragentInput>>
-      }
+      import { map } from 'lodash'
+      import { createSelector } from 'redux-bundler'
+        export default {
+          name: 'useragents',
+          <<Useragents Reducer>>,
+          <<selectUseragentInput>>,
+          <<selectUseragentsFilteredByInput>>,
+          <<doUpdateUseragentInput>>
+        }
     #+END_SRC
 
 ****  Tests Layout
@@ -1562,10 +1565,14 @@ k*** Selector
      #+BEGIN_SRC js :tangle ./src/bundles/useragents.test.js
        import { Reducer, Selector } from 'redux-testkit'
        import {composeBundlesRaw} from 'redux-bundler'
+       import createStore from './index.js'
        import useragents from './useragents.js'
+       import useragentsResource from './useragents-resource.js'
+       import useragentsSample from '../test_resources/useragents.json'
+           <<useragentsNamesSample>>
 
-       const store = composeBundlesRaw(useragents)
-       const state = store().getState()
+       var store = createStore()
+       var state = store.getState()
 
        const initialState = {
            filterInput: ''
@@ -1577,6 +1584,7 @@ k*** Selector
 
        describe('Useragents Selectors', () => {
          <<selectUseragentInput Test>>
+         <<selectUseragentsFilteredByInput Test>>
        })
 
 
@@ -1593,9 +1601,9 @@ k*** Selector
        it('should have initial state', () => {
        expect(state.useragents).toEqual(initialState)
        })
-       it('should handle USERAGENT_FILTER_INPUT_UPDATED', () => {
+       it('should handle USERAGENT_INPUT_UPDATED', () => {
            const payload = 'k^sjdj'
-           const action = {type: 'USERAGENT_FILTER_INPUT_UPDATED', payload}
+           const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
            const result = {filterInput: payload}
            Reducer(useragents.getReducer()).expect(action).toReturnState(result)
        })
@@ -1608,7 +1616,7 @@ k*** Selector
                filterInput: ''
            }
            return (state=initialState, {type, payload}) => {
-               if (type  === 'USERAGENT_FILTER_INPUT_UPDATED') {
+               if (type  === 'USERAGENT_INPUT_UPDATED') {
                    return {...state, filterInput: payload}
                }
                return state
@@ -1636,9 +1644,66 @@ k*** Selector
        selectUseragentsInput: (state) => state.useragents.filterInput
      #+END_SRC
 
+**** selectUseragentsFilteredByInput
+     **Regex -> ◊UseragentsNames**
+     _Given a regex filter, return an array of names that match this regex_
+     #+NAME: useragentsNamesSample
+     #+BEGIN_SRC js :tangle no
+       var useragentsNamesSample  = [
+          "kubectl/v1.13.3",
+          "kube-apiserver/v1.15.0",
+          "kube-proxy/v1.13.5",
+          "node-problem-detector/v0.5.0-49-gfb81368",
+          "nfs-provisioner/v0.0.0"
+        ]
+     #+END_SRC
 
+     #+NAME: selectUseragentsFilteredByInput Test
+     #+BEGIN_SRC js :tangle no
+       it('should return all useragent names if no filter is set', () => {
+           <<useragentsNamesSample>>
+           var filter = ''
+           var filterB = 'kube'
+           var filteredSample = ["kubectl/v1.13.3", "kube-apiserver/v1.15.0", "kube-proxy/v1.13.5"]
 
+           var selectUseragents = useragents.selectUseragentsFilteredByInput.resultFunc
 
+            expect(selectUseragents(useragentsSample, filter)).toEqual(useragentsNamesSample)
+            expect(selectUseragents(useragentsSample, filterB)).toEqual(filteredSample)
+
+       })
+
+     #+END_SRC
+
+     #+NAME: selectUseragentsFilteredByInput
+     #+BEGIN_SRC js :tangle no
+       selectUseragentsFilteredByInput: createSelector(
+           'selectUseragentsResource',
+           'selectUseragentsInput',
+           (useragents, input) => {
+               var useragentsNames = map(useragents, 'name')
+               if (input === '') return useragentsNames
+
+               return useragentsNames.filter(ua => {
+                   var inputAsRegex = new RegExp(input)
+                   return inputAsRegex.test(ua)
+               })
+           }
+       )
+
+     #+END_SRC
+
+**** doUpdateUseragentInput
+     #+NAME: doUpdateUseragentInput
+     #+BEGIN_SRC js :tangle no
+       doUpdateUseragentInput: (payload) => ({dispatch}) => {
+           dispatch({
+               type: 'USERAGENT_INPUT_UPDATED',
+               payload
+           })
+       }
+
+     #+END_SRC
 
 *** Zoom
     :PROPERTIES:
@@ -2625,8 +2690,7 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
      import ActiveTestSequence from '../components/active-test-sequence'
 
      function MainPage () {
-    console.log('dog')
-       return (
+         return (
            <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
            {/*<FilterContainer />*/}
            <ReleasesContainer />
@@ -2634,11 +2698,11 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
            <ActiveTestsList />
            <ActiveTestSequence />
            </main>
-       )
+         )
      }
 
      export default connect(
-       MainPage
+         MainPage
      )
    #+END_SRC
 
@@ -3037,6 +3101,7 @@ Kinda used interchangable with state, and short for redux store.  It refers to t
    For an example, check out [[file:src/test_resources/useragents.json][src/test_resources/useragents.json]]
 ** Useragent (<<<◊Useragent>>>)
    Useragents is an object representing a single entry from our =/useragents= api path.
+
    #+NAME: Useragent Definition Example
    #+BEGIN_SRC js :tangle no
      {
@@ -3378,6 +3443,20 @@ Kinda used interchangable with state, and short for redux store.  It refers to t
          "_id": "0uR9zRuFjYOPIdbF"
      }
    #+END_SRC
+** UseragentNames(<<<◊UseragentsNames>>>)
+   UseragentNames is an array of names pulled from ◊Useragents
+
+   #+NAME: UseragentNames Definition Example
+   #+BEGIN_EXAMPLE
+     [
+       "kubectl/v1.13.3",
+       "kube-apiserver/v1.15.0",
+       "kube-proxy/v1.13.5",
+       "node-problem-detector/v0.5.0-49-gfb81368",
+       "nfs-provisioner/v0.0.0"
+     ]
+   #+END_EXAMPLE
+
 ** UseragentInput(<<<◊UseragentInput>>>)
    UseragentInput is a string representing the current value of our useragent filter form.  It is converted into regex for the purpose of filtering.
    When someone inputs the search form, the UseragentInput gets added to our QueryObject as the value for =useragent=
