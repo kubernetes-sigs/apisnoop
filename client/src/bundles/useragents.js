@@ -1,4 +1,4 @@
-import { map } from 'lodash'
+import { filter, map } from 'lodash'
 import { createSelector } from 'redux-bundler'
   export default {
     name: 'useragents',
@@ -28,7 +28,22 @@ import { createSelector } from 'redux-bundler'
         }
     )
     ,
-    doUpdateUseragentInput: (payload) => ({dispatch}) => {
+    selectUseragentsFilteredByQuery: createSelector(
+        'selectUseragentsResource',
+        'selectQueryObject',
+        (useragents, query) => {
+            if (useragents == null) return null
+            if (query.useragent && query.useragent.length) {
+                return filter(useragents, (ua) => {
+                    var inputAsRegex = new RegExp(query.useragent)
+                    return inputAsRegex.test(ua.name)
+                })
+            } else {
+                return useragents
+            }
+        }
+    ),
+    doUpdateUseragentsInput: (payload) => ({dispatch}) => {
         dispatch({
             type: 'USERAGENT_INPUT_UPDATED',
             payload
