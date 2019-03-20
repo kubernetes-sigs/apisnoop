@@ -2,7 +2,8 @@ import { createSelector } from 'redux-bundler'
 import {
     groupBy,
     keyBy,
-    mapValues} from 'lodash'
+    mapValues,
+    some } from 'lodash'
 
 import { calculateCoverage } from '../lib/utils.js'
 
@@ -23,14 +24,23 @@ export default {
     selectFilteredAndZoomedEndpoints: createSelector(
         'selectFilteredEndpoints',
         'selectZoom',
-        (endpoints, zoom) => {
+        'selectEndpointsHitByFilteredUseragents',
+        (endpoints, zoom, uaEndpoints) => {
             if (endpoints == null) return null
             if (zoom) {
-              if (zoom.depth === 'endpoint' || zoom.depth === 'category') {
-                endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category)
-              } else if (zoom.depth === 'level') {
-                endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level)
-              }
+                if (zoom.depth === 'endpoint' || zoom.depth === 'category') {
+                    endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level && endpoint.category === zoom.category)
+                } else if (zoom.depth === 'level') {
+                    endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level)
+                }
+            }
+            if (uaEndpoints) {
+                endpoints = endpoints.filter(endpoint => {
+                    return some(uaEndpoints, {
+                        name: endpoint.name,
+                        method: endpoint.method
+                    })
+                })
             }
             return endpoints
         }
