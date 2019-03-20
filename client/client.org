@@ -1549,16 +1549,20 @@ k*** Selector
 ****  Layout
     #+NAME: Useragents bundle
     #+BEGIN_SRC js
-      import { filter, map } from 'lodash'
+      import { filter,
+               flattenDeep,
+               map,
+               uniq } from 'lodash'
       import { createSelector } from 'redux-bundler'
-        export default {
-          name: 'useragents',
-          <<Useragents Reducer>>,
-          <<selectUseragentInput>>,
-          <<selectUseragentsFilteredByInput>>,
-          <<selectUseragentsFilteredByQuery>>,
-          <<doUpdateUseragentsInput>>
-        }
+      export default {
+        name: 'useragents',
+        <<Useragents Reducer>>,
+        <<selectUseragentInput>>,
+        <<selectUseragentsFilteredByInput>>,
+        <<selectUseragentsFilteredByQuery>>,
+        <<selectEndpointsHitByFilteredUseragents>>,
+        <<doUpdateUseragentsInput>>
+      }
     #+END_SRC
 
 ****  Tests Layout
@@ -1748,6 +1752,84 @@ k*** Selector
             }
         )
       #+END_SRC
+
+**** selectEndpointsHitByFilteredUseragents
+     **◊Useragents -> ◊Endpoints**
+     _Given a set of useragents that contain endpoints, return an array of just the unique endpoints._
+     This won't be the ultimate filter.  Rather, we wanna setup a nice selection to use in our endpoint bundle as a filter.  So the key here is to make an array of endpoints that is useful for future filtering.
+     Our useragents contains endpoints, which themselves contains keys matching their method.
+     #+BEGIN_EXAMPLE
+       {
+         "name": "kube-apiserver/v1.15.0",
+         "bucket": "ci-kubernetes-e2e-gce-cos-k8sstable2-default",
+         "job": "1961",
+         "release": "ci-kubernetes-e2e-gce-cos-k8sstable2-default_1961",
+         "_id": "2Jm2UxZMaAZ3i2NI"
+         "endpoints": {
+           "listCoreV1LimitRangeForAllNamespaces": {
+             "watch": {
+               "counter": 7
+             },
+             "get": {
+               "counter": 1
+             }
+           }
+         }
+       }
+     #+END_EXAMPLE
+     But what we want is for the method to be a key to the endpoint.
+     #+BEGIN_EXAMPLE
+       {
+         "listCoreV1LimitRangeForAllNamespaces": {
+           "method": "watch",
+           "counter": 7,
+           "name": "kube-apiserver/v1.15.0",
+           "bucket": "ci-kubernetes-e2e-gce-cos-k8sstable2-default",
+           "job": "1961",
+           "release": "ci-kubernetes-e2e-gce-cos-k8sstable2-default_1961"
+         },
+         "listCoreV1LimitRangeForAllNamespaces": {
+           "method": "get",
+           "counter": 1
+           "name": "kube-apiserver/v1.15.0",
+           "bucket": "ci-kubernetes-e2e-gce-cos-k8sstable2-default",
+           "job": "1961",
+           "release": "ci-kubernetes-e2e-gce-cos-k8sstable2-default_1961"
+         }
+       }
+     #+END_EXAMPLE
+     In this way, we can just match our endpoints resource to this list, based on method, bucket, job, release.  That should be specific enough to be unique.
+
+    #+NAME: selectEndpointsHitByFilteredUseragents
+    #+BEGIN_SRC js :tangle no
+      selectEndpointsHitByFilteredUseragents: createSelector(
+        'selectUseragentsFilteredByQuery',
+        (useragents) => {
+          if (useragents == null) return null
+          var endpointsHit = []
+          var uaEndpointsOnly = map(useragents, "endpoints")
+          for (var uaEntry of uaEndpointsOnly) {
+            var endpointNames = Object.keys(uaEntry)
+            for (var endpoint of endpointNames) {
+              var methods = Object.keys(uaEntry[endpoint])
+              for (var method of methods) {
+                var useragent = useragents[uaEndpointsOnly.indexOf(uaEntry)]
+                var endpointEntry = {
+                  name: endpoint,
+                  method: method,
+                  release: useragent.release,
+                  bucket: useragent.bucket,
+                  job: useragent.job
+                }
+                endpointsHit.push(endpointEntry)
+              }
+            }
+          }
+          return uniq(endpointsHit)
+        }
+      )
+    #+END_SRC
+
 **** doUpdateUseragentInput
      **String -> Action**
      _Returns an action for our reducer with type "USERAGENT_INPUT_UPDATED' and String as payload_
@@ -1763,7 +1845,7 @@ k*** Selector
 
      #+END_SRC
 
-*** Zoom
+     *** Zoom
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/zoom.js :noweb yes
     :END:
