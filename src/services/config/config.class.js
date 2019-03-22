@@ -78,6 +78,7 @@ async function addEntryToEndpointService (app, releaseData, bucketJobRelease) {
         tests: rawEndpoint.tests,
         description: rawEndpoint.desc,
         path: rawEndpoint.path,
+        useragents: rawEndpoint.useragents,
         category: rawEndpoint.cat,
         isTested: rawEndpoint.counter > 0,
         ...bucketJobRelease
