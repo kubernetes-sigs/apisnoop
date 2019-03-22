@@ -14,6 +14,7 @@ import summary from './summary'
 import testsResource from './tests-resource'
 import tests from './tests'
 import useragentsResource from './useragents-resource'
+import useragents from './useragents'
 import zoom from './zoom'
 
 export default composeBundles(
@@ -31,5 +32,6 @@ export default composeBundles(
   testsResource,
   tests,
   useragentsResource,
+  useragents,
   zoom
 )
