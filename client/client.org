@@ -117,6 +117,7 @@ A good example of this can be found in our Colours bundle.
        import summary from './summary'
        import testsResource from './tests-resource'
        import tests from './tests'
+       import useragentsResource from './useragents-resource'
        import zoom from './zoom'
 
      #+END_SRC
@@ -138,6 +139,7 @@ A good example of this can be found in our Colours bundle.
          summary,
          testsResource,
          tests,
+         useragentsResource,
          zoom
        )
      #+END_SRC
@@ -401,7 +403,7 @@ A good example of this can be found in our Colours bundle.
 
     We are making it now so that the endpoints filter on the query at the start.   The key thing is whether or not a zoom is part of the query.  If it is, we filter by whatever depth the zoom is at.
 
-****  Imports and Layout
+**** Imports and Layout
     #+NAME: endpoints bundle layout
     #+BEGIN_SRC js
       import { createSelector } from 'redux-bundler'
@@ -1098,13 +1100,11 @@ A good example of this can be found in our Colours bundle.
 ****  Imports and Layout
     #+NAME: charts.js
     #+BEGIN_SRC js
-      import { fadeColor, propertiesWithValue } from '../lib/utils'
+      import { fadeColor } from '../lib/utils'
       import { createSelector } from 'redux-bundler'
       import {
         forEach,
         includes,
-        flatMap,
-        join,
         map,
         orderBy,
         reduce,
@@ -1115,24 +1115,11 @@ A good example of this can be found in our Colours bundle.
 
       export default {
         name: 'charts',
-        <<Sunburst Reducer>>,
-        <<Sunburst Selectors>>,
-        <<Sunburst Action Creators>>
+        <<Sunburst Selectors>>
       }
 
       <<Sunburst Helper Functions>>
     #+END_SRC
-****  Reducer
-   #+NAME: Sunburst Reducer
-   #+BEGIN_SRC js :tangle no
-     getReducer: () => {
-       const initialState = {
-       }
-       return (state = initialState, action = {}) => {
-         return state;
-       }
-     }
-   #+END_SRC
 ****  Selectors
    #+NAME: Sunburst Selectors
    #+BEGIN_SRC js :tangle no
@@ -1169,7 +1156,6 @@ A good example of this can be found in our Colours bundle.
        (query, endpoints) => {
          if(endpoints == null) return null
          var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
-         console.log(nameAndCoverageInfo)
          return nameAndCoverageInfo
        }
      ),
@@ -1196,27 +1182,15 @@ A good example of this can be found in our Colours bundle.
        }
      }
     #+END_SRC
-****  Action Creators
-   #+NAME: Sunburst Action Creators
-   #+BEGIN_SRC js :tangle no
-     doLockChart: () => {
-       return {
-         type: 'CHART_LOCKED'
-       }
-     },
-     doUnlockChart: () => {
-       return {
-         type: 'CHART_UNLOCKED'
-       }
-     }
-   #+END_SRC
 ***  Helper Functions
      The helper functions are grooooooss right now.  It feels far too nested, and I am passing along the query object to too many places.  I feel the color addition should e done as a selector possibly and not hae it be nested within here.-
 
      This is gross for how many nested functions there are, and that weird confusion between query and zoom.  Is there a better way to handle this?  Essentially, we wanna be able to zoom into a category, and still have the colors and endpoints show based on the query....but when we are zoomed into an endpoint, then there shouldn't be any query happening....it should be noted as 'locked on'.  This whole section smells awful, and would be good to have another set of javascripter eyes on it.
 
-     #+NAME: Sunburst Helper Functions
+     #+NAME: Removed Functions
      #+BEGIN_SRC js :tangle no
+       // I likely don't need these anymore, but dont' wanna fully remove them yet
+
        function relevantValue (value, zoom, query) {
          if (zoom[value] !== undefined) {
            return zoom[value]
@@ -1224,6 +1198,10 @@ A good example of this can be found in our Colours bundle.
          return query[value]
        }
 
+     #+END_SRC
+
+     #+NAME: Sunburst Helper Functions
+     #+BEGIN_SRC js :tangle no
        function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
          var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
          return orderBy(categories, (category) => category.children.length, ['desc'])
@@ -1548,7 +1526,43 @@ k*** Selector
      We are also taking just the first method in the endpoint....Which means the endpoint is also only showiung in the sunburst for it's own name, and not its methods.  For most of them they will only have a single method, but others do not.  Thed question then is whether each endpoint and method should be shown separately, or whether when you hover over it says how many methods it has and how many of them are tested....the case where an endpoint's put method is tested but its read method is not or some thing like that.  Not sure the best way to tackle this, like what the user would be expecting.
 
      we want to select the tests from our testsResource based on what's in our active tests
+*** Useragents Resource
+    :PROPERTIES:
+    :header-args: :tangle ./src/bundles/useragents-resource.js :noweb yes
+    :END:
 
+    This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
+
+    #+NAME: useragents resource
+    #+BEGIN_SRC js
+      import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
+      const bundle = createAsyncResourceBundle({
+        name: 'useragentsResource',
+        getPromise: ({ client, store }) => {
+          const currentReleaseName = store.selectCurrentReleaseName()
+          return fetchUseragentsByReleaseName(client, currentReleaseName)
+        }
+      })
+
+      bundle.reactUseragentsResourceFetch = createSelector(
+        'selectUseragentsResourceShouldUpdate',
+        (shouldUpdate, currentReleaseId) => {
+          if (!shouldUpdate) return
+          return { actionCreator: 'doFetchUseragentsResource' }
+        }
+      )
+
+      function fetchUseragentsByReleaseName (client, releaseName) {
+        return client.service('useragents').find({
+          query: {
+            release: releaseName
+          }
+        })
+      }
+
+      export default bundle
+    #+END_SRC
 *** Zoom
     :PROPERTIES:
     :header-args: :tangle ./src/bundles/zoom.js :noweb yes
@@ -2251,7 +2265,6 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
           activeEndpoint,
           categoryColours,
           levelColours,
-          path,
           queryObject
         } = props
 

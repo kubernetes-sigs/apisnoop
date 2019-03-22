@@ -13,6 +13,7 @@ import sunburst from './sunburst'
 import summary from './summary'
 import testsResource from './tests-resource'
 import tests from './tests'
+import useragentsResource from './useragents-resource'
 import zoom from './zoom'
 
 export default composeBundles(
@@ -29,5 +30,6 @@ export default composeBundles(
   summary,
   testsResource,
   tests,
+  useragentsResource,
   zoom
 )
