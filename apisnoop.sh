@@ -65,8 +65,11 @@ download_apiusage() {
   mkdir -p "$APISNOOP_DEST"
   cat "$APISNOOP_SOURCES" | \
    yq -r '."sig-release"[] | to_entries[] | "\(.key)/\(.value[0])"' | \
-   while read bucket; do gsutil -m cp -R -n "${APISNOOP_GCS_PREFIX}"$bucket "$APISNOOP_DEST"; done
-  mv "$APISNOOP_DEST"/*/* "$APISNOOP_DEST" || true
+   while read bucket; do
+	   mkdir -p "$APISNOOP_DEST"/$bucket;
+	   gsutil -m cp -R -n "${APISNOOP_GCS_PREFIX}"$bucket/* "$APISNOOP_DEST"/$bucket;
+   done
+  echo mv "$APISNOOP_DEST"/*/* "$APISNOOP_DEST" || true
 }
 
 if [ $# -eq 0 ]; then
