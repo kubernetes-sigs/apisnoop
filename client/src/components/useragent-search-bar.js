@@ -4,12 +4,13 @@ import {connect} from 'redux-bundler-react'
 function UseragentSearchBar (props) {
   const {
     doUpdateUseragentsInput,
-    doUpdateQuery
+    doUpdateQuery,
+    useragentsInput
    } = props
 
   return (
-      <form onInput={handleInput} onSubmit={handleSubmit}>
-      <input name='ua-filter' type='text' />
+      <form onSubmit={handleSubmit}>
+      <input name='ua-filter' type='text' value={useragentsInput} onChange={handleInput}/>
       <input type='submit' value='submit' />
       </form>
       )
@@ -19,15 +20,17 @@ function UseragentSearchBar (props) {
   }
   function handleSubmit (e) {
     e.preventDefault()
-    console.log(e.target)
     doUpdateQuery({
-      useragent: e.target.value
+      useragent: e.target[0].value
     })
+    doUpdateUseragentsInput('')
+
   }
 }
 
 export default connect(
   'doUpdateUseragentsInput',
   'doUpdateQuery',
+  'selectUseragentsInput',
   UseragentSearchBar
 )

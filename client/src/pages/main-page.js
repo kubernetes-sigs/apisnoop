@@ -12,8 +12,8 @@ function MainPage () {
     return (
       <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
       {/*<FilterContainer />*/}
-      <UseragentSearchContainer />
       <ReleasesContainer />
+      <UseragentSearchContainer />
       <SunburstAndSummary />
       <ActiveTestsList />
       <ActiveTestSequence />
