@@ -50,7 +50,7 @@ const SunburstChart = (props) => {
     var rawQuery = {
       level: path[1],
       category: path[2],
-      name: path[3],
+      name: path[3]
     }
     var query = propertiesWithValue(rawQuery)
     if (queryObject.zoomed) {
@@ -58,6 +58,9 @@ const SunburstChart = (props) => {
     }
     if (queryObject.filter) {
       query.filter = queryObject.filter
+    }
+    if (queryObject.useragents) {
+      query.useragents = queryObject.useragents
     }
     doUpdateQuery(query)
   }
@@ -69,6 +72,9 @@ const SunburstChart = (props) => {
     }
     if (queryObject.zoomed) {
       query.zoomed = queryObject.zoomed
+    }
+    if (queryObject.useragents) {
+      query.useragents = queryObject.useragents
     }
     doUpdateQuery(query)
   }
@@ -88,15 +94,22 @@ const SunburstChart = (props) => {
     if (queryObject.filter) {
       query.filter = queryObject.filter
     }
+    if (queryObject.useragents) {
+      query.useragents = queryObject.useragents
+    }
+
     doUpdateQuery(query)
   }
 
   function handleReset () {
+    var query = {}
     if (queryObject.filter) {
-      doUpdateQuery({filter: queryObject.filter})
-    } else {
-      doUpdateQuery({})
+      query.filter = queryObject.filter
     }
+    if (queryObject.useragents) {
+      query.useragents =queryObject.useragents
+    }
+    doUpdateQuery(query)
   }
 
   function getKeyPath (node) {
