@@ -4,7 +4,6 @@ import UseragentSearchBar from './useragent-search-bar'
 import UseragentSearchResults from './useragent-search-results'
 import UseragentsActiveFilter from './useragents-active-filter'
 
-
 function UseragentSearchContainer (props) {
   return (
     <div id='useragent-search'>

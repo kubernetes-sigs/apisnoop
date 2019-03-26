@@ -24,7 +24,6 @@ function UseragentSearchBar (props) {
       useragents: e.target[0].value
     })
     doUpdateUseragentsInput('')
-
   }
 }
 
