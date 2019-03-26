@@ -21,7 +21,7 @@ function UseragentSearchBar (props) {
   function handleSubmit (e) {
     e.preventDefault()
     doUpdateQuery({
-      useragent: e.target[0].value
+      useragents: e.target[0].value
     })
     doUpdateUseragentsInput('')
 
