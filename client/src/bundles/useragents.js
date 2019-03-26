@@ -35,9 +35,9 @@ export default {
     'selectQueryObject',
     (useragents, query) => {
       if (useragents == null || !query) return []
-      if (query.useragent && query.useragent.length) {
+      if (query.useragents && query.useragents.length) {
         return filter(useragents, (ua) => {
-          var inputAsRegex = new RegExp(query.useragent)
+          var inputAsRegex = new RegExp(query.useragents)
           return inputAsRegex.test(ua.name)
         })
       } else {
