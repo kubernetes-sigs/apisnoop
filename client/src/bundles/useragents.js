@@ -21,7 +21,7 @@ export default {
     'selectUseragentsInput',
     (useragents, input) => {
       var useragentsNames = map(useragents, 'name')
-      if (input === '') return useragentsNames
+      if (input === '') return []
   
       return useragentsNames.filter(ua => {
         var inputAsRegex = new RegExp(input)
