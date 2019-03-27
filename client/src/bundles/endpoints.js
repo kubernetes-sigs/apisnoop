@@ -33,7 +33,7 @@ export default {
             endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level)
           }
         }
-        if (uaEndpoints.length) {
+        if (uaEndpoints && uaEndpoints.length) {
           endpoints = endpoints.filter(ep => uaEndpoints.some(ua => ua.name === ep.name && ua.method === ep.method))
         }
         return endpoints

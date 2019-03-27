@@ -176,11 +176,14 @@ describe('Endpoints Selectors', () => {
       depth: "endpoint"
     }
   
+    // setup our useragent sample
+    var uaEndpoints_sample = []
+  
     var filterResult = endpoints.selectFilteredAndZoomedEndpoints.resultFunc
-    expect(filterResult(endpointsSample, toLevel).length).toEqual(expectedLength.toLevel)
-    expect(filterResult(endpointsSample, toCategory).length).toEqual(expectedLength.toCategory)
-    expect(filterResult(endpointsSample, toEndpoint).length).toEqual(expectedLength.toEndpoint)
-    expect(filterResult(endpointsSample).length).toEqual(expectedLength.none)
+    expect(filterResult(endpointsSample, toLevel, uaEndpoints_sample).length).toEqual(expectedLength.toLevel)
+    expect(filterResult(endpointsSample, toCategory, uaEndpoints_sample).length).toEqual(expectedLength.toCategory)
+    expect(filterResult(endpointsSample, toEndpoint, uaEndpoints_sample).length).toEqual(expectedLength.toEndpoint)
+    expect(filterResult(endpointsSample, null, null).length).toEqual(expectedLength.none)
   })
   
   var zoomDepthCategory = {
