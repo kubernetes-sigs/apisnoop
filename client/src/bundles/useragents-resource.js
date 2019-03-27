@@ -8,7 +8,7 @@ const bundle = createAsyncResourceBundle({
   }
 })
 
-bundle.reactUseragentsFetch = createSelector(
+bundle.reactUseragentsResourceFetch = createSelector(
   'selectUseragentsResourceShouldUpdate',
   (shouldUpdate, currentReleaseId) => {
     if (!shouldUpdate) return

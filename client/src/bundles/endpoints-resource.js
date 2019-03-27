@@ -8,7 +8,7 @@ const bundle = createAsyncResourceBundle({
   }
 })
 
-bundle.reactEndpointsFetch = createSelector(
+bundle.reactEndpointsResourceFetch = createSelector(
   'selectEndpointsResourceShouldUpdate',
   (shouldUpdate, currentReleaseId) => {
     if (!shouldUpdate) return
