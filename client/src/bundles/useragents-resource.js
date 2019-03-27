@@ -8,13 +8,15 @@ const bundle = createAsyncResourceBundle({
   }
 })
 
-bundle.reactUseragentsResourceFetch = createSelector(
+bundle.reactUseragentsFetch = createSelector(
   'selectUseragentsResourceShouldUpdate',
   (shouldUpdate, currentReleaseId) => {
     if (!shouldUpdate) return
     return { actionCreator: 'doFetchUseragentsResource' }
   }
 )
+
+export default bundle
 
 function fetchUseragentsByReleaseName (client, releaseName) {
   return client.service('useragents').find({
@@ -23,5 +25,3 @@ function fetchUseragentsByReleaseName (client, releaseName) {
     }
   })
 }
-
-export default bundle
