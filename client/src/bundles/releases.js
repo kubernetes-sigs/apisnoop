@@ -14,6 +14,7 @@ export default {
         store.doMarkCurrentReleaseAsOutdated()
         store.doMarkEndpointsResourceAsOutdated()
         store.doMarkTestsResourceAsOutdated()
+        store.doMarkUseragentsResourceAsOutdated()
       }
     )
   },
