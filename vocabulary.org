@@ -1358,7 +1358,139 @@ cat apisnoop.json | jq '.test_sequences["[k8s.io] Container Lifecycle Hook when 
    #+end_example
 
 ** useragents
+*** generated as part of generate_coverage_report             :processedLogs:
+     [[file:data-gen/processAuditlog.py::if%20event.get('userAgent',%20False)%20and%20useragent.startswith('e2e.test'):][link to code]]
+
+    Useragents are either a part of the auditlog event or they are not.  They were intentionally added to the audits starting with release 1.12.
+
+    So we can look for them with =useragent = event.get('userAgent', ' ')= for each auditlog event.  We then take the useragent grabbed and add it to [[unknown_urls]] [[unknown_url_methods]] and its own [[useragents]] section.
+
+    First we add the useragents found to unknown_urls and unknown_url_methods
+   #+NAME: add useragents to unknown_urls and unknown_url_methods
+   #+BEGIN_SRC python
+     def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
+     ## endpoints, new_endpoints, sunburst, tests and all that.
+         useragents = {}
+         unknown_urls = {}
+         unknown_url_methods = {}
+         for event in audit_log:
+             # import ipdb; ipdb.set_trace(context=60)
+             spec_entry = find_openapi_entry(openapi_spec, event)
+             uri = event['requestURI']
+             method = event['method']
+             useragent = event.get('userAgent', ' ')
+
+            if useragent and useragent not in unknown_urls[uri][method]['agents']:
+                unknown_urls[uri][method]['agents'].append(useragent)
+            unknown_urls[uri][method]['counter'] += 1
+            continue
+        # look for the url+method in the OpenAPI spec
+        if method not in spec_entry['methods'].keys():
+            if uri not in unknown_url_methods.keys():
+                unknown_url_methods[uri] = {}
+            if method not in unknown_url_methods[uri]:
+                unknown_url_methods[uri][method] = {
+                    'counter': 0,
+                    'agents': []
+                }
+            if useragent and useragent not in unknown_url_methods[uri][method]['agents']:
+                unknown_url_methods[uri][method]['agents'].append(useragent)
+            unknown_url_methods[uri][method]['counter'] += 1
+            continue
+   #+END_SRC
+
+   I am not honestly sure what we're doing with the unknown dicts...but it looks like for each of them we are tracking a uri and a method, and within each method the agents that are a part of that event...then we up the counter...so the counter is related to how many times this unknown url is being hit, and the useragent behind that hit.  The unknown_url_methods seems to be covering the same ground as just unknown_urls...but i guess it's saying not only is the url unknown, but the method being used is unknown, and yet it's still being hit by this useragent.
+
+   Then we add the useragent  to its own dict. This comes after our work with tests, test_tags, and test sequences
+
+   #+NAME: add useragents to its own dict
+   #+BEGIN_SRC python
+     def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
+              #...all the code up to where we work with tests
+        if event.get('userAgent', False) and useragent.startswith('e2e.test'):
+            # ...Since we know tests are available, since the useragent is an e2e.test one,
+            # add the tests to endpoints, tests, test_tags, test sequence.
+         else:
+             # IF we hit here, this is NOT an e2e.test user agent
+             if user_agent_available: # 12 and higher
+                 pass # go on to user agent processing (e2e only)
+             # continue # do no further processing (e2e + other)
+             else: # 11 and lower
+                 # Only look at e2e for now, skip anything else
+                 pass #(log everything)
+             # continue # stop here
+
+         endpoints[op][method]["counter"] += 1
+         agent = event.get('userAgent', ' ').split(' ')[0]
+         if agent not in useragents.keys():
+             useragents[agent] = {}
+         if op not in useragents[agent].keys():
+             useragents[agent][op] = {}
+         if method not in useragents[agent][op].keys():
+             useragents[agent][op][method] = {
+                 "counter": 0
+             }
+             useragents[agent][op][method]["counter"] += 1
+             # sunburst[level][category][path][method]['counter'] += 1
+             # if agent not in sb_method['agents']:
+             #     sb_method['agents'].append(agent)
+             # if agent not in sb_method['agents']:
+             #     sb_method['agents'].append(agent)
+             #     sunburst[level][category][path][method]['agents'].append(agent)
+
+     # This should be calculated on the server, via an index
+     # import ipdb; ipdb.set_trace(context=60)
+         if agent not in endpoints[op][method]['agents']:
+             endpoints[op][method]['agents'].append(agent)
+   #+END_SRC
+
+I do not understand the =else= logic on [[add useragents to its own dict][line 1413]].  It seems to pass regardless of true or false.
+But regardless, once that's done we up our endopint counter, and add the useragent to our useragents dict, along with the operation and method included in this event.  We up the counter, to show how many times this useragent hit this operation and method (what does it mean if it's higher than 1?  does it tell us anything significant?)
+
+lastly, we append the useragent to the endpoints[op][method][agents]...so we get a list of agents within that section, and we can cross reference this to the useragents dict to get our hit counter.
+
 ** unknown_urls
+*** generated as part of generate_coverage_report             :processedLogs:
+     [[file:data-gen/processAuditlog.py::if%20event.get('userAgent',%20False)%20and%20useragent.startswith('e2e.test'):][link to code]]
+An unknown_url is one that is hit during an auditlog event, but cannot be found in our openAPI Spec.
+
+Though actually, I feel like our code is incorrect here.  We are adding useragents to our unknown_urls...before we check to see if the url is actually unknown....is this just a quirk of our for loop or a mistake?  Like what happens when we try to append to a dict entry that doesn't exist?
+
+   #+NAME: add useragents to unknown_urls and unknown_url_methods
+   #+BEGIN_SRC python
+     def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
+     ## endpoints, new_endpoints, sunburst, tests and all that.
+         useragents = {}
+         unknown_urls = {}
+         unknown_url_methods = {}
+         for event in audit_log:
+             # import ipdb; ipdb.set_trace(context=60)
+             spec_entry = find_openapi_entry(openapi_spec, event)
+             uri = event['requestURI']
+             method = event['method']
+             useragent = event.get('userAgent', ' ')
+
+            if useragent and useragent not in unknown_urls[uri][method]['agents']:
+                unknown_urls[uri][method]['agents'].append(useragent)
+            unknown_urls[uri][method]['counter'] += 1
+            continue
+        # look for the url+method in the OpenAPI spec
+        if method not in spec_entry['methods'].keys():
+            if uri not in unknown_url_methods.keys():
+                unknown_url_methods[uri] = {}
+            if method not in unknown_url_methods[uri]:
+                unknown_url_methods[uri][method] = {
+                    'counter': 0,
+                    'agents': []
+                }
+            if useragent and useragent not in unknown_url_methods[uri][method]['agents']:
+                unknown_url_methods[uri][method]['agents'].append(useragent)
+            unknown_url_methods[uri][method]['counter'] += 1
+            continue
+   #+END_SRC
+
+So we can expect the unknown_urls dict to either be empty (which is good?) or to have a number of urls, within each are methods and within this a list of agents that hit this method, and a counter for how many times it is hit.  IT doesn't seem like we can cross reference how many times an individual useragent is hitting an uknown url, just that it was hit a number of times by this speficic list of agents.
+
 ** unknown_url_methods
 ** endpoint.path :: this is just
 ** endpoint.test_tags ::
