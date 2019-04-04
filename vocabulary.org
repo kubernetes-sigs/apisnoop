@@ -1,0 +1,255 @@
+* Global / Agreed
+  :LOGBOOK:
+  CLOCK: [2019-04-04 Thu 10:56]--[2019-04-04 Thu 11:21] =>  0:25
+  :END:
+  - level :: level of stability/support for an api version. See [[https://kubernetes.io/docs/reference/using-api/api-overview/#api-versioning][K8s Docs: API Versioning]]  
+  - category ::
+  -  :: 
+* Current APISnoop Definitions 
+This is drawing from the backend api and the front end names.  
+There is more data available, and more names, in the processed logs.
+Endpoint info is generated directly from swagger.json
+** Code Sample for Generating Endpoint Info
+[[file:~/apisnoop/data-gen/processAuditlog.py::def%20generate_endpoints_tree(openapi_spec):][data-gen/processAuditlog.py::generate_endpoints_tree()]]
+#+NAME: generate_endpoints_tree
+#+BEGIN_SRC python
+  def generate_endpoints_tree(openapi_spec):
+      # Base tests structure, without audit / test loaded
+
+      endpoints = {}
+
+      for endpoint in openapi_spec['paths'].values():
+          for (method_name, method) in endpoint['methods'].items():
+              method = endpoint['methods'][method_name]
+              deprecated = re.match("[Dd]eprecated", method["description"])
+              if deprecated:
+                  # import ipdb; ipdb.set_trace(context=60)
+                  continue
+
+              op = method['operationId']
+              if op not in endpoints.keys():
+                  endpoints[op] = {}
+
+              endpoints[op][method_name] = {
+                  "cat": method["category"],
+                  "desc": method["description"],
+                  "group": method["group"],
+                  "kind": method["kind"],
+                  "ver": method["version"],
+                  "path": endpoint['path'],
+                  "level": endpoint['level'],
+                  # "deprecated": deprecated,
+                  "counter": 0,
+                  "agents": [],
+                  "test_tags": [],
+                  "tests": []
+              }
+
+      return endpoints
+#+END_SRC
+
+#+NAME: apisnoop['endpoints]'
+#+BEGIN_SRC yaml
+{
+  "createStorageV1alpha1VolumeAttachment": {
+    "post": {
+      "tests": [],
+      "agents": [],
+      "path": "/apis/storage.k8s.io/v1alpha1/volumeattachments",
+      "desc": "create a VolumeAttachment",
+      "kind": "VolumeAttachment",
+      "group": "storage.k8s.io",
+      "level": "alpha",
+      "counter": 0,
+      "test_tags": [],
+      "cat": "storage",
+      "ver": "v1alpha1"
+    }
+  },
+  "listApiextensionsV1beta1CustomResourceDefinition": {
+    "watch": {
+      "tests": [],
+      "agents": [
+        "kube-apiserver/v1.15.0",
+        "kube-controller-manager/v1.15.0"
+      ],
+      "path": "/apis/apiextensions.k8s.io/v1beta1/customresourcedefinitions",
+      "desc": "list or watch objects of kind CustomResourceDefinition",
+      "kind": "CustomResourceDefinition",
+      "group": "apiextensions.k8s.io",
+      "level": "beta",
+      "counter": 14,
+      "test_tags": [],
+      "cat": "apiextensions",
+      "ver": "v1beta1"
+    },
+    "get": {
+      "tests": [],
+      "agents": [
+        "kube-apiserver/v1.15.0",
+        "kube-controller-manager/v1.15.0"
+      ],
+      "path": "/apis/apiextensions.k8s.io/v1beta1/customresourcedefinitions",
+      "desc": "list or watch objects of kind CustomResourceDefinition",
+      "kind": "CustomResourceDefinition",
+      "group": "apiextensions.k8s.io",
+      "level": "beta",
+      "counter": 2,
+      "test_tags": [],
+      "cat": "apiextensions",
+      "ver": "v1beta1"
+    }
+  },
+#+END_SRC
+**  Definitions
+*** sunburst :: main circular graphic
+    This is a specific name from d3.
+    Our  first inspiration: [[Kerry Roden's bl.ocks.org post]] 
+    Code we use for viz now: [[https://uber.github.io/react-vis/documentation/other-charts/sunburst-diagram][react-vis/sunburst]]
+*** node :: individual piece of the sunburst
+  specif d3 convention. In APISnoop, nodes generally maps to endpoint+operation.  Is used in code for mouseOver and mouseClick in sunburst Component
+*** level :: # parse_level_from_path(path)
+    Given /v${API_VERSION}${API_LEVEL}${API_LEVEL_VERSION}
+    /v1alpha2
+    API_VERSION=1
+    API_LEVEL=alpha
+    API_LEVEL_VERSION=2
+    [[file:apisnoop/data-gen/lib/parsers.py::def%20parse_level_from_path(path):][data-gen/lib/parsers.py::parse_level_from_path()]]
+    #+NAME: level being one of alpha/beta/stable
+    #+BEGIN_SRC python
+    LEVEL_PATTERN = re.compile("/v(?P<api_version>[0-9]+)(?:(?P<api_level>alpha|beta)(?P<api_level_version>[0-9]+))?")
+    def parse_level_from_path(path):
+        # get the level (alpha/beta/stable) and the version from the path
+        level = None
+        match = LEVEL_PATTERN.search(path)
+        if match:
+            level = match.groupdict().get("api_level")
+        if level is None:
+            level = "stable"
+        return level
+    #+END_SRC
+*** event :: audit log entry.  refers to an audit log event.
+*** audit log event:: find out!
+*** TODO add defs for lines 349 to 357 to grab each of these defs.
+*** category :: comes from openAPI spec.  
+*** counter :: refers to a tally of some sort, but has several counters and all contextual
+    in processAuditlog.py, search for anywhere we do `+=1`
+    So counter will be  gathered from where within the endpoint data it is mentioned, and how it maps to the specific lines of code in processAuditlog.py
+    
+**** TODO Make counters more explicitly named?
+    
+*** useragent.endpoints.$endpoint.counter :: 
+*** verb :: HTTP layer of the method
+*** Operation :: OpenAPISpec naming for an endpoint (sans method)
+*** method :: operation 
+    #+NAME: Method within Swagger.json
+    #+BEGIN_SRC yaml
+        "/api/v1/namespaces/{namespace}/configmaps/{name}": {
+          "delete": { # METHOD
+            "consumes": [
+              "*/*"
+            ],
+            "description": "delete a ConfigMap",
+            "operationId": "deleteCoreV1NamespacedConfigMap",
+    #+END_SRC
+*** endpoints :: flattened list of endpoints, taken from our processed logs
+    this is referring to the endpoints as our web interface sees it.  
+    It is initially generated by generate_endpoint_tree (see [[code sample]]kkkkkkkkkk
+*** endpoint.path :: this is just 
+*** endpoint.test_tags ::
+*** endpoint.description ::
+*** endpoint.tests :: 
+*** bucket :: name of GCS bucket API data came from 
+*** job :: K8s build number (?) (where is this from? Prow?)
+*** release ::  it is the concatination of the values from bucket and job and used to generate the URL. 
+                Result of hack.  If routing went to "apisnoop.cncf.io/bucket/job..." then release would not be necessary.
+*** _id :: the unique id given by feathers when entry added to API db
+*** test :: A test that is part of the e2e suite binary (check)
+*** isTested :: Whether or not endopint method counter is > 0 (this is incorrect)
+    Our current definition is not right.  The actual definition should be whether  the endpoint method's test array has a length greater than 0.  IKn other words, if it contains tests we know it is tested. 
+**** TODO Adjust  isTested to match correct definition
+**** TODO update this definition when we update code.
+
+*** test.sequence :: 
+** Data from apisnoop
+#+NAME: Endpoint
+#+BEGIN_EXAMPLE
+     {                                                                                                                                                                                    
+        "name": "readCoreV1NamespacedPersistentVolumeClaimStatus",                                                                                                                         
+        "method": "get",                                                                                                                                                                   
+        "level": "stable",                                                                                                                                                                 
+        "test_tags": [],                                                                                                                                                                   
+        "tests": [],                                                                                                                                                                       
+        "description": "read status of the specified PersistentVolumeClaim",                                                                                                               
+        "path": "/api/v1/namespaces/{namespace}/persistentvolumeclaims/{name}/status",                                                                                                     
+        "category": "core",                                                                                                                                                                
+        "isTested": false,                                                                                                                                                                 
+        "bucket": "ci-kubernetes-e2e-gce-cos-k8sstable3-default",                                                                                                                          
+        "job": "460",                                                                                                                                                                      
+        "release": "ci-kubernetes-e2e-gce-cos-k8sstable3-default_460",                                                                                                                     
+        "_id": "6P78EQLmPvD27Ls7"                                                                                                                                                          
+      }   
+#+END_EXAMPLE
+
+#+NAME: Useragent snippet
+#+BEGIN_EXAMPLE json
+  {"name": "kube-apiserver/v1.15.0",                                                                                                                                                     
+  "endpoints": {                                                                                                                                                                        
+  "listCoreV1LimitRangeForAllNamespaces": {                                                                                                                                         
+  "watch": {                                                                                                                                                                    
+  "counter": 7                                                                                                                                                              
+  },                                                                                                                                                                            
+  "get": {                                                                                                                                                                      
+  "counter": 1                                                                                                                                                              
+  }                                                                                                                                                                             
+  },                                                                                                                                                                                
+  "createApiregistrationV1APIService": {                                                                                                                                            
+  "post": {                                                                                                                                                                     
+  "counter": 51                                                                                                                                                             
+  }                                                                                                                                                                             
+  }
+  }
+#+END_EXAMPLE
+* globant
+** Definitions
+*** resources/kind ::
+*** E2E name ::
+*** E2E Tags ::
+*** APIGroups ::
+*** Groups :: 
+*** Batch :: 
+*** Version ::
+*** Subresource ::
+*** Verbs ::
+* [[https://github.com/kubernetes/kubernetes/tree/master/api/openapi-spec#kubernetess-openapi-specification][openapi spec]]
+  Resulting spec is generated as [[https://github.com/kubernetes/kubernetes/blob/master/api/openapi-spec/swagger.json][swagger.json]]
+- [[https://github.com/kubernetes/kubernetes/tree/master/api/openapi-spec#x-kubernetes-group-version-kind][group-version-kind]] :: 
+- [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#resources][kubernetes resource]] ::
+* [[https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.14/][API Documentation]]
+** Resource
+*** Categories
+- Workloads :: used to manage and run your containers on the cluster.
+- Discovery & LB :: used to "stitch" your workloads together in into an externally accessible, load-balanced Service.
+- Config & Storage :: used to inject initialization data into your applications, and to persist data that is external to your container.
+- Cluster :: defines how the cluster itself is configured; these are typically used only by cluster operators.
+- Metadata ::  used to configure the behavior of other resources within the cluster, such as [HorizontalPodAutoscaler](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.14/#horizontalpodautoscaler-v1-autoscaling) for scaling workloads.
+*** Objects
+Resource objects typically have 3 components:
+
+- Resource ObjectMeta :: This is metadata about the resource, such as its name, type, api version, annotations, and labels. This contains fields that maybe updated both by the end user and the system (e.g. annotations).
+- ResourceSpec :: This is defined by the user and describes the desired state of system. Fill this in when creating or updating an object.
+- ResourceStatus :: This is filled in by the server and reports the current state of the system. In most cases, users don't need to change this.
+ 
+*** CRUD Operations
+- Create :: create the resource in the storage backend. After a resource is create the system will apply the desired state.
+- Read / Get :: retrieve a specific resource object by name
+- Read / List :: retrieve all resource objects of a specific type within a namespace, and the results can be restricted to resources matching a selector query.
+- Read / Watch :: stream results for an object(s) as it is updated. Similar to a callback, watch is used to respond to resource changes.
+- Update / Replace :: update the resource by replacing the existing spec with the provided one. 
+- Update / Patch :: apply a change to a specific field.
+- Delete :: delete a resource
+- Rollback :: a PodTemplate to a previous version. Only available for some resource types
+- Read / Write Scale :: Read or Update the number of replicas for the given resource. Only available for some resource types.
+- Read / Write Staus :: Read or Update the Status for a resource object. The Status can only changed through these update operations.
+** Definitions
+https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.14/#-strong-definitions-strong-
