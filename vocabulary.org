@@ -1454,7 +1454,67 @@ lastly, we append the useragent to the endpoints[op][method][agents]...so we get
      [[file:data-gen/processAuditlog.py::if%20event.get('userAgent',%20False)%20and%20useragent.startswith('e2e.test'):][link to code]]
 An unknown_url is one that is hit during an auditlog event, but cannot be found in our openAPI Spec.
 
-Though actually, I feel like our code is incorrect here.  We are adding useragents to our unknown_urls...before we check to see if the url is actually unknown....is this just a quirk of our for loop or a mistake?  Like what happens when we try to append to a dict entry that doesn't exist?
+   #+NAME: add useragents to unknown_urls and unknown_url_methods
+   #+BEGIN_SRC python
+     def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
+     ## endpoints, new_endpoints, sunburst, tests and all that.
+         useragents = {}
+         unknown_urls = {}
+         unknown_url_methods = {}
+         for event in audit_log:
+             # import ipdb; ipdb.set_trace(context=60)
+             spec_entry = find_openapi_entry(openapi_spec, event)
+             uri = event['requestURI']
+             method = event['method']
+             useragent = event.get('userAgent', ' ')
+             if spec_entry is None:
+                 # print("API Entry not found for event URL \"%s\"" % \
+                 #   event['requestURI'])
+                 # openapi/v2 (kubectl)
+                 # /apis/scalingpolicy.kope.io/*/scalingpolcies
+                 # /apis/metrics.kope.io/*
+                 # /apis/extensions/*/replicationcontrollers
+                 if uri not in unknown_urls.keys():
+                     unknown_urls[uri] = {}
+                 if method not in unknown_urls[uri]:
+                     unknown_urls[uri][method] = {
+                         'counter': 0,
+                         'agents': []
+                     }
+                 if useragent and useragent not in unknown_urls[uri][method]['agents']:
+                     unknown_urls[uri][method]['agents'].append(useragent)
+                 unknown_urls[uri][method]['counter'] += 1
+                 continue
+             # look for the url+method in the OpenAPI spec
+             if method not in spec_entry['methods'].keys():
+                 # Mostly it's valid urls with /localsubjectaccesreviews appended
+                 # TODO: figure out what /localsubjectaccessreviews are
+                 # print("API Method %s not found for event URL \"%s\"" % (
+                     # event['method'],event['requestURI']))
+                 if uri not in unknown_url_methods.keys():
+                     unknown_url_methods[uri] = {}
+                 if method not in unknown_url_methods[uri]:
+                     unknown_url_methods[uri][method] = {
+                         'counter': 0,
+                         'agents': []
+                     }
+                 if useragent and useragent not in unknown_url_methods[uri][method]['agents']:
+                     unknown_url_methods[uri][method]['agents'].append(useragent)
+                 unknown_url_methods[uri][method]['counter'] += 1
+                 continue
+
+            if useragent and useragent not in unknown_urls[uri][method]['agents']:
+                unknown_urls[uri][method]['agents'].append(useragent)
+            unknown_urls[uri][method]['counter'] += 1
+            continue
+   #+END_SRC
+
+So we can expect the unknown_urls dict to either be empty (which is good?) or to have a number of urls, within each are methods and within this a list of agents that hit this method, and a counter for how many times it is hit.  IT doesn't seem like we can cross reference how many times an individual useragent is hitting an uknown url, just that it was hit a number of times by this speficic list of agents.
+
+** unknown_url_methods
+*** generated as part of generate_coverage_report             :processedLogs:
+     [[file:data-gen/processAuditlog.py::if%20event.get('userAgent',%20False)%20and%20useragent.startswith('e2e.test'):][link to code]]
+An unknown_url_method is v close to unknown_urls.  They are generated and added to in the same section of code.  One is saying whether the url is not in the apispec, the other is saying, "the url is in the spec, but the method is new."  In either case, we track the op and method it hit, upping the counter and adding to the list of useragents the one that hit it.
 
    #+NAME: add useragents to unknown_urls and unknown_url_methods
    #+BEGIN_SRC python
@@ -1469,29 +1529,47 @@ Though actually, I feel like our code is incorrect here.  We are adding useragen
              uri = event['requestURI']
              method = event['method']
              useragent = event.get('userAgent', ' ')
+             if spec_entry is None:
+                 # print("API Entry not found for event URL \"%s\"" % \
+                 #   event['requestURI'])
+                 # openapi/v2 (kubectl)
+                 # /apis/scalingpolicy.kope.io/*/scalingpolcies
+                 # /apis/metrics.kope.io/*
+                 # /apis/extensions/*/replicationcontrollers
+                 if uri not in unknown_urls.keys():
+                     unknown_urls[uri] = {}
+                 if method not in unknown_urls[uri]:
+                     unknown_urls[uri][method] = {
+                         'counter': 0,
+                         'agents': []
+                     }
+                 if useragent and useragent not in unknown_urls[uri][method]['agents']:
+                     unknown_urls[uri][method]['agents'].append(useragent)
+                 unknown_urls[uri][method]['counter'] += 1
+                 continue
+             # look for the url+method in the OpenAPI spec
+             if method not in spec_entry['methods'].keys():
+                 # Mostly it's valid urls with /localsubjectaccesreviews appended
+                 # TODO: figure out what /localsubjectaccessreviews are
+                 # print("API Method %s not found for event URL \"%s\"" % (
+                     # event['method'],event['requestURI']))
+                 if uri not in unknown_url_methods.keys():
+                     unknown_url_methods[uri] = {}
+                 if method not in unknown_url_methods[uri]:
+                     unknown_url_methods[uri][method] = {
+                         'counter': 0,
+                         'agents': []
+                     }
+                 if useragent and useragent not in unknown_url_methods[uri][method]['agents']:
+                     unknown_url_methods[uri][method]['agents'].append(useragent)
+                 unknown_url_methods[uri][method]['counter'] += 1
+                 continue
 
             if useragent and useragent not in unknown_urls[uri][method]['agents']:
                 unknown_urls[uri][method]['agents'].append(useragent)
             unknown_urls[uri][method]['counter'] += 1
             continue
-        # look for the url+method in the OpenAPI spec
-        if method not in spec_entry['methods'].keys():
-            if uri not in unknown_url_methods.keys():
-                unknown_url_methods[uri] = {}
-            if method not in unknown_url_methods[uri]:
-                unknown_url_methods[uri][method] = {
-                    'counter': 0,
-                    'agents': []
-                }
-            if useragent and useragent not in unknown_url_methods[uri][method]['agents']:
-                unknown_url_methods[uri][method]['agents'].append(useragent)
-            unknown_url_methods[uri][method]['counter'] += 1
-            continue
    #+END_SRC
-
-So we can expect the unknown_urls dict to either be empty (which is good?) or to have a number of urls, within each are methods and within this a list of agents that hit this method, and a counter for how many times it is hit.  IT doesn't seem like we can cross reference how many times an individual useragent is hitting an uknown url, just that it was hit a number of times by this speficic list of agents.
-
-** unknown_url_methods
 ** endpoint.path :: this is just
 ** endpoint.test_tags ::
 ** endpoint.description ::
