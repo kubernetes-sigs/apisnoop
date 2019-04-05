@@ -174,24 +174,3 @@ def load_audit_log(path):
             audit_log.append(raw_event)
             # import ipdb; ipdb.set_trace(context=15)
     return audit_log
-
-def load_coverage_csv(path):
-    rows = []
-    with open(path,'rb') as csvfile:
-        for row in csv.DictReader(csvfile):
-            data = {}
-            data['method'] = row['METHOD'].lower()
-            data['url'] = row['URL']
-
-            keymap = {
-                'Conformance?': 'conforms',
-                'Open questions': 'questions',
-                'Test file': 'testfile'
-            }
-            for fromkey, tokey in keymap.items():
-                value = row[fromkey].strip()
-                if len(value) > 0:
-                    data[tokey] = value
-            data['level'] = parse_level_from_path(path)
-            rows += [data]
-    return rows
