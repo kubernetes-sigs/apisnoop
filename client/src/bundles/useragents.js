@@ -21,7 +21,15 @@ export default {
     'selectUseragentsInput',
     (useragents, input) => {
       var useragentsNames = map(useragents, 'name')
-      if (input === '') return useragentsNames
+      if (input === '') return []
+  
+      var isValid = true
+      try {
+        new RegExp(input)
+      } catch (err) {
+        isValid = false
+      }
+      if (!isValid) return ['not valid regex']
   
       return useragentsNames.filter(ua => {
         var inputAsRegex = new RegExp(input)
@@ -35,9 +43,9 @@ export default {
     'selectQueryObject',
     (useragents, query) => {
       if (useragents == null || !query) return []
-      if (query.useragent && query.useragent.length) {
+      if (query.useragents && query.useragents.length) {
         return filter(useragents, (ua) => {
-          var inputAsRegex = new RegExp(query.useragent)
+          var inputAsRegex = new RegExp(query.useragents)
           return inputAsRegex.test(ua.name)
         })
       } else {

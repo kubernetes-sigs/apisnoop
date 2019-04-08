@@ -377,7 +377,7 @@ A good example of this can be found in our Colours bundle.
         }
       })
 
-      bundle.reactEndpointsFetch = createSelector(
+      bundle.reactEndpointsResourceFetch = createSelector(
         'selectEndpointsResourceShouldUpdate',
         (shouldUpdate, currentReleaseId) => {
           if (!shouldUpdate) return
@@ -412,8 +412,7 @@ A good example of this can be found in our Colours bundle.
       import {
         groupBy,
         keyBy,
-        mapValues,
-        some } from 'lodash'
+        mapValues } from 'lodash'
 
       import { calculateCoverage } from '../lib/utils.js'
 
@@ -667,11 +666,14 @@ A good example of this can be found in our Colours bundle.
            depth: "endpoint"
          }
 
+         // setup our useragent sample
+         var uaEndpoints_sample = []
+
          var filterResult = endpoints.selectFilteredAndZoomedEndpoints.resultFunc
-         expect(filterResult(endpointsSample, toLevel).length).toEqual(expectedLength.toLevel)
-         expect(filterResult(endpointsSample, toCategory).length).toEqual(expectedLength.toCategory)
-         expect(filterResult(endpointsSample, toEndpoint).length).toEqual(expectedLength.toEndpoint)
-         expect(filterResult(endpointsSample).length).toEqual(expectedLength.none)
+         expect(filterResult(endpointsSample, toLevel, uaEndpoints_sample).length).toEqual(expectedLength.toLevel)
+         expect(filterResult(endpointsSample, toCategory, uaEndpoints_sample).length).toEqual(expectedLength.toCategory)
+         expect(filterResult(endpointsSample, toEndpoint, uaEndpoints_sample).length).toEqual(expectedLength.toEndpoint)
+         expect(filterResult(endpointsSample, null, null).length).toEqual(expectedLength.none)
        })
 
      #+END_SRC
@@ -691,7 +693,7 @@ A good example of this can be found in our Colours bundle.
                endpoints = endpoints.filter(endpoint => endpoint.level === zoom.level)
              }
            }
-           if (uaEndpoints.length) {
+           if (uaEndpoints && uaEndpoints.length) {
              endpoints = endpoints.filter(ep => uaEndpoints.some(ua => ua.name === ep.name && ua.method === ep.method))
            }
            return endpoints
@@ -956,6 +958,7 @@ When running this with just a useragent filter, I get 900 results in 'selectEndp
               store.doMarkCurrentReleaseAsOutdated()
               store.doMarkEndpointsResourceAsOutdated()
               store.doMarkTestsResourceAsOutdated()
+              store.doMarkUseragentsResourceAsOutdated()
             }
           )
         },
@@ -1535,6 +1538,8 @@ k*** Selector
         }
       )
 
+      export default bundle
+
       function fetchUseragentsByReleaseName (client, releaseName) {
         return client.service('useragents').find({
           query: {
@@ -1543,7 +1548,6 @@ k*** Selector
         })
       }
 
-      export default bundle
     #+END_SRC
 *** Useragents
     :PROPERTIES:
@@ -1614,8 +1618,15 @@ k*** Selector
        it('should have initial state', () => {
          expect(state.useragents).toEqual(initialState)
        })
-       it('should handle USERAGENT_INPUT_UPDATED', () => {
-         const payload = 'k^sjdj'
+       it('should handle USERAGENT_INPUT_UPDATED with alphanumeric', () => {
+         const payload = 'ksjdj'
+         const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
+         const result = {filterInput: payload}
+         Reducer(useragents.getReducer()).expect(action).toReturnState(result)
+       })
+
+       it('should handle USERAGENT_INPUT_UPDATED with full regex', () => {
+         const payload = '(./a(sjd)*'
          const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
          const result = {filterInput: payload}
          Reducer(useragents.getReducer()).expect(action).toReturnState(result)
@@ -1695,7 +1706,15 @@ k*** Selector
          'selectUseragentsInput',
          (useragents, input) => {
            var useragentsNames = map(useragents, 'name')
-           if (input === '') return useragentsNames
+           if (input === '') return []
+
+           var isValid = true
+           try {
+             new RegExp(input)
+           } catch (err) {
+             isValid = false
+           }
+           if (!isValid) return ['not valid regex']
 
            return useragentsNames.filter(ua => {
              var inputAsRegex = new RegExp(input)
@@ -1748,9 +1767,9 @@ k*** Selector
           'selectQueryObject',
           (useragents, query) => {
             if (useragents == null || !query) return []
-            if (query.useragent && query.useragent.length) {
+            if (query.useragents && query.useragents.length) {
               return filter(useragents, (ua) => {
-                var inputAsRegex = new RegExp(query.useragent)
+                var inputAsRegex = new RegExp(query.useragents)
                 return inputAsRegex.test(ua.name)
               })
             } else {
@@ -1954,10 +1973,15 @@ k*** Selector
       import Footer from './footer'
 
       export default connect(
+        'selectMasterRelease',
+        'selectRouteInfo',
         'doUpdateUrl',
         'selectRoute',
-        ({ doUpdateUrl, route }) => {
+        ({ masterRelease, routeInfo, doUpdateUrl, route }) => {
           const CurrentPage = route
+          if (masterRelease && routeInfo.url === '/') {
+            doUpdateUrl(`/${masterRelease.name}`)
+          }
           return (
               <div onClick={navHelper(doUpdateUrl)}>
               <Header />
@@ -2028,7 +2052,8 @@ k*** Selector
           Page: selectPage
         }),
         {fetchEndpoints,
-         fetchTests: doFetchTests
+         fetchTests,
+         fetchUseragents
         })(App)
     #+END_SRC
 *** Footer
@@ -2458,7 +2483,7 @@ We are being passed a big chunk of data for releases, drawing from the metadata 
           var rawQuery = {
             level: path[1],
             category: path[2],
-            name: path[3],
+            name: path[3]
           }
           var query = propertiesWithValue(rawQuery)
           if (queryObject.zoomed) {
@@ -2466,6 +2491,9 @@ We are being passed a big chunk of data for releases, drawing from the metadata 
           }
           if (queryObject.filter) {
             query.filter = queryObject.filter
+          }
+          if (queryObject.useragents) {
+            query.useragents = queryObject.useragents
           }
           doUpdateQuery(query)
         }
@@ -2477,6 +2505,9 @@ We are being passed a big chunk of data for releases, drawing from the metadata 
           }
           if (queryObject.zoomed) {
             query.zoomed = queryObject.zoomed
+          }
+          if (queryObject.useragents) {
+            query.useragents = queryObject.useragents
           }
           doUpdateQuery(query)
         }
@@ -2496,15 +2527,22 @@ We are being passed a big chunk of data for releases, drawing from the metadata 
           if (queryObject.filter) {
             query.filter = queryObject.filter
           }
+          if (queryObject.useragents) {
+            query.useragents = queryObject.useragents
+          }
+
           doUpdateQuery(query)
         }
 
         function handleReset () {
+          var query = {}
           if (queryObject.filter) {
-            doUpdateQuery({filter: queryObject.filter})
-          } else {
-            doUpdateQuery({})
+            query.filter = queryObject.filter
           }
+          if (queryObject.useragents) {
+            query.useragents =queryObject.useragents
+          }
+          doUpdateQuery(query)
         }
 
         function getKeyPath (node) {
@@ -2823,6 +2861,135 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
     Since we loading just the info for a particular release, it's far less overhead, so we can do things like add _all_ the tests to our reducer, and then just select the ones that matter to us...but their entire object.   Since this is just a basic filter, it still ends up fast.  Neat!
 
     When you click on a test it should add it to our query.   Then, the query learns to look for whether there is a Test showing and if so, to display the active test detail.
+*** Useragent Search Container
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/useragent-search-container.js
+    :END:
+
+     A container, that sits below our releases and has a search bar displayed.  When you type into it, it shows the result of yoru regex filter below, by displaying the useragents that fit that filter
+
+    #+NAME: Useragent Search Container
+    #+BEGIN_SRC js
+      import React from 'react'
+      import { connect } from 'redux-bundler-react'
+      import UseragentSearchBar from './useragent-search-bar'
+      import UseragentSearchResults from './useragent-search-results'
+      import UseragentsActiveFilter from './useragents-active-filter'
+
+
+      function UseragentSearchContainer (props) {
+        return (
+          <div id='useragent-search'>
+            <UseragentSearchBar />
+            <UseragentSearchResults />
+            <UseragentsActiveFilter />
+          </div>
+        )
+      }
+      export default connect(
+        UseragentSearchContainer
+      )
+    #+END_SRC
+*** Useragent Search Bar
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/useragent-search-bar.js
+    :END:
+    #+BEGIN_SRC js
+      import React from 'react'
+      import {connect} from 'redux-bundler-react'
+
+      function UseragentSearchBar (props) {
+        const {
+          doUpdateUseragentsInput,
+          doUpdateQuery,
+          useragentsInput
+         } = props
+
+        return (
+            <form onSubmit={handleSubmit}>
+            <input name='ua-filter' type='text' value={useragentsInput} onChange={handleInput}/>
+            <input type='submit' value='submit' />
+            </form>
+            )
+
+        function handleInput (e) {
+          doUpdateUseragentsInput(e.target.value)
+        }
+        function handleSubmit (e) {
+          e.preventDefault()
+          doUpdateQuery({
+            useragents: e.target[0].value
+          })
+          doUpdateUseragentsInput('')
+
+        }
+      }
+
+      export default connect(
+        'doUpdateUseragentsInput',
+        'doUpdateQuery',
+        'selectUseragentsInput',
+        UseragentSearchBar
+      )
+
+
+
+    #+END_SRC
+*** Useragent Search Results
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/useragent-search-results.js
+    :END:
+    #+BEGIN_SRC js
+      import React from 'react'
+      import {connect} from 'redux-bundler-react'
+
+      function UseragentSearchResults (props) {
+        const useragents = props.useragentsFilteredByInput
+        if(useragents == null || useragents.length <= 0) return null
+        return (
+          <div id='useragent-search-results' className='mt2 mb0'>
+            <strong className='f5'>Useragents covered by this regex</strong>
+            <ul className="list ph0">
+              {useragents.map(useragent => <li key={useragent} className="f6 dib mr2 pa2 mid-gray">{ useragent }</li>)}
+            </ul>
+          </div>
+        )
+      }
+
+      export default connect(
+        'selectUseragentsFilteredByInput',
+        UseragentSearchResults
+      )
+    #+END_SRC
+*** Useragents Active Filter
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/useragents-active-filter.js
+    :END:
+    #+BEGIN_SRC js
+      import React from 'react'
+      import {connect} from 'redux-bundler-react'
+
+      function UseragentsActiveFilter (props) {
+        const useragents = props.useragentsFilteredByQuery
+        if(useragents == null || useragents.length <= 0) return null
+        return (
+            <div className='ma3'>
+            <strong>Currently Filtered To:</strong>
+            <ul>
+              {useragents.map(useragent => <li>{ useragent.name }</li>)}
+            </ul>
+            </div>
+        )
+      }
+
+      export default connect(
+        'selectUseragentsFilteredByQuery',
+        UseragentsActiveFilter
+      )
+    #+END_SRC
+*** End
+
+
 ** Pages
 *** Main Page
    :PROPERTIES:
@@ -2835,6 +3002,7 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
 
      // import FilterContainer from '../components/filter-container' # a regex filter for endpoints.
      import ReleasesContainer from '../components/releases-container'
+     import UseragentSearchContainer from '../components/useragent-search-container'
      import SunburstAndSummary from '../components/sunburst-and-summary'
      import ActiveTestsList from '../components/active-tests-list'
      import ActiveTestSequence from '../components/active-test-sequence'
@@ -2844,6 +3012,7 @@ The interior label was a bit tricky to do, and it has some logic put in that i d
            <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
            {/*<FilterContainer />*/}
            <ReleasesContainer />
+           <UseragentSearchContainer />
            <SunburstAndSummary />
            <ActiveTestsList />
            <ActiveTestSequence />

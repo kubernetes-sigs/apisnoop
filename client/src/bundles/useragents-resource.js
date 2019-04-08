@@ -16,6 +16,8 @@ bundle.reactUseragentsResourceFetch = createSelector(
   }
 )
 
+export default bundle
+
 function fetchUseragentsByReleaseName (client, releaseName) {
   return client.service('useragents').find({
     query: {
@@ -23,5 +25,3 @@ function fetchUseragentsByReleaseName (client, releaseName) {
     }
   })
 }
-
-export default bundle
