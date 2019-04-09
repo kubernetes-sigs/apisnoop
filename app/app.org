@@ -233,27 +233,70 @@ export default () => (
   :PROPERTIES:
     :header-args: :tangle ./src/bundles/endpoints.js :noweb yes
     :END:
-
   The operatorId's and their methods from the job results
 ****  Layout
     #+NAME: Endpoints bundle
     #+BEGIN_SRC js
+      import { createSelector } from 'redux-bundler'
+      import { groupBy, mapValues, transform } from 'lodash'
+
+      import endpoints from '../data/endpoints.json'
+
       export default {
         name: 'endpoints',
-        <<Endpoints Reducer>>
+          <<Endpoints Reducer>>,
+          <<selectEndpoints>>,
+          <<selectEndpointsByLevelAndCategoryAndOperatorId>>
       }
     #+END_SRC
-
 **** Endpoints Reducer
    #+NAME: Endpoints Reducer
    #+BEGIN_SRC js :tangle no
      getReducer: () => {
-       const initialState = []
+       const initialState = endpoints
        return (state=initialState, action) => {
          return state
        }
      }
    #+END_SRC
+**** selectEndpoints
+     **◊State => ◊Endpoints**
+     selects all the endpoints from the global state
+     #+NAME: selectEndpoints
+     #+BEGIN_SRC js :tangle no
+       selectEndpoints: (state) => state.endpoints
+     #+END_SRC
+**** selectEndpointsByLevelAndCategoryAndOperatorId
+     **◊Endpoints -> ◊SunburstTree**
+     Given all endpoints, organize them in proper structure for our sunburst tree
+
+     We want to have parent and children from all our endpoints, so we need to take the flattened structure and nest it.  Our current nesting (level, category, and OpId) can change if there's a better grouping that we find
+
+     #+NAME: selectEndpointsByLevelAndCategoryAndOperatorId
+     #+BEGIN_SRC js :tangle no
+       selectEndpointsByLevelAndCategoryAndOperatorId: createSelector(
+         'selectEndpoints',
+         (endpoints) => {
+           var endpointsWithOpIds = mapValues (endpoints, (value, key, endpoints) => {
+             return {operatorId: key, ...value}
+           })
+           var endpointsByLevel = groupBy(endpointsWithOpIds, 'level')
+           return mapValues(endpointsByLevel, endpointsInLevel => {
+             var endpointsByCategory = groupBy(endpointsInLevel, 'category')
+             return mapValues(endpointsByCategory, endpointsInCategory => {
+               return endpointsInCategory.map (endpoint => {
+                 return {
+                   ...endpoint,
+                   size: 1
+                 }
+               })
+             })
+           })
+         }
+       )
+
+     #+END_SRC
+
 ** JobResultsMetadata
   :PROPERTIES:
     :header-args: :tangle ./src/bundles/job-results-metadata.js :noweb yes
@@ -376,6 +419,29 @@ export default () => (
      "timestamp": 1553561320
    }
    #+end_example
+* Endpoints (<<<◊Endpoints>>>)
+Endpoints is an array of Objects, with each key an OperationID.  They are the endpoints within the paths hit in our audit log
+
+Here is a single endpoint, so it's first group is OpID, which would be unique.
+#+NAME: Endpoints Definition Sample
+#+BEGIN_SRC json
+  "getCodeVersion": {
+    "category": "version",
+    "kind": "",
+    "group": "",
+    "description": "get the code version",
+    "conformanceHits": 0,
+    "level": "stable",
+    "isDeprecated": false,
+    "hits": 0,
+    "testHits": 0,
+    "version": "",
+    "path": "/version/"
+  }
+
+#+END_SRC
+
+* Footnotes
 ** Endpoints...
    :PROPERTIES:
    :header-args: :dir ../..
@@ -719,8 +785,18 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
    - [X] Create Data Folder and put sample of job results metadata into that
    - [X] Create bundle that loads the job results into state
    - [X] Create component that grabs from that store
-** TODO [0/3]Display Endpoint Bundle With Success
-   - [ ] understand the data that the current endpoint resource needs.
-   - [ ] Make up data definition for endpoint as it is now
+** TODO [2/3]Display Endpoint Bundle With Success
+   - [X] understand the data that the current endpoint resource needs.
+   - [X] Make up data definition for endpoint as it is now
    - [ ] change the wording if needed (operatorId's instead of endpoints?)
+** TODO Create Test Resources for each of our paths
+   These ared static json's that should not change and should be made up of let's say 20 of each.
+   There should be a consistent percentage too, if possible.
+   So there should be 20 endpoints
+   And there should be 20 tests, where 10 endoints are hit by the test included, and 5 of them are hit by the conformance tests included
+   There should be 20 useragents, with the results that 10 endpoints are hit by a selected useragent
+   There should be 20 test tags, where 10 endpoints are hit by one of the test tags
+
+   It doesn't need to be this exact necessarily, but we want ot make sure that if we apply a filter based on a regex of tests, for example, we know the result we should recive and it is greater than 0
+** TODO Create tests for existing bundles, using our test data
 ** TODO re-tangle backend.org to bring back correct index.js
