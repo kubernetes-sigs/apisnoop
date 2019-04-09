@@ -82,10 +82,6 @@ def find_openapi_entry(openapi_spec, event):
 
 def generate_coverage_report(openapi_spec, audit_log):
   endpoints = generate_endpoints_tree(openapi_spec)
-  file=open("endpoints_tree.json", 'w')
-  file.write(
-      json.dumps(endpoints))
-  file.close()
   tests = {}
   test_tags = {}
   test_sequences = {}
@@ -120,11 +116,9 @@ def generate_coverage_report(openapi_spec, audit_log):
     if test_name:
       # Populate tests[]
       if test_name not in tests.keys():
-        tests[test_name] = {}
-      if operationId not in tests[test_name].keys():
-        tests[test_name][operationId] = []
-      if method not in tests[test_name][operationId]:
-        tests[test_name][operationId].append(method)
+        tests[test_name] = []
+      if operationId not in tests[test_name]:
+        tests[test_name].append(operationId)
 
       # populate test_sequences[]
       if test_name not in test_sequences.keys():
@@ -141,25 +135,17 @@ def generate_coverage_report(openapi_spec, audit_log):
         if tag == '[Conformance]':
           endpoints[operationId]['conformanceHits'] += 1
         if tag not in test_tags.keys():
-          test_tags[tag] = {}
-        if operationId not in test_tags[tag].keys():
-          test_tags[tag][operationId] = []
-        if method not in test_tags[tag][operationId]:
-          test_tags[tag][operationId].append(method)
+          test_tags[tag] = []
+        if operationId not in test_tags[tag]:
+          test_tags[tag].append(operationId)
 
       agent = useragent.split(' ')[0]
       if agent not in useragents.keys():
-        useragents[agent] = {}
-      if operationId not in useragents[agent].keys():
-        useragents[agent][operationId] = []
-      if method not in useragents[agent][operationId]:
-        useragents[agent][operationId].append(method)
+        useragents[agent] = []
+      if operationId not in useragents[agent]:
+        useragents[agent].append(operationId)
 
-  file=open("endpoints_leaves.json", 'w')
-  file.write(
-      json.dumps(endpoints))
-  file.close()
-  # Nice debug to check for hits
+  # Nice debug point to check for hits etc
   # {k: v for k, v in endpoints.iteritems() if v['hits'] > 0}
   report = {}
   report['endpoints'] = endpoints
@@ -174,7 +160,6 @@ def usage_and_exit():
   print("  snoopAuditlog.py <auditfile> <branch_or_tag> <outfile>")
   print("    - Process audit file for use with webui")
   exit(1)
-
 
 def main():
   if len(sys.argv) < 4:
