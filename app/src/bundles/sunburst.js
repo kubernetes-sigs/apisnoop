@@ -1,226 +1,88 @@
 import { createSelector } from 'redux-bundler'
-import { map } from 'lodash'
+import { map, sortBy } from 'lodash'
+import { fadeColour } from '../lib/utils'
 
 export default {
-  name: 'sunburst'
-}
-
-import { fadeColor } from '../lib/utils'
-import { createSelector } from 'redux-bundler'
-import {
-  forEach,
-  includes,
-  map,
-  orderBy,
-  reduce,
-  sortBy,
-  values
-} from 'lodash'
-
-
-export default {
-  name: 'charts',
+  name: 'sunburst',
   selectSunburst: createSelector(
-    'selectEndpointsByLevelAndCategoryAndNameAndMethod',
+    'selectEndpointsByLevelAndCategoryAndOperatorId',
     'selectLevelColours',
     'selectCategoryColours',
     'selectQueryObject',
-    'selectZoomedEndpoint',
-    (endpointsByLevelAndCategoryAndNameAndMethod, levelColours, categoryColours, queryObject, zoomedEndpoint) => {
+    (endpointsByLevelAndCategoryAndOperatorId, levelColours, categoryColours, query) => {
       return {
         name: 'root',
-        children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
+        children: map(endpointsByLevelAndCategoryAndOperatorId, (endpointsByCategoryAndOperatorId, level) => {
           return {
             name: level,
-            color: determineLevelColours(queryObject, levelColours, level),
-            children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
+            color: determineLevelColours(query, levelColours, level),
+            children: map(endpointsByCategoryAndOperatorId, (endpointsByOperatorId, category) => {
+              return {
+                name: category,
+                color: determineCategoryColours(query, categoryColours, category, level),
+                children: sortedEndpoints(endpointsByOperatorId, categoryColours, query)
+              }
+            })
           }
         })
       }
     }
-  ),
-  selectSunburstSorted: createSelector(
-    'selectSunburst',
-    (sunburst) => {
-      var sortedLevels = orderBy(sunburst.children, 'name', 'desc')
-      sunburst.children = sortedLevels
-      return sunburst
-    }
-  ),
-  selectInteriorLabel: createSelector(
-    'selectQueryObject',
-    'selectEndpointsWithTestCoverage',
-    (query, endpoints) => {
-      if(endpoints == null) return null
-      var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
-      return nameAndCoverageInfo
-    }
-  ),
-  selectLabelStyle: () => {
-    return {
-      PERCENTAGE: {
-        fontSize: '1.3em',
-        textAnchor: 'middle'
-      },
-      FRACTION: {
-        fontSize: '1.2em,',
-        textAnchor: 'middle'
-      },
-      PATH: {
-        fontSize: '1em',
-        textAnchor: 'middle'
-      },
-      DESCRIPTION: {
-        fontSize: '0.9em',
-        fontFamily: 'IBM Plex Mono',
-        textAnchor: 'middle',
-        width: '20px'
-      }
-    }
-  }
-}
-
-function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
-  var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
-  return orderBy(categories, (category) => category.children.length, ['desc'])
-}
-
-function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
-  return map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
-    return {
-      name: category,
-      color: determineCategoryColours(queryObject, categoryColours, category, level),
-      children: endpointsSortedByConformance(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint)
-    }
-  })
-}
-
-function endpointsSortedByConformance (endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint) {
-  var endpoints = createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint)
-  var sortedEndpoints = sortBy(endpoints, [
-    (endpoint) => endpoint.tested === 'untested', (endpoint) => endpoint.isConformance !== 'conformance',
-    (endpoint) => endpoint.testTagCount
-  ])
-  return sortedEndpoints
-}
-
-function createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint) {
-  return values(reduce(
-    endpointsByNameAndMethod,
-    (sofar, endpointsByMethod, name) => {
-      sofar = fillOutMethodInfo(sofar, endpointsByMethod, category, name, level, queryObject, categoryColours, zoomedEndpoint)
-      return sofar
-    },
-    {}
-  ))
-}
-
-function fillOutMethodInfo (sofar, endpointsByMethod, category, name, level, queryObject, categoryColours, zoomedEndpoint) {
-  forEach(endpointsByMethod, (endpoint, method) => {
-    var { isTested } = endpoint
-    var isConformance = checkForConformance(endpoint.test_tags)
-    var path = `${name}/${method}`
-    var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
-    var initialColor = calculateInitialColor(endpoint, isConformance, categoryColours)
-    sofar[path] = {
-      name,
-      parentName: category,
-      testTagCount: endpoint.test_tags.length,
-      tested: isTested ? 'tested' : 'untested',
-      isConformance: isConformance ? "conformance" : "not conformance",
-      size,
-      color: isTested ? determineEndpointColours(queryObject, initialColor, category, level, endpoint, zoomedEndpoint) : 'rgba(244,244,244, 1)',
-    }
-  })
-  return sofar
-}
-
-function checkForConformance (test_tags) {
-  var tagsAsStrings = test_tags.map(tag => tag.replace(/\[|]/g,''))
-  return includes(tagsAsStrings, 'Conformance')
+  )
 }
 
 function determineLevelColours (query, colours, level) {
-  if (query.level === undefined) {
-    return colours[level]
-  } else if (query.level === level){
+  if (query.level === undefined || query.level === level) {
     return colours[level]
   } else {
-    return fadeColor(colours[level], '0.1')
+    return fadeColour(colours[level], '0.1')
   }
 }
+
 function determineCategoryColours (query, categoryColours, category, level) {
   if (query.level === undefined) {
     return categoryColours[`category.${category}`]
   } else if (query.level === level && query.category === category){
     return categoryColours[`category.${category}`]
   } else {
-    return fadeColor(categoryColours[`category.${category}`], '0.1')
+    return fadeColour(categoryColours[`category.${category}`], '0.1')
   }
 }
-function determineEndpointColours (query, color, category, level, endpoint, zoomedEndpoint) {
-  if (zoomedEndpoint != null && zoomedEndpoint !== undefined) {
-    if (zoomedEndpoint.name === endpoint.name) {
-      return fadeColor(color, '0.7')
-    } else {
-      return fadeColor(color, '0.1')
-    }
-  }
-  else if (query.level === undefined) {
-    return color
-  } else if (query.level === level && query.category === category && query.name === endpoint.name){
-    return color
+
+function determineEndpointColour (endpoint, categoryColours, query) {
+  var initialColor = determineInitialEndpointColour(endpoint, categoryColours)
+  if (query.level === undefined) {
+    return initialColor
+  } else if (query.level === endpoint.level && query.category === endpoint.category && query.name === endpoint.operatorId) {
+    return initialColor
   } else {
-    return fadeColor(color, '0.1')
+    return fadeColour(initialColor, '0.1')
   }
 }
-function calculateInitialColor (endpoint, isConformance, categoryColours) {
-  if (endpoint.isTested && isConformance)  {
+
+function determineInitialEndpointColour (endpoint, categoryColours) {
+  if (endpoint.testHits > 0 && endpoint.conformanceHits > 0)  {
     return categoryColours[`category.${endpoint.category}`]
-  } else  if( endpoint.isTested && !isConformance) {
+  } else  if( endpoint.testHits > 0 && endpoint.conformanceHits === 0) {
     var color = categoryColours[`category.${endpoint.category}`]
-    var fadedColor = fadeColor(color, '0.2')
+    var fadedColor = fadeColour(color, '0.2')
     return fadedColor
   } else {
     return 'rgba(244, 244, 244, 1)'
   }
 }
 
-function determineNameAndCoverageInfo (query, endpoints) {
- // check our query to see how far in the path we are.
- // If a response is null, it means its not a part of the path
- // therefore, we display the preceding level's info.
-  if (endpoints == null) return null // this makes sure the endpoints have loaded.
-  if (query && query.level === undefined) {
-    var name = ''
-    var coverage = endpoints.coverage
-    var tested = false
-    var endpoint = false
-    var description= ''
-  }else if (query.level && query.category === undefined) {
-    name = query.level
-    coverage = endpoints[query.level].coverage
-    description= ''
-  } else if (query.level && query.category && query.name === undefined) {
-    name = query.category
-    coverage = endpoints[query.level][query.category].coverage
-    description= ''
-  } else {
-    var endpointInQuestion = endpoints[query.level][query.category][query.name]
-    name = query.name
-    description= determineDescription(endpoints[query.level][query.category][query.name])
-    tested = determineTested(endpointInQuestion)
-    coverage = endpointInQuestion.coverage
-    endpoint = true
-  }
-  return {name, coverage, description, tested, endpoint}
-}
-
-function determineDescription (endpoint) {
-  var method = Object.keys(endpoint)[0]
-  return endpoint[method].description
-}
-function determineTested (endpoint) {
-  var method = Object.keys(endpoint)[0]
-  return endpoint[method].isTested ? 'Tested' : 'Untested'
+function sortedEndpoints (endpoints, categoryColours, query) {
+  var sortedEndpoints = sortBy(endpoints, [
+    'kind',
+    (endpoint) => endpoint.testHits > 0,
+    (endpoint) => endpoint.conformanceHits > 0
+  ])
+  return sortedEndpoints.map(endpoint => {
+    return {
+      name: endpoint.operatorId,
+      kind: endpoint.kind,
+      size: endpoint.size,
+      color: determineEndpointColour(endpoint, categoryColours, query)
+    }
+  })
 }

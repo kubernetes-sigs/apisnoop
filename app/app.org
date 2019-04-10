@@ -189,7 +189,7 @@ export default () => (
       return (
         <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
           <Metadata />
-          <h1>HELLO YOU ARE DOING GOOD</h1>
+          <h1>HELLO YOU ARE DOING GOODLY</h1>
           {/*<FilterContainer />*/}
           {/* <UseragentSearchContainer /> */}
           {/* <SunburstAndSummary /> */}
@@ -219,12 +219,14 @@ export default () => (
       import jobResultsMetadata from './job-results-metadata'
       import endpoints from './endpoints'
       import colours from './colours'
+      import sunburst from './sunburst'
 
 
       export default composeBundles(
         colours,
         endpoints,
-        jobResultsMetadata
+        jobResultsMetadata,
+        sunburst
       )
     #+END_SRC
 
@@ -601,11 +603,15 @@ export default () => (
     #+NAME: sunburst bundle
     #+BEGIN_SRC js
       import { createSelector } from 'redux-bundler'
-      import { map } from 'lodash'
+      import { map, sortBy } from 'lodash'
+      import { fadeColour } from '../lib/utils'
 
       export default {
-        name: 'sunburst'
+        name: 'sunburst',
+        <<selectSunburst>>
       }
+
+      <<Helper Functions>>
     #+END_SRC
 
 *** selectSunburst
@@ -618,20 +624,21 @@ export default () => (
   #+BEGIN_SRC js :tangle no
     selectSunburst: createSelector(
       'selectEndpointsByLevelAndCategoryAndOperatorId',
+      'selectLevelColours',
+      'selectCategoryColours',
       'selectQueryObject',
-      'selectColors',
-      (endpointsByLevelAndCategoryAndOperatorId, query) => {
-        return {,
+      (endpointsByLevelAndCategoryAndOperatorId, levelColours, categoryColours, query) => {
+        return {
           name: 'root',
           children: map(endpointsByLevelAndCategoryAndOperatorId, (endpointsByCategoryAndOperatorId, level) => {
             return {
               name: level,
-              color: determineLevelColours(query, level),
+              color: determineLevelColours(query, levelColours, level),
               children: map(endpointsByCategoryAndOperatorId, (endpointsByOperatorId, category) => {
                 return {
                   name: category,
-                  color: determineCategoryColors(query, level, category),
-                  children: endpointsByOperatorId
+                  color: determineCategoryColours(query, categoryColours, category, level),
+                  children: sortedEndpoints(endpointsByOperatorId, categoryColours, query)
                 }
               })
             }
@@ -639,275 +646,114 @@ export default () => (
         }
       }
     )
-
   #+END_SRC
 
-
-
-*** Original Sunburst
-****  Imports and Layout
-    #+NAME: charts.js
-    #+BEGIN_SRC js
-      import { fadeColor } from '../lib/utils'
-      import { createSelector } from 'redux-bundler'
-      import {
-        forEach,
-        includes,
-        map,
-        orderBy,
-        reduce,
-        sortBy,
-        values
-      } from 'lodash'
-
-
-      export default {
-        name: 'charts',
-        <<Sunburst Selectors>>
+*** Helper Functions
+    #+NAME: Helper Functions
+    #+BEGIN_SRC js :tangle no
+      function determineLevelColours (query, colours, level) {
+        if (query.level === undefined || query.level === level) {
+          return colours[level]
+        } else {
+          return fadeColour(colours[level], '0.1')
+        }
       }
 
-      <<Sunburst Helper Functions>>
+      function determineCategoryColours (query, categoryColours, category, level) {
+        if (query.level === undefined) {
+          return categoryColours[`category.${category}`]
+        } else if (query.level === level && query.category === category){
+          return categoryColours[`category.${category}`]
+        } else {
+          return fadeColour(categoryColours[`category.${category}`], '0.1')
+        }
+      }
+
+      function determineEndpointColour (endpoint, categoryColours, query) {
+        var initialColor = determineInitialEndpointColour(endpoint, categoryColours)
+        if (query.level === undefined) {
+          return initialColor
+        } else if (query.level === endpoint.level && query.category === endpoint.category && query.name === endpoint.operatorId) {
+          return initialColor
+        } else {
+          return fadeColour(initialColor, '0.1')
+        }
+      }
+
+      function determineInitialEndpointColour (endpoint, categoryColours) {
+        if (endpoint.testHits > 0 && endpoint.conformanceHits > 0)  {
+          return categoryColours[`category.${endpoint.category}`]
+        } else  if( endpoint.testHits > 0 && endpoint.conformanceHits === 0) {
+          var color = categoryColours[`category.${endpoint.category}`]
+          var fadedColor = fadeColour(color, '0.2')
+          return fadedColor
+        } else {
+          return 'rgba(244, 244, 244, 1)'
+        }
+      }
+
+      function sortedEndpoints (endpoints, categoryColours, query) {
+        var sortedEndpoints = sortBy(endpoints, [
+          'kind',
+          (endpoint) => endpoint.testHits > 0,
+          (endpoint) => endpoint.conformanceHits > 0
+        ])
+        return sortedEndpoints.map(endpoint => {
+          return {
+            name: endpoint.operatorId,
+            kind: endpoint.kind,
+            size: endpoint.size,
+            color: determineEndpointColour(endpoint, categoryColours, query)
+          }
+        })
+      }
+
     #+END_SRC
-****  Selectors
-   #+NAME: Sunburst Selectors
-   #+BEGIN_SRC js :tangle no
-     selectSunburst: createSelector(
-       'selectEndpointsByLevelAndCategoryAndNameAndMethod',
-       'selectLevelColours',
-       'selectCategoryColours',
-       'selectQueryObject',
-       'selectZoomedEndpoint',
-       (endpointsByLevelAndCategoryAndNameAndMethod, levelColours, categoryColours, queryObject, zoomedEndpoint) => {
-         return {
-           name: 'root',
-           children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
-             return {
-               name: level,
-               color: determineLevelColours(queryObject, levelColours, level),
-               children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
-             }
-           })
-         }
+* Lib
+** Utils
+   :PROPERTIES:
+   :header-args: :tangle ./src/lib/utils.js
+   :END:
+   #+NAME: Utils
+   #+BEGIN_SRC js
+     import {
+       filter,
+       isUndefined,
+       size,
+       words,
+       pickBy } from 'lodash'
+
+     export function calculateCoverage (endpoints) {
+       var total = size(endpoints)
+       var tested = size(filter(endpoints, ['isTested', true]))
+       var percentage = (total, tested) => {
+         if (!tested && !total) return 'No Endpoints'
+         var percentageNumber = (100 * tested /total).toPrecision(3)
+         return `${percentageNumber}%`
        }
-     ),
-     selectSunburstSorted: createSelector(
-       'selectSunburst',
-       (sunburst) => {
-         var sortedLevels = orderBy(sunburst.children, 'name', 'desc')
-         sunburst.children = sortedLevels
-         return sunburst
-       }
-     ),
-     selectInteriorLabel: createSelector(
-       'selectQueryObject',
-       'selectEndpointsWithTestCoverage',
-       (query, endpoints) => {
-         if(endpoints == null) return null
-         var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
-         return nameAndCoverageInfo
-       }
-     ),
-     selectLabelStyle: () => {
        return {
-         PERCENTAGE: {
-           fontSize: '1.3em',
-           textAnchor: 'middle'
-         },
-         FRACTION: {
-           fontSize: '1.2em,',
-           textAnchor: 'middle'
-         },
-         PATH: {
-           fontSize: '1em',
-           textAnchor: 'middle'
-         },
-         DESCRIPTION: {
-           fontSize: '0.9em',
-           fontFamily: 'IBM Plex Mono',
-           textAnchor: 'middle',
-           width: '20px'
-         }
+         tested,
+         total,
+         percentage: percentage(total, tested),
+         ratio: `${tested}/${total}`
        }
      }
-    #+END_SRC
-***  Helper Functions
-     The helper functions are grooooooss right now.  It feels far too nested, and I am passing along the query object to too many places.  I feel the color addition should e done as a selector possibly and not hae it be nested within here.-
 
-     This is gross for how many nested functions there are, and that weird confusion between query and zoom.  Is there a better way to handle this?  Essentially, we wanna be able to zoom into a category, and still have the colors and endpoints show based on the query....but when we are zoomed into an endpoint, then there shouldn't be any query happening....it should be noted as 'locked on'.  This whole section smells awful, and would be good to have another set of javascripter eyes on it.
+     export function fadeColour (rgba, desiredOpacity) {
+       var rgbaParts = words(rgba, /[^,|^(|^)]+/g)
+       rgbaParts.pop()
+       rgbaParts.push(desiredOpacity)
+       var newRgbaString = rgbaParts.join(',')
+       var newRgba = newRgbaString.replace(/,/,'(') + ')'
+       return newRgba
+     }
 
-     #+NAME: Removed Functions
-     #+BEGIN_SRC js :tangle no
-       // I likely don't need these anymore, but dont' wanna fully remove them yet
-
-       function relevantValue (value, zoom, query) {
-         if (zoom[value] !== undefined) {
-           return zoom[value]
-         }
-         return query[value]
-       }
-
-     #+END_SRC
-
-     #+NAME: Sunburst Helper Functions
-     #+BEGIN_SRC js :tangle no
-       function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
-         var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
-         return orderBy(categories, (category) => category.children.length, ['desc'])
-       }
-
-       function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
-         return map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
-           return {
-             name: category,
-             color: determineCategoryColours(queryObject, categoryColours, category, level),
-             children: endpointsSortedByConformance(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint)
-           }
-         })
-       }
-
-       function endpointsSortedByConformance (endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint) {
-         var endpoints = createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint)
-         var sortedEndpoints = sortBy(endpoints, [
-           (endpoint) => endpoint.tested === 'untested', (endpoint) => endpoint.isConformance !== 'conformance',
-           (endpoint) => endpoint.testTagCount
-         ])
-         return sortedEndpoints
-       }
-
-       function createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint) {
-         return values(reduce(
-           endpointsByNameAndMethod,
-           (sofar, endpointsByMethod, name) => {
-             sofar = fillOutMethodInfo(sofar, endpointsByMethod, category, name, level, queryObject, categoryColours, zoomedEndpoint)
-             return sofar
-           },
-           {}
-         ))
-       }
-
-       function fillOutMethodInfo (sofar, endpointsByMethod, category, name, level, queryObject, categoryColours, zoomedEndpoint) {
-         forEach(endpointsByMethod, (endpoint, method) => {
-           var { isTested } = endpoint
-           var isConformance = checkForConformance(endpoint.test_tags)
-           var path = `${name}/${method}`
-           var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
-           var initialColor = calculateInitialColor(endpoint, isConformance, categoryColours)
-           sofar[path] = {
-             name,
-             parentName: category,
-             testTagCount: endpoint.test_tags.length,
-             tested: isTested ? 'tested' : 'untested',
-             isConformance: isConformance ? "conformance" : "not conformance",
-             size,
-             color: isTested ? determineEndpointColours(queryObject, initialColor, category, level, endpoint, zoomedEndpoint) : 'rgba(244,244,244, 1)',
-           }
-         })
-         return sofar
-       }
-
-       function checkForConformance (test_tags) {
-         var tagsAsStrings = test_tags.map(tag => tag.replace(/\[|]/g,''))
-         return includes(tagsAsStrings, 'Conformance')
-       }
-
-       function determineLevelColours (query, colours, level) {
-         if (query.level === undefined) {
-           return colours[level]
-         } else if (query.level === level){
-           return colours[level]
-         } else {
-           return fadeColor(colours[level], '0.1')
-         }
-       }
-       function determineCategoryColours (query, categoryColours, category, level) {
-         if (query.level === undefined) {
-           return categoryColours[`category.${category}`]
-         } else if (query.level === level && query.category === category){
-           return categoryColours[`category.${category}`]
-         } else {
-           return fadeColor(categoryColours[`category.${category}`], '0.1')
-         }
-       }
-       function determineEndpointColours (query, color, category, level, endpoint, zoomedEndpoint) {
-         if (zoomedEndpoint != null && zoomedEndpoint !== undefined) {
-           if (zoomedEndpoint.name === endpoint.name) {
-             return fadeColor(color, '0.7')
-           } else {
-             return fadeColor(color, '0.1')
-           }
-         }
-         else if (query.level === undefined) {
-           return color
-         } else if (query.level === level && query.category === category && query.name === endpoint.name){
-           return color
-         } else {
-           return fadeColor(color, '0.1')
-         }
-       }
-       function calculateInitialColor (endpoint, isConformance, categoryColours) {
-         if (endpoint.isTested && isConformance)  {
-           return categoryColours[`category.${endpoint.category}`]
-         } else  if( endpoint.isTested && !isConformance) {
-           var color = categoryColours[`category.${endpoint.category}`]
-           var fadedColor = fadeColor(color, '0.2')
-           return fadedColor
-         } else {
-           return 'rgba(244, 244, 244, 1)'
-         }
-       }
-
-       function determineNameAndCoverageInfo (query, endpoints) {
-        // check our query to see how far in the path we are.
-        // If a response is null, it means its not a part of the path
-        // therefore, we display the preceding level's info.
-         if (endpoints == null) return null // this makes sure the endpoints have loaded.
-         if (query && query.level === undefined) {
-           var name = ''
-           var coverage = endpoints.coverage
-           var tested = false
-           var endpoint = false
-           var description= ''
-         }else if (query.level && query.category === undefined) {
-           name = query.level
-           coverage = endpoints[query.level].coverage
-           description= ''
-         } else if (query.level && query.category && query.name === undefined) {
-           name = query.category
-           coverage = endpoints[query.level][query.category].coverage
-           description= ''
-         } else {
-           var endpointInQuestion = endpoints[query.level][query.category][query.name]
-           name = query.name
-           description= determineDescription(endpoints[query.level][query.category][query.name])
-           tested = determineTested(endpointInQuestion)
-           coverage = endpointInQuestion.coverage
-           endpoint = true
-         }
-         return {name, coverage, description, tested, endpoint}
-       }
-
-       function determineDescription (endpoint) {
-         var method = Object.keys(endpoint)[0]
-         return endpoint[method].description
-       }
-       function determineTested (endpoint) {
-         var method = Object.keys(endpoint)[0]
-         return endpoint[method].isTested ? 'Tested' : 'Untested'
-       }
-
-     #+END_SRC
-****  Thoughts on colour
-     Every node has a color that renders in our sunburst.  That color can be in two states: bright if it is focused on, and faded if it is not.  Before, we figured out this color in the d3 visualization by tracing through the keypath every time.  What I feel like we could do now is to check in the sunburst selectors whether or not that node is part of the current URL query. If it is, give it a bright color.  If it is not, give it a faded color.
-
-This means we have to be aware of the node's parent too, because methods and categories are shared across each level.  So you ahve to do a thing of 'are you a part of the path and is your parent also a part of the path, and is your parents.parent a part of the path?  If so, do this color.
-
-I feel this would be easiest with three functions, even though they're kinda similar.  determineLevelColor(level), determineCategoryColor(category), determineEndpointColor(endpoint).  For the level, it just checks whether there is a query and if it's a part of it.  Category checks if there's a query and if it and the level are a part of it.  endpoint the same, but level and category too.
-
-I've now done this, but the functions feel v. fragile to me, like there's a simpler way to go about it that I am just not seeing.  I think the problem is partially that we have a hella nested function by necessity--since we are making a sunburst which is built on nesting, so things are going to feel strangely convoluted inherently?  But it would still be nice to refactor this for simplicity.
+     export function propertiesWithValue (obj) {
+       return pickBy(obj, (val) => !isUndefined(val))
+     }
 
 
-
-
+   #+END_SRC
 * Data Definitions
 ** ColourState (<<<◊ColourState>>>)
 
@@ -1458,7 +1304,208 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
 
 
 
+** Original Sunburst
+****  Imports and Layout
+    #+NAME: charts.js
+    #+BEGIN_SRC js
+      import { fadeColor } from '../lib/utils'
+      import { createSelector } from 'redux-bundler'
+      import {
+        forEach,
+        includes,
+        map,
+        orderBy,
+        reduce,
+        sortBy,
+        values
+      } from 'lodash'
 
+
+      export default {
+        name: 'charts',
+        <<Sunburst Selectors>>
+      }
+
+      <<Sunburst Helper Functions>>
+    #+END_SRC
+****  Selectors
+   #+NAME: Sunburst Selectors
+   #+BEGIN_SRC js :tangle no
+     selectSunburst: createSelector(
+       'selectEndpointsByLevelAndCategoryAndNameAndMethod',
+       'selectLevelColours',
+       'selectCategoryColours',
+       'selectQueryObject',
+       'selectZoomedEndpoint',
+       (endpointsByLevelAndCategoryAndNameAndMethod, levelColours, categoryColours, queryObject, zoomedEndpoint) => {
+         return {
+           name: 'root',
+           children: map(endpointsByLevelAndCategoryAndNameAndMethod, (endpointsByCategoryAndNameAndMethod, level) => {
+             return {
+               name: level,
+               color: determineLevelColours(queryObject, levelColours, level),
+               children: categoriesSortedByEndpointCount(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
+             }
+           })
+         }
+       }
+     ),
+     selectSunburstSorted: createSelector(
+       'selectSunburst',
+       (sunburst) => {
+         var sortedLevels = orderBy(sunburst.children, 'name', 'desc')
+         sunburst.children = sortedLevels
+         return sunburst
+       }
+     ),
+     selectInteriorLabel: createSelector(
+       'selectQueryObject',
+       'selectEndpointsWithTestCoverage',
+       (query, endpoints) => {
+         if(endpoints == null) return null
+         var nameAndCoverageInfo = determineNameAndCoverageInfo(query, endpoints)
+         return nameAndCoverageInfo
+       }
+     ),
+     selectLabelStyle: () => {
+       return {
+         PERCENTAGE: {
+           fontSize: '1.3em',
+           textAnchor: 'middle'
+         },
+         FRACTION: {
+           fontSize: '1.2em,',
+           textAnchor: 'middle'
+         },
+         PATH: {
+           fontSize: '1em',
+           textAnchor: 'middle'
+         },
+         DESCRIPTION: {
+           fontSize: '0.9em',
+           fontFamily: 'IBM Plex Mono',
+           textAnchor: 'middle',
+           width: '20px'
+         }
+       }
+     }
+    #+END_SRC
+****  Helper Functions
+      The helper functions are grooooooss right now.  It feels far too nested, and I am passing along the query object to too many places.  I feel the color addition should e done as a selector possibly and not hae it be nested within here.-
+
+      This is gross for how many nested functions there are, and that weird confusion between query and zoom.  Is there a better way to handle this?  Essentially, we wanna be able to zoom into a category, and still have the colors and endpoints show based on the query....but when we are zoomed into an endpoint, then there shouldn't be any query happening....it should be noted as 'locked on'.  This whole section smells awful, and would be good to have another set of javascripter eyes on it.
+
+      #+NAME: Removed Functions
+      #+BEGIN_SRC js :tangle no
+        // I likely don't need these anymore, but dont' wanna fully remove them yet
+
+        function relevantValue (value, zoom, query) {
+          if (zoom[value] !== undefined) {
+            return zoom[value]
+          }
+          return query[value]
+        }
+
+      #+END_SRC
+
+      #+NAME: Sunburst Helper Functions
+      #+BEGIN_SRC js :tangle no
+        function categoriesSortedByEndpointCount (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
+          var categories = categoriesWithEndpointsAsChildren(endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint)
+          return orderBy(categories, (category) => category.children.length, ['desc'])
+        }
+
+        function categoriesWithEndpointsAsChildren (endpointsByCategoryAndNameAndMethod, level, categoryColours, queryObject, zoomedEndpoint) {
+          return map(endpointsByCategoryAndNameAndMethod, (endpointsByNameAndMethod, category) => {
+            return {
+              name: category,
+              color: determineCategoryColours(queryObject, categoryColours, category, level),
+              children: endpointsSortedByConformance(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint)
+            }
+          })
+        }
+
+        function endpointsSortedByConformance (endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint) {
+          var endpoints = createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint)
+          var sortedEndpoints = sortBy(endpoints, [
+            (endpoint) => endpoint.tested === 'untested', (endpoint) => endpoint.isConformance !== 'conformance',
+            (endpoint) => endpoint.testTagCount
+          ])
+          return sortedEndpoints
+        }
+
+        function createEndpointAndMethod(endpointsByNameAndMethod, category, level, queryObject, categoryColours, zoomedEndpoint) {
+          return values(reduce(
+            endpointsByNameAndMethod,
+            (sofar, endpointsByMethod, name) => {
+              sofar = fillOutMethodInfo(sofar, endpointsByMethod, category, name, level, queryObject, categoryColours, zoomedEndpoint)
+              return sofar
+            },
+            {}
+          ))
+        }
+
+        function fillOutMethodInfo (sofar, endpointsByMethod, category, name, level, queryObject, categoryColours, zoomedEndpoint) {
+          forEach(endpointsByMethod, (endpoint, method) => {
+            var { isTested } = endpoint
+            var isConformance = checkForConformance(endpoint.test_tags)
+            var path = `${name}/${method}`
+            var size = (sofar[path] == null) ? 1 : sofar[path].size + 1
+            var initialColor = calculateInitialColor(endpoint, isConformance, categoryColours)
+            sofar[path] = {
+              name,
+              parentName: category,
+              testTagCount: endpoint.test_tags.length,
+              tested: isTested ? 'tested' : 'untested',
+              isConformance: isConformance ? "conformance" : "not conformance",
+              size,
+              color: isTested ? determineEndpointColours(queryObject, initialColor, category, level, endpoint, zoomedEndpoint) : 'rgba(244,244,244, 1)',
+            }
+          })
+          return sofar
+        }
+
+        function checkForConformance (test_tags) {
+          var tagsAsStrings = test_tags.map(tag => tag.replace(/\[|]/g,''))
+          return includes(tagsAsStrings, 'Conformance')
+        }
+
+        function determineEndpointColours (query, color, category, level, endpoint, zoomedEndpoint) {
+          if (zoomedEndpoint != null && zoomedEndpoint !== undefined) {
+            if (zoomedEndpoint.name === endpoint.name) {
+              return fadeColor(color, '0.7')
+            } else {
+              return fadeColor(color, '0.1')
+            }
+          }
+          else if (query.level === undefined) {
+            return color
+          } else if (query.level === level && query.category === category && query.name === endpoint.name){
+            return color
+          } else {
+            return fadeColor(color, '0.1')
+          }
+        }
+        function calculateInitialColor (endpoint, isConformance, categoryColours) {
+          if (endpoint.isTested && isConformance)  {
+            return categoryColours[`category.${endpoint.category}`]
+          } else  if( endpoint.isTested && !isConformance) {
+            var color = categoryColours[`category.${endpoint.category}`]
+            var fadedColor = fadeColor(color, '0.2')
+            return fadedColor
+          } else {
+            return 'rgba(244, 244, 244, 1)'
+          }
+        }
+      #+END_SRC
+*****  Thoughts on colour
+      Every node has a color that renders in our sunburst.  That color can be in two states: bright if it is focused on, and faded if it is not.  Before, we figured out this color in the d3 visualization by tracing through the keypath every time.  What I feel like we could do now is to check in the sunburst selectors whether or not that node is part of the current URL query. If it is, give it a bright color.  If it is not, give it a faded color.
+
+ This means we have to be aware of the node's parent too, because methods and categories are shared across each level.  So you ahve to do a thing of 'are you a part of the path and is your parent also a part of the path, and is your parents.parent a part of the path?  If so, do this color.
+
+ I feel this would be easiest with three functions, even though they're kinda similar.  determineLevelColor(level), determineCategoryColor(category), determineEndpointColor(endpoint).  For the level, it just checks whether there is a query and if it's a part of it.  Category checks if there's a query and if it and the level are a part of it.  endpoint the same, but level and category too.
+
+ I've now done this, but the functions feel v. fragile to me, like there's a simpler way to go about it that I am just not seeing.  I think the problem is partially that we have a hella nested function by necessity--since we are making a sunburst which is built on nesting, so things are going to feel strangely convoluted inherently?  But it would still be nice to refactor this for simplicity.
 
 * Tasks
 ** DONE setup basic dev environment
