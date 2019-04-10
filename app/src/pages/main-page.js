@@ -12,7 +12,7 @@ function MainPage () {
   return (
     <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
       <Metadata />
-      <h1>HELLO YOU ARE DOING GOOD</h1>
+      <h1>HELLO YOU ARE DOING GOODLY</h1>
       {/*<FilterContainer />*/}
       {/* <UseragentSearchContainer /> */}
       {/* <SunburstAndSummary /> */}
