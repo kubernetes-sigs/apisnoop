@@ -59,6 +59,7 @@ export default {
         "extensions",
         "logs",
         "networking",
+        "node",
         "policy",
         "rbacAuthorization",
         "scheduling",
