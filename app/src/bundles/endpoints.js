@@ -1,5 +1,10 @@
 import { createSelector } from 'redux-bundler'
-import { groupBy, mapValues, transform } from 'lodash'
+import {
+  groupBy,
+  isEmpty,
+  mapValues,
+  pickBy,
+  transform } from 'lodash'
 
 import endpoints from '../data/endpoints.json'
 
@@ -12,8 +17,22 @@ export default {
       }
     },
     selectEndpoints: (state) => state.endpoints,
-    selectEndpointsByLevelAndCategoryAndOperatorId: createSelector(
+    selectFilteredEndpoints: createSelector(
       'selectEndpoints',
+      'selectZoom',
+      (endpoints, zoom) => {
+        if (endpoints == null) return null
+        if (isEmpty(zoom)) return endpoints
+        if (zoom.depth === 'endpoint' || zoom.depth === 'category') {
+          endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
+        } else if (zoom.depth === 'level') {
+          endpoints =pickBy(endpoints, (val, key) => val.level === zoom.level)
+        }
+        return endpoints
+      }
+    ),
+    selectEndpointsByLevelAndCategoryAndOperatorId: createSelector(
+      'selectFilteredEndpoints',
       (endpoints) => {
         var endpointsWithOpIds = mapValues (endpoints, (value, key, endpoints) => {
           return {operatorId: key, ...value}
@@ -34,3 +53,18 @@ export default {
     )
     
 }
+
+selectFilteredEndpoints: createSelector(
+  'selectEndpoints',
+  'selectZoom',
+  (endpoints, zoom) => {
+    if (endpoints == null) return null
+    if (isEmpty(zoom)) return endpoints
+    if (zoom.depth === 'endpoint' || zoom.depth === 'category') {
+      endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
+    } else if (zoom.depth === 'level') {
+      endpoints =pickBy(endpoints, (val, key) => val.level === zoom.level)
+    }
+    return endpoints
+  }
+)
