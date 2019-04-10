@@ -4,6 +4,7 @@ import { connect } from 'redux-bundler-react'
 import {
   get,
   join,
+  omit,
   sortBy } from 'lodash'
 
 import { propertiesWithValue } from '../lib/utils'
@@ -26,76 +27,50 @@ const SunburstChart = (props) => {
     getColor={node => node.color}
     onValueMouseOver={handleMouseOver}
     onValueMouseOut={handleMouseOut}
+    onValueClick={handleMouseClick}
       >
       </Sunburst>
       <button className='ttsc' onClick={handleReset}>Reset</button>
       </div>
   )
+
   function handleMouseOver (node, event) {
     var path = getKeyPath(node)
-    var rawQuery = {
+    var query= propertiesWithValue({
       level: path[1],
       category: path[2],
-      name: path[3]
-    }
-    var query = propertiesWithValue(rawQuery)
-    if (queryObject.zoomed) {
-      query.zoomed = queryObject.zoomed
-    }
-    if (queryObject.filter) {
-      query.filter = queryObject.filter
-    }
-    if (queryObject.useragents) {
-      query.useragents = queryObject.useragents
-    }
-    doUpdateQuery(query)
+      operatorId: path[3]
+    })
+    doUpdateQuery({
+      ...queryObject,
+      ...query
+    })
   }
 
   function handleMouseOut () {
-    var query = {}
-    if (queryObject.filter) {
-      query.filter = queryObject.filter
-    }
-    if (queryObject.zoomed) {
-      query.zoomed = queryObject.zoomed
-    }
-    if (queryObject.useragents) {
-      query.useragents = queryObject.useragents
-    }
+    var query = omit(queryObject, ['level','category','operatorId'])
     doUpdateQuery(query)
   }
 
   function handleMouseClick (node, event) {
     var depth = ['root', 'level', 'category', 'endpoint']
     var path = getKeyPath(node)
-    var rawQuery = {
+    var query = propertiesWithValue({
       level: path[1],
       category: path[2],
-      name: path[3],
-      filter: queryObject.filter
-    }
-    var query = propertiesWithValue(rawQuery)
-    var queryAsArray = sortBy(query, ['level','category','name'])
+      operatorId: path[3],
+    })
+    var queryAsArray = sortBy(query, ['level','category','operatorId'])
     query.zoomed = `${depth[node.depth]}-${join(queryAsArray,'-')}`
-    if (queryObject.filter) {
-      query.filter = queryObject.filter
-    }
-    if (queryObject.useragents) {
-      query.useragents = queryObject.useragents
-    }
-
-    doUpdateQuery(query)
+    doUpdateQuery({
+      ...queryObject,
+      ...query
+    })
   }
 
   function handleReset () {
-    var query = {}
-    if (queryObject.filter) {
-      query.filter = queryObject.filter
-    }
-    if (queryObject.useragents) {
-      query.useragents =queryObject.useragents
-    }
-    doUpdateQuery(query)
+    var resetQuery = omit(queryObject,['level', 'category', 'operatorId', 'zoomed'])
+    doUpdateQuery(resetQuery)
   }
 
   function getKeyPath (node) {

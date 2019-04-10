@@ -1,5 +1,5 @@
 import { createSelector } from 'redux-bundler'
-import { map, sortBy } from 'lodash'
+import { map, orderBy, sortBy } from 'lodash'
 import { fadeColour } from '../lib/utils'
 
 export default {
@@ -10,7 +10,7 @@ export default {
     'selectCategoryColours',
     'selectQueryObject',
     (endpointsByLevelAndCategoryAndOperatorId, levelColours, categoryColours, query) => {
-      return {
+      var sunburst = {
         name: 'root',
         children: map(endpointsByLevelAndCategoryAndOperatorId, (endpointsByCategoryAndOperatorId, level) => {
           return {
@@ -26,6 +26,9 @@ export default {
           }
         })
       }
+      var sortedLevels = orderBy(sunburst.children, 'name', 'desc')
+      sunburst.children = sortedLevels
+      return sunburst
     }
   )
 }
@@ -52,7 +55,8 @@ function determineEndpointColour (endpoint, categoryColours, query) {
   var initialColor = determineInitialEndpointColour(endpoint, categoryColours)
   if (query.level === undefined) {
     return initialColor
-  } else if (query.level === endpoint.level && query.category === endpoint.category && query.name === endpoint.operatorId) {
+  }
+  if (query.operatorId && query.operatorId === endpoint.operatorId) {
     return initialColor
   } else {
     return fadeColour(initialColor, '0.1')
