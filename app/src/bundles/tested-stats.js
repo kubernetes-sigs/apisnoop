@@ -96,7 +96,7 @@ function gatherTestedStats (endpoints) {
   var percentConformanceTested = Math.round((conformanceTestedOpIds / totalOpIds) * 100)
   var labelX = totalOpIds > 1 ? `${totalOpIds} endpoints` : `${totalOpIds} endpoint`
   var labelY = `${percentTested}% hit by tests.`
-  var labelZ = `${percentConformanceTested}% hit by conformancetests.`
+  var labelZ = `${percentConformanceTested}% hit by conformance tests.`
   return {
     totalOpIds,
     testedOpIds,
