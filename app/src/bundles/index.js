@@ -1,9 +1,10 @@
 import { composeBundles } from 'redux-bundler'
 
-import jobResultsMetadata from './job-results-metadata'
-import endpoints from './endpoints'
 import colours from './colours'
+import endpoints from './endpoints'
+import jobResultsMetadata from './job-results-metadata'
 import sunburst from './sunburst'
+import testedStats from './tested-stats'
 import zoom from './zoom'
 
 export default composeBundles(
@@ -11,5 +12,6 @@ export default composeBundles(
   endpoints,
   jobResultsMetadata,
   sunburst,
+  testedStats,
   zoom
 )
