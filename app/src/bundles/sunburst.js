@@ -30,7 +30,24 @@ export default {
       sunburst.children = sortedLevels
       return sunburst
     }
-  )
+  ),
+  selectLabelStyles: () => {
+    return {
+      X: {
+        fontSize: '1.3em',
+        textAnchor: 'middle',
+        width: '50%'
+      },
+      Y: {
+        fontSize: '1.2em,',
+        textAnchor: 'middle'
+      },
+      Z: {
+        fontSize: '1em',
+        textAnchor: 'middle'
+      }
+    }
+  }
 }
 
 function determineLevelColours (query, colours, level) {

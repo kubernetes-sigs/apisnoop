@@ -1,5 +1,5 @@
 import React from 'react'
-import { Sunburst } from 'react-vis'
+import { Sunburst, LabelSeries } from 'react-vis'
 import { connect } from 'redux-bundler-react'
 import {
   get,
@@ -11,9 +11,11 @@ import { propertiesWithValue } from '../lib/utils'
 
 const SunburstChart = (props) => {
   const {
-    sunburst,
+    activeStats,
+    doUpdateQuery,
+    labelStyles,
     queryObject,
-    doUpdateQuery
+    sunburst,
   } = props
 
   return (
@@ -29,6 +31,12 @@ const SunburstChart = (props) => {
     onValueMouseOut={handleMouseOut}
     onValueClick={handleMouseClick}
       >
+     <LabelSeries
+       data={[{x: 0, y: 60, label: activeStats.labelX, labelAnchorY: 'center', style:labelStyles.X},
+              {x: 0, y: 0, label: activeStats.labelY, style: labelStyles.Y},
+              {x: 0, y: -20, label: activeStats.labelZ, style: labelStyles.Z}
+             ]}
+     />
       </Sunburst>
       <button className='ttsc' onClick={handleReset}>Reset</button>
       </div>
@@ -47,7 +55,7 @@ const SunburstChart = (props) => {
     })
   }
 
-  function handleMouseOut () {
+  function handleMouseOut (e) {
     var query = omit(queryObject, ['level','category','operationId'])
     doUpdateQuery(query)
   }
@@ -84,8 +92,10 @@ const SunburstChart = (props) => {
 }
 
 export default connect(
+  'selectActiveStats',
+  'doUpdateQuery',
+  'selectLabelStyles',
   'selectQueryObject',
   'selectSunburst',
-  'doUpdateQuery',
   SunburstChart
 )
