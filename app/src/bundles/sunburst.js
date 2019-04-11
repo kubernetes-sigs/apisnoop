@@ -56,7 +56,7 @@ function determineEndpointColour (endpoint, categoryColours, query) {
   if (query.level === undefined) {
     return initialColor
   }
-  if (query.operatorId && query.operatorId === endpoint.operatorId) {
+  if (query.operationId && query.operationId === endpoint.operationId) {
     return initialColor
   } else {
     return fadeColour(initialColor, '0.1')
@@ -83,7 +83,7 @@ function sortedEndpoints (endpoints, categoryColours, query) {
   ])
   return sortedEndpoints.map(endpoint => {
     return {
-      name: endpoint.operatorId,
+      name: endpoint.operationId,
       kind: endpoint.kind,
       size: endpoint.size,
       color: determineEndpointColour(endpoint, categoryColours, query)
