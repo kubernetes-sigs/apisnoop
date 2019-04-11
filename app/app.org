@@ -420,10 +420,11 @@ export default () => (
     #+BEGIN_SRC js
       import { composeBundles } from 'redux-bundler'
 
-      import jobResultsMetadata from './job-results-metadata'
-      import endpoints from './endpoints'
       import colours from './colours'
+      import endpoints from './endpoints'
+      import jobResultsMetadata from './job-results-metadata'
       import sunburst from './sunburst'
+      import testedStats from './tested-stats'
       import zoom from './zoom'
 
       export default composeBundles(
@@ -431,6 +432,7 @@ export default () => (
         endpoints,
         jobResultsMetadata,
         sunburst,
+        testedStats,
         zoom
       )
     #+END_SRC
@@ -701,7 +703,7 @@ export default () => (
      // returns list of endpoints that fit constraints given by any of our queries.//
      These could be filtered by useragent, regex filter, test_tag, or zoom
      #+NAME: selectFilteredEndpoints
-     #+BEGIN_SRC js
+     #+BEGIN_SRC js :tangle no
        selectFilteredEndpoints: createSelector(
          'selectEndpoints',
          'selectZoom',
@@ -972,6 +974,207 @@ export default () => (
            }
 
     #+END_SRC
+** TestedStats
+  :PROPERTIES:
+  :header-args: :tangle ./src/bundles/tested-stats.js :noweb yes
+  :END:
+  This bundle deals with our endpoints overal testing info, percentageof endpoints tested and conformance tested. It is used to generate the interior label of the sunburst (or other places if we deem it fit.)
+
+  My thought is we would generate all the info for every level, category, and opPid before hand...so that we could filter by this later if we'd like...and to improve performance of the sunburst.  Before, we would wait until someone hovered over a node, calculate what node it was, and then calculate the coverage for it and what shluld display....now when you hover over a node, we check what it is, and show it's test info in the label by calling it like so:
+  =testedStats[node.level][node.category][labelX]= For when the node is on a category, and we want the topmost label.
+*** Imports and Layout
+    #+NAME: testedStats Imports and Layout
+    #+BEGIN_SRC js
+      import { createSelector } from 'redux-bundler'
+      import { filter,
+               groupBy,
+               isEmpty,
+               keyBy,
+               mapValues } from 'lodash'
+
+      export default {
+        name: 'testedStats',
+        <<selectTestedStats>>,
+        <<selectActiveStats>>
+      }
+
+    #+END_SRC
+*** selectTestedStats
+    *◊Endpoints -> ◊TestedStats*
+    /Runs through a set of filtered endpoints generating stats info for each grouping/
+
+    #+NAME: selectTestedStats
+    #+BEGIN_SRC js :tangle no
+      selectTestedStats: createSelector(
+        'selectFilteredEndpoints',
+        (endpoints) => {
+          var endpointsWithOpIds = mapValues(endpoints, (value, key, endpoints) => {
+            return {operationId: key, ...value}
+          })
+          var testedStats = gatherTestedStats(endpoints)
+          var endpointsByLevel = groupBy(endpointsWithOpIds, 'level')
+          return {
+            ...testedStats,
+            ...mapValues(endpointsByLevel, (endpointsInLevel) => {
+              var testedStats = gatherTestedStats(endpointsInLevel)
+              var endpointsByCategory = groupBy(endpointsInLevel, 'category')
+              return {
+                ...testedStats,
+                ...mapValues(endpointsByCategory, (endpointsInCategory) => {
+                  var testedStats = gatherTestedStats(endpointsInCategory)
+                  var endpoints = keyBy(endpointsInCategory, 'operationId')
+                  return {
+                    ...testedStats,
+                    ...mapValues(endpoints, (endpoint) => {
+                      var testedStats = gatherEndpointTestedStats(endpoint)
+                      return {
+                        ...testedStats
+                      }
+                    })
+                  }
+                })
+              }
+            })
+          }
+        }
+      )
+    #+END_SRC
+*** selectActiveStats
+    *TestedStats QueryObject -> TestedStat*
+    /Return the stats matching the current query/
+    Our query object will have up to a level, category, endpoint....if it doesn't, then we haven't hovered over anything.o
+    #+NAME: selectActiveStats
+    #+BEGIN_SRC js :tangle no
+      selectActiveStats: createSelector(
+        'selectTestedStats',
+        'selectQueryObject',
+        (stats, query) => {
+          if (isEmpty(query) || !query.level) {
+            return {
+              labelX: stats.labelX,
+              labelY: stats.labelY,
+              labelZ: stats.labelZ,
+            }
+          }
+          if (query.operationId) {
+            return {
+              labelX: stats[query.level][query.category][query.operationId].labelX,
+              labelY: stats[query.level][query.category][query.operationId].labelY,
+              labelZ: stats[query.level][query.category][query.operationId].labelZ
+            }
+          }
+          if (query.category && !query.operationId) {
+            return {
+              labelX: stats[query.level][query.category].labelX,
+              labelY: stats[query.level][query.category].labelY,
+              labelZ: stats[query.level][query.category].labelZ,
+            }
+          }
+          if (query.level && !query.category) {
+            return {
+              labelX: stats[query.level].labelX,
+              labelY: stats[query.level].labelY,
+              labelZ: stats[query.level].labelZ,
+            }
+          } else {
+            return {
+              labelX: '',
+              labelY: '',
+              labelZ: ''
+            }
+          }
+        }
+      )
+
+    #+END_SRC
+*** Helper Functions
+**** Calculate Number
+     *Endpoints KeyWithIntegerValue -> Number*
+     / Calculate the number of endpoints that have a positive value for the specified key/
+     #+NAME: CalculateNumber
+     #+BEGIN_SRC js
+       function calculateNumber (endpoints, key) {
+         var endpointsWithPositiveValue = filter(endpoints, (endpoint) => endpoint[key] > 0)
+         return endpointsWithPositiveValue.length
+       }
+     #+END_SRC
+**** gatherTestedStats
+     *◊Endpoints -> ◊TestedStat*
+     /Return an object containing the tested stats for a select group of endpoints/
+     #+NAME: gatherStats
+     #+BEGIN_SRC js
+       function gatherTestedStats (endpoints) {
+         var totalOpIds = Object.keys(endpoints).length
+         var testedOpIds = calculateNumber(endpoints, 'testHits')
+         var conformanceTestedOpIds = calculateNumber(endpoints, 'conformanceHits')
+         var percentTested = Math.round((testedOpIds / totalOpIds) * 100)
+         var percentConformanceTested = Math.round((conformanceTestedOpIds / totalOpIds) * 100)
+         var labelX = totalOpIds > 1 ? `${totalOpIds} endpoints` : `${totalOpIds} endpoint`
+         var labelY = `${percentTested}% hit by tests.`
+         var labelZ = `${percentConformanceTested}% hit by conformancetests.`
+         return {
+           totalOpIds,
+           testedOpIds,
+           conformanceTestedOpIds,
+           percentTested,
+           percentConformanceTested,
+           labelX,
+           labelY,
+           labelZ
+         }
+       }
+     #+END_SRC
+**** gatherEndpointTestedStats
+     *◊Endpoint-> ◊EndpointTestedStat*
+     /Return an object containing the unique tested stats for the endpoint/
+     #+NAME: gatherStats
+     #+BEGIN_SRC js
+       function gatherEndpointTestedStats (endpoint) {
+         var tested = endpoint.testHits > 1
+         var conformanceTested = endpoint.conformanceHits > 1
+         var labelX = () => {
+           if (tested && conformanceTested) {
+             return 'Tested and Conformance Tested'
+           } else if (tested && !conformanceTested) {
+             return 'Tested, but not Conformance Tested'
+           } else {
+             return 'Not Tested'
+           }
+         }
+         var labelY = () => {
+           if (tested) {
+             return endpoint.testHits > 1
+               ? `hit by tests ${endpoint.testHits} times`
+               : `hit by tests ${endpoint.testHits} time`
+           } else {
+             if (endpoint.hits === 0) return 'Not Hit'
+             return endpoint.hits > 1
+               ? `hit ${endpoint.hits} times overall`
+               : `hit ${endpoint.hits} time overall`
+           }
+         }
+         var labelZ = () => {
+           if (conformanceTested) {
+             return endpoint.conformanceHits > 1
+               ? `hit by conformance tests ${endpoint.conformanceHits} times`
+               : `hit by conformance tests ${endpoint.conformanceHits} time`
+           } else {
+             return ''
+           }
+         }
+         return {
+           tested,
+           testHits: endpoint.testHits,
+           conformanceTested,
+           conformanceHits: endpoint.conformanceHits,
+           hits: endpoint.hits,
+           labelX: labelX(),
+           labelY: labelY(),
+           labelZ: labelZ()
+         }
+       }
+     #+END_SRC
+
 ** Zoom
    :PROPERTIES:
    :header-args: :tangle ./src/bundles/zoom.js :noweb yes
@@ -1007,7 +1210,7 @@ export default () => (
             depth: zoomArray[0],
             level: zoomArray[1],
             category: zoomArray[2],
-            operatorId: zoomArray[3]
+            operationId: zoomArray[3]
           }
           var zoom = propertiesWithValue(zoomRaw) || {}
           return zoom
@@ -1195,8 +1398,8 @@ export default () => (
    }
 
  #+END_SRC
-** GroupedEndpoints (<<<◊GroupedEndpoints)
-   An Object, derived from ◊Endpoints, where they are grouped by arbitrary keys.  In the current case, these keys are Level, then category, the operatorId.  This sets us up to turn it into a sunburst more easily.
+** GroupedEndpoints (<<<◊GroupedEndpoints>>>)
+   An Object, derived from ◊Endpoints, where they are grouped by arbitrary keys.  In the current case, these keys are Level, then category, the operationId.  This sets us up to turn it into a sunburst more easily.
 
    #+NAME: GroupedEndpoints Definition Example
    #+BEGIN_SRC json
@@ -1220,7 +1423,7 @@ export default () => (
              isDeprecated: false,
              kind: "",
              level: "stable",
-             operatorId: "getAPIVersions",
+             operationId: "getAPIVersions",
              path: "apis/",
              size: 1,
              testHits: 920,
@@ -1290,7 +1493,7 @@ export default () => (
 ** SunburstTree(<<<◊SunburstTree>>>)
    An Object built for the react-vis/d3 sunburst graph.  It requires a root that contains children, witch each children containing children, all the way to the end.
 
-   In this case we have root>level>category>operatorId.
+   In this case we have root>level>category>operationId.
 
    #+NAME: SunburstTree Example
    #+BEGIN_SRC json
@@ -1306,7 +1509,7 @@ export default () => (
                color: rgba color,
                children: [
                  {
-                   name: operatorId,
+                   name: operationId,
                    size: 1,
                    testHits: 3,
                    conformanceTestHits: 2,
@@ -1322,6 +1525,53 @@ export default () => (
    #+END_SRC
 
    We are reducing it down to the bare min info for endpoint.  If they hover over an endpo;int and wanna see more deets like group, version, kind then we can reference that from the ◊Endpoints already in the store.   This only contains info necessary to make the sunburst render correctly.
+** TestedStats(<<<◊TestedStats>>>)
+   An object containing the test information, and coverage statements, for each section of our sunburst.  We can then use this so, upon hover, the active endpoint and active label would show....where we could then reference the current queried section in our label series.
+
+   So I think We want to hae something real similar to ◊GroupedEndpoints, but with the only keys being coverage info.  I also think, for ease, that we should have the same type of label no matter if they're looking at an opId, category, or level
+  #+NAME: TestedStats Definition Example
+  #+BEGIN_SRC json
+    {
+      opIds: 10,
+      testedOpIds: 5,
+      conformancTestedOpIds: 3
+      percentTested: 50,
+      percentConformanceTested: 30,
+      labelX: '10 total Endpoints',
+      labelY: '50% Hit by Tests',
+      labelZ: '30% Hit by Conformance Tests'
+      alpha: {},
+      beta: {},
+      stable: {
+          opIds: 10,
+          testedOpIds: 5,
+          conformancTestedOpIds: 3
+          percentTested: 50,
+          percentConformanceTested: 30,
+          labelX: '10 total Endpoints',
+          labelY: '50% Hit by Tests',
+          labelZ: '30% Hit by Conformance Tests'
+        cat1: {
+            opIds: 10,
+            testedOpIds: 5,
+            conformancTestedOpIds: 3
+            percentTested: 50,
+            percentConformanceTested: 30,
+            labelX: '10 total Endpoints',
+            labelY: '50% Hit by Tests',
+            labelZ: '30% Hit by Conformance Tests'
+          opId1: {
+            testedHits: 10,
+            conformancHits:: 0,
+            labelX: 'Tested, but not Conformance Tested',
+            labelY: 'Hit by 10 tests, overall',
+            labelZ: 'Hit by 0 conformance Tests'
+          }
+        }
+      }
+    }
+  #+END_SRC
+
 
 * Footnotes
 ** Endpoints...
@@ -1614,7 +1864,6 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
 
 
 
-
 * Tasks
 ** DONE setup basic dev environment
    CLOSED: [2019-04-08 Mon 09:28]
@@ -1667,7 +1916,7 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
    CLOSED: [2019-04-10 Wed 08:54]
    - [X] understand the data that the current endpoint resource needs.
    - [X] Make up data definition for endpoint as it is now
-   - [X] change the wording if needed (operatorId's instead of endpoints?)
+   - [X] change the wording if needed (operationId's instead of endpoints?)
 ** TODO [80%] Display the Sunburst
 *** DONE Setup Sunburst Bundle in app.org
     CLOSED: [2019-04-10 Wed 12:07]
@@ -1676,6 +1925,8 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
 *** DONE Sunburst Component Added Back in to site, without mouseover yet.
     CLOSED: [2019-04-10 Wed 13:00]
 *** DONE Needs for mouseover added to these tasks
+*** TODO Interior Label added to Sunburst
+    I think this can be done through its own bundle that just calculates the endpoints inside for each level and category.  We wouldn't be adding that much more content to our bundle, and would make it so no logic is having to happen on the frontend side...it just always displays A,B, C
 *** TODO Sunburst sorted correctly.
 *** TODO Summary added back to sunburst
 *** TODO Header added back to sunburst
@@ -1686,4 +1937,5 @@ the "" as a kind within each category, and sometimes their only kind
 ** TODO investigate setting the color in diff way to bring up performance
    it's being calculated again everytime the query updates.  And we are having to calculate it for the entire tree every time.
    Perhaps we sest the color first on general "colored or not", then in sunburst we determine "faded or not"?  This would remove 1 or 2 if statements from beiong calcualted each time...i think?
-** TODO Investigate how to
+** TODO Refactor TestedStats for Recursion and proper FP
+** TODO Move "endpointsWithOpId" to its own selector so we aren't calculating it twice
