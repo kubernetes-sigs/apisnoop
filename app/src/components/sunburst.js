@@ -39,7 +39,7 @@ const SunburstChart = (props) => {
     var query= propertiesWithValue({
       level: path[1],
       category: path[2],
-      operatorId: path[3]
+      operationId: path[3]
     })
     doUpdateQuery({
       ...queryObject,
@@ -48,7 +48,7 @@ const SunburstChart = (props) => {
   }
 
   function handleMouseOut () {
-    var query = omit(queryObject, ['level','category','operatorId'])
+    var query = omit(queryObject, ['level','category','operationId'])
     doUpdateQuery(query)
   }
 
@@ -58,9 +58,9 @@ const SunburstChart = (props) => {
     var query = propertiesWithValue({
       level: path[1],
       category: path[2],
-      operatorId: path[3],
+      operationId: path[3],
     })
-    var queryAsArray = sortBy(query, ['level','category','operatorId'])
+    var queryAsArray = sortBy(query, ['level','category','operationId'])
     query.zoomed = `${depth[node.depth]}-${join(queryAsArray,'-')}`
     doUpdateQuery({
       ...queryObject,
@@ -69,7 +69,7 @@ const SunburstChart = (props) => {
   }
 
   function handleReset () {
-    var resetQuery = omit(queryObject,['level', 'category', 'operatorId', 'zoomed'])
+    var resetQuery = omit(queryObject,['level', 'category', 'operationId', 'zoomed'])
     doUpdateQuery(resetQuery)
   }
 

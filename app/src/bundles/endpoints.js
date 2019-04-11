@@ -3,8 +3,7 @@ import {
   groupBy,
   isEmpty,
   mapValues,
-  pickBy,
-  transform } from 'lodash'
+  pickBy } from 'lodash'
 
 import endpoints from '../data/endpoints.json'
 
@@ -12,7 +11,7 @@ export default {
   name: 'endpoints',
     getReducer: () => {
       const initialState = endpoints
-      return (state=initialState, action) => {
+      return (state = initialState, action) => {
         return state
       }
     },
@@ -51,7 +50,7 @@ export default {
         })
       }
     )
-    
+
 }
 
 selectFilteredEndpoints: createSelector(

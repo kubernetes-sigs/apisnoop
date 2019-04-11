@@ -20,7 +20,7 @@ export default {
         depth: zoomArray[0],
         level: zoomArray[1],
         category: zoomArray[2],
-        operatorId: zoomArray[3]
+        operationId: zoomArray[3]
       }
       var zoom = propertiesWithValue(zoomRaw) || {}
       return zoom
