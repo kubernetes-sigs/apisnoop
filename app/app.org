@@ -416,7 +416,9 @@ export default () => (
       import { composeBundles } from 'redux-bundler'
 
       import colours from './colours'
+      import config from './config'
       import endpoints from './endpoints'
+      import endpointsResource from './endpoints-resource'
       import jobResultsMetadata from './job-results-metadata'
       import sunburst from './sunburst'
       import testedStats from './tested-stats'
@@ -424,7 +426,9 @@ export default () => (
 
       export default composeBundles(
         colours,
+        config,
         endpoints,
+        endpointsResource,
         jobResultsMetadata,
         sunburst,
         testedStats,
@@ -650,6 +654,22 @@ export default () => (
 
     #+END_SRC
 
+** Config
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/config.js :noweb yes
+   :END:
+   #+NAME: config.js
+   #+BEGIN_SRC js
+     const config = {
+       gsUrl: document.querySelector('meta[name="gs-bucket"]').getAttribute('content')
+     }
+
+     export default {
+       name: 'config',
+       reducer: (state = config) => state,
+       selectGsUrl: (state) => state.config.gsUrl
+     }
+   #+END_SRC
 ** Endpoints
   :PROPERTIES:
     :header-args: :tangle ./src/bundles/endpoints.js :noweb yes
@@ -770,6 +790,50 @@ export default () => (
          }
        )
      #+END_SRC
+** Endpoints  Resource
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/endpoints-resource.js :noweb yes
+   :END:
+
+   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
+
+   #+NAME: useragents resource
+   #+BEGIN_SRC js
+     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
+     const bundle = createAsyncResourceBundle({
+       name: 'endpointsResource',
+       getPromise: ({store}) => {
+         var gsUrl = store.selectGsUrl()
+         return fetchResource(gsUrl, 'products.json')
+       }
+     })
+
+     bundle.reactEndpointsResourceFetch = createSelector(
+       'selectEndpointsResourceShouldUpdate',
+       (shouldUpdate) => {
+         if (!shouldUpdate) return
+         return { actionCreator: 'doFetchEndpointsResource' }
+       }
+     )
+
+     export default bundle
+
+     function fetchResource (gsUrl, resource) {
+       var path = `${gsUrl}/${resource}`
+       return fetch(path)
+         .then((response) => {
+           if (!response.ok) {
+             throw new Error("HTTP error, status = " + response.status);
+           }
+           return response.json()
+         })
+         .catch((err) => {
+           console.log({fetchErr: err})
+         })
+     }
+
+   #+END_SRC
 ** JobResultsMetadata
   :PROPERTIES:
     :header-args: :tangle ./src/bundles/job-results-metadata.js :noweb yes
