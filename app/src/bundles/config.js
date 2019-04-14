@@ -1,9 +1,10 @@
 const config = {
-  gsUrl: document.querySelector('meta[name="gs-bucket"]').getAttribute('content')
+  gsBucket: document.querySelector('meta[name="gs-bucket"]').getAttribute('content'),
+  gsUrl: 'http://storage.googleapis.com/'
 }
 
 export default {
   name: 'config',
   reducer: (state = config) => state,
-  selectGsUrl: (state) => state.config.gsUrl
+  selectGsPath: (state) => state.config.gsUrl.concat(state.config.gsBucket)
 }

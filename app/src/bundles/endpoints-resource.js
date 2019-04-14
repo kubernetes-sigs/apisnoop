@@ -3,8 +3,8 @@ import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
 const bundle = createAsyncResourceBundle({
   name: 'endpointsResource',
   getPromise: ({store}) => {
-    var gsUrl = store.selectGsUrl()
-    return fetchResource(gsUrl, 'products.json')
+    var gsPath = store.selectGsPath()
+    return fetchResource(gsPath, 'endpoints.json')
   }
 })
 
@@ -18,9 +18,10 @@ bundle.reactEndpointsResourceFetch = createSelector(
 
 export default bundle
 
-function fetchResource (gsUrl, resource) {
-  var path = `${gsUrl}/${resource}`
-  return fetch(path)
+function fetchResource (gsPath, resource) {
+  var fullPath = gsPath + resource
+  console.log({fullPath})
+  return fetch(fullPath, {mode: 'no-cors'})
     .then((response) => {
       if (!response.ok) {
         throw new Error("HTTP error, status = " + response.status);
