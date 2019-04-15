@@ -1,5 +1,7 @@
 import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
 
+import { fetchResource } from '../lib/utils'
+
 const bundle = createAsyncResourceBundle({
   name: 'endpointsResource',
   getPromise: ({store}) => {
@@ -17,18 +19,3 @@ bundle.reactEndpointsResourceFetch = createSelector(
 )
 
 export default bundle
-
-function fetchResource (gsPath, resource) {
-  var fullPath = gsPath + resource
-  console.log({fullPath})
-  return fetch(fullPath, {mode: 'no-cors'})
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error("HTTP error, status = " + response.status);
-      }
-      return response.json()
-    })
-    .catch((err) => {
-      console.log({fetchErr: err})
-    })
-}

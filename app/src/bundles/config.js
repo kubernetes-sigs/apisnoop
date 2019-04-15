@@ -1,6 +1,6 @@
 const config = {
   gsBucket: document.querySelector('meta[name="gs-bucket"]').getAttribute('content'),
-  gsUrl: 'http://storage.googleapis.com/'
+  gsUrl: 'http://apisnoop.storage.googleapis.com/'
 }
 
 export default {
