@@ -10,6 +10,8 @@ export default {
   selectTestedStats: createSelector(
     'selectFilteredEndpoints',
     (endpoints) => {
+      console.log({endpoints})
+      if (endpoints == null) return null
       var endpointsWithOpIds = mapValues(endpoints, (value, key, endpoints) => {
         return {operationId: key, ...value}
       })
@@ -44,6 +46,7 @@ export default {
     'selectTestedStats',
     'selectQueryObject',
     (stats, query) => {
+      if (stats == null) return null
       if (isEmpty(query) || !query.level) {
         return {
           labelX: stats.labelX,
