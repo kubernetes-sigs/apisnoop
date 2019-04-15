@@ -25,6 +25,22 @@ export default {
     })
     return endpointsWithOpId
   },
+  selectActiveEndpoint: createSelector(
+    'selectEndpointsResource',
+    'selectQueryObject',
+    'selectZoom',
+    (endpoints, query, zoom) => {
+      if (endpoints == null) return null
+      if (zoom && zoom.depth === 'endpoint') {
+        return endpoints[zoom.operatorID]
+      }
+      if (query.operationId) {
+        return endpoints[query.operationId]
+      }
+  
+      return {}
+    }
+  ),
   selectFilteredEndpoints: createSelector(
     'selectEndpoints',
     'selectOpIdsHitByFilteredUseragents',
@@ -49,10 +65,7 @@ export default {
     'selectFilteredEndpoints',
     (endpoints) => {
       if (endpoints == null) return null
-      var endpointsWithOpIds = mapValues(endpoints, (value, key, endpoints) => {
-        return {operationId: key, ...value}
-      })
-      var endpointsByLevel = groupBy(endpointsWithOpIds, 'level')
+      var endpointsByLevel = groupBy(endpoints, 'level')
       return mapValues(endpointsByLevel, endpointsInLevel => {
         var endpointsByCategory = groupBy(endpointsInLevel, 'category')
         return mapValues(endpointsByCategory, endpointsInCategory => {
