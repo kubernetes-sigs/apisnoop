@@ -1,33 +1,21 @@
 import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
 
+import { fetchResource } from '../lib/utils'
+
 const bundle = createAsyncResourceBundle({
-  name: 'endpointsResource',
+  name: 'useragentsResource',
   getPromise: ({store}) => {
-    const gsUrl= store.config.gsUrl
-    return fetchEndpoints(gsUrl, 'products.json')
+    var gsPath = store.selectGsPath()
+    return fetchResource(gsPath, '/useragents.json')
   }
 })
 
-bundle.reactEndpointsResourceFetch = createSelector(
-  'selectEndpointsResourceShouldUpdate',
+bundle.reactUseragentsResourceFetch = createSelector(
+  'selectUseragentsResourceShouldUpdate',
   (shouldUpdate) => {
     if (!shouldUpdate) return
-    return { actionCreator: 'doFetchEndpointsResource' }
+    return { actionCreator: 'doFetchUseragentsResource' }
   }
 )
 
 export default bundle
-
-function fetchResource (gsUrl, resource) {
-  var path = `${gsUrl}/${resource}`
-  fetch(path)
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error("HTTP error, status = " + response.status);
-      }
-      return response.json()
-    })
-    .catch((err) => {
-      console.log({fetchErr: err})
-    })
-}
