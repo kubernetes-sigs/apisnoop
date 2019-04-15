@@ -11,6 +11,7 @@ import useragentsResource from './useragents-resource'
 import jobResultsMetadata from './job-results-metadata'
 import sunburst from './sunburst'
 import testedStats from './tested-stats'
+import useragents from './useragents'
 import zoom from './zoom'
 
 export default composeBundles(
@@ -25,5 +26,6 @@ export default composeBundles(
   jobResultsMetadata,
   sunburst,
   testedStats,
+  useragents,
   zoom
 )

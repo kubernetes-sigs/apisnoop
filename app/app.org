@@ -481,6 +481,7 @@ export default () => (
       import jobResultsMetadata from './job-results-metadata'
       import sunburst from './sunburst'
       import testedStats from './tested-stats'
+      import useragents from './useragents'
       import zoom from './zoom'
 
       export default composeBundles(
@@ -495,6 +496,7 @@ export default () => (
         jobResultsMetadata,
         sunburst,
         testedStats,
+        useragents,
         zoom
       )
     #+END_SRC
@@ -788,23 +790,40 @@ export default () => (
      selects all the endpoints from the global state
      #+NAME: selectEndpoints
      #+BEGIN_SRC js :tangle no
-       selectEndpoints: (state) => state.endpointsResource.data
+       selectEndpoints: (state) => {
+         let endpoints = state.endpointsResource.data
+         let endpointsWithOpId =  mapValues(endpoints, (val, key, obj) => {
+           return {
+             operationId: key,
+             ...val
+           }
+         })
+         return endpointsWithOpId
+       }
      #+END_SRC
 **** selectFilteredEndpoints
-     **◊Endpoints, ◊Zoom -> ◊Endpoints**
+     **◊Endpoints ◊OpIds ◊Zoom -> ◊Endpoints**
      // returns list of endpoints that fit constraints given by any of our queries.//
-     These could be filtered by useragent, regex filter, test_tag, or zoom
+     These could be filtered by useragent, regex filter, test_tag, or zoom.
+     The ◊OpIds would be an array of Id's based on a set filter (either useragents or tests)
+
      #+NAME: selectFilteredEndpoints
      #+BEGIN_SRC js :tangle no
        selectFilteredEndpoints: createSelector(
          'selectEndpoints',
+         'selectOpIdsHitByFilteredUseragents',
          'selectZoom',
-         (endpoints, zoom) => {
+         (endpoints, opIds, zoom) => {
            if (endpoints == null) return null
-           if (isEmpty(zoom)) return endpoints
-           if (zoom.depth === 'endpoint' || zoom.depth === 'category') {
+           if (Array.isArray(opIds) && opIds.length > 0) {
+             // if endpoint.opId is in the array of opIds keep it.
+             endpoints = pickBy(endpoints, (val, key) => {
+               return opIds.includes(val.operationId)
+             })
+           }
+           if (!isEmpty(zoom) && (zoom.depth === 'endpoint' || zoom.depth === 'category')) {
              endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
-           } else if (zoom.depth === 'level') {
+           } else if (!isEmpty(zoom) && zoom.depth === 'level') {
              endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level)
            }
            return endpoints
@@ -1214,6 +1233,280 @@ export default () => (
 
      export default bundle
    #+END_SRC
+** Useragents
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/useragents.js :noweb yes
+   :END:
+
+   Holds our filtered inputs both when the filter is just input in the search form and when it is set as a query.
+   I feel these need to be two separate bundles, since one is temporary/changable and the other is the set query .
+   For the one being changable, we only need the useragent names, all the other info isn't really that important.
+
+***  Layout
+   #+NAME: Useragents bundle
+   #+BEGIN_SRC js
+     import { filter,
+              map,
+              pickBy,
+              uniq } from 'lodash'
+     import { createSelector } from 'redux-bundler'
+     export default {
+       name: 'useragents',
+       <<Useragents Reducer>>,
+       <<selectUseragentInput>>,
+       <<selectUseragentsFilteredByInput>>,
+       <<selectUseragentsFilteredByQuery>>,
+       <<selectOpIdsHitByFilteredUseragents>>,
+       <<doUpdateUseragentsInput>>
+     }
+   #+END_SRC
+
+***  Tests Layout
+    #+NAME: Useragents Tests Setup
+    #+BEGIN_SRC js :tangle ./src/bundles/useragents.test.js
+      import { Reducer, Selector } from 'redux-testkit'
+      import { map } from 'lodash'
+      import {composeBundlesRaw} from 'redux-bundler'
+      import createStore from './index.js'
+      import useragents from './useragents.js'
+      import useragentsResource from './useragents-resource.js'
+      import useragentsSample from '../test_resources/useragents.json'
+      <<useragentsNamesSample>>
+
+      var store = createStore()
+      var state = store.getState()
+
+      const initialState = {
+        filterInput: ''
+      }
+
+      describe('Useragents Reducer', () => {
+        <<Useragents Reducer Test>>
+      })
+
+      describe('Useragents Selectors', () => {
+        <<selectUseragentInput Test>>
+        <<selectUseragentsFilteredByInput Test>>
+        <<selectUseragentsFilteredByQuery Test>>
+      })
+
+    #+END_SRC
+
+***  Useragents Reducer
+
+    **Action -> UseragentState**
+    Received action and its payload and returns the new Useragentstate(containing changes based on payload).
+    If no action is given, returns the initial state.
+
+    #+NAME: Useragents Reducer Test
+    #+BEGIN_SRC js :tangle no
+      it('should have initial state', () => {
+        expect(state.useragents).toEqual(initialState)
+      })
+      it('should handle USERAGENT_INPUT_UPDATED with alphanumeric', () => {
+        const payload = 'ksjdj'
+        const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
+        const result = {filterInput: payload}
+        Reducer(useragents.getReducer()).expect(action).toReturnState(result)
+      })
+
+      it('should handle USERAGENT_INPUT_UPDATED with full regex', () => {
+        const payload = '(./a(sjd)*'
+        const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
+        const result = {filterInput: payload}
+        Reducer(useragents.getReducer()).expect(action).toReturnState(result)
+      })
+    #+END_SRC
+
+    #+NAME: Useragents Reducer
+    #+BEGIN_SRC js :tangle no
+      getReducer: () => {
+        const initialState = {
+          filterInput: ''
+        }
+        return (state=initialState, {type, payload}) => {
+          if (type  === 'USERAGENT_INPUT_UPDATED') {
+            return {...state, filterInput: payload}
+          }
+          return state
+        }
+      }
+    #+END_SRC
+
+*** selectUseragentInput
+    **UseragentState -> String**
+    _selects the input state from useragent_
+    #+NAME: selectUseragentInput Test
+    #+BEGIN_SRC js :tangle no
+      it('should return a string for selectUseragentInput', () => {
+        const stateA = {useragents: {filterInput: ''}}
+        const stateB = {useragents: {filterInput: 'r^eg&x'}}
+        var selectInput = useragents.selectUseragentsInput
+
+        expect(selectInput(stateA)).toEqual(stateA.useragents.filterInput)
+        expect(selectInput(stateB)).toEqual(stateB.useragents.filterInput)
+      })
+
+    #+END_SRC
+    #+NAME: selectUseragentInput
+    #+BEGIN_SRC js :tangle no
+      selectUseragentsInput: (state) => state.useragents.filterInput
+    #+END_SRC
+
+*** selectUseragentsFilteredByInput
+    **Regex -> ◊UseragentsNames**
+    _Given a regex filter, return an array of names that match this regex_
+    #+NAME: useragentsNamesSample
+    #+BEGIN_SRC js :tangle no
+      var useragentsNamesSample  = [
+        "kubectl/v1.13.3",
+        "kube-apiserver/v1.15.0",
+        "kube-proxy/v1.13.5",
+        "node-problem-detector/v0.5.0-49-gfb81368",
+        "nfs-provisioner/v0.0.0"
+      ]
+    #+END_SRC
+
+    #+NAME: selectUseragentsFilteredByInput Test
+    #+BEGIN_SRC js :tangle no
+      it('should return all useragent names if no filter is set', () => {
+          <<useragentsNamesSample>>
+          var filter = ''
+          var filterB = 'kube'
+          var filteredSample = ["kubectl/v1.13.3", "kube-apiserver/v1.15.0", "kube-proxy/v1.13.5"]
+
+          var selectUseragents = useragents.selectUseragentsFilteredByInput.resultFunc
+
+           expect(selectUseragents(useragentsSample, filter)).toEqual(useragentsNamesSample)
+           expect(selectUseragents(useragentsSample, filterB)).toEqual(filteredSample)
+
+      })
+
+    #+END_SRC
+
+    #+NAME: selectUseragentsFilteredByInput
+    #+BEGIN_SRC js :tangle no
+      selectUseragentsFilteredByInput: createSelector(
+        'selectUseragentsResource',
+        'selectUseragentsInput',
+        (useragents, input) => {
+          var useragentsNames = map(useragents, 'name')
+          if (input === '') return []
+
+          var isValid = true
+          try {
+            new RegExp(input)
+          } catch (err) {
+            isValid = false
+          }
+          if (!isValid) return ['not valid regex']
+
+          return useragentsNames.filter(ua => {
+            var inputAsRegex = new RegExp(input)
+            return inputAsRegex.test(ua)
+          })
+        }
+      )
+
+    #+END_SRC
+
+*** selectUseragentsFilteredByQuery
+    **◊Useragents ◊Query -> ◊Useragents**
+    _Return a filtered Useragents based on query.useragent_
+    #+BEGIN_SRC shell :dir ./src/test_resources :results output :tangle no
+      cat useragents.json | jq 'map(.name)'
+    #+END_SRC
+
+
+    #+NAME: selectUseragentsFilteredByQuery Test
+    #+BEGIN_SRC js :tangle no
+      it('should return useragents whose name matches query', () => {
+        var noFilter = {useragent: ''}
+        var expectedResult = [
+          "kubectl/v1.13.3",
+          "kube-apiserver/v1.15.0",
+          "kube-proxy/v1.13.5",
+          "node-problem-detector/v0.5.0-49-gfb81368",
+          "nfs-provisioner/v0.0.0"
+        ]
+
+        var filter = {useragent: 'kube'}
+        var expectedFilteredResult = [
+          "kubectl/v1.13.3",
+          "kube-apiserver/v1.15.0",
+          "kube-proxy/v1.13.5"
+        ]
+
+        var selectQueryFilter = useragents.selectUseragentsFilteredByQuery.resultFunc
+        var unFilteredResult = map(selectQueryFilter(useragentsSample, noFilter), 'name')
+        var filteredResult = map(selectQueryFilter(useragentsSample, filter), 'name')
+        expect(filteredResult).toEqual(expectedFilteredResult)
+        expect(unFilteredResult).toEqual(expectedResult)
+      })
+    #+END_SRC
+
+     #+NAME: selectUseragentsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectUseragentsFilteredByQuery: createSelector(
+         'selectUseragentsResource',
+         'selectQueryObject',
+         (useragents, query) => {
+           if (useragents == null || !query) return []
+           if (query.useragents && query.useragents.length) {
+             return pickBy(useragents, (val, key) => {
+               var inputAsRegex = new RegExp(query.useragents)
+               return inputAsRegex.test(key)
+             })
+           } else {
+             return []
+           }
+         }
+       )
+     #+END_SRC
+
+*** selectOpIdsHitByFilteredUseragents
+    **◊Useragents -> ◊Endpoints**
+    _Given a set of useragents that contain endpoints, return an array of just the unique endpoints._
+    This won't be the ultimate filter.  Rather, we wanna setup a nice selection to use in our endpoint bundle as a filter.  So the key here is to make an array of endpoints that is useful for future filtering.
+
+   #+NAME: selectOpIdsHitByFilteredUseragents
+   #+BEGIN_SRC js :tangle no
+     selectOpIdsHitByFilteredUseragents: createSelector(
+       'selectUseragentsFilteredByQuery',
+       (useragents) => {
+         let opIdsHit = []
+         let opIds = Object.keys(useragents)
+         let opId, opIdIndex;
+
+         if (useragents == null)  {
+           return opIdsHit
+         }
+         for (opIdIndex = 0; opIdIndex < opIds.length; opIdIndex++) {
+           opId = opIds[opIdIndex]
+           opIdsHit.push(useragents[opId])
+         }
+         return uniq(opIdsHit.flat())
+       }
+     )
+   #+END_SRC
+
+  NOTE this kinda works now, but I'm realizing that we don't need bucket,job,release...since we are only pulling ua's from a single release at the page load.  What we really need is to match on level, category, name, method...but the level and category are not a part of this.  Is it possible for an endoint to exist in beta/stable or in multiple categories?  If so, this would be inaccurate.
+
+*** doUpdateUseragentInput
+    **String -> Action**
+    _Returns an action for our reducer with type "USERAGENT_INPUT_UPDATED' and String as payload_
+
+    #+NAME: doUpdateUseragentsInput
+    #+BEGIN_SRC js :tangle no
+      doUpdateUseragentsInput: (payload) => ({dispatch}) => {
+        dispatch({
+          type: 'USERAGENT_INPUT_UPDATED',
+          payload
+        })
+      }
+
+    #+END_SRC
+
 ** Metadata Resource
    :PROPERTIES:
    :header-args: :tangle ./src/bundles/metadata-resource.js :noweb yes
@@ -1279,7 +1572,6 @@ export default () => (
       selectTestedStats: createSelector(
         'selectFilteredEndpoints',
         (endpoints) => {
-          console.log({endpoints})
           if (endpoints == null) return null
           var endpointsWithOpIds = mapValues(endpoints, (value, key, endpoints) => {
             return {operationId: key, ...value}
@@ -1860,7 +2152,6 @@ export default () => (
     }
   #+END_SRC
 
-
 * Footnotes
 ** Endpoints...
    :PROPERTIES:
@@ -2153,6 +2444,7 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
 
 
 * Tasks
+** TODO OpIds returns an array of a single array.....stop it from doing that.
 ** DONE setup basic dev environment
    CLOSED: [2019-04-08 Mon 09:28]
    this would need to be its own react app, in its own folder that we could point to, so it has its own package.json....otherwise the scripts we run would be for client and not app.
@@ -2205,7 +2497,8 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
    - [X] understand the data that the current endpoint resource needs.
    - [X] Make up data definition for endpoint as it is now
    - [X] change the wording if needed (operationId's instead of endpoints?)
-** TODO Fetch Endpoints from set path instead of locally
+** DONE Fetch Endpoints from set path instead of locally
+   CLOSED: [2019-04-15 Mon 14:52]
    - There are four or five json's that we want to add to our app's state
      - endpoints, tests, test_tags, test_sequences, useragents
    - When site loads, we ping per resource.  endpoints is example now.
@@ -2216,9 +2509,12 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
     - what is best logic for doing this sorta fetch?   is this (not using a backend server, pulling full json from google storage) a bad idea in general?
     - Am i missing something in the fetch request, i.e the default settings not enough?
     - What are these error messages really meaning?
-
-
-** TODO [0%] Display the Sunburst
+** TODO Port over Tests Bundle
+** TODO Port over Test Tags Bundle
+** TODO Port over Useragents Bundle
+** TODO Port over test_sequences Bundle
+** TODO Port over metadata bundle
+** TODO [62%] Display the Sunburst
 *** DONE Setup Sunburst Bundle in app.org
     CLOSED: [2019-04-10 Wed 12:07]
 *** DONE Endpoints Sorted to sunburst following new structure
@@ -2226,7 +2522,8 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
 *** DONE Sunburst Component Added Back in to site, without mouseover yet.
     CLOSED: [2019-04-10 Wed 13:00]
 *** DONE Needs for mouseover added to these tasks
-*** TODO Interior Label added to Sunburst
+*** DONE Interior Label added to Sunburst
+    CLOSED: [2019-04-15 Mon 14:52]
     I think this can be done through its own bundle that just calculates the endpoints inside for each level and category.  We wouldn't be adding that much more content to our bundle, and would make it so no logic is having to happen on the frontend side...it just always displays A,B, C
 *** TODO Sunburst sorted correctly.
 *** TODO Summary added back to sunburst
