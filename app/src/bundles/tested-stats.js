@@ -100,11 +100,6 @@ function gatherTestedStats (endpoints) {
   var labelY = `${percentTested}% hit by tests.`
   var labelZ = `${percentConformanceTested}% hit by conformance tests.`
   return {
-    totalOpIds,
-    testedOpIds,
-    conformanceTestedOpIds,
-    percentTested,
-    percentConformanceTested,
     labelX,
     labelY,
     labelZ
