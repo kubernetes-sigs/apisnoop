@@ -8,6 +8,8 @@ import React from 'react'
      activeStats,
    } = props
 
+   if (activeStats == null) return null
+
    return(
        <div id='summary-container' className=''>
        <p className='f3 mt0 mb3 ttsc'>{ activeStats.labelX }</p>

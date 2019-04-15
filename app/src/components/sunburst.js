@@ -18,6 +18,7 @@ const SunburstChart = (props) => {
     sunburst,
   } = props
 
+  if (sunburst == null) return null
   return (
       <div id='sunburst'>
       <Sunburst
@@ -31,12 +32,12 @@ const SunburstChart = (props) => {
     onValueMouseOut={handleMouseOut}
     onValueClick={handleMouseClick}
       >
-     <LabelSeries
+     {activeStats && <LabelSeries
        data={[{x: 0, y: 60, label: activeStats.labelX, labelAnchorY: 'center', style:labelStyles.X},
               {x: 0, y: 0, label: activeStats.labelY, style: labelStyles.Y},
               {x: 0, y: -20, label: activeStats.labelZ, style: labelStyles.Z}
              ]}
-     />
+     />}
       </Sunburst>
       <button className='ttsc' onClick={handleReset}>Reset</button>
       </div>

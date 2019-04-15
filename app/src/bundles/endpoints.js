@@ -15,7 +15,7 @@ export default {
       return state
     }
   },
-  selectEndpoints: (state) => state.endpoints,
+  selectEndpoints: (state) => state.endpointsResource.data,
   selectFilteredEndpoints: createSelector(
     'selectEndpoints',
     'selectZoom',
@@ -33,6 +33,7 @@ export default {
   selectEndpointsByLevelAndCategoryAndOperatorId: createSelector(
     'selectFilteredEndpoints',
     (endpoints) => {
+      if (endpoints == null) return null
       var endpointsWithOpIds = mapValues(endpoints, (value, key, endpoints) => {
         return {operationId: key, ...value}
       })
