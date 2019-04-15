@@ -10,7 +10,6 @@ export default {
   selectTestedStats: createSelector(
     'selectFilteredEndpoints',
     (endpoints) => {
-      console.log({endpoints})
       if (endpoints == null) return null
       var endpointsWithOpIds = mapValues(endpoints, (value, key, endpoints) => {
         return {operationId: key, ...value}
