@@ -15,16 +15,31 @@ export default {
       return state
     }
   },
-  selectEndpoints: (state) => state.endpointsResource.data,
+  selectEndpoints: (state) => {
+    let endpoints = state.endpointsResource.data
+    let endpointsWithOpId =  mapValues(endpoints, (val, key, obj) => {
+      return {
+        operationId: key,
+        ...val
+      }
+    })
+    return endpointsWithOpId
+  },
   selectFilteredEndpoints: createSelector(
     'selectEndpoints',
+    'selectOpIdsHitByFilteredUseragents',
     'selectZoom',
-    (endpoints, zoom) => {
+    (endpoints, opIds, zoom) => {
       if (endpoints == null) return null
-      if (isEmpty(zoom)) return endpoints
-      if (zoom.depth === 'endpoint' || zoom.depth === 'category') {
+      if (Array.isArray(opIds) && opIds.length > 0) {
+        // if endpoint.opId is in the array of opIds keep it.
+        endpoints = pickBy(endpoints, (val, key) => {
+          return opIds.includes(val.operationId)
+        })
+      }
+      if (!isEmpty(zoom) && (zoom.depth === 'endpoint' || zoom.depth === 'category')) {
         endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
-      } else if (zoom.depth === 'level') {
+      } else if (!isEmpty(zoom) && zoom.depth === 'level') {
         endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level)
       }
       return endpoints
