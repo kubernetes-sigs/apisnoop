@@ -1,10 +1,21 @@
+import { createSelector } from 'redux-bundler'
 const config = {
-  gsBucket: document.querySelector('meta[name="gs-bucket"]').getAttribute('content'),
-  gsUrl: 'http://apisnoop.storage.googleapis.com/'
+  bucket: document.querySelector('meta[name="gs-bucket"]').getAttribute('content'),
+  provider: 'http://storage.googleapis.com/'
 }
 
 export default {
   name: 'config',
   reducer: (state = config) => state,
-  selectGsPath: (state) => state.config.gsUrl.concat(state.config.gsBucket)
+  selectStorage: (state) => state.config,
+  selectGsPath: createSelector(
+    'selectQueryObject',
+    'selectStorage',
+    (query, storage) => {
+      if (query && query.bucket) {
+        return storage.provider.concat(query.bucket)
+      }
+      return storage.provider.concat(storage.bucket)
+    }
+  )
 }

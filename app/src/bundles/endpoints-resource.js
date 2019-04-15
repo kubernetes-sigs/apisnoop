@@ -6,7 +6,7 @@ const bundle = createAsyncResourceBundle({
   name: 'endpointsResource',
   getPromise: ({store}) => {
     var gsPath = store.selectGsPath()
-    return fetchResource(gsPath, 'endpoints.json')
+    return fetchResource(gsPath, '/endpoints.json')
   }
 })
 
