@@ -1,5 +1,4 @@
-import { map,
-         pickBy,
+import { pickBy,
          uniq } from 'lodash'
 import { createSelector } from 'redux-bundler'
 export default {
@@ -20,10 +19,9 @@ export default {
     'selectUseragentsResource',
     'selectUseragentsInput',
     (useragents, input) => {
-      var useragentsNames = map(useragents, 'name')
-      if (input === '') return []
-  
-      var isValid = true
+      if (useragents == null || input === '') return []
+      let useragentsNames = Object.keys(useragents)
+      let isValid = true
       try {
         new RegExp(input)
       } catch (err) {
@@ -32,7 +30,7 @@ export default {
       if (!isValid) return ['not valid regex']
   
       return useragentsNames.filter(ua => {
-        var inputAsRegex = new RegExp(input)
+        let inputAsRegex = new RegExp(input)
         return inputAsRegex.test(ua)
       })
     }
@@ -51,6 +49,12 @@ export default {
       } else {
         return []
       }
+    }
+  ),
+  selectNamesUseragentsFilteredByQuery: createSelector(
+    'selectUseragentsFilteredByQuery',
+    (useragents) => {
+      return Object.keys(useragents)
     }
   ),
   selectOpIdsHitByFilteredUseragents: createSelector(
