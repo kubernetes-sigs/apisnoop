@@ -1,5 +1,5 @@
 import React from 'react'
-import {getNavHelper} from 'internal-nav-helper'
+import navHelper from 'internal-nav-helper'
 import { connect } from 'redux-bundler-react'
 
 import Header from './header'
@@ -10,7 +10,7 @@ export default connect(
  'doUpdateUrl',
   ({doUpdateUrl}) => {
     return (
-        <div onClick={getNavHelper(doUpdateUrl)}>
+        <div onClick={navHelper(doUpdateUrl)}>
         <Header />
         <MainPage />
         <Footer />
