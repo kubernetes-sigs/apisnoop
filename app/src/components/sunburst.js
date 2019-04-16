@@ -62,7 +62,7 @@ const SunburstChart = (props) => {
   }
 
   function handleMouseClick (node, event) {
-    var depth = ['root', 'level', 'category', 'endpoint']
+    var depth = ['root', 'level', 'category', 'operationId']
     var path = getKeyPath(node)
     var query = propertiesWithValue({
       level: path[1],
