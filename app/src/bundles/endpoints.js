@@ -26,19 +26,22 @@ export default {
     return endpointsWithOpId
   },
   selectActiveEndpoint: createSelector(
-    'selectEndpointsResource',
+    'selectEndpoints',
     'selectQueryObject',
     'selectZoom',
     (endpoints, query, zoom) => {
-      if (endpoints == null) return null
-      if (zoom && zoom.depth === 'endpoint') {
-        return endpoints[zoom.operatorID]
+      let activeEndpoint = {}
+      if (endpoints == null) return activeEndpoint
+      if (zoom && zoom.depth === 'operationId') {
+        activeEndpoint = endpoints[zoom.operationId]
+        return activeEndpoint
       }
       if (query.operationId) {
-        return endpoints[query.operationId]
+        activeEndpoint = endpoints[query.operationId]
+        return activeEndpoint
+      } else {
+        return activeEndpoint
       }
-  
-      return {}
     }
   ),
   selectFilteredEndpoints: createSelector(
