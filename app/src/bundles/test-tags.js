@@ -53,9 +53,9 @@ export default {
     'selectQueryObject',
     (testTags, query) => {
       if (testTags == null || !query) return []
-      if (query.testTags && query.testTags.length) {
+      if (query.test_tags && query.test_tags.length) {
         return pickBy(testTags, (val, key) => {
-          var inputAsRegex = new RegExp(query.testTags)
+          var inputAsRegex = new RegExp(query.test_tags)
           return inputAsRegex.test(key)
         })
       } else {
@@ -82,9 +82,15 @@ export default {
       for (opIdIndex = 0; opIdIndex < opIds.length; opIdIndex++) {
         opId = opIds[opIdIndex]
         opIdsHit.push(testTags[opId])
-        console.log({opIds, opId, opIdsHit})
       }
       return uniq(opIdsHit.flat())
     }
-  )
+  ),
+  doUpdateTestTagsInput: (payload) => ({dispatch}) => {
+    dispatch({
+      type: 'TEST_TAGS_INPUT_UPDATED',
+      payload
+    })
+  }
+  
 }
