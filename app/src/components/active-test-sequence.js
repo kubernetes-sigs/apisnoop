@@ -13,15 +13,16 @@ function ActiveTestSequence (props) {
   } = props
 
   if (activeTest== null) return null
+  let testName = Object.keys(activeTest)[0]
 
   return (
       <div id='test-sequence' className="mt4 tests-section">
-      <h2>Sequence For <span className='fw2'>{ activeTest.name }</span></h2>
+      <h2>Sequence For <span className='fw2'>{ testName }</span></h2>
       <button onClick={handleClick}>Back</button>
       <ul className='list'>
-      {map(activeTest.sequence, (step) => {
-        return <SequenceStep rawStep={ step } levelColours={levelColours} categoryColours={categoryColours}  />
-      })}
+       {activeTest[testName].map(step => {
+         return <SequenceStep rawStep={ step } levelColours={levelColours} categoryColours={categoryColours}  />
+       })}
     </ul>
       </div>
   )

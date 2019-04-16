@@ -14,5 +14,13 @@ export default {
         return Object.keys(activeTests)
       }
     }
+  ),
+  selectActiveTest: createSelector(
+    'selectQueryObject',
+    'selectTestSequencesResource',
+    (query, testSequences) => {
+      if (testSequences == null || !query.test) return null
+      return pickBy(testSequences, (val, key) => key === query.test)
+    }
   )
 }
