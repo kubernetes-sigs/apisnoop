@@ -47,14 +47,15 @@ export default {
   selectFilteredEndpoints: createSelector(
     'selectEndpoints',
     'selectOpIdsHitByFilteredUseragents',
+    'selectOpIdsHitByFilteredTestTags',
     'selectZoom',
-    (endpoints, opIds, zoom) => {
+    (endpoints, useragentOpIds, testTagOpIds, zoom) => {
       if (endpoints == null) return null
-      if (Array.isArray(opIds) && opIds.length > 0) {
-        // if endpoint.opId is in the array of opIds keep it.
-        endpoints = pickBy(endpoints, (val, key) => {
-          return opIds.includes(val.operationId)
-        })
+      if (Array.isArray(useragentOpIds) && useragentOpIds.length > 0) {
+        endpoints = filterBy(useragentOpIds, endpoints)
+      }
+      if (Array.isArray(testTagOpIds) && testTagOpIds.length > 0) {
+        endpoints = filterBy(testTagOpIds, endpoints)
       }
       if (!isEmpty(zoom) && (zoom.depth === 'operationId' || zoom.depth === 'category')) {
         endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
@@ -83,4 +84,12 @@ export default {
     }
   )
   ,
+}
+
+// opIds, endpoints => endpoints
+// if endpoint.opId is in the array of opIds keep it.
+function filterBy (filteredOpIds, opIds) {
+ return pickBy(opIds, (val, key) => {
+    return filteredOpIds.includes(val.operationId)
+  })
 }
