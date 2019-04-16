@@ -5,7 +5,7 @@ import { connect } from 'redux-bundler-react'
 import UseragentsSearchContainer from '../components/useragents-search-container'
 import TestTagsSearchContainer from '../components/test-tags-search-container'
 import SunburstAndSummary from '../components/sunburst-and-summary'
-// import ActiveTestsList from '../components/active-tests-list'
+import ActiveTestsList from '../components/active-tests-list'
 // import ActiveTestSequence from '../components/active-test-sequence'
 
 function MainPage () {
@@ -16,7 +16,7 @@ function MainPage () {
       <UseragentsSearchContainer />
       <TestTagsSearchContainer />
       <SunburstAndSummary />
-      {/* <ActiveTestsList /> */}
+      <ActiveTestsList />
       {/* <ActiveTestSequence /> */}
     </main>
   )
