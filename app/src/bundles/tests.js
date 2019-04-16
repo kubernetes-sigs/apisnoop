@@ -3,7 +3,7 @@ import { pickBy } from 'lodash'
 
 export default {
   name: 'tests',
-  selectActiveTests: createSelector(
+  selectActiveTestsIndex: createSelector(
     'selectActiveEndpoint',
     'selectTestsResource',
     (endpoint, tests) => {
