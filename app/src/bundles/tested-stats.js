@@ -47,6 +47,13 @@ export default {
     'selectZoom',
     (stats, query, zoom) => {
       if (stats == null || isEmpty(stats)) return null
+      if (!isEmpty(query) && !query.level && !query.zoomed) {
+        return {
+          labelX: stats.labelX,
+          labelY: stats.labelY,
+          labelZ: stats.labelZ,
+        }
+      }
       if (isEmpty(query) || (!query.level && (zoom && !zoom.operationId))) {
         return {
           labelX: stats.labelX,
