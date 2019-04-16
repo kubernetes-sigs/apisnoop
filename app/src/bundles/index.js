@@ -1,5 +1,6 @@
 import { composeBundles } from 'redux-bundler'
 
+import activeLocation from './active-location'
 import colours from './colours'
 import config from './config'
 import endpoints from './endpoints'
@@ -15,6 +16,7 @@ import useragents from './useragents'
 import zoom from './zoom'
 
 export default composeBundles(
+  activeLocation,
   colours,
   config,
   endpoints,

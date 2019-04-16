@@ -53,7 +53,7 @@ export default {
           return opIds.includes(val.operationId)
         })
       }
-      if (!isEmpty(zoom) && (zoom.depth === 'endpoint' || zoom.depth === 'category')) {
+      if (!isEmpty(zoom) && (zoom.depth === 'operationId' || zoom.depth === 'category')) {
         endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
       } else if (!isEmpty(zoom) && zoom.depth === 'level') {
         endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level)

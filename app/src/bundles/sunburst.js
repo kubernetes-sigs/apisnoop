@@ -9,7 +9,8 @@ export default {
     'selectLevelColours',
     'selectCategoryColours',
     'selectQueryObject',
-    (endpointsByLevelAndCategoryAndOperatorId, levelColours, categoryColours, query) => {
+    'selectZoom',
+    (endpointsByLevelAndCategoryAndOperatorId, levelColours, categoryColours, query, zoom) => {
       var sunburst = {
         name: 'root',
         children: map(endpointsByLevelAndCategoryAndOperatorId, (endpointsByCategoryAndOperatorId, level) => {
@@ -20,7 +21,7 @@ export default {
               return {
                 name: category,
                 color: determineCategoryColours(query, categoryColours, category, level),
-                children: sortedEndpoints(endpointsByOperatorId, categoryColours, query)
+                children: sortedEndpoints(endpointsByOperatorId, categoryColours, query, zoom)
               }
             })
           }
@@ -68,12 +69,18 @@ function determineCategoryColours (query, categoryColours, category, level) {
   }
 }
 
-function determineEndpointColour (endpoint, categoryColours, query) {
+function determineEndpointColour (endpoint, categoryColours, query, zoom) {
   var initialColor = determineInitialEndpointColour(endpoint, categoryColours)
-  if (query.level === undefined) {
+  if (!query.level && !query.zoomed) {
+    return initialColor
+  }
+  if ((!query.level) && (zoom && zoom.depth !== 'operationId')) {
     return initialColor
   }
   if (query.operationId && query.operationId === endpoint.operationId) {
+    return initialColor
+  }
+  if (zoom && zoom.depth === 'operationId' && zoom.operationId === endpoint.operationId) {
     return initialColor
   } else {
     return fadeColour(initialColor, '0.1')
@@ -92,7 +99,7 @@ function determineInitialEndpointColour (endpoint, categoryColours) {
   }
 }
 
-function sortedEndpoints (endpoints, categoryColours, query) {
+function sortedEndpoints (endpoints, categoryColours, query, zoom) {
   var sortedEndpoints = sortBy(endpoints, [
     'kind',
     (endpoint) => endpoint.testHits > 0,
@@ -103,7 +110,7 @@ function sortedEndpoints (endpoints, categoryColours, query) {
       name: endpoint.operationId,
       kind: endpoint.kind,
       size: endpoint.size,
-      color: determineEndpointColour(endpoint, categoryColours, query)
+      color: determineEndpointColour(endpoint, categoryColours, query, zoom)
     }
   })
 }

@@ -335,7 +335,7 @@ export default () => (
         }
 
         function handleMouseClick (node, event) {
-          var depth = ['root', 'level', 'category', 'endpoint']
+          var depth = ['root', 'level', 'category', 'operationId']
           var path = getKeyPath(node)
           var query = propertiesWithValue({
             level: path[1],
@@ -1014,7 +1014,7 @@ export default () => (
                return opIds.includes(val.operationId)
              })
            }
-           if (!isEmpty(zoom) && (zoom.depth === 'endpoint' || zoom.depth === 'category')) {
+           if (!isEmpty(zoom) && (zoom.depth === 'operationId' || zoom.depth === 'category')) {
              endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
            } else if (!isEmpty(zoom) && zoom.depth === 'level') {
              endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level)
@@ -1222,7 +1222,8 @@ export default () => (
       'selectLevelColours',
       'selectCategoryColours',
       'selectQueryObject',
-      (endpointsByLevelAndCategoryAndOperatorId, levelColours, categoryColours, query) => {
+      'selectZoom',
+      (endpointsByLevelAndCategoryAndOperatorId, levelColours, categoryColours, query, zoom) => {
         var sunburst = {
           name: 'root',
           children: map(endpointsByLevelAndCategoryAndOperatorId, (endpointsByCategoryAndOperatorId, level) => {
@@ -1233,7 +1234,7 @@ export default () => (
                 return {
                   name: category,
                   color: determineCategoryColours(query, categoryColours, category, level),
-                  children: sortedEndpoints(endpointsByOperatorId, categoryColours, query)
+                  children: sortedEndpoints(endpointsByOperatorId, categoryColours, query, zoom)
                 }
               })
             }
@@ -1271,63 +1272,69 @@ export default () => (
 *** Helper Functions
     #+NAME: Helper Functions
     #+BEGIN_SRC js :tangle no
-           function determineLevelColours (query, colours, level) {
-             if (query.level === undefined || query.level === level) {
-               return colours[level]
-             } else {
-               return fadeColour(colours[level], '0.1')
-             }
-           }
+      function determineLevelColours (query, colours, level) {
+        if (query.level === undefined || query.level === level) {
+          return colours[level]
+        } else {
+          return fadeColour(colours[level], '0.1')
+        }
+      }
 
-           function determineCategoryColours (query, categoryColours, category, level) {
-             if (query.level === undefined) {
-               return categoryColours[`category.${category}`]
-             } else if (query.level === level && query.category === category){
-               return categoryColours[`category.${category}`]
-             } else {
-               return fadeColour(categoryColours[`category.${category}`], '0.1')
-             }
-           }
+      function determineCategoryColours (query, categoryColours, category, level) {
+        if (query.level === undefined) {
+          return categoryColours[`category.${category}`]
+        } else if (query.level === level && query.category === category){
+          return categoryColours[`category.${category}`]
+        } else {
+          return fadeColour(categoryColours[`category.${category}`], '0.1')
+        }
+      }
 
-           function determineEndpointColour (endpoint, categoryColours, query) {
-             var initialColor = determineInitialEndpointColour(endpoint, categoryColours)
-             if (query.level === undefined) {
-               return initialColor
-             }
-             if (query.operationId && query.operationId === endpoint.operationId) {
-               return initialColor
-             } else {
-               return fadeColour(initialColor, '0.1')
-             }
-           }
+      function determineEndpointColour (endpoint, categoryColours, query, zoom) {
+        var initialColor = determineInitialEndpointColour(endpoint, categoryColours)
+        if (!query.level && !query.zoomed) {
+          return initialColor
+        }
+        if ((!query.level) && (zoom && zoom.depth !== 'operationId')) {
+          return initialColor
+        }
+        if (query.operationId && query.operationId === endpoint.operationId) {
+          return initialColor
+        }
+        if (zoom && zoom.depth === 'operationId' && zoom.operationId === endpoint.operationId) {
+          return initialColor
+        } else {
+          return fadeColour(initialColor, '0.1')
+        }
+      }
 
-           function determineInitialEndpointColour (endpoint, categoryColours) {
-             if (endpoint.testHits > 0 && endpoint.conformanceHits > 0)  {
-               return categoryColours[`category.${endpoint.category}`]
-             } else  if( endpoint.testHits > 0 && endpoint.conformanceHits === 0) {
-               var color = categoryColours[`category.${endpoint.category}`]
-               var fadedColor = fadeColour(color, '0.2')
-               return fadedColor
-             } else {
-               return 'rgba(244, 244, 244, 1)'
-             }
-           }
+      function determineInitialEndpointColour (endpoint, categoryColours) {
+        if (endpoint.testHits > 0 && endpoint.conformanceHits > 0)  {
+          return categoryColours[`category.${endpoint.category}`]
+        } else  if( endpoint.testHits > 0 && endpoint.conformanceHits === 0) {
+          var color = categoryColours[`category.${endpoint.category}`]
+          var fadedColor = fadeColour(color, '0.2')
+          return fadedColor
+        } else {
+          return 'rgba(244, 244, 244, 1)'
+        }
+      }
 
-           function sortedEndpoints (endpoints, categoryColours, query) {
-             var sortedEndpoints = sortBy(endpoints, [
-               'kind',
-               (endpoint) => endpoint.testHits > 0,
-               (endpoint) => endpoint.conformanceHits > 0
-             ])
-             return sortedEndpoints.map(endpoint => {
-               return {
-                 name: endpoint.operationId,
-                 kind: endpoint.kind,
-                 size: endpoint.size,
-                 color: determineEndpointColour(endpoint, categoryColours, query)
-               }
-             })
-           }
+      function sortedEndpoints (endpoints, categoryColours, query, zoom) {
+        var sortedEndpoints = sortBy(endpoints, [
+          'kind',
+          (endpoint) => endpoint.testHits > 0,
+          (endpoint) => endpoint.conformanceHits > 0
+        ])
+        return sortedEndpoints.map(endpoint => {
+          return {
+            name: endpoint.operationId,
+            kind: endpoint.kind,
+            size: endpoint.size,
+            color: determineEndpointColour(endpoint, categoryColours, query, zoom)
+          }
+        })
+      }
 
     #+END_SRC
 ** Tests Resource
@@ -2348,6 +2355,19 @@ export default () => (
       }
     }
   #+END_SRC
+** ActiveLocation(<<<(◊ActiveLocation>>>)
+   An Object Containing the level, category, and opId for wherever the mouse and sunburst is.
+   If we aren't hovered on anything, then the lcoation is to whatever location we are zoomed into.
+   Otherwise it's where our mouse be.
+   #+NAME: ActiveLocation Definition Example
+   #+BEGIN_SRC json
+     {
+       level: '',
+       category: '',
+       operationId: ''
+     }
+   #+END_SRC
+
 
 * Footnotes
 ** Endpoints...
@@ -2637,9 +2657,54 @@ And when we are filteirng we'd filter all the way down to the method, as the con
 - then, remove any methods within the endpoint that are not within the array of endointsHitByUseragent[endpoint]
 
 Is there a simpler way for this?  it's a filter, then a prune essentially....If that method worked, we could use the same method for tests too and any other section.
-
-
 * Tasks
+** TODO Port over Tests Bundle
+** TODO Port over Test Tags Bundle
+** TODO Port over test_sequences Bundle
+** IN-PROGRESS Make Sure Summary has everything it needs
+   Our Summary container should hold the currect active location and the stats for that location.
+   The current location could be an endpoint or it could be a grouping of level or category.
+   If it's an endpoint, we could also include it's group, version, and kind.
+   The active location could either be set by query or zoom.  I feel like if there is no query, we should set it by zoom.  This would allow us to show info even when you're not hovered over the sunburst, but be able to see feedback for when you highlight a different section.  There might be a better design way to handle this in the long run...so make the logic super clear.
+
+   I feel we should then just have an "activeLocation" bundle that checks for query and zoom and set's the level, category, opId appropriately.
+
+   Our Summary could then look something like this:
+   #+NAME: Summary Layout
+   #+BEGIN_SRC js
+     {activeLocation.level} | {activeLocation.category} | {activeLocation.opId}
+     (if focused onto endpoint){activeEndpoint.group} {activeEndpoint.kind}
+     {tested Stats}
+     (if focused on endpoint)
+     {covered by these tests...}
+     {coming from these test tags...}
+   #+END_SRC
+** BLOCKED Port over metadata bundle
+   Need this to be better filled out, to match the metadata i already have.
+
+** TODO [62%] Display the Sunburst
+*** DONE Setup Sunburst Bundle in app.org
+    CLOSED: [2019-04-10 Wed 12:07]
+*** DONE Endpoints Sorted to sunburst following new structure
+    CLOSED: [2019-04-10 Wed 12:07]
+*** DONE Sunburst Component Added Back in to site, without mouseover yet.
+    CLOSED: [2019-04-10 Wed 13:00]
+*** DONE Needs for mouseover added to these tasks
+*** DONE Interior Label added to Sunburst
+    CLOSED: [2019-04-15 Mon 14:52]
+    I think this can be done through its own bundle that just calculates the endpoints inside for each level and category.  We wouldn't be adding that much more content to our bundle, and would make it so no logic is having to happen on the frontend side...it just always displays A,B, C
+*** TODO Sunburst sorted correctly.
+*** TODO Summary added back to sunburst
+*** TODO Header added back to sunburst
+** TODO Create tests for existing bundles, using our test data
+** TODO investigate setting the color in diff way to bring up performance
+   it's being calculated again everytime the query updates.  And we are having to calculate it for the entire tree every time.
+   Perhaps we sest the color first on general "colored or not", then in sunburst we determine "faded or not"?  This would remove 1 or 2 if statements from beiong calcualted each time...i think?
+** IDEA Refactor TestedStats for Recursion and proper FP
+
+* Finished Tasks
+** DONE Port over Useragents Bundle
+   CLOSED: [2019-04-16 Tue 11:27]
 ** DONE OpIds returns an array of a single array.....stop it from doing that.
    CLOSED: [2019-04-16 Tue 11:26]
    it was due to a filter function we applied that returned an array when we were expecting an object.  so it vreated an array inside an array.
@@ -2707,39 +2772,12 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
     - what is best logic for doing this sorta fetch?   is this (not using a backend server, pulling full json from google storage) a bad idea in general?
     - Am i missing something in the fetch request, i.e the default settings not enough?
     - What are these error messages really meaning?
-** TODO Port over Tests Bundle
-** TODO Port over Test Tags Bundle
-** DONE Port over Useragents Bundle
-   CLOSED: [2019-04-16 Tue 11:27]
-** TODO Port over test_sequences Bundle
-** BLOCKED Port over metadata bundle
-   Need this to be better filled out, to match the metadata i already have.
-
-** TODO [62%] Display the Sunburst
-*** DONE Setup Sunburst Bundle in app.org
-    CLOSED: [2019-04-10 Wed 12:07]
-*** DONE Endpoints Sorted to sunburst following new structure
-    CLOSED: [2019-04-10 Wed 12:07]
-*** DONE Sunburst Component Added Back in to site, without mouseover yet.
-    CLOSED: [2019-04-10 Wed 13:00]
-*** DONE Needs for mouseover added to these tasks
-*** DONE Interior Label added to Sunburst
-    CLOSED: [2019-04-15 Mon 14:52]
-    I think this can be done through its own bundle that just calculates the endpoints inside for each level and category.  We wouldn't be adding that much more content to our bundle, and would make it so no logic is having to happen on the frontend side...it just always displays A,B, C
-*** TODO Sunburst sorted correctly.
-*** TODO Summary added back to sunburst
-*** TODO Header added back to sunburst
-** TODO Create tests for existing bundles, using our test data
 ** DONE Bring up issue of grouping by kind
    CLOSED: [2019-04-15 Mon 12:51]
 the "" as a kind within each category, and sometimes their only kind
 brought it up, but not a solution yet besides to only keep our three rings.
 ** DONE re-tangle backend.org to bring back correct index.js
    CLOSED: [2019-04-15 Mon 12:52]
-** TODO investigate setting the color in diff way to bring up performance
-   it's being calculated again everytime the query updates.  And we are having to calculate it for the entire tree every time.
-   Perhaps we sest the color first on general "colored or not", then in sunburst we determine "faded or not"?  This would remove 1 or 2 if statements from beiong calcualted each time...i think?
-** IDEA Refactor TestedStats for Recursion and proper FP
 ** DONE Move "endpointsWithOpId" to its own selector so we aren't calculating it twice
    CLOSED: [2019-04-16 Tue 11:28]
    This is now our default Endpoints...since we want to have the opId  all the time.
