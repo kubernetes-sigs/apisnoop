@@ -519,7 +519,107 @@ export default () => (
        UseragentSearchResults
      )
    #+END_SRC
-** Useragents Active Filter
+** Search Container
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/search-container.js
+   :END:
+
+    A container, that sits below our releases and has a search bar displayed.  When you type into it, it shows the result of yoru regex filter below, by displaying the useragents that fit that filter
+
+   #+NAME: Useragent Search Container
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+     import SearchBar from './search-bar'
+     import SearchResults from './search-results'
+     import ActiveFilter from './active-filter'
+
+
+     function SearchContainer (props) {
+       return (
+         <div id='useragent-search'>
+           <UseragentSearchBar />
+           <UseragentSearchResults />
+           <UseragentsActiveFilter />
+         </div>
+       )
+     }
+     export default connect(
+       UseragentSearchContainer
+     )
+   #+END_SRC
+** Search Bar
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/useragent-search-bar.js
+   :END:
+   #+BEGIN_SRC js
+     import React from 'react'
+     import {connect} from 'redux-bundler-react'
+
+     function UseragentSearchBar (props) {
+       const {
+         doUpdateUseragentsInput,
+         doUpdateQuery,
+         useragentsInput
+        } = props
+
+       return (
+           <form onSubmit={handleSubmit}>
+           <input name='ua-filter' type='text' value={useragentsInput} onChange={handleInput}/>
+           <input type='submit' value='submit' />
+           </form>
+           )
+
+       function handleInput (e) {
+         doUpdateUseragentsInput(e.target.value)
+       }
+       function handleSubmit (e) {
+         e.preventDefault()
+         doUpdateQuery({
+           useragents: e.target[0].value
+         })
+         doUpdateUseragentsInput('')
+
+       }
+     }
+
+     export default connect(
+       'doUpdateUseragentsInput',
+       'doUpdateQuery',
+       'selectUseragentsInput',
+       UseragentSearchBar
+     )
+
+
+
+   #+END_SRC
+** Search Results
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/useragent-search-results.js
+   :END:
+   #+BEGIN_SRC js
+     import React from 'react'
+     import {connect} from 'redux-bundler-react'
+
+     function UseragentSearchResults (props) {
+       const useragents = props.useragentsFilteredByInput
+       if(useragents == null || useragents.length <= 0) return null
+       return (
+         <div id='useragent-search-results' className='mt2 mb0'>
+           <strong className='f5'>Useragents covered by this regex</strong>
+           <ul className="list ph0">
+             {useragents.map(useragent => <li key={useragent} className="f6 dib mr2 pa2 mid-gray">{ useragent }</li>)}
+           </ul>
+         </div>
+       )
+     }
+
+     export default connect(
+       'selectUseragentsFilteredByInput',
+       UseragentSearchResults
+     )
+   #+END_SRC
+** Active Filter
    :PROPERTIES:
    :header-args: :tangle ./src/components/useragents-active-filter.js
    :END:
@@ -731,7 +831,7 @@ export default () => (
             activeLocation.operationId = query.operationId || ''
             return activeLocation
           }
-          if (!query.level && zoom.level) {
+          if (!query.level && (zoom && zoom.level)) {
             activeLocation.level = zoom.level
             activeLocation.category = zoom.category || ''
             activeLocation.operationId = zoom.operationId || ''
@@ -1391,6 +1491,37 @@ export default () => (
       }
 
     #+END_SRC
+** Metadata Resource
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/metadata-resource.js :noweb yes
+   :END:
+
+   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
+
+   #+NAME: Metadata Resource
+   #+BEGIN_SRC js
+     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
+     import { fetchResource } from '../lib/utils'
+
+     const bundle = createAsyncResourceBundle({
+       name: 'metadataResource',
+       getPromise: ({store}) => {
+         var gsPath = store.selectGsPath()
+         return fetchResource(gsPath, '/metadata.json')
+       }
+     })
+
+     bundle.reactMetadataResourceFetch = createSelector(
+       'selectMetadataResourceShouldUpdate',
+       (shouldUpdate) => {
+         if (!shouldUpdate) return
+         return { actionCreator: 'doFetchMetadataResource' }
+       }
+     )
+
+     export default bundle
+   #+END_SRC
 ** Tests Resource
    :PROPERTIES:
    :header-args: :tangle ./src/bundles/tests-resource.js :noweb yes
@@ -1417,6 +1548,85 @@ export default () => (
        (shouldUpdate) => {
          if (!shouldUpdate) return
          return { actionCreator: 'doFetchTestsResource' }
+       }
+     )
+
+     export default bundle
+   #+END_SRC
+** Tests
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/tests.js :noweb yes
+   :END:
+***  Imports and Layout
+   #+NAME: Tests Bundle
+   #+BEGIN_SRC js
+     import { createSelector } from 'redux-bundler'
+     import { pickBy } from 'lodash'
+
+     export default {
+       name: 'tests',
+       <<selectActiveTests>>
+     }
+   #+END_SRC
+*** selectActiveTests
+    *◊Endpoint ◊Tests -> ◊ActiveTests*
+    /Return all the tests whose array of endpoints contain the given endpoint/
+
+    #+NAME: selectActiveTests
+    #+BEGIN_SRC js :tangle no
+      selectActiveTests: createSelector(
+        'selectActiveEndpoint',
+        'selectTestsResource',
+        (endpoint, tests) => {
+          let activeTests = []
+          if (endpoint == null || tests== null) return activeTests
+          else {
+            activeTests = pickBy(tests, (test) => test.includes(endpoint.operationId))
+            return Object.keys(activeTests)
+          }
+        }
+      )
+     #+END_SRC
+*** selectActiveTest
+    *◊Query, ◊ActiveTests -> ◊ActiveTests
+    /Return the test, from activeTests, that matches the query./
+
+     #+BEGIN_SRC js :tangle no
+      selectActiveTest: createSelector(
+        'selectQueryObject',
+        'selectTestsResource',
+        (query, tests) => {
+          if (tests == null) return null
+          return tests.find(test => test._id === query.test)
+        }
+      )
+    #+END_SRC
+** TestSequences Resource
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/test-sequences-resource.js :noweb yes
+   :END:
+
+   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
+
+   #+NAME: TestSequences Resource
+   #+BEGIN_SRC js
+     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
+     import { fetchResource } from '../lib/utils'
+
+     const bundle = createAsyncResourceBundle({
+       name: 'testSequencesResource',
+       getPromise: ({store}) => {
+         var gsPath = store.selectGsPath()
+         return fetchResource(gsPath, '/test_sequences.json')
+       }
+     })
+
+     bundle.reactTestSequencesResourceFetch = createSelector(
+       'selectTestSequencesResourceShouldUpdate',
+       (shouldUpdate) => {
+         if (!shouldUpdate) return
+         return { actionCreator: 'doFetchTestSequencesResource' }
        }
      )
 
@@ -1453,37 +1663,277 @@ export default () => (
 
      export default bundle
    #+END_SRC
-** TestSequences Resource
+** Test Tags
    :PROPERTIES:
-   :header-args: :tangle ./src/bundles/test-sequences-resource.js :noweb yes
+   :header-args: :tangle ./src/bundles/test-tags.js :noweb yes
    :END:
-
-   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
-
-   #+NAME: TestSequences Resource
+***  Imports and Layout
+   #+NAME: Tests Bundle
    #+BEGIN_SRC js
-     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+     import { createSelector } from 'redux-bundler'
+     import { pickBy, uniq } from 'lodash'
 
-     import { fetchResource } from '../lib/utils'
+     export default {
+       name: 'testTags',
+       <<TestTags Reducer>>,
+       <<selectActiveTestTags>>,
+       <<selectTestTagsInput>>,
+       <<selectTestTagsFilteredByInput>>,
+       <<selectTestTagsFilteredByQuery>>,
+       <<selectNamesTestTagsFilteredByQuery>>,
+       <<selectOpIdsHitByFilteredTestTags>>
+     }
+   #+END_SRC
+***  TestTags Reducer
 
-     const bundle = createAsyncResourceBundle({
-       name: 'testSequencesResource',
-       getPromise: ({store}) => {
-         var gsPath = store.selectGsPath()
-         return fetchResource(gsPath, '/test_sequences.json')
-       }
-     })
+    **Action -> TestTagstate**
+    Received action and its payload and returns the new TestTagstate(containing changes based on payload).
+    If no action is given, returns the initial state.
 
-     bundle.reactTestSequencesResourceFetch = createSelector(
-       'selectTestSequencesResourceShouldUpdate',
-       (shouldUpdate) => {
-         if (!shouldUpdate) return
-         return { actionCreator: 'doFetchTestSequencesResource' }
+    #+NAME: TestTags Reducer Test
+    #+BEGIN_SRC js :tangle no
+      it('should have initial state', () => {
+        expect(state.testTags).toEqual(initialState)
+      })
+      it('should handle USERAGENT_INPUT_UPDATED with alphanumeric', () => {
+        const payload = 'ksjdj'
+        const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
+        const result = {filterInput: payload}
+        Reducer(testTags.getReducer()).expect(action).toReturnState(result)
+      })
+
+      it('should handle USERAGENT_INPUT_UPDATED with full regex', () => {
+        const payload = '(./a(sjd)*'
+        const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
+        const result = {filterInput: payload}
+        Reducer(testTags.getReducer()).expect(action).toReturnState(result)
+      })
+    #+END_SRC
+
+    #+NAME: TestTags Reducer
+    #+BEGIN_SRC js :tangle no
+      getReducer: () => {
+        const initialState = {
+          filterInput: ''
+        }
+        return (state=initialState, {type, payload}) => {
+          if (type  === 'TEST_TAGS_INPUT_UPDATED') {
+            return {...state, filterInput: payload}
+          }
+          return state
+        }
+      }
+    #+END_SRC
+
+*** selectActiveTestTags
+    *◊Endpoint ◊TestTags -> ◊ActiveTestTags*
+    /Return all the tests whose array of endpoints contain the given endpoint/
+
+    #+NAME: selectActiveTestTags
+    #+BEGIN_SRC js :tangle no
+      selectActiveTestTags: createSelector(
+        'selectActiveEndpoint',
+        'selectTestTagsResource',
+        (endpoint, testTags) => {
+          let activeTestTags = []
+          if (endpoint == null || testTags== null) return activeTestTags
+          else {
+            activeTestTags = pickBy(testTags, (testTag) => testTag.includes(endpoint.operationId))
+            return uniq(Object.keys(activeTestTags))
+          }
+        }
+      )
+     #+END_SRC
+*** selectTestTagsInput
+    **TestTagState -> String**
+    _selects the input state from useragent_
+
+    #+NAME: selectUseragentInput Test
+    #+BEGIN_SRC js :tangle no
+      it('should return a string for selectUseragentInput', () => {
+        const stateA = {testTags: {filterInput: ''}}
+        const stateB = {testTags: {filterInput: 'r^eg&x'}}
+        var selectInput = testTags.selectTestTagsInput
+
+        expect(selectInput(stateA)).toEqual(stateA.testTags.filterInput)
+        expect(selectInput(stateB)).toEqual(stateB.testTags.filterInput)
+      })
+
+    #+END_SRC
+
+    #+NAME: selectTestTagsInput
+    #+BEGIN_SRC js :tangle no
+      selectTestTagsInput: (state) => state.testTags.filterInput
+    #+END_SRC
+
+*** selectTestTagsFilteredByInput
+    **Regex -> ◊TestTagsNames**
+    _Given a regex filter, return an array of names that match this regex_
+    #+NAME: testTagsNamesSample
+    #+BEGIN_SRC js :tangle no
+      var testTagsNamesSample  = [
+        "kubectl/v1.13.3",
+        "kube-apiserver/v1.15.0",
+        "kube-proxy/v1.13.5",
+        "node-problem-detector/v0.5.0-49-gfb81368",
+        "nfs-provisioner/v0.0.0"
+      ]
+    #+END_SRC
+
+    #+NAME: selectTestTagsFilteredByInput Test
+    #+BEGIN_SRC js :tangle no
+      it('should return all useragent names if no filter is set', () => {
+          <<testTagsNamesSample>>
+          var filter = ''
+          var filterB = 'kube'
+          var filteredSample = ["kubectl/v1.13.3", "kube-apiserver/v1.15.0", "kube-proxy/v1.13.5"]
+
+          var selectTestTags = testTags.selectTestTagsFilteredByInput.resultFunc
+
+           expect(selectTestTags(testTagsSample, filter)).toEqual(testTagsNamesSample)
+           expect(selectTestTags(testTagsSample, filterB)).toEqual(filteredSample)
+
+      })
+
+    #+END_SRC
+
+    #+NAME: selectTestTagsFilteredByInput
+    #+BEGIN_SRC js :tangle no
+      selectTestTagsFilteredByInput: createSelector(
+        'selectTestTagsResource',
+        'selectTestTagsInput',
+        (testTags, input) => {
+          if (testTags == null || input === '') return []
+          let testTagsNames = Object.keys(testTags)
+          let isValid = true
+          try {
+            new RegExp(input)
+          } catch (err) {
+            isValid = false
+          }
+          if (!isValid) return ['not valid regex']
+
+          return testTagsNames.filter(ua => {
+            let inputAsRegex = new RegExp(input)
+            return inputAsRegex.test(ua)
+          })
+        }
+      )
+
+    #+END_SRC
+
+*** selectTestTagsFilteredByQuery
+    **◊TestTags ◊Query -> ◊TestTags**
+    _Return a filtered TestTags based on query.useragent_
+
+    #+BEGIN_SRC shell :dir ./src/test_resources :results output :tangle no
+      cat testTags.json | jq 'map(.name)'
+    #+END_SRC
+
+
+    #+NAME: selectTestTagsFilteredByQuery Test
+    #+BEGIN_SRC js :tangle no
+      it('should return testTags whose name matches query', () => {
+        var noFilter = {useragent: ''}
+        var expectedResult = [
+          "kubectl/v1.13.3",
+          "kube-apiserver/v1.15.0",
+          "kube-proxy/v1.13.5",
+          "node-problem-detector/v0.5.0-49-gfb81368",
+          "nfs-provisioner/v0.0.0"
+        ]
+
+        var filter = {useragent: 'kube'}
+        var expectedFilteredResult = [
+          "kubectl/v1.13.3",
+          "kube-apiserver/v1.15.0",
+          "kube-proxy/v1.13.5"
+        ]
+
+        var selectQueryFilter = testTags.selectTestTagsFilteredByQuery.resultFunc
+        var unFilteredResult = map(selectQueryFilter(testTagsSample, noFilter), 'name')
+        var filteredResult = map(selectQueryFilter(testTagsSample, filter), 'name')
+        expect(filteredResult).toEqual(expectedFilteredResult)
+        expect(unFilteredResult).toEqual(expectedResult)
+      })
+    #+END_SRC
+
+     #+NAME: selectTestTagsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectTestTagsFilteredByQuery: createSelector(
+         'selectTestTagsResource',
+         'selectQueryObject',
+         (testTags, query) => {
+           if (testTags == null || !query) return []
+           if (query.testTags && query.testTags.length) {
+             return pickBy(testTags, (val, key) => {
+               var inputAsRegex = new RegExp(query.testTags)
+               return inputAsRegex.test(key)
+             })
+           } else {
+             return []
+           }
+         }
+       )
+     #+END_SRC
+
+*** selectNamesTestTagsFilteredByQuery
+    **◊TestTags -> ◊UseragentNames**
+    //Returns an array of Keys from our TestTags Object.  In other words: their names//
+
+     #+NAME: selectNamesTestTagsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectNamesTestTagsFilteredByQuery: createSelector(
+         'selectTestTagsFilteredByQuery',
+         (testTags) => {
+           return Object.keys(testTags)
+         }
+       )
+     #+END_SRC
+
+*** selectOpIdsHitByFilteredTestTags
+    **◊TestTags -> ◊Endpoints**
+    _Given a set of testTags that contain endpoints, return an array of just the unique endpoints._
+    This won't be the ultimate filter.  Rather, we wanna setup a nice selection to use in our endpoint bundle as a filter.  So the key here is to make an array of endpoints that is useful for future filtering.
+
+   #+NAME: selectOpIdsHitByFilteredTestTags
+   #+BEGIN_SRC js :tangle no
+     selectOpIdsHitByFilteredTestTags: createSelector(
+       'selectTestTagsFilteredByQuery',
+       (testTags) => {
+         let opIdsHit = []
+         let opIds = Object.keys(testTags)
+         let opId, opIdIndex;
+
+         if (testTags == null)  {
+           return opIdsHit
+         }
+         for (opIdIndex = 0; opIdIndex < opIds.length; opIdIndex++) {
+           opId = opIds[opIdIndex]
+           opIdsHit.push(testTags[opId])
+         }
+         return uniq(opIdsHit.flat())
        }
      )
-
-     export default bundle
    #+END_SRC
+
+  NOTE this kinda works now, but I'm realizing that we don't need bucket,job,release...since we are only pulling ua's from a single release at the page load.  What we really need is to match on level, category, name, method...but the level and category are not a part of this.  Is it possible for an endoint to exist in beta/stable or in multiple categories?  If so, this would be inaccurate.
+
+*** doUpdateUseragentInput
+    **String -> Action**
+    _Returns an action for our reducer with type "USERAGENT_INPUT_UPDATED' and String as payload_
+
+    #+NAME: doUpdateTestTagsInput
+    #+BEGIN_SRC js :tangle no
+      doUpdateTestTagsInput: (payload) => ({dispatch}) => {
+        dispatch({
+          type: 'USERAGENT_INPUT_UPDATED',
+          payload
+        })
+      }
+
+    #+END_SRC
+
 ** Useragents Resource
    :PROPERTIES:
    :header-args: :tangle ./src/bundles/useragents-resource.js :noweb yes
@@ -1801,119 +2251,6 @@ export default () => (
 
     #+END_SRC
 
-** Metadata Resource
-   :PROPERTIES:
-   :header-args: :tangle ./src/bundles/metadata-resource.js :noweb yes
-   :END:
-
-   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
-
-   #+NAME: Metadata Resource
-   #+BEGIN_SRC js
-     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
-
-     import { fetchResource } from '../lib/utils'
-
-     const bundle = createAsyncResourceBundle({
-       name: 'metadataResource',
-       getPromise: ({store}) => {
-         var gsPath = store.selectGsPath()
-         return fetchResource(gsPath, '/metadata.json')
-       }
-     })
-
-     bundle.reactMetadataResourceFetch = createSelector(
-       'selectMetadataResourceShouldUpdate',
-       (shouldUpdate) => {
-         if (!shouldUpdate) return
-         return { actionCreator: 'doFetchMetadataResource' }
-       }
-     )
-
-     export default bundle
-   #+END_SRC
-** Tests
-   :PROPERTIES:
-   :header-args: :tangle ./src/bundles/tests.js :noweb yes
-   :END:
-***  Imports and Layout
-   #+NAME: Tests Bundle
-   #+BEGIN_SRC js
-     import { createSelector } from 'redux-bundler'
-     import { pickBy } from 'lodash'
-
-     export default {
-       name: 'tests',
-       <<selectActiveTests>>
-     }
-   #+END_SRC
-*** selectActiveTests
-    *◊Endpoint ◊Tests -> ◊ActiveTests*
-    /Return all the tests whose array of endpoints contain the given endpoint/
-
-    #+NAME: selectActiveTests
-    #+BEGIN_SRC js :tangle no
-      selectActiveTests: createSelector(
-        'selectActiveEndpoint',
-        'selectTestsResource',
-        (endpoint, tests) => {
-          let activeTests = []
-          if (endpoint == null || tests== null) return activeTests
-          else {
-            activeTests = pickBy(tests, (test) => test.includes(endpoint.operationId))
-            return Object.keys(activeTests)
-          }
-        }
-      )
-     #+END_SRC
-*** selectActiveTest
-    *◊Query, ◊ActiveTests -> ◊ActiveTests
-    /Return the test, from activeTests, that matches the query./
-
-     #+BEGIN_SRC js :tangle no
-      selectActiveTest: createSelector(
-        'selectQueryObject',
-        'selectTestsResource',
-        (query, tests) => {
-          if (tests == null) return null
-          return tests.find(test => test._id === query.test)
-        }
-      )
-    #+END_SRC
-** Test Tags
-   :PROPERTIES:
-   :header-args: :tangle ./src/bundles/test-tags.js :noweb yes
-   :END:
-***  Imports and Layout
-   #+NAME: Tests Bundle
-   #+BEGIN_SRC js
-     import { createSelector } from 'redux-bundler'
-     import { pickBy, uniq } from 'lodash'
-
-     export default {
-       name: 'testTags',
-       <<selectActiveTestTags>>
-     }
-   #+END_SRC
-*** selectActiveTestTags
-    *◊Endpoint ◊TestTags -> ◊ActiveTestTags*
-    /Return all the tests whose array of endpoints contain the given endpoint/
-
-    #+NAME: selectActiveTestTags
-    #+BEGIN_SRC js :tangle no
-      selectActiveTestTags: createSelector(
-        'selectActiveEndpoint',
-        'selectTestTagsResource',
-        (endpoint, testTags) => {
-          let activeTestTags = []
-          if (endpoint == null || testTags== null) return activeTestTags
-          else {
-            activeTestTags = pickBy(testTags, (testTag) => testTag.includes(endpoint.operationId))
-            return uniq(Object.keys(activeTestTags))
-          }
-        }
-      )
-     #+END_SRC
 ** TestedStats
   :PROPERTIES:
   :header-args: :tangle ./src/bundles/tested-stats.js :noweb yes
@@ -1992,7 +2329,7 @@ export default () => (
         'selectZoom',
         (stats, query, zoom) => {
           if (stats == null || isEmpty(stats)) return null
-          if (isEmpty(query) || (!query.level && !zoom.operationId)) {
+          if (isEmpty(query) || (!query.level && (zoom && !zoom.operationId))) {
             return {
               labelX: stats.labelX,
               labelY: stats.labelY,
