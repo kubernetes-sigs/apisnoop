@@ -44,9 +44,10 @@ export default {
   selectActiveStats: createSelector(
     'selectTestedStats',
     'selectQueryObject',
-    (stats, query) => {
-      if (stats == null) return null
-      if (isEmpty(query) || !query.level) {
+    'selectZoom',
+    (stats, query, zoom) => {
+      if (stats == null || isEmpty(stats)) return null
+      if (isEmpty(query) || (!query.level && !zoom.operationId)) {
         return {
           labelX: stats.labelX,
           labelY: stats.labelY,
@@ -58,6 +59,14 @@ export default {
           labelX: stats[query.level][query.category][query.operationId].labelX,
           labelY: stats[query.level][query.category][query.operationId].labelY,
           labelZ: stats[query.level][query.category][query.operationId].labelZ
+        }
+      }
+      if (zoom && zoom.depth === 'operationId') {
+        console.log({stats, zoom})
+        return {
+          labelX: stats[zoom.level][zoom.category][zoom.operationId].labelX,
+          labelY: stats[zoom.level][zoom.category][zoom.operationId].labelY,
+          labelZ: stats[zoom.level][zoom.category][zoom.operationId].labelZ
         }
       }
       if (query.category && !query.operationId) {
@@ -91,6 +100,7 @@ function calculateNumber (endpoints, key) {
 }
 
 function gatherTestedStats (endpoints) {
+  if (isEmpty(endpoints)) return {}
   var totalOpIds = Object.keys(endpoints).length
   var testedOpIds = calculateNumber(endpoints, 'testHits')
   var conformanceTestedOpIds = calculateNumber(endpoints, 'conformanceHits')
