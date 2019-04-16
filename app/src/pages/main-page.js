@@ -11,7 +11,6 @@ import TestsContainer from '../components/tests-container'
 function MainPage () {
   return (
     <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
-      <h1>HELLO YOU ARE DOING GOODLY</h1>
       {/*<FilterContainer />*/}
       <UseragentsSearchContainer />
       <TestTagsSearchContainer />
