@@ -21,7 +21,7 @@ export default {
         activeLocation.operationId = query.operationId || ''
         return activeLocation
       }
-      if (!query.level && zoom.level) {
+      if (!query.level && (zoom && zoom.level)) {
         activeLocation.level = zoom.level
         activeLocation.category = zoom.category || ''
         activeLocation.operationId = zoom.operationId || ''
