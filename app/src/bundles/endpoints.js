@@ -5,16 +5,8 @@ import {
   mapValues,
   pickBy } from 'lodash'
 
-import endpoints from '../data/endpoints.json'
-
 export default {
   name: 'endpoints',
-  getReducer: () => {
-    const initialState = endpoints
-    return (state=initialState, action) => {
-      return state
-    }
-  },
   selectEndpoints: (state) => {
     let endpoints = state.endpointsResource.data
     let endpointsWithOpId =  mapValues(endpoints, (val, key, obj) => {

@@ -41,6 +41,15 @@ describe('Useragents Reducer', () => {
 
 describe('Useragents Selectors', () => {
   it('should return a string for selectUseragentInput', () => {
+    const stateA = {testTags: {filterInput: ''}}
+    const stateB = {testTags: {filterInput: 'r^eg&x'}}
+    var selectInput = testTags.selectTestTagsInput
+  
+    expect(selectInput(stateA)).toEqual(stateA.testTags.filterInput)
+    expect(selectInput(stateB)).toEqual(stateB.testTags.filterInput)
+  })
+  
+  it('should return a string for selectUseragentInput', () => {
     const stateA = {useragents: {filterInput: ''}}
     const stateB = {useragents: {filterInput: 'r^eg&x'}}
     var selectInput = useragents.selectUseragentsInput
