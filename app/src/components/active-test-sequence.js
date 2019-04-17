@@ -1,6 +1,6 @@
 import React from 'react'
 import { connect } from 'redux-bundler-react'
-import { map, omit } from 'lodash'
+import { omit } from 'lodash'
 import dayjs from 'dayjs'
 
 function ActiveTestSequence (props) {
