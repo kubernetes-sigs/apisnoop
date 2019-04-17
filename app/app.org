@@ -1,0 +1,3555 @@
+#+TITLE: App.org
+#+TODO: IDEA(i) TODO(t) NEXT(n) IN-PROGRESS(p) BLOCKED(b) | DONE(d) DONE-AND-SHARED(!)
+#+PROPERTY: header-args :dir (file-name-directory buffer-file-name)
+#+PROPERTY: header-args:js :results silent :noweb yes :mkdirp yes
+#+PROPERTY: header-args:json :mkdirp yes
+
+* Understanding our Client
+  This is a web-based visual interface to the data curation and manipulation we are doing as the APISnoop project.  The purpose is to display previously unseen connections between the testing coverage of kubernetes, and the people and communities for which this testing coverage matters.
+* Architecture
+  The frontend is written with React and Redux (via redux-bundler).  The visualization for the sunburst is done with react-vis, a d3 library for react.
+** React
+  React allows for a dynamic site built out of a servies of discrete components.  So our site with a header, a list of releases, a sunburst, and a list of tests will have header, sunburst, release list, and test list components.  This allows for someone on the team to work on a single component individually without affecting the rest of the site.  It also allows for reusability: for example, if we wanted to have three different filters in our site - for test tags, useragents, and regex-- we can do this with a single filter component given three different variables.  It speeds up frontend development while maintaining consistent style.
+** Redux
+  Redux is a state-management tool which allows for one simple, immutable, trackable state.  It holds all the business-logic of the app, and any data or manipulation of data the app requires.  Said simply, it is sort of the backend server inside the front-end, but a server that runs as a single, parsale object.
+** Our Design Philosophy
+  In our [[index.js]] file we connect the entire React site to Redux, which allows for every component to have access to whichever parts of the state they need.
+
+  This allows for a consistent philosophy for how new features and components are built:
+*** React should be dumb.
+    No react component should do anything fancy.  It should only present the data it is given and nothing more.  There should be no internal state that a component has to manage.
+
+ There will be times when you need to handle mouse or keyboard events.  When this happens, the eventHandler should update redux with what happened and let redux manage how to handle it, and update the data react presents.
+*** Redux should be boring
+If the redux store feels like one big spreadsheet, then we are doing a good job.  There shouldn't be multiple manipulations of the state to manage, or nested logic that you have to travel through to understand how the app got to where it was.  Instead, we hold raw data in a nice clear, mostly untouched column, and then filter or combine that data as necessary-- like macros in an excel sheet.
+*** The URL guides all
+    To make redux as boring as possible we follow a basic flow where events on a react component change the current url, and redux determines the data to give components based on the current url.  This makes it easy to share specific configurations of apisnoop with others, but also makes a clean process for building out new features...a new feature essentially is an added url query paramter.
+*** Coding should be pleasant
+    I refactor the code often with this philosophy in mind.  I want the overall flow of the app to be clear to future me and to whoever else we collaborate with.  Super clever(and super obscure) functions are avoided, and things that no longer server a clear purpose are pruned.  I also try to reduce the amount of boilerplate needed (or abstract it within this org file), so the focus can just be on the functions and components.
+*** Our work should support learning
+    I refactor the org file more often than the code, to help future developers learn what it is we're doing and why. No important things should be held in a conversational memory, but instead linked and explained here.  The risk with this is verbosity.  So cleaning up sentence structure and explanations is as important as refactoring code.
+
+The downside of this is that apisnoop developers should be doing it from within the org file--but the strengths are strong enough to make this worthwhile I think.
+* Index.js
+  :PROPERTIES:
+  :header-args: :tangle ./src/index.js
+  :END:
+ #+NAME: index.js
+ #+BEGIN_SRC js
+   import React from 'react'
+   import { render } from 'react-dom'
+
+   import { Provider } from 'redux-bundler-react'
+
+   import App from './components/app'
+   import createStore from './bundles'
+   var store = createStore()
+
+   document.title = 'APISnoop'
+
+   render(
+       <Provider store={store}>
+       <App />
+       </Provider>,
+     document.getElementById('root')
+   )
+ #+END_SRC
+* Index.html
+  :PROPERTIES:
+  :header-args: :tangle ./public/index.html
+  :END:
+  This lives in our public folder, and is where the whole code will spring from.  We are looking to have this become a spyglass lense too.
+  #+NAME: index.html
+  #+BEGIN_SRC html
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <link rel="shortcut icon" href="%PUBLIC_URL%/favicon.ico" />
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, shrink-to-fit=no"
+        />
+        <meta name="theme-color" content="#000000" />
+        <meta name='gs-bucket' content='apisnoop/spyglass/ci-kubernetes-e2e-gci-gce/1116453304528801792' />
+        <!--
+          manifest.json provides metadata used when your web app is installed on a
+          user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
+        -->
+        <link rel="stylesheet" href="https://unpkg.com/tachyons@4/css/tachyons.min.css">
+        <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+        <link rel='stylesheet' href='/stylesheet.css' type='text/css'>
+        <!--
+          Notice the use of %PUBLIC_URL% in the tags above.
+          It will be replaced with the URL of the `public` folder during the build.
+          Only files inside the `public` folder can be referenced from the HTML.
+
+          Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+          work correctly both with client-side routing and a non-root public URL.
+          Learn how to configure a non-root public URL by running `npm run build`.
+        -->
+        <title>React App</title>
+      </head>
+      <body>
+        <noscript>You need to enable JavaScript to run this app.</noscript>
+        <div id="root"></div>
+        <!--
+          This HTML file is a template.
+          If you open it directly in the browser, you will see an empty page.
+
+          You can add webfonts, meta tags, or analytics to this file.
+          The build step will place the bundled scripts into the <body> tag.
+
+          To begin the development, run `npm start` or `yarn start`.
+          To create a production bundle, use `npm run build` or `yarn build`.
+        -->
+      </body>
+    </html>
+
+  #+END_SRC
+* Bundles
+** Index
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/index.js
+   :END:
+   This is the root bundler, that takes all the other individual ones and composes a single super bundle.
+*** Import And Compose Bundle
+    We import all the various bundles we make here.  The only module we need is redux-bundle's compose bundle function.
+    #+NAME: bundle index
+    #+BEGIN_SRC js
+      import { composeBundles } from 'redux-bundler'
+
+      import activeLocation from './active-location'
+      import colours from './colours'
+      import config from './config'
+      import endpoints from './endpoints'
+      import endpointsResource from './endpoints-resource'
+      import metadataResource from './metadata-resource'
+      import testsResource from './tests-resource'
+      import testTagsResource from './test-tags-resource'
+      import testSequencesResource from './test-sequences-resource'
+      import useragentsResource from './useragents-resource'
+      import jobResultsMetadata from './job-results-metadata'
+      import sunburst from './sunburst'
+      import testedStats from './tested-stats'
+      import tests from './tests'
+      import testTags from './test-tags'
+      import useragents from './useragents'
+      import zoom from './zoom'
+
+      export default composeBundles(
+        activeLocation,
+        colours,
+        config,
+        endpoints,
+        endpointsResource,
+        metadataResource,
+        testsResource,
+        testTagsResource,
+        testSequencesResource,
+        useragentsResource,
+        jobResultsMetadata,
+        sunburst,
+        testedStats,
+        tests,
+        testTags,
+        useragents,
+        zoom
+      )
+    #+END_SRC
+
+** ActiveLocation
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/active-location.js :noweb yes
+   :END:
+
+   The current path (level, category, opId) based on query and zoom.
+   This is a reaaaal simple bundle, but helps not have to do extra logic in our components
+
+*** Layout
+   #+NAME: Active Location bundle
+   #+BEGIN_SRC js
+     import { isEmpty } from 'lodash'
+     import { createSelector } from 'redux-bundler'
+
+     export default {
+       name: 'activeLocation',
+       <<selectActiveLocation>>
+     }
+   #+END_SRC
+*** selectActiveLocation
+    ◊Query ◊Zoom -> ◊ActiveLocation
+    // If there is a zoom, active location is the current location of the zoom.  Otherwise, it's the current query //
+
+    #+NAME: selectActiveLocation
+    #+BEGIN_SRC js :tangle no
+      selectActiveLocation: createSelector(
+        'selectQueryObject',
+        'selectZoom',
+        (query, zoom) => {
+          let activeLocation = {
+            level: '',
+            category: '',
+            operationId: ''
+          }
+          if (isEmpty(query) && zoom == null) {
+            return activeLocation
+          }
+          if (!isEmpty(query) && query.level) {
+            activeLocation.level = query.level
+            activeLocation.category = query.category || ''
+            activeLocation.operationId = query.operationId || ''
+            return activeLocation
+          }
+          if (!query.level && (zoom && zoom.level)) {
+            activeLocation.level = zoom.level
+            activeLocation.category = zoom.category || ''
+            activeLocation.operationId = zoom.operationId || ''
+            return activeLocation
+          }
+          else {
+            return activeLocation
+          }
+        }
+      )
+
+    #+END_SRC
+** Colours
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/colours.js :noweb yes
+   :END:
+
+   The colors used for our app, mapped to our levels and categories.  Now we can always identify a level by its color, no matter if we are seeing the level in our sunburst chart or as a title/tag somewhere else in the page.
+
+***  Layout
+   #+NAME: Colours bundle
+   #+BEGIN_SRC js
+     export default {
+       name: 'colours',
+       <<Colours Reducer>>,
+       <<selectLevelColours>>,
+       <<selectCategoryColours>>
+     }
+   #+END_SRC
+***  Tests Layout
+
+    (This sets up a mock store, state to run our tests on later.  everything dealing with tests ends up within =src/bundles/colours.test.js but is distributed throughout this passage so that the tests can be next to the functions they are testing.)
+
+    #+NAME: Colours Tests Setup
+    #+BEGIN_SRC js :tangle ./src/bundles/colours.test.js
+      import { Reducer, Selector } from 'redux-testkit'
+      import {composeBundlesRaw} from 'redux-bundler'
+      import colours from './colours.js'
+
+      const store = composeBundlesRaw(colours)
+      const state = store().getState()
+
+      <<Colours Initial State>>
+
+      describe('Colours Reducer', () => {
+        <<Colours Reducer Test>>
+      })
+
+      describe('Colours Selectors', () => {
+        <<selectLevelColours Test>>
+        <<selectCategoryColours Test>>
+      })
+    #+END_SRC
+
+***  Colours Reducer
+
+    **Action -> ColourState**
+   Receives any actions and, no matter its payload, returns the initial Colourstate.
+
+    #+NAME: Colours Initial State
+    #+BEGIN_SRC js :tangle no
+      const initialState = {
+        colours: {
+          'alpha': 'rgba(230, 25, 75, 1)',
+          'beta': 'rgba(0, 130, 200, 1)',
+          'stable': 'rgba(60, 180, 75, 1)',
+          'unused': 'rgba(255, 255, 255, 1)'
+        },
+        moreColours: [
+          'rgba(183, 28, 28, 1)',
+          'rgba(136, 14, 79, 1)',
+          'rgba(74, 20, 140, 1)',
+          'rgba(49, 27, 146, 1)',
+          'rgba(26, 35, 126, 1)',
+          'rgba(13, 71, 161, 1)',
+          'rgba(1, 87, 155, 1)',
+          'rgba(0, 96, 100, 1)',
+          'rgba(0, 77, 64, 1)',
+          'rgba(27, 94, 32, 1)',
+          'rgba(51, 105, 30, 1)',
+          'rgba(130, 119, 23, 1)',
+          'rgba(245, 127, 23, 1)',
+          'rgba(255, 111, 0, 1)',
+          'rgba(230, 81, 0, 1)',
+          'rgba(191, 54, 12, 1)',
+          'rgba(244, 67, 54, 1)',
+          'rgba(233, 30, 99, 1)',
+          'rgba(156, 39, 176, 1)',
+          'rgba(103, 58, 183, 1)',
+          'rgba(63, 81, 181, 1)',
+          'rgba(33, 150, 243, 1)',
+          'rgba(3, 169, 244, 1)',
+          'rgba(0, 188, 212, 1)',
+          'rgba(0, 150, 136, 1)',
+          'rgba(76, 175, 80, 1)',
+          'rgba(139, 195, 74, 1)',
+          'rgba(205, 220, 57, 1)',
+          'rgba(255, 235, 59, 1)',
+          'rgba(255, 193, 7, 1)',
+          'rgba(255, 152, 0, 1)',
+          'rgba(255, 87, 34, 1)'
+
+        ],
+        categories: [
+          "admissionregistration",
+          "apiextensions",
+          "apiregistration",
+          "apis",
+          "apps",
+          "authentication",
+          "authorization",
+          "autoscaling",
+          "batch",
+          "certificates",
+          "core",
+          "events",
+          "extensions",
+          "logs",
+          "networking",
+          "node",
+          "policy",
+          "rbacAuthorization",
+          "scheduling",
+          "settings",
+          "storage",
+          "version",
+          "auditregistration",
+          "coordination"
+        ]
+      }
+    #+END_SRC
+
+
+    #+NAME: Colours Reducer Test
+    #+BEGIN_SRC js :tangle no
+      it('should have initial state', () => {
+        expect(colours.getReducer()()).toEqual(initialState)
+      })
+      it('should not have unknown actions affect state', ()=> {
+        Reducer(colours.getReducer())
+        .expect({type: 'NOT_EXISTING'})
+        .toReturnState(initialState)
+      })
+    #+END_SRC
+
+    #+NAME: Colours Reducer
+    #+BEGIN_SRC js :tangle no
+       getReducer: () => {
+         <<Colours Initial State>>
+         return (state=initialState, action) => {
+           return state
+         }
+       }
+    #+END_SRC
+
+***  selectLevelColours
+    ◊ColourState -> ◊LevelColours
+    Given the ColourState return the LevelColours from the Colourstate
+    Colours is an object structured as {level_name: rgba code}
+
+    #+NAME: selectLevelColours Test
+    #+BEGIN_SRC js :tangle no
+      it('should list all the level colours', () => {
+        var result = {
+          alpha: 'rgba(230, 25, 75, 1)',
+          beta: 'rgba(0, 130, 200, 1)',
+          stable: 'rgba(60, 180, 75, 1)',
+          unused: 'rgba(255, 255, 255, 1)'
+        }
+        Selector(colours.selectLevelColours).expect(state).toReturn(result)
+      })
+    #+END_SRC
+
+    #+NAME: selectLevelColours
+    #+BEGIN_SRC js :tangle no
+   selectLevelColours: (state) => state.colours.colours
+    #+END_SRC
+
+***  selectCategoryColours
+
+    ◊ColourState -> ◊CategoryColours
+    Given the state, return object mapping categories to their colours
+    CategoryColours is an object structured as {category.name : rgbaColor}
+
+    #+NAME: selectCategoryColours Test
+    #+BEGIN_SRC js :tangle no
+      it('should show categories mapped to colours', () => {
+        var result = {
+          'category.admissionregistration': 'rgba(183, 28, 28, 1)',
+          'category.apiextensions': 'rgba(49, 27, 146, 1)',
+          'category.apiregistration': 'rgba(1, 87, 155, 1)',
+          'category.apis': 'rgba(27, 94, 32, 1)',
+          'category.apps': 'rgba(245, 127, 23, 1)',
+          'category.authentication': 'rgba(191, 54, 12, 1)',
+          'category.authorization': 'rgba(156, 39, 176, 1)',
+          'category.autoscaling': 'rgba(33, 150, 243, 1)',
+          'category.batch': 'rgba(0, 150, 136, 1)',
+          'category.certificates': 'rgba(205, 220, 57, 1)',
+          'category.core': 'rgba(255, 152, 0, 1)',
+          'category.events': 'rgba(136, 14, 79, 1)',
+          'category.extensions': 'rgba(26, 35, 126, 1)',
+          'category.logs': 'rgba(0, 96, 100, 1)',
+          'category.networking': 'rgba(51, 105, 30, 1)',
+          'category.node': 'rgba(53, 105, 30, 1)',
+          'category.policy': 'rgba(255, 111, 0, 1)',
+          'category.rbacAuthorization': 'rgba(244, 67, 54, 1)',
+          'category.scheduling': 'rgba(103, 58, 183, 1)',
+          'category.settings': 'rgba(3, 169, 244, 1)',
+          'category.storage': 'rgba(76, 175, 80, 1)',
+          'category.version': 'rgba(255, 235, 59, 1)',
+          'category.auditregistration': 'rgba(255, 87, 34, 1)',
+          'category.coordination': 'rgba(74, 20, 140, 1)'
+        }
+        Selector(colours.selectCategoryColours).expect(state).toReturn(result)
+      })
+    #+END_SRC
+
+    #+NAME: selectCategoryColours
+    #+BEGIN_SRC js :tangle no
+      selectCategoryColours: (state) => {
+        var colours = {}
+        for (var catidx = 0; catidx < state.colours.categories.length; catidx++) {
+          var category = state.colours.categories[catidx]
+          colours['category.' + category] = state.colours.moreColours[(catidx * 3) % state.colours.moreColours.length]
+        }
+        return colours
+      }
+
+    #+END_SRC
+
+** Config
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/config.js :noweb yes
+   :END:
+
+   The idea for this now is that we have some default settings, in our index.html, for what our bucket should be...but this could be updated by a query.   If the query doesn't have an ending slash...then the full url won't work and that seems confusing.  and so i will make each path you wanna reference have to start with '/', so then the bucket can just be =apisnoop/spyglass/job= instead of =apisnoop/spyglass/job/=
+
+   #+NAME: config.js
+   #+BEGIN_SRC js
+     import { createSelector } from 'redux-bundler'
+     const config = {
+       bucket: document.querySelector('meta[name="gs-bucket"]').getAttribute('content'),
+       provider: 'http://storage.googleapis.com/'
+     }
+
+     export default {
+       name: 'config',
+       reducer: (state = config) => state,
+       selectStorage: (state) => state.config,
+       selectGsPath: createSelector(
+         'selectQueryObject',
+         'selectStorage',
+         (query, storage) => {
+           if (query && query.bucket) {
+             return storage.provider.concat(query.bucket)
+           }
+           return storage.provider.concat(storage.bucket)
+         }
+       )
+     }
+   #+END_SRC
+** Endpoints
+  :PROPERTIES:
+    :header-args: :tangle ./src/bundles/endpoints.js :noweb yes
+    :END:
+  The operationId's and their methods from the job results
+**** Imports and Export
+    #+NAME: Endpoints bundle
+    #+BEGIN_SRC js
+      import { createSelector } from 'redux-bundler'
+      import {
+        groupBy,
+        isEmpty,
+        mapValues,
+        pickBy } from 'lodash'
+
+      export default {
+        name: 'endpoints',
+        <<selectEndpoints>>,
+        <<selectActiveEndpoint>>,
+        <<selectFilteredEndpoints>>,
+        <<selectEndpointsByLevelAndCategoryAndOperatorId>>,
+      }
+    #+END_SRC
+**** selectEndpoints
+     **◊State => ◊Endpoints**
+     selects all the endpoints from the global state
+     #+NAME: selectEndpoints
+     #+BEGIN_SRC js :tangle no
+       selectEndpoints: (state) => {
+         let endpoints = state.endpointsResource.data
+         let endpointsWithOpId =  mapValues(endpoints, (val, key, obj) => {
+           return {
+             operationId: key,
+             ...val
+           }
+         })
+         return endpointsWithOpId
+       }
+     #+END_SRC
+**** selectFilteredEndpoints
+     **◊Endpoints ◊OpIds ◊Zoom -> ◊Endpoints**
+     // returns list of endpoints that fit constraints given by any of our queries.//
+     These could be filtered by useragent, regex filter, test_tag, or zoom.
+     The ◊OpIds would be an array of Id's based on a set filter (either useragents or tests)
+
+     #+NAME: selectFilteredEndpoints
+     #+BEGIN_SRC js :tangle no
+       selectFilteredEndpoints: createSelector(
+         'selectEndpoints',
+         'selectOpIdsHitByFilteredUseragents',
+         'selectOpIdsHitByFilteredTestTags',
+         'selectZoom',
+         (endpoints, useragentOpIds, testTagOpIds, zoom) => {
+           if (endpoints == null) return null
+           if (Array.isArray(useragentOpIds) && useragentOpIds.length > 0) {
+             endpoints = filterBy(useragentOpIds, endpoints)
+           }
+           if (Array.isArray(testTagOpIds) && testTagOpIds.length > 0) {
+             endpoints = filterBy(testTagOpIds, endpoints)
+           }
+           if (!isEmpty(zoom) && (zoom.depth === 'operationId' || zoom.depth === 'category')) {
+             endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
+           } else if (!isEmpty(zoom) && zoom.depth === 'level') {
+             endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level)
+           }
+           return endpoints
+         }
+       )
+     #+END_SRC
+
+**** selectEndpointsByLevelAndCategoryAndOperatorId
+     **◊Endpoints -> ◊GroupedEndpoints**
+     Given all endpoints, organize them in proper structure for our sunburst tree
+
+     We want to have parent and children from all our endpoints, so we need to take the flattened structure and nest it.  Our current nesting (level, category, and OpId) can change if there's a better grouping that we find
+
+    #+NAME: selectEndpointsByLevelAndCategoryAndOperatorId
+    #+BEGIN_SRC js :tangle no
+      selectEndpointsByLevelAndCategoryAndOperatorId: createSelector(
+        'selectFilteredEndpoints',
+        (endpoints) => {
+          if (endpoints == null) return null
+          var endpointsByLevel = groupBy(endpoints, 'level')
+          return mapValues(endpointsByLevel, endpointsInLevel => {
+            var endpointsByCategory = groupBy(endpointsInLevel, 'category')
+            return mapValues(endpointsByCategory, endpointsInCategory => {
+              return endpointsInCategory.map (endpoint => {
+                return {
+                  ...endpoint,
+                  size: 1
+                }
+              })
+            })
+          })
+        }
+      )
+
+    #+END_SRC
+
+   We could also do this by kind, but it seems each category contains a kind of =''=, and for some categories that's their only kind.  Not sure how successfully this would display in the sunburst.
+**** selectActiveEndpoint
+     **◊Endpoints ◊Query ◊Zoom => ◊Endpoint**
+     //With an endpoint determined by current query (mouse hover) or zoom (mouse click),
+       pull that endpoints info from our list of all endpoints//
+
+     #+NAME: selectActiveEndpoint
+     #+BEGIN_SRC js :tangle no
+       selectActiveEndpoint: createSelector(
+         'selectEndpoints',
+         'selectQueryObject',
+         'selectZoom',
+         (endpoints, query, zoom) => {
+           let activeEndpoint = {}
+           if (endpoints == null) return activeEndpoint
+           if (zoom && zoom.depth === 'operationId') {
+             activeEndpoint = endpoints[zoom.operationId]
+             return activeEndpoint
+           }
+           if (query.operationId) {
+             activeEndpoint = endpoints[query.operationId]
+             return activeEndpoint
+           } else {
+             return activeEndpoint
+           }
+         }
+       )
+     #+END_SRC
+**** helper functions
+     #+NAME: helper functions
+     #+BEGIN_SRC js
+       // opIds, endpoints => endpoints
+       // if endpoint.opId is in the array of opIds keep it.
+       function filterBy (filteredOpIds, opIds) {
+        return pickBy(opIds, (val, key) => {
+           return filteredOpIds.includes(val.operationId)
+         })
+       }
+
+
+     #+END_SRC
+** Endpoints  Resource
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/endpoints-resource.js :noweb yes
+   :END:
+
+   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
+
+   #+NAME: Endpoints Resource
+   #+BEGIN_SRC js
+     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
+     import { fetchResource } from '../lib/utils'
+
+     const bundle = createAsyncResourceBundle({
+       name: 'endpointsResource',
+       getPromise: ({store}) => {
+         var gsPath = store.selectGsPath()
+         return fetchResource(gsPath, '/endpoints.json')
+       }
+     })
+
+     bundle.reactEndpointsResourceFetch = createSelector(
+       'selectEndpointsResourceShouldUpdate',
+       (shouldUpdate) => {
+         if (!shouldUpdate) return
+         return { actionCreator: 'doFetchEndpointsResource' }
+       }
+     )
+
+     export default bundle
+   #+END_SRC
+** JobResultsMetadata
+  :PROPERTIES:
+    :header-args: :tangle ./src/bundles/job-results-metadata.js :noweb yes :mkdirp yes
+    :END:
+
+  Metadata from job results used to populate our header information
+
+****  Layout
+    #+NAME: JobResultsMetadata bundle
+    #+BEGIN_SRC js
+      import jobResultsMetadata from '../data/job-results-metadata.json'
+
+      export default {
+        name: 'jobResultsMetadata',
+        <<JobResultsMetadata Reducer>>,
+        <<selectMetadata>>
+      }
+    #+END_SRC
+**** Tests Layout
+     color as an example to draw from.
+     #+NAME: Colours Tests Setup
+     #+BEGIN_SRC js :tangle no
+       import { Reducer, Selector } from 'redux-testkit'
+       import {composeBundlesRaw} from 'redux-bundler'
+       import colours from './colours.js'
+
+       const store = composeBundlesRaw(colours)
+       const state = store().getState()
+
+       <<Colours Initial State>>
+
+       describe('Colours Reducer', () => {
+         <<Colours Reducer Test>>
+       })
+
+       describe('Colours Selectors', () => {
+         <<selectLevelColours Test>>
+         <<selectCategoryColours Test>>
+       })
+     #+END_SRC
+
+**** Reducer
+
+     **Action -> JRMState**
+    Receives any actions and, no matter its payload, returns the initial JRMState.
+    JRMState is ◊JobResultsMetadata , and draws from our =data= folder
+
+
+     #+NAME: JobResultsMetadata Reducer Test
+     #+BEGIN_SRC js :tangle no
+       it('should have initial state', () => {
+         expect(colours.getReducer()()).toEqual(initialState)
+       })
+       it('should not have unknown actions affect state', ()=> {
+         Reducer(colours.getReducer())
+           .expect({type: 'NOT_EXISTING'})
+           .toReturnState(initialState)
+       })
+     #+END_SRC
+
+     #+NAME: JobResultsMetadata Reducer
+     #+BEGIN_SRC js :tangle no
+        getReducer: () => {
+       const initialState = jobResultsMetadata
+          return (state=initialState, action) => {
+            return state
+          }
+        }
+     #+END_SRC
+
+**** selectMetadata
+     **JRMState -> JRMState**
+     selects entire output of the JRM State to be used in our components.
+
+
+     #+NAME: selectMetadata
+     #+BEGIN_SRC js :tangle no
+    selectMetadata: (state) => state.jobResultsMetadata
+    #+END_SRC
+** Sunburst
+  :PROPERTIES:
+  :header-args: :tangle ./src/bundles/sunburst.js :noweb yes
+  :END:
+*** Imports and Layout
+
+    #+NAME: sunburst bundle
+    #+BEGIN_SRC js
+      import { createSelector } from 'redux-bundler'
+      import { map, orderBy, sortBy } from 'lodash'
+      import { fadeColour } from '../lib/utils'
+
+      export default {
+        name: 'sunburst',
+        <<selectSunburst>>,
+        <<selectLabelStyles>>
+      }
+
+      <<Helper Functions>>
+    #+END_SRC
+
+*** selectSunburst
+    We want to create a sunburst, that has a specific sorting (where beta appears in bottom left.)  We did th is as two selectors before, could we do it with just one now?
+
+  **◊GroupedEndpoints => ◊SunburstTree**
+  //Takes our Grouped Endpoints to return an object with specific parent child structure, that is ready for d3 viz.//
+
+  #+NAME: selectSunburst
+  #+BEGIN_SRC js :tangle no
+    selectSunburst: createSelector(
+      'selectEndpointsByLevelAndCategoryAndOperatorId',
+      'selectLevelColours',
+      'selectCategoryColours',
+      'selectQueryObject',
+      'selectZoom',
+      (endpointsByLevelAndCategoryAndOperatorId, levelColours, categoryColours, query, zoom) => {
+        var sunburst = {
+          name: 'root',
+          children: map(endpointsByLevelAndCategoryAndOperatorId, (endpointsByCategoryAndOperatorId, level) => {
+            return {
+              name: level,
+              color: determineLevelColours(query, levelColours, level),
+              children: map(endpointsByCategoryAndOperatorId, (endpointsByOperatorId, category) => {
+                return {
+                  name: category,
+                  color: determineCategoryColours(query, categoryColours, category, level),
+                  children: sortedEndpoints(endpointsByOperatorId, categoryColours, query, zoom)
+                }
+              })
+            }
+          })
+        }
+        var sortedLevels = orderBy(sunburst.children, 'name', 'desc')
+        sunburst.children = sortedLevels
+        return sunburst
+      }
+    )
+  #+END_SRC
+
+*** selectLabelStyles
+    #+NAME: selectLabelStyles
+    #+BEGIN_SRC js :tangle no
+      selectLabelStyles: () => {
+        return {
+          X: {
+            fontSize: '1.3em',
+            textAnchor: 'middle',
+            width: '50%'
+          },
+          Y: {
+            fontSize: '1.2em,',
+            textAnchor: 'middle'
+          },
+          Z: {
+            fontSize: '1em',
+            textAnchor: 'middle'
+          }
+        }
+      }
+    #+END_SRC
+
+*** Helper Functions
+    #+NAME: Helper Functions
+    #+BEGIN_SRC js :tangle no
+      function determineLevelColours (query, colours, level) {
+        if (query.level === undefined || query.level === level) {
+          return colours[level]
+        } else {
+          return fadeColour(colours[level], '0.1')
+        }
+      }
+
+      function determineCategoryColours (query, categoryColours, category, level) {
+        if (query.level === undefined) {
+          return categoryColours[`category.${category}`]
+        } else if (query.level === level && query.category === category){
+          return categoryColours[`category.${category}`]
+        } else {
+          return fadeColour(categoryColours[`category.${category}`], '0.1')
+        }
+      }
+
+      function determineEndpointColour (endpoint, categoryColours, query, zoom) {
+        var initialColor = determineInitialEndpointColour(endpoint, categoryColours)
+        if (!query.level && !query.zoomed) {
+          return initialColor
+        }
+        if ((!query.level) && (zoom && zoom.depth !== 'operationId')) {
+          return initialColor
+        }
+        if (query.operationId && query.operationId === endpoint.operationId) {
+          return initialColor
+        }
+        if (zoom && zoom.depth === 'operationId' && zoom.operationId === endpoint.operationId) {
+          return initialColor
+        } else {
+          return fadeColour(initialColor, '0.1')
+        }
+      }
+
+      function determineInitialEndpointColour (endpoint, categoryColours) {
+        if (endpoint.testHits > 0 && endpoint.conformanceHits > 0)  {
+          return categoryColours[`category.${endpoint.category}`]
+        } else  if( endpoint.testHits > 0 && endpoint.conformanceHits === 0) {
+          var color = categoryColours[`category.${endpoint.category}`]
+          var fadedColor = fadeColour(color, '0.2')
+          return fadedColor
+        } else {
+          return 'rgba(244, 244, 244, 1)'
+        }
+      }
+
+      function sortedEndpoints (endpoints, categoryColours, query, zoom) {
+        var sortedEndpoints = sortBy(endpoints, [
+          'kind',
+          (endpoint) => endpoint.testHits > 0,
+          (endpoint) => endpoint.conformanceHits > 0
+        ])
+        return sortedEndpoints.map(endpoint => {
+          return {
+            name: endpoint.operationId,
+            kind: endpoint.kind,
+            size: endpoint.size,
+            color: determineEndpointColour(endpoint, categoryColours, query, zoom)
+          }
+        })
+      }
+
+    #+END_SRC
+** Metadata Resource
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/metadata-resource.js :noweb yes
+   :END:
+
+   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
+
+   #+NAME: Metadata Resource
+   #+BEGIN_SRC js
+     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
+     import { fetchResource } from '../lib/utils'
+
+     const bundle = createAsyncResourceBundle({
+       name: 'metadataResource',
+       getPromise: ({store}) => {
+         var gsPath = store.selectGsPath()
+         return fetchResource(gsPath, '/metadata.json')
+       }
+     })
+
+     bundle.reactMetadataResourceFetch = createSelector(
+       'selectMetadataResourceShouldUpdate',
+       (shouldUpdate) => {
+         if (!shouldUpdate) return
+         return { actionCreator: 'doFetchMetadataResource' }
+       }
+     )
+
+     export default bundle
+   #+END_SRC
+** Tests Resource
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/tests-resource.js :noweb yes
+   :END:
+
+   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
+
+   #+NAME: Tests Resource
+   #+BEGIN_SRC js
+     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
+     import { fetchResource } from '../lib/utils'
+
+     const bundle = createAsyncResourceBundle({
+       name: 'testsResource',
+       getPromise: ({store}) => {
+         var gsPath = store.selectGsPath()
+         return fetchResource(gsPath, '/tests.json')
+       }
+     })
+
+     bundle.reactTestsResourceFetch = createSelector(
+       'selectTestsResourceShouldUpdate',
+       (shouldUpdate) => {
+         if (!shouldUpdate) return
+         return { actionCreator: 'doFetchTestsResource' }
+       }
+     )
+
+     export default bundle
+   #+END_SRC
+** Tests
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/tests.js :noweb yes
+   :END:
+*** Imports and Layout
+   #+NAME: Tests Bundle
+   #+BEGIN_SRC js
+     import { createSelector } from 'redux-bundler'
+     import { pickBy } from 'lodash'
+
+     export default {
+       name: 'tests',
+       <<selectActiveTests>>,
+       <<selectActiveTest>>
+     }
+   #+END_SRC
+*** selectActiveTests
+    *◊Endpoint ◊Tests -> ◊ActiveTests*
+    /Return all the tests whose array of endpoints contain the given endpoint/
+
+    #+NAME: selectActiveTests
+    #+BEGIN_SRC js :tangle no
+      selectActiveTestsIndex: createSelector(
+        'selectActiveEndpoint',
+        'selectTestsResource',
+        (endpoint, tests) => {
+          let activeTests = []
+          if (endpoint == null || tests== null) return activeTests
+          else {
+            activeTests = pickBy(tests, (test) => test.includes(endpoint.operationId))
+            return Object.keys(activeTests)
+          }
+        }
+      )
+     #+END_SRC
+*** selectActiveTest
+    *◊Query, ◊TestSequences -> ◊ActiveTest
+    /Return the testSequences property for the test that matches the query./
+
+    #+NAME: selectActiveTest
+     #+BEGIN_SRC js :tangle no
+       selectActiveTest: createSelector(
+         'selectQueryObject',
+         'selectTestSequencesResource',
+         (query, testSequences) => {
+           if (testSequences == null || !query.test) return null
+           return pickBy(testSequences, (val, key) => key === query.test)
+         }
+       )
+    #+END_SRC
+** TestSequences Resource
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/test-sequences-resource.js :noweb yes
+   :END:
+
+   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
+
+   #+NAME: TestSequences Resource
+   #+BEGIN_SRC js
+     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
+     import { fetchResource } from '../lib/utils'
+
+     const bundle = createAsyncResourceBundle({
+       name: 'testSequencesResource',
+       getPromise: ({store}) => {
+         var gsPath = store.selectGsPath()
+         return fetchResource(gsPath, '/test_sequences.json')
+       }
+     })
+
+     bundle.reactTestSequencesResourceFetch = createSelector(
+       'selectTestSequencesResourceShouldUpdate',
+       (shouldUpdate) => {
+         if (!shouldUpdate) return
+         return { actionCreator: 'doFetchTestSequencesResource' }
+       }
+     )
+
+     export default bundle
+   #+END_SRC
+** TestTags Resource
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/test-tags-resource.js :noweb yes
+   :END:
+
+   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
+
+   #+NAME: TestTags Resource
+   #+BEGIN_SRC js
+     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
+     import { fetchResource } from '../lib/utils'
+
+     const bundle = createAsyncResourceBundle({
+       name: 'testTagsResource',
+       getPromise: ({store}) => {
+         var gsPath = store.selectGsPath()
+         return fetchResource(gsPath, '/test_tags.json')
+       }
+     })
+
+     bundle.reactTestTagsResourceFetch = createSelector(
+       'selectTestTagsResourceShouldUpdate',
+       (shouldUpdate) => {
+         if (!shouldUpdate) return
+         return { actionCreator: 'doFetchTestTagsResource' }
+       }
+     )
+
+     export default bundle
+   #+END_SRC
+** Test Tags
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/test-tags.js :noweb yes
+   :END:
+*** Imports and Layout
+   #+NAME: Tests Bundle
+   #+BEGIN_SRC js
+     import { createSelector } from 'redux-bundler'
+     import { pickBy, uniq } from 'lodash'
+
+     export default {
+       name: 'testTags',
+       <<TestTags Reducer>>,
+       <<selectActiveTestTags>>,
+       <<selectTestTagsInput>>,
+       <<selectTestTagsFilteredByInput>>,
+       <<selectTestTagsFilteredByQuery>>,
+       <<selectNamesTestTagsFilteredByQuery>>,
+       <<selectOpIdsHitByFilteredTestTags>>,
+       <<doUpdateTestTagsInput>>
+     }
+   #+END_SRC
+*** TestTags Reducer
+
+    **Action -> TestTagstate**
+    Received action and its payload and returns the new TestTagstate(containing changes based on payload).
+    If no action is given, returns the initial state.
+
+    #+NAME: TestTags Reducer Test
+    #+BEGIN_SRC js :tangle no
+      it('should have initial state', () => {
+        expect(state.testTags).toEqual(initialState)
+      })
+      it('should handle USERAGENT_INPUT_UPDATED with alphanumeric', () => {
+        const payload = 'ksjdj'
+        const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
+        const result = {filterInput: payload}
+        Reducer(testTags.getReducer()).expect(action).toReturnState(result)
+      })
+
+      it('should handle USERAGENT_INPUT_UPDATED with full regex', () => {
+        const payload = '(./a(sjd)*'
+        const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
+        const result = {filterInput: payload}
+        Reducer(testTags.getReducer()).expect(action).toReturnState(result)
+      })
+    #+END_SRC
+
+    #+NAME: TestTags Reducer
+    #+BEGIN_SRC js :tangle no
+      getReducer: () => {
+        const initialState = {
+          filterInput: ''
+        }
+        return (state=initialState, {type, payload}) => {
+          if (type  === 'TEST_TAGS_INPUT_UPDATED') {
+            return {...state, filterInput: payload}
+          }
+          return state
+        }
+      }
+    #+END_SRC
+
+*** selectActiveTestTags
+    *◊Endpoint ◊TestTags -> ◊ActiveTestTags*
+    /Return all the tests whose array of endpoints contain the given endpoint/
+
+    #+NAME: selectActiveTestTags
+    #+BEGIN_SRC js :tangle no
+      selectActiveTestTags: createSelector(
+        'selectActiveEndpoint',
+        'selectTestTagsResource',
+        (endpoint, testTags) => {
+          let activeTestTags = []
+          if (endpoint == null || testTags== null) return activeTestTags
+          else {
+            activeTestTags = pickBy(testTags, (testTag) => testTag.includes(endpoint.operationId))
+            return uniq(Object.keys(activeTestTags))
+          }
+        }
+      )
+     #+END_SRC
+*** selectTestTagsInput
+    **TestTagState -> String**
+    _selects the input state from useragent_
+
+    #+NAME: selectUseragentInput Test
+    #+BEGIN_SRC js :tangle no
+      it('should return a string for selectUseragentInput', () => {
+        const stateA = {testTags: {filterInput: ''}}
+        const stateB = {testTags: {filterInput: 'r^eg&x'}}
+        var selectInput = testTags.selectTestTagsInput
+
+        expect(selectInput(stateA)).toEqual(stateA.testTags.filterInput)
+        expect(selectInput(stateB)).toEqual(stateB.testTags.filterInput)
+      })
+
+    #+END_SRC
+
+    #+NAME: selectTestTagsInput
+    #+BEGIN_SRC js :tangle no
+      selectTestTagsInput: (state) => state.testTags.filterInput
+    #+END_SRC
+
+*** selectTestTagsFilteredByInput
+    **Regex -> ◊TestTagsNames**
+    _Given a regex filter, return an array of names that match this regex_
+    #+NAME: testTagsNamesSample
+    #+BEGIN_SRC js :tangle no
+      var testTagsNamesSample  = [
+        "kubectl/v1.13.3",
+        "kube-apiserver/v1.15.0",
+        "kube-proxy/v1.13.5",
+        "node-problem-detector/v0.5.0-49-gfb81368",
+        "nfs-provisioner/v0.0.0"
+      ]
+    #+END_SRC
+
+    #+NAME: selectTestTagsFilteredByInput Test
+    #+BEGIN_SRC js :tangle no
+      it('should return all useragent names if no filter is set', () => {
+          <<testTagsNamesSample>>
+          var filter = ''
+          var filterB = 'kube'
+          var filteredSample = ["kubectl/v1.13.3", "kube-apiserver/v1.15.0", "kube-proxy/v1.13.5"]
+
+          var selectTestTags = testTags.selectTestTagsFilteredByInput.resultFunc
+
+           expect(selectTestTags(testTagsSample, filter)).toEqual(testTagsNamesSample)
+           expect(selectTestTags(testTagsSample, filterB)).toEqual(filteredSample)
+
+      })
+
+    #+END_SRC
+
+    #+NAME: selectTestTagsFilteredByInput
+    #+BEGIN_SRC js :tangle no
+      selectTestTagsFilteredByInput: createSelector(
+        'selectTestTagsResource',
+        'selectTestTagsInput',
+        (testTags, input) => {
+          if (testTags == null || input === '') return []
+          let testTagsNames = Object.keys(testTags)
+          let isValid = true
+          try {
+            new RegExp(input)
+          } catch (err) {
+            isValid = false
+          }
+          if (!isValid) return ['not valid regex']
+
+          return testTagsNames.filter(ua => {
+            let inputAsRegex = new RegExp(input)
+            return inputAsRegex.test(ua)
+          })
+        }
+      )
+
+    #+END_SRC
+
+*** selectTestTagsFilteredByQuery
+    **◊TestTags ◊Query -> ◊TestTags**
+    _Return a filtered TestTags based on query.useragent_
+
+    #+BEGIN_SRC shell :dir ./src/test_resources :results output :tangle no
+      cat testTags.json | jq 'map(.name)'
+    #+END_SRC
+
+
+    #+NAME: selectTestTagsFilteredByQuery Test
+    #+BEGIN_SRC js :tangle no
+      it('should return testTags whose name matches query', () => {
+        var noFilter = {useragent: ''}
+        var expectedResult = [
+          "kubectl/v1.13.3",
+          "kube-apiserver/v1.15.0",
+          "kube-proxy/v1.13.5",
+          "node-problem-detector/v0.5.0-49-gfb81368",
+          "nfs-provisioner/v0.0.0"
+        ]
+
+        var filter = {useragent: 'kube'}
+        var expectedFilteredResult = [
+          "kubectl/v1.13.3",
+          "kube-apiserver/v1.15.0",
+          "kube-proxy/v1.13.5"
+        ]
+
+        var selectQueryFilter = testTags.selectTestTagsFilteredByQuery.resultFunc
+        var unFilteredResult = map(selectQueryFilter(testTagsSample, noFilter), 'name')
+        var filteredResult = map(selectQueryFilter(testTagsSample, filter), 'name')
+        expect(filteredResult).toEqual(expectedFilteredResult)
+        expect(unFilteredResult).toEqual(expectedResult)
+      })
+    #+END_SRC
+
+     #+NAME: selectTestTagsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectTestTagsFilteredByQuery: createSelector(
+         'selectTestTagsResource',
+         'selectQueryObject',
+         (testTags, query) => {
+           if (testTags == null || !query) return []
+           if (query.test_tags && query.test_tags.length) {
+             return pickBy(testTags, (val, key) => {
+               var inputAsRegex = new RegExp(query.test_tags)
+               return inputAsRegex.test(key)
+             })
+           } else {
+             return []
+           }
+         }
+       )
+     #+END_SRC
+
+*** selectNamesTestTagsFilteredByQuery
+    **◊TestTags -> ◊UseragentNames**
+    //Returns an array of Keys from our TestTags Object.  In other words: their names//
+
+     #+NAME: selectNamesTestTagsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectNamesTestTagsFilteredByQuery: createSelector(
+         'selectTestTagsFilteredByQuery',
+         (testTags) => {
+           return Object.keys(testTags)
+         }
+       )
+     #+END_SRC
+
+*** selectOpIdsHitByFilteredTestTags
+    **◊TestTags -> ◊Endpoints**
+    _Given a set of testTags that contain endpoints, return an array of just the unique endpoints._
+    This won't be the ultimate filter.  Rather, we wanna setup a nice selection to use in our endpoint bundle as a filter.  So the key here is to make an array of endpoints that is useful for future filtering.
+
+   #+NAME: selectOpIdsHitByFilteredTestTags
+   #+BEGIN_SRC js :tangle no
+     selectOpIdsHitByFilteredTestTags: createSelector(
+       'selectTestTagsFilteredByQuery',
+       (testTags) => {
+         let opIdsHit = []
+         let opIds = Object.keys(testTags)
+         let opId, opIdIndex;
+
+         if (testTags == null)  {
+           return opIdsHit
+         }
+         for (opIdIndex = 0; opIdIndex < opIds.length; opIdIndex++) {
+           opId = opIds[opIdIndex]
+           opIdsHit.push(testTags[opId])
+         }
+         return uniq(opIdsHit.flat())
+       }
+     )
+   #+END_SRC
+
+  NOTE this kinda works now, but I'm realizing that we don't need bucket,job,release...since we are only pulling ua's from a single release at the page load.  What we really need is to match on level, category, name, method...but the level and category are not a part of this.  Is it possible for an endoint to exist in beta/stable or in multiple categories?  If so, this would be inaccurate.
+
+*** doUpdateUseragentInput
+    **String -> Action**
+    _Returns an action for our reducer with type "USERAGENT_INPUT_UPDATED' and String as payload_
+
+    #+NAME: doUpdateTestTagsInput
+    #+BEGIN_SRC js :tangle no
+      doUpdateTestTagsInput: (payload) => ({dispatch}) => {
+        dispatch({
+          type: 'TEST_TAGS_INPUT_UPDATED',
+          payload
+        })
+      }
+
+    #+END_SRC
+
+** Useragents Resource
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/useragents-resource.js :noweb yes
+   :END:
+
+   This is the same pattern as endpoints, releases, and tests.  We set up an async resource bundle that has the fetching and reacting built in.  Whenever a fetch is triggered by switching to a new release, than we query our feathers for the useragents path and grab only the ones that fit this release.
+
+   #+NAME: Useragents Resource
+   #+BEGIN_SRC js
+     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+
+     import { fetchResource } from '../lib/utils'
+
+     const bundle = createAsyncResourceBundle({
+       name: 'useragentsResource',
+       getPromise: ({store}) => {
+         var gsPath = store.selectGsPath()
+         return fetchResource(gsPath, '/useragents.json')
+       }
+     })
+
+     bundle.reactUseragentsResourceFetch = createSelector(
+       'selectUseragentsResourceShouldUpdate',
+       (shouldUpdate) => {
+         if (!shouldUpdate) return
+         return { actionCreator: 'doFetchUseragentsResource' }
+       }
+     )
+
+     export default bundle
+   #+END_SRC
+** Useragents
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/useragents.js :noweb yes
+   :END:
+
+   Holds our filtered inputs both when the filter is just input in the search form and when it is set as a query.
+   I feel these need to be two separate bundles, since one is temporary/changable and the other is the set query .
+   For the one being changable, we only need the useragent names, all the other info isn't really that important.
+
+*** Layout
+   #+NAME: Useragents bundle
+   #+BEGIN_SRC js
+     import { pickBy,
+              uniq } from 'lodash'
+     import { createSelector } from 'redux-bundler'
+     export default {
+       name: 'useragents',
+       <<Useragents Reducer>>,
+       <<selectUseragentInput>>,
+       <<selectUseragentsFilteredByInput>>,
+       <<selectUseragentsFilteredByQuery>>,
+       <<selectNamesUseragentsFilteredByQuery>>,
+       <<selectOpIdsHitByFilteredUseragents>>,
+       <<doUpdateUseragentsInput>>
+     }
+   #+END_SRC
+
+*** Tests Layout
+    #+NAME: Useragents Tests Setup
+    #+BEGIN_SRC js :tangle ./src/bundles/useragents.test.js
+      import { Reducer, Selector } from 'redux-testkit'
+      import { map } from 'lodash'
+      import {composeBundlesRaw} from 'redux-bundler'
+      import createStore from './index.js'
+      import useragents from './useragents.js'
+      import useragentsResource from './useragents-resource.js'
+      import useragentsSample from '../test_resources/useragents.json'
+      <<useragentsNamesSample>>
+
+      var store = createStore()
+      var state = store.getState()
+
+      const initialState = {
+        filterInput: ''
+      }
+
+      describe('Useragents Reducer', () => {
+        <<Useragents Reducer Test>>
+      })
+
+      describe('Useragents Selectors', () => {
+        <<selectUseragentInput Test>>
+        <<selectUseragentsFilteredByInput Test>>
+        <<selectUseragentsFilteredByQuery Test>>
+      })
+
+    #+END_SRC
+
+*** Useragents Reducer
+
+    **Action -> UseragentState**
+    Received action and its payload and returns the new Useragentstate(containing changes based on payload).
+    If no action is given, returns the initial state.
+
+    #+NAME: Useragents Reducer Test
+    #+BEGIN_SRC js :tangle no
+      it('should have initial state', () => {
+        expect(state.useragents).toEqual(initialState)
+      })
+      it('should handle USERAGENT_INPUT_UPDATED with alphanumeric', () => {
+        const payload = 'ksjdj'
+        const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
+        const result = {filterInput: payload}
+        Reducer(useragents.getReducer()).expect(action).toReturnState(result)
+      })
+
+      it('should handle USERAGENT_INPUT_UPDATED with full regex', () => {
+        const payload = '(./a(sjd)*'
+        const action = {type: 'USERAGENT_INPUT_UPDATED', payload}
+        const result = {filterInput: payload}
+        Reducer(useragents.getReducer()).expect(action).toReturnState(result)
+      })
+    #+END_SRC
+
+    #+NAME: Useragents Reducer
+    #+BEGIN_SRC js :tangle no
+      getReducer: () => {
+        const initialState = {
+          filterInput: ''
+        }
+        return (state=initialState, {type, payload}) => {
+          if (type  === 'USERAGENT_INPUT_UPDATED') {
+            return {...state, filterInput: payload}
+          }
+          return state
+        }
+      }
+    #+END_SRC
+
+*** selectUseragentInput
+    **UseragentState -> String**
+    _selects the input state from useragent_
+    #+NAME: selectUseragentInput Test
+    #+BEGIN_SRC js :tangle no
+      it('should return a string for selectUseragentInput', () => {
+        const stateA = {useragents: {filterInput: ''}}
+        const stateB = {useragents: {filterInput: 'r^eg&x'}}
+        var selectInput = useragents.selectUseragentsInput
+
+        expect(selectInput(stateA)).toEqual(stateA.useragents.filterInput)
+        expect(selectInput(stateB)).toEqual(stateB.useragents.filterInput)
+      })
+
+    #+END_SRC
+    #+NAME: selectUseragentInput
+    #+BEGIN_SRC js :tangle no
+      selectUseragentsInput: (state) => state.useragents.filterInput
+    #+END_SRC
+
+*** selectUseragentsFilteredByInput
+    **Regex -> ◊UseragentsNames**
+    _Given a regex filter, return an array of names that match this regex_
+    #+NAME: useragentsNamesSample
+    #+BEGIN_SRC js :tangle no
+      var useragentsNamesSample  = [
+        "kubectl/v1.13.3",
+        "kube-apiserver/v1.15.0",
+        "kube-proxy/v1.13.5",
+        "node-problem-detector/v0.5.0-49-gfb81368",
+        "nfs-provisioner/v0.0.0"
+      ]
+    #+END_SRC
+
+    #+NAME: selectUseragentsFilteredByInput Test
+    #+BEGIN_SRC js :tangle no
+      it('should return all useragent names if no filter is set', () => {
+          <<useragentsNamesSample>>
+          var filter = ''
+          var filterB = 'kube'
+          var filteredSample = ["kubectl/v1.13.3", "kube-apiserver/v1.15.0", "kube-proxy/v1.13.5"]
+
+          var selectUseragents = useragents.selectUseragentsFilteredByInput.resultFunc
+
+           expect(selectUseragents(useragentsSample, filter)).toEqual(useragentsNamesSample)
+           expect(selectUseragents(useragentsSample, filterB)).toEqual(filteredSample)
+
+      })
+
+    #+END_SRC
+
+    #+NAME: selectUseragentsFilteredByInput
+    #+BEGIN_SRC js :tangle no
+      selectUseragentsFilteredByInput: createSelector(
+        'selectUseragentsResource',
+        'selectUseragentsInput',
+        (useragents, input) => {
+          if (useragents == null || input === '') return []
+          let useragentsNames = Object.keys(useragents)
+          let isValid = true
+          try {
+            new RegExp(input)
+          } catch (err) {
+            isValid = false
+          }
+          if (!isValid) return ['not valid regex']
+
+          return useragentsNames.filter(ua => {
+            let inputAsRegex = new RegExp(input)
+            return inputAsRegex.test(ua)
+          })
+        }
+      )
+
+    #+END_SRC
+
+*** selectUseragentsFilteredByQuery
+    **◊Useragents ◊Query -> ◊Useragents**
+    _Return a filtered Useragents based on query.useragent_
+    #+BEGIN_SRC shell :dir ./src/test_resources :results output :tangle no
+      cat useragents.json | jq 'map(.name)'
+    #+END_SRC
+
+
+    #+NAME: selectUseragentsFilteredByQuery Test
+    #+BEGIN_SRC js :tangle no
+      it('should return useragents whose name matches query', () => {
+        var noFilter = {useragent: ''}
+        var expectedResult = [
+          "kubectl/v1.13.3",
+          "kube-apiserver/v1.15.0",
+          "kube-proxy/v1.13.5",
+          "node-problem-detector/v0.5.0-49-gfb81368",
+          "nfs-provisioner/v0.0.0"
+        ]
+
+        var filter = {useragent: 'kube'}
+        var expectedFilteredResult = [
+          "kubectl/v1.13.3",
+          "kube-apiserver/v1.15.0",
+          "kube-proxy/v1.13.5"
+        ]
+
+        var selectQueryFilter = useragents.selectUseragentsFilteredByQuery.resultFunc
+        var unFilteredResult = map(selectQueryFilter(useragentsSample, noFilter), 'name')
+        var filteredResult = map(selectQueryFilter(useragentsSample, filter), 'name')
+        expect(filteredResult).toEqual(expectedFilteredResult)
+        expect(unFilteredResult).toEqual(expectedResult)
+      })
+    #+END_SRC
+
+     #+NAME: selectUseragentsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectUseragentsFilteredByQuery: createSelector(
+         'selectUseragentsResource',
+         'selectQueryObject',
+         (useragents, query) => {
+           if (useragents == null || !query) return []
+           if (query.useragents && query.useragents.length) {
+             return pickBy(useragents, (val, key) => {
+               var inputAsRegex = new RegExp(query.useragents)
+               return inputAsRegex.test(key)
+             })
+           } else {
+             return []
+           }
+         }
+       )
+     #+END_SRC
+
+*** selectNamesUseragentsFilteredByQuery
+    **◊Useragents -> ◊UseragentNames**
+    //Returns an array of Keys from our Useragents Object.  In other words: their names//
+
+     #+NAME: selectNamesUseragentsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectNamesUseragentsFilteredByQuery: createSelector(
+         'selectUseragentsFilteredByQuery',
+         (useragents) => {
+           return Object.keys(useragents)
+         }
+       )
+     #+END_SRC
+
+*** selectOpIdsHitByFilteredUseragents
+    **◊Useragents -> ◊Endpoints**
+    _Given a set of useragents that contain endpoints, return an array of just the unique endpoints._
+    This won't be the ultimate filter.  Rather, we wanna setup a nice selection to use in our endpoint bundle as a filter.  So the key here is to make an array of endpoints that is useful for future filtering.
+
+   #+NAME: selectOpIdsHitByFilteredUseragents
+   #+BEGIN_SRC js :tangle no
+     selectOpIdsHitByFilteredUseragents: createSelector(
+       'selectUseragentsFilteredByQuery',
+       (useragents) => {
+         let opIdsHit = []
+         let opIds = Object.keys(useragents)
+         let opId, opIdIndex;
+
+         if (useragents == null)  {
+           return opIdsHit
+         }
+         for (opIdIndex = 0; opIdIndex < opIds.length; opIdIndex++) {
+           opId = opIds[opIdIndex]
+           opIdsHit.push(useragents[opId])
+         }
+         return uniq(opIdsHit.flat())
+       }
+     )
+   #+END_SRC
+
+  NOTE this kinda works now, but I'm realizing that we don't need bucket,job,release...since we are only pulling ua's from a single release at the page load.  What we really need is to match on level, category, name, method...but the level and category are not a part of this.  Is it possible for an endoint to exist in beta/stable or in multiple categories?  If so, this would be inaccurate.
+
+*** doUpdateUseragentInput
+    **String -> Action**
+    _Returns an action for our reducer with type "USERAGENT_INPUT_UPDATED' and String as payload_
+
+    #+NAME: doUpdateUseragentsInput
+    #+BEGIN_SRC js :tangle no
+      doUpdateUseragentsInput: (payload) => ({dispatch}) => {
+        dispatch({
+          type: 'USERAGENT_INPUT_UPDATED',
+          payload
+        })
+      }
+
+    #+END_SRC
+
+** TestedStats
+  :PROPERTIES:
+  :header-args: :tangle ./src/bundles/tested-stats.js :noweb yes
+  :END:
+  This bundle deals with our endpoints overal testing info, percentageof endpoints tested and conformance tested. It is used to generate the interior label of the sunburst (or other places if we deem it fit.)
+
+  My thought is we would generate all the info for every level, category, and opPid before hand...so that we could filter by this later if we'd like...and to improve performance of the sunburst.  Before, we would wait until someone hovered over a node, calculate what node it was, and then calculate the coverage for it and what shluld display....now when you hover over a node, we check what it is, and show it's test info in the label by calling it like so:
+  =testedStats[node.level][node.category][labelX]= For when the node is on a category, and we want the topmost label.
+*** Imports and Layout
+    #+NAME: testedStats Imports and Layout
+    #+BEGIN_SRC js
+      import { createSelector } from 'redux-bundler'
+      import { filter,
+               groupBy,
+               isEmpty,
+               keyBy,
+               mapValues } from 'lodash'
+
+      export default {
+        name: 'testedStats',
+        <<selectTestedStats>>,
+        <<selectActiveStats>>
+      }
+
+    #+END_SRC
+*** selectTestedStats
+    *◊Endpoints -> ◊TestedStats*
+    /Runs through a set of filtered endpoints generating stats info for each grouping/
+
+    #+NAME: selectTestedStats
+    #+BEGIN_SRC js :tangle no
+      selectTestedStats: createSelector(
+        'selectFilteredEndpoints',
+        (endpoints) => {
+          if (endpoints == null) return null
+          var endpointsWithOpIds = mapValues(endpoints, (value, key, endpoints) => {
+            return {operationId: key, ...value}
+          })
+          var testedStats = gatherTestedStats(endpoints)
+          var endpointsByLevel = groupBy(endpointsWithOpIds, 'level')
+          return {
+            ...testedStats,
+            ...mapValues(endpointsByLevel, (endpointsInLevel) => {
+              var testedStats = gatherTestedStats(endpointsInLevel)
+              var endpointsByCategory = groupBy(endpointsInLevel, 'category')
+              return {
+                ...testedStats,
+                ...mapValues(endpointsByCategory, (endpointsInCategory) => {
+                  var testedStats = gatherTestedStats(endpointsInCategory)
+                  var endpoints = keyBy(endpointsInCategory, 'operationId')
+                  return {
+                    ...testedStats,
+                    ...mapValues(endpoints, (endpoint) => {
+                      var testedStats = gatherEndpointTestedStats(endpoint)
+                      return {
+                        ...testedStats
+                      }
+                    })
+                  }
+                })
+              }
+            })
+          }
+        }
+      )
+    #+END_SRC
+*** selectActiveStats
+    *TestedStats QueryObject -> TestedStat*
+    /Return the stats matching the current query/
+    Our query object will have up to a level, category, endpoint....if it doesn't, then we haven't hovered over anything.o
+    #+NAME: selectActiveStats
+    #+BEGIN_SRC js :tangle no
+      selectActiveStats: createSelector(
+        'selectTestedStats',
+        'selectQueryObject',
+        'selectZoom',
+        (stats, query, zoom) => {
+          if (stats == null || isEmpty(stats)) return null
+          if (!isEmpty(query) && !query.level && !query.zoomed) {
+            return {
+              labelX: stats.labelX,
+              labelY: stats.labelY,
+              labelZ: stats.labelZ,
+            }
+          }
+          if (isEmpty(query) || (!query.level && (zoom && !zoom.operationId))) {
+            return {
+              labelX: stats.labelX,
+              labelY: stats.labelY,
+              labelZ: stats.labelZ,
+            }
+          }
+          if (query.operationId) {
+            return {
+              labelX: stats[query.level][query.category][query.operationId].labelX,
+              labelY: stats[query.level][query.category][query.operationId].labelY,
+              labelZ: stats[query.level][query.category][query.operationId].labelZ
+            }
+          }
+          if (zoom && zoom.depth === 'operationId') {
+            console.log({stats, zoom})
+            return {
+              labelX: stats[zoom.level][zoom.category][zoom.operationId].labelX,
+              labelY: stats[zoom.level][zoom.category][zoom.operationId].labelY,
+              labelZ: stats[zoom.level][zoom.category][zoom.operationId].labelZ
+            }
+          }
+          if (query.category && !query.operationId) {
+            return {
+              labelX: stats[query.level][query.category].labelX,
+              labelY: stats[query.level][query.category].labelY,
+              labelZ: stats[query.level][query.category].labelZ,
+            }
+          }
+          if (query.level && !query.category) {
+            return {
+              labelX: stats[query.level].labelX,
+              labelY: stats[query.level].labelY,
+              labelZ: stats[query.level].labelZ,
+            }
+          } else {
+            return {
+              labelX: '',
+              labelY: '',
+              labelZ: ''
+            }
+          }
+        }
+      )
+
+    #+END_SRC
+*** Helper Functions
+**** Calculate Number
+     *Endpoints KeyWithIntegerValue -> Number*
+     / Calculate the number of endpoints that have a positive value for the specified key/
+     #+NAME: CalculateNumber
+     #+BEGIN_SRC js
+       function calculateNumber (endpoints, key) {
+         var endpointsWithPositiveValue = filter(endpoints, (endpoint) => endpoint[key] > 0)
+         return endpointsWithPositiveValue.length
+       }
+     #+END_SRC
+**** gatherTestedStats
+     *◊Endpoints -> ◊TestedStat*
+     /Return an object containing the tested stats for a select group of endpoints/
+     #+NAME: gatherStats
+     #+BEGIN_SRC js
+       function gatherTestedStats (endpoints) {
+         if (isEmpty(endpoints)) return {}
+         var totalOpIds = Object.keys(endpoints).length
+         var testedOpIds = calculateNumber(endpoints, 'testHits')
+         var conformanceTestedOpIds = calculateNumber(endpoints, 'conformanceHits')
+         var percentTested = Math.round((testedOpIds / totalOpIds) * 100)
+         var percentConformanceTested = Math.round((conformanceTestedOpIds / totalOpIds) * 100)
+         var labelX = totalOpIds > 1 ? `${totalOpIds} endpoints` : `${totalOpIds} endpoint`
+         var labelY = `${percentTested}% hit by tests.`
+         var labelZ = `${percentConformanceTested}% hit by conformance tests.`
+         return {
+           labelX,
+           labelY,
+           labelZ
+         }
+       }
+     #+END_SRC
+**** gatherEndpointTestedStats
+     *◊Endpoint-> ◊EndpointTestedStat*
+     /Return an object containing the unique tested stats for the endpoint/
+     #+NAME: gatherStats
+     #+BEGIN_SRC js
+       function gatherEndpointTestedStats (endpoint) {
+         var tested = endpoint.testHits > 1
+         var conformanceTested = endpoint.conformanceHits > 1
+         var labelX = () => {
+           if (tested && conformanceTested) {
+             return 'Tested and Conformance Tested'
+           } else if (tested && !conformanceTested) {
+             return 'Tested, but not Conformance Tested'
+           } else {
+             return 'Not Tested'
+           }
+         }
+         var labelY = () => {
+           if (tested) {
+             return endpoint.testHits > 1
+               ? `hit by tests ${endpoint.testHits} times`
+               : `hit by tests ${endpoint.testHits} time`
+           } else {
+             if (endpoint.hits === 0) return 'Not Hit'
+             return endpoint.hits > 1
+               ? `hit ${endpoint.hits} times overall`
+               : `hit ${endpoint.hits} time overall`
+           }
+         }
+         var labelZ = () => {
+           if (conformanceTested) {
+             return endpoint.conformanceHits > 1
+               ? `hit by conformance tests ${endpoint.conformanceHits} times`
+               : `hit by conformance tests ${endpoint.conformanceHits} time`
+           } else {
+             return ''
+           }
+         }
+         return {
+           tested,
+           testHits: endpoint.testHits,
+           conformanceTested,
+           conformanceHits: endpoint.conformanceHits,
+           hits: endpoint.hits,
+           labelX: labelX(),
+           labelY: labelY(),
+           labelZ: labelZ()
+         }
+       }
+     #+END_SRC
+
+** Zoom
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/zoom.js :noweb yes
+   :END:
+*** Imports and Layout
+   #+NAME: Zoom Bundle
+   #+BEGIN_SRC js
+     import { createSelector } from 'redux-bundler'
+     import { split } from 'lodash'
+
+     import { propertiesWithValue } from '../lib/utils'
+
+     export default {
+       name: 'zoom',
+       <<Zoom Selector>>
+     }
+   #+END_SRC
+*** Selector
+    #+NAME: Zoom Selector
+    #+BEGIN_SRC js :tangle no
+      selectZoomArray: createSelector(
+        'selectQueryObject',
+        (query) => {
+          if (query == null || query.zoomed === undefined) return null
+          return split(query.zoomed, '-')
+        }
+      ),
+      selectZoom: createSelector(
+        'selectZoomArray',
+        (zoomArray) => {
+          if  (zoomArray == null) return null
+          var zoomRaw = {
+            depth: zoomArray[0],
+            level: zoomArray[1],
+            category: zoomArray[2],
+            operationId: zoomArray[3]
+          }
+          var zoom = propertiesWithValue(zoomRaw) || {}
+          return zoom
+        }
+      )
+    #+END_SRC
+
+    With selectors, the values are given all at once as soon as  the page starts up.   Which will be before the fetch has returned for our data.  We need to make sure to not try to ask something of the data before it's returned, and so to include the 'if null return null' for both
+
+    We are also taking just the first method in the endpoint....Which means the endpoint is also only showiung in the sunburst for it's own name, and not its methods.  For most of them they will only have a single method, but others do not.  Thed question then is whether each endpoint and method should be shown separately, or whether when you hover over it says how many methods it has and how many of them are tested....the case where an endpoint's put method is tested but its read method is not or some thing like that.  Not sure the best way to tackle this, like what the user would be expecting.
+
+    we want to select the tests from our testsResource based on what's in our active tests
+
+* Components
+** App
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/app.js
+    :END:
+    the initiatory component.  This is sort of the standard layout in which all other views are placed within.
+    #+Name: App.js
+    #+BEGIN_SRC js
+      import React from 'react'
+      import navHelper from 'internal-nav-helper'
+      import { connect } from 'redux-bundler-react'
+
+      import Header from './header'
+      import Footer from './footer'
+      import MainPage from '../pages/main-page'
+
+      export default connect(
+       'doUpdateUrl',
+        ({doUpdateUrl}) => {
+          return (
+              <div onClick={navHelper(doUpdateUrl)}>
+              <Header />
+              <MainPage />
+              <Footer />
+              </div>
+          )
+        }
+      )
+    #+END_SRC
+** Header
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/header.js
+    :END:
+   #+NAME: Header
+   #+BEGIN_SRC js
+import React from 'react'
+
+export default () => (
+    <header className='flex flex-row pt2 pb2 pl4 pr4 h3_5 items-center justify-between bg-light-gray black shadow-3'>
+      <div id='logo' className= 'flex flex-wrap items-center'>
+      <img className='h2' src='./assets/apisnoop_logo_v1.png' alt='logo for apisnoop, a magnifying glass with a sunburst graph inside.' />
+      <h1 className='ma0 f4 fw4 pl2 avenir'>APISnoop</h1>
+      </div>
+      <div id='source-code' className='flex items-center'>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        <a href='https://github.com/cncf/apisnoop' title='github repo for apisnoop' className='link f7 pl1'>Source Code</a>
+      </div>
+    </header>
+)
+
+
+   #+END_SRC
+** Footer
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/footer.js
+    :END:
+   #+NAME: Footer
+   #+BEGIN_SRC js
+     import React from 'react'
+
+     export default () => (
+         <footer className='w-100 flex flex-row-ns pt2 pb2 h3 pl4 pr4 items-center justify-between bg-black black shadow-3 white'>
+         <div id='logo' className= 'flex flex-wrap items-center justify-center'>
+         <a className='contain bg-cncf bg-center white h-100 w4 mr4' href='https://cncf.io' title='leads to external cncf homepage'>
+         <span className='o-0'>cncf</span>
+         </a>
+         <a className='contain bg-packet bg-center h-100 w4 mr4' href='https://packet.net' title='leads to external packet homepage'>
+         <span className='o-0'>packet</span>
+         </a>
+         <h1 className='ma0 f4 fw4 pl2 avenir'>APISnoop</h1>
+         </div>
+         <div id='source-code' className='flex items-center'>
+         </div>
+         </footer>
+     )
+   #+END_SRC
+** Summary Container
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/summary-container.js
+   :END:
+
+   This will hold the right-hand side of ourr sunburst and summary page, detailing the current path we are on and any relevant information about it.
+
+   #+NAME: Summary Container
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+
+     import TestTagsList from './test-tags-list'
+
+     const SummaryContainer = (props) => {
+       const {
+         activeLocation,
+         activeStats,
+       } = props
+
+       if (activeStats == null) return null
+
+       return(
+           <div id='summary-container' className=''>
+           <p>{activeLocation.level}{activeLocation.category}{activeLocation.operationId}</p>
+           <p className='f3 mt0 mb3 ttsc'>{ activeStats.labelX }</p>
+           <p className='f4 mt0 mb3 i fw2'>{ activeStats.labelY }</p>
+           <TestTagsList />
+           </div>
+       )
+     }
+     export default connect(
+       'selectActiveLocation',
+       'selectActiveStats',
+       'selectCategoryColours',
+       'selectLevelColours',
+       SummaryContainer
+     )
+   #+END_SRC
+
+** Sunburst And Summary
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/sunburst-and-summary.js
+   :END:
+   #+NAME: sunburst-and-summary
+   #+BEGIN_SRC js :tangle ./src/components/sunburst-and-summary.js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+
+     import SunburstContainer from './sunburst-container'
+     import SummaryContainer from './summary-container'
+
+     const SunburstAndSummary = (props) => {
+       return (
+           <section
+             id='summary-and-sunburst'
+             className='flex mb4 mt4'
+           >
+           <SunburstContainer />
+           <SummaryContainer />
+         </section>
+       )
+     }
+
+     export default connect(
+       SunburstAndSummary
+     )
+
+   #+END_SRC
+** Sunburst Container
+   #+NAME: sunburst-container
+   #+BEGIN_SRC js :tangle ./src/components/sunburst-container.js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+
+     import Sunburst from './sunburst'
+     import SunburstHeader from './sunburst-header'
+
+     const SunburstContainer = (props) => {
+       return (
+           <div id='sunburst-container' className='flex flex-column mr4'>
+           <SunburstHeader />
+           <Sunburst />
+           </div>
+       )
+     }
+
+     export default connect(
+       SunburstContainer
+     )
+
+   #+END_SRC
+** Sunburst Header
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/sunburst-header.js
+   :END:
+   #+NAME: sunburst-header
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+
+     const SunburstHeader = (props) => {
+       const {
+         metadata
+       } = props
+
+       return (
+           <div id='sunburst-header' className='relative'>
+           <h2 className='mb1 mt1 pt4 f1'>
+           { metadata.version }
+           </h2>
+           <p className='ibm-plex-mono f6 mt0 pt0 pl2'> from job {metadata.job} in bucket {metadata.bucket}</p>
+           <p className='ibm-plex-mono f6 mb1 pt0 pl2'>Data Gathered on {metadata.timestamp}</p>
+           </div>
+       )
+     }
+
+     export default connect(
+       'selectMetadata',
+       SunburstHeader
+     )
+
+   #+END_SRC
+** Sunburst
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/sunburst.js
+    :END:
+    #+NAME: Sunburst
+    #+BEGIN_SRC js
+      import React from 'react'
+      import { Sunburst, LabelSeries } from 'react-vis'
+      import { connect } from 'redux-bundler-react'
+      import {
+        get,
+        join,
+        omit,
+        sortBy } from 'lodash'
+
+      import { propertiesWithValue } from '../lib/utils'
+
+      const SunburstChart = (props) => {
+        const {
+          activeStats,
+          doUpdateQuery,
+          labelStyles,
+          queryObject,
+          sunburst,
+        } = props
+
+        if (sunburst == null) return null
+        return (
+            <div id='sunburst'>
+            <Sunburst
+          hideRootNode
+          colorType="literal"
+          data={sunburst}
+          height={600}
+          width={600}
+          getColor={node => node.color}
+          onValueMouseOver={handleMouseOver}
+          onValueMouseOut={handleMouseOut}
+          onValueClick={handleMouseClick}
+            >
+           {activeStats && <LabelSeries
+             data={[{x: 0, y: 60, label: activeStats.labelX, labelAnchorY: 'center', style:labelStyles.X},
+                    {x: 0, y: 0, label: activeStats.labelY, style: labelStyles.Y},
+                    {x: 0, y: -20, label: activeStats.labelZ, style: labelStyles.Z}
+                   ]}
+           />}
+            </Sunburst>
+            <button className='ttsc' onClick={handleReset}>Reset</button>
+            </div>
+        )
+
+        function handleMouseOver (node, event) {
+          var path = getKeyPath(node)
+          var query= propertiesWithValue({
+            level: path[1],
+            category: path[2],
+            operationId: path[3]
+          })
+          doUpdateQuery({
+            ...queryObject,
+            ...query
+          })
+        }
+
+        function handleMouseOut (e) {
+          var query = omit(queryObject, ['level','category','operationId'])
+          doUpdateQuery(query)
+        }
+
+        function handleMouseClick (node, event) {
+          var depth = ['root', 'level', 'category', 'operationId']
+          var path = getKeyPath(node)
+          var query = propertiesWithValue({
+            level: path[1],
+            category: path[2],
+            operationId: path[3],
+          })
+          var queryAsArray = sortBy(query, ['level','category','operationId'])
+          query.zoomed = `${depth[node.depth]}-${join(queryAsArray,'-')}`
+          doUpdateQuery({
+            ...queryObject,
+            ...query
+          })
+        }
+
+        function handleReset () {
+          var resetQuery = omit(queryObject,['level', 'category', 'operationId', 'zoomed'])
+          doUpdateQuery(resetQuery)
+        }
+
+        function getKeyPath (node) {
+          if (!node.parent) {
+            return ['root'];
+          }
+          var nodeKey = get(node, 'data.name') || get(node, 'name')
+          var parentKeyPath = getKeyPath(node.parent)
+          return [...parentKeyPath, nodeKey]
+        }
+      }
+
+      export default connect(
+        'selectActiveStats',
+        'doUpdateQuery',
+        'selectLabelStyles',
+        'selectQueryObject',
+        'selectSunburst',
+        SunburstChart
+      )
+    #+END_SRC
+** Test Tags List
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/test-tags-list.js
+   :END:
+   this lists all the test tags that are under an endpoint (or more spefifically, for right now, the first method of that endpoint).
+   #+NAME: test-tags-list
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+
+     function TestTag (props) {
+       const { testTag } = props
+       return (
+         <li className='dib tal ttsc mr2 mb2 ph2 pv1 mid-gray'>
+           { testTag }
+         </li>
+       )
+     }
+
+     function TestTagsList (props) {
+       const { activeTestTags } = props
+
+       if (activeTestTags == null) return null
+       if (activeTestTags.length === 0) return null
+
+       return (
+         <div className="mt4 pl0">
+           <p>Tests are coming from:</p>
+           <div className="scrollbox">
+           <ul className='list pl0 ml0'>
+           {activeTestTags.map((testTag, index) => {
+               return <TestTag key={'testTag_'.concat(index)} testTag={ testTag } />
+             })}
+           </ul>
+         </div>
+         </div>
+       )
+     }
+
+     export default connect(
+       'selectActiveTestTags',
+       TestTagsList
+     )
+   #+END_SRC
+
+** TestTags Search Container
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/test-tags-search-container.js
+   :END:
+
+    A container, that sits below our releases and has a search bar displayed.  When you type into it, it shows the result of yoru regex filter below, by displaying the useragents that fit that filter
+
+   #+NAME: TestTags Search Container
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+     import SearchBar from './search-bar'
+     import SearchResults from './search-results'
+     import ActiveFilter from './active-filter'
+
+
+     function TestTagsSearchContainer (props) {
+       const {
+         doUpdateTestTagsInput,
+         namesTestTagsFilteredByQuery,
+         testTagsInput,
+         testTagsFilteredByInput
+       } = props
+
+       return (
+         <div id='test-tags-search'>
+           <h2>Filter by test tags</h2>
+           <SearchBar searchFilter={'test_tags'} doUpdateInput={doUpdateTestTagsInput} input={testTagsInput} />
+           <SearchResults searchFilter={'test_tags'} results={testTagsFilteredByInput} />
+           <ActiveFilter searchFilter={'test_tags'} results={namesTestTagsFilteredByQuery}/>
+         </div>
+       )
+     }
+     export default connect(
+       'doUpdateTestTagsInput',
+       'selectTestTagsInput',
+       'selectTestTagsFilteredByInput',
+       'selectNamesTestTagsFilteredByQuery',
+       TestTagsSearchContainer
+     )
+   #+END_SRC
+
+** Tests Container
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/tests-container.js
+   :END:
+   Is added to the main page and toggles between two components: if there is no test given in the query, we show the ActiveTestsList,
+   if there is a test in the query (indicating someone clicked on a test from the active tests list), then we display ActiveTestSequence.
+   #+NAME: Tests Container
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+
+     import ActiveTestsList from './active-tests-list'
+     import ActiveTestSequence from './active-test-sequence'
+
+     function TestsContainer (props) {
+       const {
+         queryObject
+       } = props
+
+       if (queryObject == null) return null
+
+       return(
+           <section id='tests'>
+           {queryObject && queryObject.test == null &&
+            <ActiveTestsList />}
+           {queryObject.test && (typeof queryObject.test == 'string') &&
+             <ActiveTestSequence />}
+           </section>
+       )
+     }
+
+     export default connect(
+       'selectQueryObject',
+       TestsContainer
+     )
+   #+END_SRC
+
+** Useragents Search Container
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/useragents-search-container.js
+   :END:
+
+    A container, that sits below our releases and has a search bar displayed.  When you type into it, it shows the result of yoru regex filter below, by displaying the useragents that fit that filter
+
+   #+NAME: TestTags Search Container
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+     import SearchBar from './search-bar'
+     import SearchResults from './search-results'
+     import ActiveFilter from './active-filter'
+
+
+     function UseragentsSearchContainer (props) {
+       const {
+         doUpdateUseragentsInput,
+         namesUseragentsFilteredByQuery,
+         useragentsInput,
+         useragentsFilteredByInput
+       } = props
+
+       return (
+         <div id='test-tags-search'>
+           <h2>Filter by user-agents</h2>
+           <SearchBar searchFilter={'useragents'} doUpdateInput={doUpdateUseragentsInput} input={useragentsInput} />
+           <SearchResults searchFilter={'useragents'} results={useragentsFilteredByInput} />
+           <ActiveFilter searchFilter={'useragents'} results={namesUseragentsFilteredByQuery}/>
+         </div>
+       )
+     }
+     export default connect(
+       'doUpdateUseragentsInput',
+       'selectUseragentsInput',
+       'selectUseragentsFilteredByInput',
+       'selectNamesUseragentsFilteredByQuery',
+       UseragentsSearchContainer
+     )
+   #+END_SRC
+
+** Active Tests list
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/active-tests-list.js
+   :END:
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+     import { isEmpty, map } from 'lodash'
+
+     function TestItem (props) {
+       const {
+         testItem,
+         queryObject,
+         doUpdateQuery } = props
+
+       return (
+           <li className='mb3 dim'key='test_{ testItem._id }'>
+           <button className='but-no-style link mid-gray magic-pointer' onClick={()=> handleClick(queryObject, testItem)} title={'info for ' + testItem}>{ testItem }</button>
+           </li>
+       )
+
+       function handleClick (query, id) {
+         doUpdateQuery({
+           ...query,
+           test: testItem
+         })
+       }
+     }
+
+     function TestList (props) {
+       const {
+         activeEndpoint,
+         activeTestsIndex,
+         queryObject,
+         doUpdateQuery,
+       } = props
+
+       if (activeTestsIndex == null || isEmpty(activeEndpoint)) return null
+       return (
+           <div id='tests-list' className='tests-section min-vh-100 mt4'>
+           <h2 className='f1'>Tests for <span className='fw2'>{activeEndpoint.level} / {activeEndpoint.category} / {activeEndpoint.operationId} </span></h2>
+           <ul className='list pl0'>
+           {map(activeTestsIndex, (testItem) => {
+             return <TestItem testItem={ testItem } doUpdateQuery={ doUpdateQuery } queryObject={ queryObject } />
+           })}
+         </ul>
+           </div>
+       )
+     }
+
+
+
+     export default connect(
+       'selectActiveEndpoint',
+       'selectActiveTestsIndex',
+       'selectQueryObject',
+       'doUpdateQuery',
+       TestList
+     )
+   #+END_SRC
+
+   Since we loading just the info for a particular release, it's far less overhead, so we can do things like add _all_ the tests to our reducer, and then just select the ones that matter to us...but their entire object.   Since this is just a basic filter, it still ends up fast.  Neat!
+
+   When you click on a test it should add it to our query.   Then, the query learns to look for whether there is a Test showing and if so, to display the active test detail.
+** Active Test Sequence
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/active-test-sequence.js
+   :END:
+   #+BEGIN_SRC js
+          import React from 'react'
+          import { connect } from 'redux-bundler-react'
+          import { omit } from 'lodash'
+          import dayjs from 'dayjs'
+
+          function ActiveTestSequence (props) {
+            const {
+              activeTest,
+              categoryColours,
+              levelColours,
+              queryObject,
+              doUpdateQuery
+            } = props
+
+            if (activeTest== null) return null
+            let testName = Object.keys(activeTest)[0]
+
+            return (
+                <div id='test-sequence' className="mt4 tests-section">
+                <h2>Sequence For <span className='fw2'>{ testName }</span></h2>
+                <button onClick={handleClick}>Back</button>
+                <ul className='list'>
+                 {activeTest[testName].map(step => {
+                   return <SequenceStep rawStep={ step } levelColours={levelColours} categoryColours={categoryColours}  />
+                 })}
+              </ul>
+                </div>
+            )
+
+            function handleClick () {
+              var queryWithoutTest = omit(queryObject, 'test')
+              doUpdateQuery(queryWithoutTest)
+            }
+          }
+
+          function SequenceStep (props) {
+            const {
+              categoryColours,
+              levelColours,
+              rawStep
+            } = props
+
+            var step = {
+              timestamp: dayjs(rawStep[0]).format('mm:ss'),
+              level: rawStep[1],
+              category: rawStep[2],
+              method: rawStep[3],
+              endpoint: rawStep[4]
+            }
+
+            return (
+                <li className='' key='test_{ testItem._id }'>
+                <span className='fw2 i mid-gray mr2'>{ step.timestamp}</span>
+                <span className='mr1 ml1 fw2' style={{color: levelColours[step.level]}}>{step.level}</span>
+                <span className='mr1 ml1 fw2' style={{color: categoryColours['category.' + step.category] }}>{step.category}</span>
+                <span className='mr1 ml1 fw3 ttsc'> {step.endpoint}</span>
+                </li>
+            )
+          }
+
+          export default connect(
+            'selectActiveTest',
+            'selectCategoryColours',
+            'selectLevelColours',
+            'selectQueryObject',
+            'doUpdateQuery',
+            ActiveTestSequence
+          )
+   #+END_SRC
+
+   Since we loading just the info for a particular release, it's far less overhead, so we can do things like add _all_ the tests to our reducer, and then just select the ones that matter to us...but their entire object.   Since this is just a basic filter, it still ends up fast.  Neat!
+
+   When you click on a test it should add it to our query.   Then, the query learns to look for whether there is a Test showing and if so, to display the active test detail.
+** Search Bar
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/search-bar.js
+   :END:
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+     import { pickBy } from 'lodash'
+
+     function SearchBar (props) {
+       const {
+         doUpdateInput,
+         doUpdateQuery,
+         input,
+         searchFilter,
+         queryObject } = props
+
+       return (
+           <form onSubmit={handleSubmit}>
+           <input name='ua-filter' type='text' value={input} onChange={handleInput}/>
+           <input type='submit' value='submit' />
+           </form>
+           )
+
+       function handleInput (e) {
+         doUpdateInput(e.target.value)
+       }
+       function handleSubmit (e) {
+         e.preventDefault()
+         let filters = {
+           useragents: queryObject.useragents,
+           test_tags: queryObject.test_tags
+         }
+         filters[searchFilter] = e.target[0].value
+         filters = pickBy(filters, (v,k) => v !== '' && v !== undefined)
+         doUpdateQuery({...filters})
+         doUpdateInput('')
+       }
+     }
+
+     export default connect(
+       'doUpdateQuery',
+       'selectQueryObject',
+       SearchBar
+     )
+   #+END_SRC
+** Search Results
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/search-results.js
+   :END:
+   #+BEGIN_SRC js
+     import React from 'react'
+     import {connect} from 'redux-bundler-react'
+
+     function SearchResults (props) {
+       const {results, searchFilter } = props
+       if(results == null || results.length <= 0) return null
+       return (
+         <div id={searchFilter.concat('-search-results')} className='mt2 mb0'>
+           <strong className='f5'>{searchFilter} covered by this regex</strong>
+           <ul className="list ph0">
+             {results.map(result => <li key={result} className="f6 dib mr2 pa2 mid-gray">{ result }</li>)}
+           </ul>
+         </div>
+       )
+     }
+
+     export default connect(
+       SearchResults
+     )
+   #+END_SRC
+** Active Filter
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/active-filter.js
+   :END:
+   #+BEGIN_SRC js
+     import React from 'react'
+     import {connect} from 'redux-bundler-react'
+
+     function ActiveFilter (props) {
+       const {results, searchFilter} = props
+       if(results == null || results.length <= 0) return null
+       return (
+           <div className='ma3'>
+           <strong>Currently Filtered To:</strong>
+           <ul>
+           {results.map((result, index) => {
+             return <li key={`${searchFilter}`.concat(index)}>
+               { result }
+             </li>
+           })
+           }
+         </ul>
+           </div>
+       )
+     }
+
+     export default connect(
+       ActiveFilter
+     )
+   #+END_SRC
+* Pages
+** Main Page
+  :PROPERTIES:
+  :header-args: :tangle ./src/pages/main-page.js
+  :END:
+  #+NAME: Main Page
+  #+BEGIN_SRC js
+    import React from 'react'
+    import { connect } from 'redux-bundler-react'
+
+    // import FilterContainer from '../components/filter-container' # a regex filter for endpoints.
+    import UseragentsSearchContainer from '../components/useragents-search-container'
+    import TestTagsSearchContainer from '../components/test-tags-search-container'
+    import SunburstAndSummary from '../components/sunburst-and-summary'
+    import TestsContainer from '../components/tests-container'
+    // import ActiveTestSequence from '../components/active-test-sequence'
+
+    function MainPage () {
+      return (
+        <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
+          {/*<FilterContainer />*/}
+          <UseragentsSearchContainer />
+          <TestTagsSearchContainer />
+          <SunburstAndSummary />
+          <TestsContainer />
+          {/* <ActiveTestSequence /> */}
+        </main>
+      )
+    }
+
+    export default connect(
+      MainPage
+    )
+    #+END_SRC
+
+* Lib
+** Utils
+   :PROPERTIES:
+   :header-args: :tangle ./src/lib/utils.js
+   :END:
+   #+NAME: Utils
+   #+BEGIN_SRC js
+     import {
+       filter,
+       isUndefined,
+       size,
+       words,
+       pickBy } from 'lodash'
+
+     export function fadeColour (rgba, desiredOpacity) {
+       var rgbaParts = words(rgba, /[^,|^(|^)]+/g)
+       rgbaParts.pop()
+       rgbaParts.push(desiredOpacity)
+       var newRgbaString = rgbaParts.join(',')
+       var newRgba = newRgbaString.replace(/,/,'(') + ')'
+       return newRgba
+     }
+
+     export function propertiesWithValue (obj) {
+       return pickBy(obj, (val) => !isUndefined(val))
+     }
+
+     export function fetchResource (gsPath, resource) {
+       var fullPath = gsPath + resource
+       return fetch(fullPath)
+         .then((response) => {
+           if (!response.ok) {
+             throw new Error("HTTP error, status = " + response.status);
+           }
+           return response.json()
+         })
+         .catch((err) => {
+           console.log({fetchErr: err})
+         })
+     }
+
+
+   #+END_SRC
+* Data Definitions
+** ColourState (<<<◊ColourState>>>)
+
+   Colourstate is an Object, consisting of colours, moreColours, and categories.
+   It is used to set the colours of the various levels, categories, and endpoints throughout the site.
+
+     #+NAME: ColourState Example
+     #+BEGIN_Example
+       const initialState = {
+         colours: {
+           'alpha': 'rgba(230, 25, 75, 1)',
+           'beta': 'rgba(0, 130, 200, 1)',
+           'stable': 'rgba(60, 180, 75, 1)',
+           'unused': 'rgba(255, 255, 255, 1)'
+         },
+         moreColours: [
+           'rgba(183, 28, 28, 1)',
+           'rgba(136, 14, 79, 1)',
+           'rgba(74, 20, 140, 1)',
+           'rgba(49, 27, 146, 1)',
+           'rgba(26, 35, 126, 1)',
+           'rgba(13, 71, 161, 1)',
+           'rgba(1, 87, 155, 1)',
+           'rgba(0, 96, 100, 1)',
+           'rgba(0, 77, 64, 1)',
+           'rgba(27, 94, 32, 1)',
+           'rgba(51, 105, 30, 1)',
+           'rgba(130, 119, 23, 1)',
+           'rgba(245, 127, 23, 1)',
+           'rgba(255, 111, 0, 1)',
+           'rgba(230, 81, 0, 1)',
+           'rgba(191, 54, 12, 1)',
+           'rgba(244, 67, 54, 1)',
+           'rgba(233, 30, 99, 1)',
+           'rgba(156, 39, 176, 1)',
+           'rgba(103, 58, 183, 1)',
+           'rgba(63, 81, 181, 1)',
+           'rgba(33, 150, 243, 1)',
+           'rgba(3, 169, 244, 1)',
+           'rgba(0, 188, 212, 1)',
+           'rgba(0, 150, 136, 1)',
+           'rgba(76, 175, 80, 1)',
+           'rgba(139, 195, 74, 1)',
+           'rgba(205, 220, 57, 1)',
+           'rgba(255, 235, 59, 1)',
+           'rgba(255, 193, 7, 1)',
+           'rgba(255, 152, 0, 1)',
+           'rgba(255, 87, 34, 1)'
+
+         ],
+         categories: [
+           "admissionregistration",
+           "apiextensions",
+           "apiregistration",
+           "apis",
+           "apps",
+           "authentication",
+           "authorization",
+           "autoscaling",
+           "batch",
+           "certificates",
+           "core",
+           "events",
+           "extensions",
+           "logs",
+           "networking",
+           "policy",
+           "rbacAuthorization",
+           "scheduling",
+           "settings",
+           "storage",
+           "version",
+           "auditregistration",
+           "coordination"
+         ]
+       }
+     #+END_EXAMPLE
+** LevelCololurs (<<<◊LevelColours>>>)
+   LevelColours is an Object.
+   It is the base colours attached to the four levels of our sunburst: Alpha, Beta, Stable, and Unused.
+   #+NAME: LevelColours Example
+   #+BEGIN_EXAMPLE js
+     {
+       alpha: 'rgba(230, 25, 75, 1)',
+       beta: 'rgba(0, 130, 200, 1)',
+       stable: 'rgba(60, 180, 75, 1)',
+       unused: 'rgba(255, 255, 255, 1)'
+     }
+   #+END_EXAMPLE
+** CategoryColours (<<<◊CategoryColours>>>)
+   CategoryColours is an object, holding all categories mapped to moreColours from our ColourState
+
+   #+NAME: CategoryColours Example
+   #+BEGIN_SRC js
+     {
+       'category.admissionregistration': 'rgba(183, 28, 28, 1)',
+       'category.apiextensions': 'rgba(49, 27, 146, 1)',
+       'category.apiregistration': 'rgba(1, 87, 155, 1)',
+       'category.apis': 'rgba(27, 94, 32, 1)',
+       'category.apps': 'rgba(245, 127, 23, 1)',
+       'category.authentication': 'rgba(191, 54, 12, 1)',
+       'category.authorization': 'rgba(156, 39, 176, 1)',
+       'category.autoscaling': 'rgba(33, 150, 243, 1)',
+       'category.batch': 'rgba(0, 150, 136, 1)',
+       'category.certificates': 'rgba(205, 220, 57, 1)',
+       'category.core': 'rgba(255, 152, 0, 1)',
+       'category.events': 'rgba(136, 14, 79, 1)',
+       'category.extensions': 'rgba(26, 35, 126, 1)',
+       'category.logs': 'rgba(0, 96, 100, 1)',
+       'category.networking': 'rgba(51, 105, 30, 1)',
+       'category.policy': 'rgba(255, 111, 0, 1)',
+       'category.rbacAuthorization': 'rgba(244, 67, 54, 1)',
+       'category.scheduling': 'rgba(103, 58, 183, 1)',
+       'category.settings': 'rgba(3, 169, 244, 1)',
+       'category.storage': 'rgba(76, 175, 80, 1)',
+       'category.version': 'rgba(255, 235, 59, 1)',
+       'category.auditregistration': 'rgba(255, 87, 34, 1)',
+       'category.coordination': 'rgba(74, 20, 140, 1)'
+     }
+   #+END_SRC
+** CategoryColours (<<<◊CategoryColours>>>)
+   CategoryColours is an object, holding all categories mapped to moreColours from our ColourState
+
+   #+NAME: CategoryColours Example
+   #+BEGIN_SRC js
+     {
+       'category.admissionregistration': 'rgba(183, 28, 28, 1)',
+       'category.apiextensions': 'rgba(49, 27, 146, 1)',
+       'category.apiregistration': 'rgba(1, 87, 155, 1)',
+       'category.apis': 'rgba(27, 94, 32, 1)',
+       'category.apps': 'rgba(245, 127, 23, 1)',
+       'category.authentication': 'rgba(191, 54, 12, 1)',
+       'category.authorization': 'rgba(156, 39, 176, 1)',
+       'category.autoscaling': 'rgba(33, 150, 243, 1)',
+       'category.batch': 'rgba(0, 150, 136, 1)',
+       'category.certificates': 'rgba(205, 220, 57, 1)',
+       'category.core': 'rgba(255, 152, 0, 1)',
+       'category.events': 'rgba(136, 14, 79, 1)',
+       'category.extensions': 'rgba(26, 35, 126, 1)',
+       'category.logs': 'rgba(0, 96, 100, 1)',
+       'category.networking': 'rgba(51, 105, 30, 1)',
+       'category.policy': 'rgba(255, 111, 0, 1)',
+       'category.rbacAuthorization': 'rgba(244, 67, 54, 1)',
+       'category.scheduling': 'rgba(103, 58, 183, 1)',
+       'category.settings': 'rgba(3, 169, 244, 1)',
+       'category.storage': 'rgba(76, 175, 80, 1)',
+       'category.version': 'rgba(255, 235, 59, 1)',
+       'category.auditregistration': 'rgba(255, 87, 34, 1)',
+       'category.coordination': 'rgba(74, 20, 140, 1)'
+     }
+   #+END_SRC
+** Endpoints (<<<◊Endpoints>>>)
+ Endpoints is an array of Objects, with each key an OperationID.  They are the endpoints within the paths hit in our audit log
+
+ Here is a single endpoint, so it's first group is OpID, which would be unique.
+ #+NAME: Endpoints Definition Sample
+ #+BEGIN_SRC json
+   "getCodeVersion": {
+     "category": "version",
+     "kind": "",
+     "group": "",
+     "description": "get the code version",
+     "conformanceHits": 0,
+     "level": "stable",
+     "isDeprecated": false,
+     "hits": 0,
+     "testHits": 0,
+     "version": "",
+     "path": "/version/"
+   }
+
+ #+END_SRC
+** GroupedEndpoints (<<<◊GroupedEndpoints>>>)
+   An Object, derived from ◊Endpoints, where they are grouped by arbitrary keys.  In the current case, these keys are Level, then category, the operationId.  This sets us up to turn it into a sunburst more easily.
+
+   #+NAME: GroupedEndpoints Definition Example
+   #+BEGIN_SRC json
+     {
+       alpha:{
+         ...list of categories, with each containing array of endpointObjects...
+       },
+       beta: {
+         ...list of categories, with each containing array of endpointObjects...
+       },
+       stable: {
+         core: [],
+         api: [],
+         apps: [
+           {
+             category: "apis",
+             conformanceHits: 196,
+             description: "something",
+             group: '',
+             hits: 2828,
+             isDeprecated: false,
+             kind: "",
+             level: "stable",
+             operationId: "getAPIVersions",
+             path: "apis/",
+             size: 1,
+             testHits: 920,
+             version: ""
+           },
+           {
+             ...diff endpoint, same structure as above...
+           }
+         ]
+     }
+
+   #+END_SRC
+
+** JobResultsMetadata (<<<◊JobResultsMetadata>>>)
+   JobResultsMetadata is a JSON Object.
+   Interpretation: metadata used to populate the header of our page, with information on the job release we are looking at.
+   #+NAME: JobResultsMetadata Definition Example
+   #+BEGIN_SRC json :tangle ./src/data/job-results-metadata.json
+     {
+       "job": "36092",
+       "bucket": "ci-kubernetes-e2e-gci-gce",
+       "version": "v1.15.0-alpha.0.1493",
+       "job-version": "v1.15.0-alpha.0.1493+1cb550295a9314",
+       "master_os_image": "cos-beta-73-11647-64-0",
+       "infra-commit": "279855f78",
+       "node_os_image": "cos-beta-73-11647-64-0",
+       "pod": "8fa53d0a-4f5a-11e9-8a35-0a580a6c1338",
+       "passed": true,
+       "result": "SUCCESS",
+       "timestamp": 1553561320
+     }
+   #+END_SRC
+
+   We can test it is valid json with =jq=
+   #+BEGIN_SRC shell :results output
+  cat ./data/job-results-metadata.json | jq .
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_example
+   {
+     "job": "36092",
+     "bucket": "ci-kubernetes-e2e-gci-gce",
+     "version": "v1.15.0-alpha.0.1493",
+     "job-version": "v1.15.0-alpha.0.1493+1cb550295a9314",
+     "master_os_image": "cos-beta-73-11647-64-0",
+     "infra-commit": "279855f78",
+     "node_os_image": "cos-beta-73-11647-64-0",
+     "pod": "8fa53d0a-4f5a-11e9-8a35-0a580a6c1338",
+     "passed": true,
+     "result": "SUCCESS",
+     "timestamp": 1553561320
+   }
+   #+end_example
+** LevelColours (<<<◊LevelColours>>>)
+   LevelColours is an Object.
+   It is the base colours attached to the four levels of our sunburst: Alpha, Beta, Stable, and Unused.
+   #+NAME: LevelColours Example
+   #+BEGIN_EXAMPLE js
+     {
+       alpha: 'rgba(230, 25, 75, 1)',
+       beta: 'rgba(0, 130, 200, 1)',
+       stable: 'rgba(60, 180, 75, 1)',
+       unused: 'rgba(255, 255, 255, 1)'
+     }
+   #+END_EXAMPLE
+** SunburstTree(<<<◊SunburstTree>>>)
+   An Object built for the react-vis/d3 sunburst graph.  It requires a root that contains children, witch each children containing children, all the way to the end.
+
+   In this case we have root>level>category>operationId.
+
+   #+NAME: SunburstTree Example
+   #+BEGIN_SRC json
+     {
+       name: "root",
+       children: [
+         {
+           name: "level",
+           color: rgba color,
+           children: [
+             {
+               name: "core",
+               color: rgba color,
+               children: [
+                 {
+                   name: operationId,
+                   size: 1,
+                   testHits: 3,
+                   conformanceTestHits: 2,
+                   hits: 10,
+                   color: rgba color
+                 }
+               ]
+             }
+           ]
+         }
+       ]
+     }
+   #+END_SRC
+
+   We are reducing it down to the bare min info for endpoint.  If they hover over an endpo;int and wanna see more deets like group, version, kind then we can reference that from the ◊Endpoints already in the store.   This only contains info necessary to make the sunburst render correctly.
+** TestedStats(<<<◊TestedStats>>>)
+   An object containing the test information, and coverage statements, for each section of our sunburst.  We can then use this so, upon hover, the active endpoint and active label would show....where we could then reference the current queried section in our label series.
+
+   So I think We want to hae something real similar to ◊GroupedEndpoints, but with the only keys being coverage info.  I also think, for ease, that we should have the same type of label no matter if they're looking at an opId, category, or level
+  #+NAME: TestedStats Definition Example
+  #+BEGIN_SRC json
+    {
+      opIds: 10,
+      testedOpIds: 5,
+      conformancTestedOpIds: 3
+      percentTested: 50,
+      percentConformanceTested: 30,
+      labelX: '10 total Endpoints',
+      labelY: '50% Hit by Tests',
+      labelZ: '30% Hit by Conformance Tests'
+      alpha: {},
+      beta: {},
+      stable: {
+          opIds: 10,
+          testedOpIds: 5,
+          conformancTestedOpIds: 3
+          percentTested: 50,
+          percentConformanceTested: 30,
+          labelX: '10 total Endpoints',
+          labelY: '50% Hit by Tests',
+          labelZ: '30% Hit by Conformance Tests'
+        cat1: {
+            opIds: 10,
+            testedOpIds: 5,
+            conformancTestedOpIds: 3
+            percentTested: 50,
+            percentConformanceTested: 30,
+            labelX: '10 total Endpoints',
+            labelY: '50% Hit by Tests',
+            labelZ: '30% Hit by Conformance Tests'
+          opId1: {
+            testedHits: 10,
+            conformancHits:: 0,
+            labelX: 'Tested, but not Conformance Tested',
+            labelY: 'Hit by 10 tests, overall',
+            labelZ: 'Hit by 0 conformance Tests'
+          }
+        }
+      }
+    }
+  #+END_SRC
+** ActiveLocation(<<<(◊ActiveLocation>>>)
+   An Object Containing the level, category, and opId for wherever the mouse and sunburst is.
+   If we aren't hovered on anything, then the lcoation is to whatever location we are zoomed into.
+   Otherwise it's where our mouse be.
+   #+NAME: ActiveLocation Definition Example
+   #+BEGIN_SRC json
+     {
+       level: '',
+       category: '',
+       operationId: ''
+     }
+   #+END_SRC
+
+** Query(<<<◊Query>>>)
+   Query is an object representing the url query parameters of apisnoop.
+   It is used to filter which endpoints are seen in the sunburst and what tests are retrieved
+   #+NAME: Query Definition Example
+   #+BEGIN_SRC js :tangle no
+     {
+       test: "04xuKGPMwdRSUPGk",
+       useragent: "k*",
+       zoomed: "endpoint-stable-core-listCoreV1NamespacedLimitRange"
+    }
+   #+END_SRC
+** Zoom(<<<◊Zoom>>>)
+     Zoom is an object derived from a mouseclick on our sunburst.
+     It may consist of:
+     - level :: the first ring of the sunburst
+     - category :: an item from the second ring of the sunburst, but whose parent ring is the set level.
+     - endpoint :: an item from the third ring, whose parent ring is the set category.
+     - depth :: the ring in which the mouse was clicked.
+
+ You can determine the zoom location by seeing the depth and section clicked and tracing the parents of that selection.  And so clicking on a category will give you {category, level, depth} and clicking on level would only give you {level, depth}.
+
+#+Name: Zoom Definition Example
+#+BEGIN_EXAMPLE
+  {
+    level: "stable",
+    category: "core",
+    endpoint: "deleteCoreV1Namespace",
+    depth: "endpoint"
+  }
+#+END_EXAMPLE
+* Glossary
+** Bundle (<<<bundles>>> | <<<bundle>>>)
+   a collection of redux code all organized by some concern or idea.  It's a marked difference from the typical organizing style, where you organize files by what they are (reducers, selectors, etc.).  This, instead, organizes files by their topic.
+** Component (<<<Component>>> | <<<Components>>>)
+Self-contained, presentational parts of our front-end site.  It is what people actually see and interact with on our site.  What is unique is how specific and reusable components are.  Every singular bit of the api should essentially be a component.  We do this because it is easier to build upon, to collaborate with others, to maintain, and to share components across other projects.
+** Pages (<<<page>>> | <<<pages>>>)
+    A collection of components.  Can be thought as the overall layout for a particular subject within our app.  Basically a 'webpage', but that has built-in headers/footers/navigation and so on.
+** Dynamic Web App (<<<dynamic web app>>>)
+A site whose content and presentation is determined by code that is run when the site is first loaded.  As opposed to a static web site, where the content is already generated and delivered to you from the server when you log on.  The upside is that it allows for a robust site that is tailored to individual visitors, who can navigate around the area quickly and easily.  The downside is that they can be resource heavy, and do not work on browsers that have disabled javascript.
+** Client-Side (<<<client-side>>>)
+Refers to  code that is run on the client (as opposed to on the server).  The client is most often the web browser.  So a client-side app, if done well, allows for a quick data fetch from the server and then a snappy full-powered web app since all the functionality is being handled by the browser itself
+** Static Web Site (<<<static web site>>>)
+A site whose content is pre-set, and not made based on the actions of the site visitor or their browser.  Original html sites are static (coolguy.website being an example).  Apisnoop is dynamic.  You can see the differenve by viewikng the source code of their index.html files.  coolguy has all the code written directly in the file.  apisnoop has nothing except a javascript file waiting to be run.
+** Immutable State( <<<immutable state>>> )
+In our context, state refers to the state of the app.  Immutable means that it cannot be changed. So this means, whenever there is any action that should change the state we replace the entire state.  For example: the current state might hold values like the current URL, and that we are currently fetching data and it's pending.  When the data fetch is accomplished, we want to update the state.  We do this not by looking for our 'DATA' value and adjusting it.  Instead, we replace the state entirely, with our new state being the same url but now 'data fetch fulfilled'.
+
+Doing it in this way means we can have a snapshot of the state for every update to it.  If we wanna see what the app looked like before the data was fetched, we can simply go back to the state when it was still pending.  This makes the site easier to debug and easier to maintain.
+
+It is a core principle or [[#arch-redux][redux]], and brought up often when discussing redux apps and functional programming.
+** Selectors (<<<selector>>> | <<<selectors>>>)
+a concept within [[#arch-redux][redux]].  A selector will 'select' data in our redux store, potentially make changes to it, and then give it to our components.  It is a [[arch-redux-bundle][redux bundle]] best practice to never have the componets draw from the redux store directly, and instead always get it from selectors.  This sets up a pattern where the store remains 'dumb', which makes it easier to debug.
+
+ For example, let's say in our app we fetch release names from a server and they come to us like this:
+- release_1.12.3
+- release_2.4
+- release_1.3.1
+
+We want to take these names and display them on the frontpage of the site, but we want them to be sorted, and cleaned up to not have underscores and have relase be capitalized.  We _could_ adjust them as they get added to our store, by doing some quick sort and replace functions in our reducer.  But this will make it harder to reason about later, or compare it to the equivalent files in our server.  Instead, we just want to have raw data in our redux store, have a selector select it, and have the selector do the sorting and cleanup.  This way, if there's an issue with the basic data we check redux.  If there's an issue with sorting or capitalization, we check the selector.  We don't ahve to check some helper function nested inside a reducer store or some other hard to debug thang.
+** Reducers ( <<<Reducer>>> | <<<Reducers>>>)
+An immutable object containing the current state of the app.  Driving principle of [[#arch-redux][redux]].  Called a reducer because it takes a number of objects given to it and reduces it down to a single thing.  By object, we mean it in the literal javascript sense...and so the entire state of a complex app can be represented as:
+
+#+BEGIN_EXAMPLE
+{ name: 'something',
+  users: ['list', 'of', 'users'],
+  current_path: '/@timothee/profile'
+}
+#+END_EXAMPLE
+
+In other words, we take a lot of complexity and reduce it down to a text object that can be easily updated or replaced. This brings us closer to designing an app as a spreadhseet, where the frontend is just displaying the data in pleasing way, and the backend has a consistent and logical way to add and amend the data.
+** Actions ( <<<action>>> | <<<actions>>>)
+  In our context, an object that announces a change in state, along with a payload of data for that change.  Actions are represented as so:
+
+#+NAME: example action
+#+BEGIN_EXAMPLE
+{
+  type: 'NEW_USER_ADDED',
+  payload: userData
+}
+#+END_EXAMPLE
+
+So actions always have a type and a payload.  The type is written like a news headline, and the payload can be anything (a string, an object, an array, an integer, etc).  For more info, check out our conventions section.
+** <<<action creator>>>
+A function that creates an action.  They are written as 'doThisAction', so in the example above, we might have a function called 'doAddNewUser', and running the function results in the action object above.
+** <<<reactor>>> | <<<Reactors>>>
+ A special type of selector, that is set up to listen to conditions that should prompt an action.  An example might be if you wanted your app to attempt another data fetch if the first one failed.  You'd have a reactor that was waiting for a 'DATA_FETCH_FAILED' action, and when that came it would trigger a 'DATA_FETCH_STARTED' action in response.  Reactors bring us closer to a clearly separated app, where the reducer just holds data, the components just display the data given, and selectors and reactors handle the rest.
+** Store (-<<<store>>>)
+Kinda used interchangable with state, and short for redux store.  It refers to the big object containing the entire state of the app.
+** State (<<<State>>>)
+  All the data, properties, truths, and so on of the app at this moment in time.  Similar to your emotional, personal, physical state.
+* Footnotes
+** Endpoints...
+   :PROPERTIES:
+   :header-args: :dir ../..
+   :END:
+*** Exploration
+**** overall
+      If we base it off swagger.json, what does that look like?
+      #+BEGIN_SRC  shell
+     cat swagger.json | jq '. | keys'
+      #+END_SRC
+
+      #+RESULTS:
+      | [                   |
+      | definitions         |
+      | info                |
+      | paths               |
+      | security            |
+      | securityDefinitions |
+      | swagger             |
+      | ]                   |
+**** Irrelevant sections
+     Still useful in general, but not for our app
+     #+NAME: swagger.info
+      #+BEGIN_SRC  shell
+     cat swagger.json | jq '.info'
+      #+END_SRC
+
+      #+RESULTS: swagger.info
+      | {       |            |
+      | title   | Kubernetes |
+      | version | v1.15.0    |
+      | }       |            |
+
+     #+NAME: swagger.security
+      #+BEGIN_SRC  shell
+     cat swagger.json | jq '.security'
+      #+END_SRC
+      #+RESULTS: swagger.security
+      | [           |    |
+      | {           |    |
+      | BearerToken | [] |
+      | }           |    |
+      | ]           |    |
+
+     #+NAME: swagger.securityDefinitions
+      #+BEGIN_SRC  shell
+     cat swagger.json | jq '.securityDefinitions'
+      #+END_SRC
+      #+RESULTS: swagger.securityDefinitions
+
+     #+NAME: swagger.swagger
+      #+BEGIN_SRC  shell
+     cat swagger.json | jq '.swagger'
+      #+END_SRC
+      #+RESULTS: swagger.swagger
+      : 2.0
+
+      here is a sample definition
+     #+NAME: swagger.definitions
+      #+BEGIN_SRC  shell
+     cat swagger.json | jq '.definitions["io.k8s.api.apps.v1.ControllerRevisionList"] | keys'
+      #+END_SRC
+
+      #+RESULTS: swagger.definitions
+      | [                               |
+      | description                     |
+      | properties                      |
+      | required                        |
+      | type                            |
+      | x-kubernetes-group-version-kind |
+      | ]                               |
+**** Relevant Section: Paths
+     #+NAME: Example Path
+     #+BEGIN_SRC shell
+      cat swagger.json | jq \
+        '.paths["/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies/{name}"] | keys'
+    #+END_SRC
+
+    #+RESULTS: Example Path
+    | [          |
+    | delete     |
+    | get        |
+    | parameters |
+    | patch      |
+    | put        |
+    | ]          |
+
+    So here is a path, that has four methods/verbs, along with the parameters.
+
+    And the operation id for each verb
+    #+NAME: Operation ID's for each verb
+    #+BEGIN_SRC shell :results output
+      cat swagger.json | jq \
+        '.paths["/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies/{name}"]["delete"]["operationId"]'
+      cat swagger.json | jq \
+        '.paths["/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies/{name}"]["get"]["operationId"]'
+      cat swagger.json | jq \
+        '.paths["/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies/{name}"]["patch"]["operationId"]'
+      cat swagger.json | jq \
+        '.paths["/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies/{name}"]["put"]["operationId"]'
+
+    #+END_SRC
+
+    #+RESULTS: Operation ID's for each verb
+    : "deleteNetworkingV1NamespacedNetworkPolicy"
+    : "readNetworkingV1NamespacedNetworkPolicy"
+    : "patchNetworkingV1NamespacedNetworkPolicy"
+    : "replaceNetworkingV1NamespacedNetworkPolicy"
+
+    And within one of these, there isn't a section for "methods", but each one does have parameters.
+
+    #+NAME: look at a single verb
+    #+BEGIN_SRC shell :results output
+      cat swagger.json | jq \
+        '.paths["/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies/{name}"]["delete"]'
+    #+END_SRC
+
+    #+RESULTS: look at a single verb
+    #+begin_example
+    {
+      "consumes": [
+        "*/*"
+      ],
+      "description": "delete a NetworkPolicy",
+      "operationId": "deleteNetworkingV1NamespacedNetworkPolicy",
+      "parameters": [
+        {
+          "in": "body",
+          "name": "body",
+          "schema": {
+            "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.DeleteOptions"
+          }
+        },
+        {
+          "description": "When present, indicates that modifications should not be persisted. An invalid or unrecognized dryRun directive will result in an error response and no further processing of the request. Valid values are: - All: all dry run stages will be processed",
+          "in": "query",
+          "name": "dryRun",
+          "type": "string",
+          "uniqueItems": true
+        },
+        {
+          "description": "The duration in seconds before the object should be deleted. Value must be non-negative integer. The value zero indicates delete immediately. If this value is nil, the default grace period for the specified type will be used. Defaults to a per object value if not specified. zero means delete immediately.",
+          "in": "query",
+          "name": "gracePeriodSeconds",
+          "type": "integer",
+          "uniqueItems": true
+        },
+        {
+          "description": "Deprecated: please use the PropagationPolicy, this field will be deprecated in 1.7. Should the dependent objects be orphaned. If true/false, the \"orphan\" finalizer will be added to/removed from the object's finalizers list. Either this field or PropagationPolicy may be set, but not both.",
+          "in": "query",
+          "name": "orphanDependents",
+          "type": "boolean",
+          "uniqueItems": true
+        },
+        {
+          "description": "Whether and how garbage collection will be performed. Either this field or OrphanDependents may be set, but not both. The default policy is decided by the existing finalizer set in the metadata.finalizers and the resource-specific default policy. Acceptable values are: 'Orphan' - orphan the dependents; 'Background' - allow the garbage collector to delete the dependents in the background; 'Foreground' - a cascading policy that deletes all dependents in the foreground.",
+          "in": "query",
+          "name": "propagationPolicy",
+          "type": "string",
+          "uniqueItems": true
+        }
+      ],
+      "produces": [
+        "application/json",
+        "application/yaml",
+        "application/vnd.kubernetes.protobuf"
+      ],
+      "responses": {
+        "200": {
+          "description": "OK",
+          "schema": {
+            "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Status"
+          }
+        },
+        "202": {
+          "description": "Accepted",
+          "schema": {
+            "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Status"
+          }
+        },
+        "401": {
+          "description": "Unauthorized"
+        }
+      },
+      "schemes": [
+        "https"
+      ],
+      "tags": [
+        "networking_v1"
+      ],
+      "x-kubernetes-action": "delete",
+      "x-kubernetes-group-version-kind": {
+        "group": "networking.k8s.io",
+        "kind": "NetworkPolicy",
+        "version": "v1"
+      }
+    }
+    #+end_example
+
+    Our current mode is to look at the opId and then the method's within.  And each opId has a path.  I assume this is the path we are taking.  What are the paramters related to?  And where are we getting the additional methods?
+
+*** Initial Definition
+
+I think the basic endpoint, without redundant info, could be:
+#+NAME: Endpoint Definition
+#+BEGIN_SRC json
+  {
+    "operationId": '',
+    "path": '',
+    "level": '',
+    "category": '',
+    "group": '',
+    "version": '',
+    "kind": '',
+    "methods": [
+      "get": {
+        isTested: boolean,
+        isConformance: boolean,
+      },
+      "watch": {
+        isTested: boolean,
+        isConformance: boolean,
+      }
+    ]
+  }
+
+#+END_SRC
+
+The test tags and tests and such aren't needed, as they are in their own path.  When you hover over the method of an opId, then that becomes the  "activeOp" and we select the tests whose list of keys contain this opID[method].
+
+we make the tested booleans more specific, as these determine the color in the sunburst and it's easy to just have it checked on render whether something is true or false, rather than determining if true on render.
+
+We are't using counters yet, and there's so many different counters...that I'd rather not include them here (counter for hit by a test, a test tag, a user-agent, etc.)
+
+IF we are filtering on zoom, then the zoom will have:
+- level
+- category
+- opId
+- method
+
+you don't wnat to zoom all the way to method, though, cos you just get a big donut.  you wanna freeze the method, but zoom into opId.  So we can keep our basic filter and then just say if "zoom.method !== null then freeze sunburst" and freeze just disables the mouseOver/mouseAway options.
+
+What does a useragent filter look like?
+we'd have a list of opId methods that are hit by that user-agent  so it'd be nested.
+So let's assume we could have something like this
+
+#+NAME: endpointA
+#+BEGIN_SRC json
+  {
+    "operationId": 'readFoo',
+    "path": 'foo/',
+    "level": 'stable',
+    "category": 'core',
+    "group": 'foos',
+    "version": 'foo1',
+    "kind": 'foothings',
+    "methods": [
+      "get": {
+        isTested: true,
+        isConformance: true,
+      },
+      "watch": {
+        isTested: false,
+        isConformance: false,
+      }
+    ]
+  }
+#+END_SRC
+
+And our list of endpoints hit by user-agent as
+#+NAME: endpointsHitByUseragent
+#+BEGIN_SRC json
+[
+"readFoo": [ "get"],
+"readBar": ["get", "watch"]
+]
+#+END_SRC
+
+so this is saying that readFoo[get] was hit by the user-agent but readFoo[watch] was not.  WE know this because watch is absent in the array.
+
+And when we are filteirng we'd filter all the way down to the method, as the concern is whether they're conformance or not....so we'd want to say"
+
+- if useragent filter is set...
+- then return endpoint.filtered where the opId is in "endpointsHitByUseragent"
+- then, remove any methods within the endpoint that are not within the array of endointsHitByUseragent[endpoint]
+
+Is there a simpler way for this?  it's a filter, then a prune essentially....If that method worked, we could use the same method for tests too and any other section.
+* Tasks
+** TODO Port over test_sequences Bundle
+** TODO Display Tests at Bottom of Page
+** TODO When test clicked, show its test sequence
+** BLOCKED Port over metadata bundle
+   Need this to be better filled out, to match the metadata i already have.
+
+** TODO Create tests for existing bundles, using our test data
+** TODO investigate setting the color in diff way to bring up performance
+   it's being calculated again everytime the query updates.  And we are having to calculate it for the entire tree every time.
+   Perhaps we sest the color first on general "colored or not", then in sunburst we determine "faded or not"?  This would remove 1 or 2 if statements from beiong calcualted each time...i think?
+** IDEA Refactor TestedStats for Recursion and proper FP
+* Finished Tasks
+** DONE Port over Useragents Bundle
+   CLOSED: [2019-04-16 Tue 11:27]
+** DONE OpIds returns an array of a single array.....stop it from doing that.
+   CLOSED: [2019-04-16 Tue 11:26]
+   it was due to a filter function we applied that returned an array when we were expecting an object.  so it vreated an array inside an array.
+** DONE setup basic dev environment
+   CLOSED: [2019-04-08 Mon 09:28]
+   this would need to be its own react app, in its own folder that we could point to, so it has its own package.json....otherwise the scripts we run would be for client and not app.
+   #+NAME: Create React App for new app
+   #+BEGIN_SRC shell :dir ./
+  npx create-react-app app
+   #+END_SRC
+
+   #+NAME: Explore Files in app
+   #+BEGIN_SRC shell :dir ./app/ :results output
+  tree -I "node_modules"
+   #+END_SRC
+
+   #+RESULTS: Explore Files in app
+   #+begin_example
+   .
+   ├── package.json
+   ├── package-lock.json
+   ├── public
+   │   ├── favicon.ico
+   │   ├── index.html
+   │   └── manifest.json
+   ├── README.md
+   └── src
+       ├── App.css
+       ├── App.js
+       ├── App.test.js
+       ├── index.css
+       ├── index.js
+       ├── logo.svg
+       └── serviceWorker.js
+
+   2 directories, 13 files
+   #+end_example
+** DONE [5/5] Port over Code from client.org to get basic site
+   CLOSED: [2019-04-08 Mon 10:30]
+   - [X] header
+   - [X] footer
+   - [X] pngs
+   - [X] tachyons css
+   - [X] it says "HELLO YOU ARE DOING GOOD!"
+** DONE [4/4] Display Job Results Metadata at top of header
+   CLOSED: [2019-04-08 Mon 12:14]
+   - [X]  Define  JobResultsMetadata
+   - [X] Create Data Folder and put sample of job results metadata into that
+   - [X] Create bundle that loads the job results into state
+   - [X] Create component that grabs from that store
+** DONE [3/3]Display Endpoint Bundle With Success
+   CLOSED: [2019-04-10 Wed 08:54]
+   - [X] understand the data that the current endpoint resource needs.
+   - [X] Make up data definition for endpoint as it is now
+   - [X] change the wording if needed (operationId's instead of endpoints?)
+** DONE Fetch Endpoints from set path instead of locally
+   CLOSED: [2019-04-15 Mon 14:52]
+   - There are four or five json's that we want to add to our app's state
+     - endpoints, tests, test_tags, test_sequences, useragents
+   - When site loads, we ping per resource.  endpoints is example now.
+     - Does the initial logic/function look right?
+   - When we try to do this, we get a CORS error about "allow-cross-origin"...I believe this was set now and we are using a correct api following htis blog post: [[https://medium.com/@kevinsimper/google-cloud-storage-cors-not-working-after-enabling-14693412e404][kevin simper blog]]
+   - When we add {mode: "no-cors"} to our fetch request, we get a CORB error
+*** Questions
+    - what is best logic for doing this sorta fetch?   is this (not using a backend server, pulling full json from google storage) a bad idea in general?
+    - Am i missing something in the fetch request, i.e the default settings not enough?
+    - What are these error messages really meaning?
+** DONE Bring up issue of grouping by kind
+   CLOSED: [2019-04-15 Mon 12:51]
+the "" as a kind within each category, and sometimes their only kind
+brought it up, but not a solution yet besides to only keep our three rings.
+** DONE re-tangle backend.org to bring back correct index.js
+   CLOSED: [2019-04-15 Mon 12:52]
+** DONE Move "endpointsWithOpId" to its own selector so we aren't calculating it twice
+   CLOSED: [2019-04-16 Tue 11:28]
+   This is now our default Endpoints...since we want to have the opId  all the time.
+** DONE Fix activeStats so it shows the current Zoom if there is no Query.
+   CLOSED: [2019-04-16 Tue 16:53]
+   if you zoom on an endpoint, it ignores it in the activeStats....that don't seem right.
+
+** DONE Port over Tests Bundle
+   CLOSED: [2019-04-16 Tue 14:58]
+** DONE Port over Test Tags Bundle
+   CLOSED: [2019-04-16 Tue 14:58]
+** DONE [100%] Display the Sunburst
+   CLOSED: [2019-04-16 Tue 16:53]
+*** DONE Setup Sunburst Bundle in app.org
+    CLOSED: [2019-04-10 Wed 12:07]
+*** DONE Endpoints Sorted to sunburst following new structure
+    CLOSED: [2019-04-10 Wed 12:07]
+*** DONE Sunburst Component Added Back in to site, without mouseover yet.
+    CLOSED: [2019-04-10 Wed 13:00]
+*** DONE Needs for mouseover added to these tasks
+*** DONE Interior Label added to Sunburst
+    CLOSED: [2019-04-15 Mon 14:52]
+    I think this can be done through its own bundle that just calculates the endpoints inside for each level and category.  We wouldn't be adding that much more content to our bundle, and would make it so no logic is having to happen on the frontend side...it just always displays A,B, C
+*** DONE Summary added back to sunburst
+    CLOSED: [2019-04-16 Tue 16:53]
+*** DONE Header added back to sunburst
+    CLOSED: [2019-04-16 Tue 16:53]
+** DONE Make Sure Summary has everything it needs
+   CLOSED: [2019-04-16 Tue 16:54]
+   Our Summary container should hold the currect active location and the stats for that location.
+   The current location could be an endpoint or it could be a grouping of level or category.
+   If it's an endpoint, we could also include it's group, version, and kind.
+   The active location could either be set by query or zoom.  I feel like if there is no query, we should set it by zoom.  This would allow us to show info even when you're not hovered over the sunburst, but be able to see feedback for when you highlight a different section.  There might be a better design way to handle this in the long run...so make the logic super clear.
+
+   I feel we should then just have an "activeLocation" bundle that checks for query and zoom and set's the level, category, opId appropriately.
+
+   Our Summary could then look something like this:
+   #+NAME: Summary Layout
+   #+BEGIN_SRC js
+     {activeLocation.level} | {activeLocation.category} | {activeLocation.opId}
+     (if focused onto endpoint){activeEndpoint.group} {activeEndpoint.kind}
+     {tested Stats}
+     (if focused on endpoint)
+     {covered by these tests...}
+     {coming from these test tags...}
+   #+END_SRC

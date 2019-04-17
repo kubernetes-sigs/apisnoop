@@ -4,6 +4,7 @@ import os
 import re
 import json
 
+# python 2 and 3 provide urlparse in different modules
 try:
     from urllib.parse import urlparse
 except Exception as e:
@@ -40,11 +41,11 @@ def generate_endpoints_tree(openapi_spec):
                 endpoints[op] = {}
 
             endpoints[op][method_name] = {
-                "cat": method["category"],
-                "desc": method["description"],
+                "category": method["category"],
+                "description": method["description"],
                 "group": method["group"],
                 "kind": method["kind"],
-                "ver": method["version"],
+                "version": method["version"],
                 "path": endpoint['path'],
                 "level": endpoint['level'],
                 # "deprecated": deprecated,
@@ -55,92 +56,6 @@ def generate_endpoints_tree(openapi_spec):
             }
 
     return endpoints
-
-def generate_new_endpoints_tree(openapi_spec):
-    # Base tests structure, without audit / test loaded
-
-    endpoints = {}
-
-    for endpoint in openapi_spec['paths'].values():
-        for (method_name, method) in endpoint['methods'].items():
-            method = endpoint['methods'][method_name]
-            deprecated = re.match("[Dd]eprecated", method["description"])
-            if deprecated:
-                # import ipdb; ipdb.set_trace(context=60)
-                continue
-
-            op = method['operationId']
-            # if op not in endpoints.keys():
-            #     endpoints[op] = {}
-
-            endpoints[method_name + ':' + op] = {
-                "cat": method["category"],
-                "desc": method["description"],
-                "group": method["group"],
-                "kind": method["kind"],
-                "ver": method["version"],
-                "path": endpoint['path'],
-                "level": endpoint['level'],
-                # "deprecated": deprecated,
-                "counter": 0,
-                "agents": [],
-                "test_tags": [],
-                "tests": []
-            }
-
-    return endpoints
-
-
-def generate_sunburst_tree(openapi_spec):
-    # Base sunburst structure, without audit / test loaded
-
-    sunburst = {}
-
-    for endpoint in openapi_spec['paths'].values():
-
-        level = endpoint.get('level')
-        if level not in sunburst.keys():
-            sunburst[level] = {
-            }
-
-        for method_name in endpoint['methods'].keys():
-            method = endpoint['methods'][method_name]
-            op = method['operationId']
-            category = method['category']
-            path = endpoint['path']
-            op_method = "%s/%s" % (op, method_name)
-
-            if category not in sunburst[level].keys():
-                sunburst[level][category] = {
-                }
-
-            if op_method not in sunburst[level][category].keys():
-                sunburst[level][category][op_method] = {
-                }
-
-    root = {
-        "name": "root",
-        "children": []
-    }
-    for level in ['stable', 'beta', 'alpha']:
-        categories = sunburst[level]
-        category_children = []
-        for category, op_methods in categories.items():
-            op_method_children = []
-            for op_method, method_info in op_methods.items():
-                method_info["name"] = op_method
-                method_info["color"] = "green"
-                method_info["size"] = "1"
-                # method_info["color"] = "green"
-                op_method_children.append(method_info)
-            category_children.append(
-                {"name": category,
-                 "children": op_method_children})
-        root['children'].append(
-            {"name": level,
-             "children": category_children})
-    return root
-
 
 def find_openapi_entry(openapi_spec, event):
     url = urlparse(event['requestURI'])
@@ -169,53 +84,8 @@ def find_openapi_entry(openapi_spec, event):
     return None
 
 
-def generate_count_tree(openapi_spec):
-    count_tree = {}
-
-    for endpoint in openapi_spec['paths'].values():
-        path = endpoint['path']
-        for method in endpoint['methods']:
-            count_tree[method+':'+path] = {
-                "counter": 0,
-                "methods": {},
-                "misses": {},
-                "fields": {},
-                "agents": [],
-                "tests": [],
-                "test_tags": [],
-                "level": endpoint.get("level"),
-                "tags": endpoint['methods'][method]['tags'],
-                "category": endpoint['methods'][method]['category']
-            }
-
-    return count_tree
-
-
-def get_count_results(count_tree):
-    results = []
-
-    for url, url_data in count_tree.items():
-        results += [{
-            'url': url,
-            'level': url_data['level'],
-            'tags': ','.join(url_data['tags']),
-            'category': url_data['category'],
-            'counter': url_data['counter']
-        }]
-
-    r = sorted(results,
-               key=lambda x: (-x['counter'],
-                              x['level'], x['url'], x['method']))
-    return r
-
-
 def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
-
     endpoints = generate_endpoints_tree(openapi_spec)
-    new_endpoints = generate_new_endpoints_tree(openapi_spec)
-    sunburst = generate_sunburst_tree(openapi_spec)
-    # count_tree = generate_count_tree(openapi_spec)
-    # test_tree = {'tests': {}, 'tags': []}
     tests = {}
     test_tags = {}
     test_sequences = {}
@@ -223,7 +93,6 @@ def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
     unknown_urls = {}
     unknown_url_methods = {}
     for event in audit_log:
-        # import ipdb; ipdb.set_trace(context=60)
         spec_entry = find_openapi_entry(openapi_spec, event)
         uri = event['requestURI']
         method = event['method']
@@ -269,11 +138,6 @@ def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
         level = spec_entry.get('level')
         category = spec_entry['methods'][method]['category']
         path = spec_entry['path']
-        # sb_level=filter(lambda l: l['name']==level, sunburst['children'])[0]
-        # sb_category=filter(lambda c: c['name']==category, sb_level['children'])[0]
-        # sb_path=filter(lambda p: p['name']==path, sb_category['children'])[0]
-        # sb_method=filter(lambda m: m['name']==method, sb_path['children'])[0]
-        # sunburst_event(sunburst, event, spec_entry)
         if event.get('userAgent', False) and useragent.startswith('e2e.test'):
             test_name_start = ' -- '
             if useragent.find(test_name_start) > -1:
@@ -316,9 +180,12 @@ def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
               # continue # do no further processing (e2e + other)
             else: # 11 and lower
               # Only look at e2e for now, skip anything else
+              # Let's look into dropping support for 11 and lower
               pass #(log everything)
               # continue # stop here
 
+        # TODO: this does NOT mean tested, this means hit
+        # This is a remnant of 11 and lower not having tests in user agent
         endpoints[op][method]["counter"] += 1
         agent = event.get('userAgent', ' ').split(' ')[0]
         if agent not in useragents.keys():
@@ -330,59 +197,17 @@ def generate_coverage_report(openapi_spec, audit_log, user_agent_available):
                 "counter": 0
             }
         useragents[agent][op][method]["counter"] += 1
-        # sunburst[level][category][path][method]['counter'] += 1
-        # if agent not in sb_method['agents']:
-        #     sb_method['agents'].append(agent)
-        # if agent not in sb_method['agents']:
-        #     sb_method['agents'].append(agent)
-        #     sunburst[level][category][path][method]['agents'].append(agent)
-
-# This should be calculated on the server, via an index
-        # import ipdb; ipdb.set_trace(context=60)
         if agent not in endpoints[op][method]['agents']:
             endpoints[op][method]['agents'].append(agent)
 
     report = {}
-    report['sunburst'] = sunburst
     report['endpoints'] = endpoints
-    report['new_endpoints'] = new_endpoints
     report['tests'] = tests
     report['test_tags'] = test_tags
     report['test_sequences'] = test_sequences
     report['useragents'] = useragents
     report['unknown_urls'] = unknown_urls
     report['unknown_url_methods'] = unknown_url_methods
-    # import ipdb; ipdb.set_trace(context=60)
-    # count_tree = generate_count_tree(openapi_spec)
-    # report['count'] = count_tree
-    # report['results'] = get_count_results(count_tree)
-    # report['unknown_url_methods'] = unknown_url_methods
-
-    # generate some simple statistics
-    # statistics = {
-    #     'total': {
-    #         'hit': 0,
-    #         'total': 0
-    #     }
-    # }
-
-    # for level in ['alpha', 'beta', 'stable']:
-    #     statistics[level] = {
-    #         'hit': len(
-    #             filter(lambda x: x['level'] == level and x['count'] > 0,
-    #                    report['results'])),
-    #         'total': len(
-    #             filter(lambda x: x['level'] == level,
-    #                    report['results']))
-    #     }
-    #     statistics['total']['hit'] += statistics[level]['hit']
-    #     statistics['total']['total'] += statistics[level]['total']
-
-    # report['statistics'] = statistics
-
-    # report['unknown_methods'] = list(
-    #     set([" | ".join(x) for x in unknown_url_methods]))
-
     return report
 
 
@@ -403,7 +228,6 @@ def main():
     if not os.path.isfile(filename):
         print("Invalid filename given")
         usage_and_exit()
-    branch_or_tag = sys.argv[2]
     auditpath = os.path.dirname(filename)
     metadata = file_to_json(auditpath + '/artifacts/metadata.json')
     finished = file_to_json(auditpath + '/finished.json')
@@ -411,26 +235,23 @@ def main():
     major = semver.split('.')[0]
     minor = semver.split('.')[1]
 
+    # TODO: some better logic for retreiving the openapi spec to load
+    # We could look at the audit_log, rather than requiring it on the cli
+    branch_or_tag = sys.argv[2]
+    openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
+
+    openapi_spec = load_openapi_spec(openapi_uri)
+    audit_log = load_audit_log(filename)
+
     user_agent_available = True
     if int(minor) < 12:
         user_agent_available = False
-
-    if minor != '15':
-        branch = "release-"+major+'.'+minor
-    else:
-        commit = metadata['revision'].split('+')[-1]
-        # branch = 'master'
-        branch = commit
-    openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
-    openapi_spec = load_openapi_spec(openapi_uri)
-    audit_log = load_audit_log(filename)
     report = generate_coverage_report(openapi_spec, audit_log, user_agent_available)
-    # import ipdb; ipdb.set_trace(context=60)
+
     output_path = sys.argv[3]
     open(output_path, 'w').write(
         json.dumps(report))
     return  # we are done
-
 
 if __name__ == "__main__":
     main()
