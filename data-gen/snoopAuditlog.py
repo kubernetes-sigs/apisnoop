@@ -80,6 +80,53 @@ def find_openapi_entry(openapi_spec, event):
   hit_cache[url.path] = None
   return None
 
+discovery_ops = [
+    'get/getCoreAPIVersions',
+    'get/getAPIVersions',
+    'get/getAppsV1beta2APIResources',
+    'get/getAdmissionregistrationV1beta1APIResources',
+    'get/getAuthenticationV1APIResources',
+    'get/getAuthenticationV1beta1APIResources',
+    'get/getAuthorizationV1APIResources',
+    'get/getAuthorizationV1beta1APIResources',
+    'get/getAutoscalingV1APIResources',
+    'get/getAutoscalingV2beta1APIResources',
+    'get/getAutoscalingV2beta2APIResources',
+    'get/getApiextensionsV1beta1APIResources',
+    'get/getApiregistrationV1APIResources',
+    'get/getApiregistrationV1beta1APIResources',
+    'get/getAppsV1APIResources',
+    'get/getAppsV1beta1APIResources',
+    'get/getAppsV1beta2APIResources',
+    'get/getBatchV1APIResources',
+    'get/getBatchV1beta1APIResources',
+    'get/getBatchV2alpha1APIResources',
+    'get/getCertificatesV1beta1APIResources',
+    'get/getCoordinationV1APIResources',
+    'get/getCoordinationV1beta1APIResources',
+    'get/getEventsV1beta1APIResources',
+    'get/getExtensionsV1beta1APIResources',
+    'get/getNodeV1beta1APIResources',
+    'get/getPolicyV1beta1APIResources',
+    'get/getSettingsV1alpha1APIResources',
+    'get/getSchedulingV1APIResources',
+    'get/getSchedulingV1beta1APIResources',
+    'get/getSchedulingV1alpha1APIResources',
+    'get/getStorageV1APIResources',
+    'get/getRbacAuthorizationV1APIResources',
+    'get/getRbacAuthorizationV1beta1APIResources',
+    'get/getStorageV1beta1APIResources',
+    'get/getNetworkingV1beta1APIResources',
+    'get/getNetworkingV1APIResources',
+    'post/createCoreV1Namespace',
+    'get/readCoreV1Namespace',
+    'post/createRbacAuthorizationV1beta1NamespacedRoleBinding',
+    'post/createAuthorizationV1beta1SubjectAccessReview',
+    'watch/listCoreV1NamespacedServiceAccount',
+    'get/readCoreV1NamespacedPod',
+    # 'post/createCoreV1NamespacedPod',
+]
+
 def generate_coverage_report(openapi_spec, audit_log):
   endpoints = generate_endpoints_tree(openapi_spec)
   tests = {}
@@ -98,6 +145,7 @@ def generate_coverage_report(openapi_spec, audit_log):
     # at this point we know we want to process further
     useragent = event.get('userAgent', ' ') # if not userAgent, use " "
     operationId = spec_entry['methods'][method]['operationId']
+    method_op = method + '/' + operationId
     endpoints[operationId]['hits'] += 1
 
     test_name = False
@@ -117,12 +165,16 @@ def generate_coverage_report(openapi_spec, audit_log):
       # Populate tests[]
       if test_name not in tests.keys():
         tests[test_name] = []
+      if test_name not in test_sequences.keys():
+        test_sequences[test_name] = []
+      # if len(test_sequences[test_name]) < 30 and method_op in discovery_ops:
+      if method_op in discovery_ops:
+        # we should probably see if we can check if discovery is complete
+        continue # skip recording if we are using a discovery phase
       if operationId not in tests[test_name]:
         tests[test_name].append(operationId)
 
       # populate test_sequences[]
-      if test_name not in test_sequences.keys():
-        test_sequences[test_name] = []
       level = endpoints[operationId]['level']
       category = endpoints[operationId]['category']
       test_sequences[test_name].append(
@@ -139,11 +191,11 @@ def generate_coverage_report(openapi_spec, audit_log):
         if operationId not in test_tags[tag]:
           test_tags[tag].append(operationId)
 
-      agent = useragent.split(' ')[0]
-      if agent not in useragents.keys():
-        useragents[agent] = []
-      if operationId not in useragents[agent]:
-        useragents[agent].append(operationId)
+    agent = useragent.split(' ')[0]
+    if agent not in useragents.keys():
+      useragents[agent] = []
+    if operationId not in useragents[agent]:
+      useragents[agent].append(operationId)
 
   # Nice debug point to check for hits etc
   # {k: v for k, v in endpoints.iteritems() if v['hits'] > 0}
@@ -157,12 +209,12 @@ def generate_coverage_report(openapi_spec, audit_log):
 
 def usage_and_exit():
   print("Usage:")
-  print("  snoopAuditlog.py <auditfile> <branch_or_tag> <outfile>")
+  print("  snoopAuditlog.py <auditfile> <outfolder>")
   print("    - Process audit file for use with webui")
   exit(1)
 
 def main():
-  if len(sys.argv) < 4:
+  if len(sys.argv) < 3:
     usage_and_exit()
   # create folder structure on disk
   create_folders()
@@ -180,7 +232,6 @@ def main():
 
   # TODO: some better logic for retreiving the openapi spec to load
   # We could look at the audit_log, rather than requiring it on the cli
-  branch_or_tag = sys.argv[2]
   if minor == '15':
     branch_or_tag = metadata["revision"].split("+")[1]
   else:
@@ -192,7 +243,7 @@ def main():
   audit_log = load_audit_log(filename)
   report = generate_coverage_report(openapi_spec, audit_log)
 
-  output_path = sys.argv[3]
+  output_path = sys.argv[2]
   for key in report.keys():
     open(output_path+"/"+key+".json", 'w').write(
       json.dumps(report[key]))

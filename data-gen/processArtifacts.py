@@ -44,37 +44,26 @@ def main(infolder,outfolder):
             # branch = 'master'
             branch = commit
         ts = datetime.fromtimestamp(finished['timestamp'])
-        # print auditfile
-        # print(metadata['version'] + ' => ' + branch)
-        # print(ts.date())
         if 'conformance' in auditfile:
             type = 'conformance'
         else:
             type = 'sig-release'
-        auditLogPath = path_to("processAuditlog.py")
+        auditLogPath = path_to("snoopAuditlog.py")
         audit_folder = auditpath.split('/')[-2]
         audit_job = auditpath.split('/')[-1]
         audit_name = type + '_' + semver + '_' + str(ts.date())
-        # import ipdb; ipdb.set_trace(context=15)
         job_outfolder = outfolder + '/' + audit_folder + '/' + audit_job + '/'
         os.makedirs(job_outfolder)
         copyfile(auditpath + '/artifacts/metadata.json',
                  job_outfolder + "/metadata.json")
         copyfile(auditpath + '/finished.json',
                  job_outfolder + "/finished.json")
-        processed_outfile = job_outfolder + "/apisnoop.json"
         print("(")
         print(
             ' '.join(["python", auditLogPath,
-                      auditfile, branch, processed_outfile])
+                      auditfile, job_outfolder])
         )
         print(")&")
-        # print("(")
-        # print(
-        #     ' '.join(["python2", "audit/logreview.py", "load-audit", outdb,
-        #               auditfile, branch, audit_name])
-        # )
-        # print(")&")
     print("wait $(jobs -p)")
 
 
