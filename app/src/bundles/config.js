@@ -1,7 +1,7 @@
 import { createSelector } from 'redux-bundler'
 const config = {
   bucket: document.querySelector('meta[name="gs-bucket"]').getAttribute('content'),
-  provider: 'http://storage.googleapis.com/'
+  provider: 'https://storage.googleapis.com/'
 }
 
 export default {
