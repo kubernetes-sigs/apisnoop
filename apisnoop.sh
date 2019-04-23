@@ -53,7 +53,7 @@ update_cache() {
 
 process_cache() {
   "${APISNOOP_PATH}"/processArtifacts.py "${2:-$APISNOOP_CACHE}" "${3:-$APISNOOP_DEST}" > "${APISNOOP_PATH}"/processArtifacts.sh
-  bash "${APISNOOP_PATH}"/processArtifacts.sh
+  sh "${APISNOOP_PATH}"/processArtifacts.sh
 }
 
 upload_apiusage() {
