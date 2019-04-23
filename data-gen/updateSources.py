@@ -18,7 +18,8 @@ def get_html(url):
 @click.command()
 @click.argument('sources')
 def main(sources):
-    syaml = yaml.load(open(sources).read())
+    # https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
+    syaml = yaml.load(open(sources).read(),Loader=yaml.FullLoader)
     for top, level in syaml.items():
         for sublevel, entry in level.items():
             for bucket, jobs in entry.items():

@@ -66,7 +66,8 @@ downloads = {}
 @click.argument('sources')
 @click.argument('dest')
 def main(sources,dest):
-    s = yaml.load(open(sources).read())
+    # https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
+    s = yaml.load(open(sources).read(),Loader=yaml.FullLoader)
     for top, level in s.items():
         for sublevel, entry in level.items():
             for bucket, jobs in entry.items():
