@@ -20,7 +20,7 @@ function BucketList (props) {
         } = props
   return (
       <div className='min-vh-80'>
-      <h1>Select A Bucket</h1>
+      <h1>Select a Bucket</h1>
       <ul className="list">
       {buckets.map((bucket, i) => {
         return (
