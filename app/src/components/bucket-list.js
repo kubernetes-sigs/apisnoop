@@ -12,6 +12,7 @@ function BucketList (props) {
 
   const { doUpdateQuery,
           doMarkEndpointsResourceAsOutdated,
+          doMarkMetadataResourceAsOutdated,
           doMarkTestsResourceAsOutdated,
           doMarkTestSequencesResourceAsOutdated,
           doMarkTestTagsResourceAsOutdated,
@@ -39,6 +40,7 @@ function BucketList (props) {
     doMarkTestsResourceAsOutdated()
     doMarkTestSequencesResourceAsOutdated()
     doMarkTestTagsResourceAsOutdated()
+    doMarkMetadataResourceAsOutdated()
     doMarkUseragentsResourceAsOutdated()
     doUpdateQuery({bucket: fullPath})
   }
@@ -48,6 +50,7 @@ export default connect(
   'doUpdateQuery',
   'doMarkEndpointsResourceAsOutdated',
   'doMarkTestsResourceAsOutdated',
+  'doMarkMetadataResourceAsOutdated',
   'doMarkTestSequencesResourceAsOutdated',
   'doMarkTestTagsResourceAsOutdated',
   'doMarkUseragentsResourceAsOutdated',
