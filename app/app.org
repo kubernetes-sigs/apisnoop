@@ -239,6 +239,7 @@ The downside of this is that apisnoop developers should be doing it from within 
       import endpoints from './endpoints'
       import endpointsResource from './endpoints-resource'
       import metadataResource from './metadata-resource'
+      import metadata from './metadata'
       import testsResource from './tests-resource'
       import testTagsResource from './test-tags-resource'
       import testSequencesResource from './test-sequences-resource'
@@ -258,6 +259,7 @@ The downside of this is that apisnoop developers should be doing it from within 
         endpoints,
         endpointsResource,
         metadataResource,
+        metadata,
         testsResource,
         testTagsResource,
         testSequencesResource,
@@ -1007,6 +1009,53 @@ The downside of this is that apisnoop developers should be doing it from within 
 
      export default bundle
    #+END_SRC
+** Metadata
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/metadata.js :noweb yes
+   :END:
+*** Imports and Export
+   #+NAME: Tests Bundle
+   #+BEGIN_SRC js
+     import { createSelector } from 'redux-bundler'
+
+     export default {
+       name: 'metadata',
+       <<selectJob>>,
+       <<selectBucket>>
+     }
+   #+END_SRC
+*** selectJob
+    *◊MetadataResource -> ◊Job*
+    /Return a string of the Job name (minus the commit) from our metadata resource/
+
+    #+NAME: selectJob
+    #+BEGIN_SRC js :tangle no
+      selectJob: createSelector(
+        'selectMetadataResource',
+        (metadata) => {
+          let job = ''
+          if (metadata == null) return job
+          job = metadata['job-version'].split('+')[0]
+          return job
+       }
+      )
+     #+END_SRC
+*** selectBucket
+    *◊QueryObject -> ◊Bucket*
+    /Returns Bucket Name without its storage path (apisnoop/spyglass)/
+
+    #+NAME: selectBucket
+    #+BEGIN_SRC js :tangle no
+      selectBucket: createSelector(
+        'selectQueryObject',
+        (query) => {
+          let bucket = ''
+          if (query.bucket === undefined )return bucket
+          bucket = query.bucket.split('apisnoop/spyglass/')[1]
+          return bucket
+       }
+      )
+     #+END_SRC
 ** Tests Resource
    :PROPERTIES:
    :header-args: :tangle ./src/bundles/tests-resource.js :noweb yes
@@ -2120,6 +2169,7 @@ export default () => (
 
        const { doUpdateQuery,
                doMarkEndpointsResourceAsOutdated,
+               doMarkMetadataResourceAsOutdated,
                doMarkTestsResourceAsOutdated,
                doMarkTestSequencesResourceAsOutdated,
                doMarkTestTagsResourceAsOutdated,
@@ -2147,6 +2197,7 @@ export default () => (
          doMarkTestsResourceAsOutdated()
          doMarkTestSequencesResourceAsOutdated()
          doMarkTestTagsResourceAsOutdated()
+         doMarkMetadataResourceAsOutdated()
          doMarkUseragentsResourceAsOutdated()
          doUpdateQuery({bucket: fullPath})
        }
@@ -2156,6 +2207,7 @@ export default () => (
        'doUpdateQuery',
        'doMarkEndpointsResourceAsOutdated',
        'doMarkTestsResourceAsOutdated',
+       'doMarkMetadataResourceAsOutdated',
        'doMarkTestSequencesResourceAsOutdated',
        'doMarkTestTagsResourceAsOutdated',
        'doMarkUseragentsResourceAsOutdated',
@@ -2363,22 +2415,24 @@ export default () => (
 
      const SunburstHeader = (props) => {
        const {
-         metadata
+         job,
+         bucket
        } = props
 
+       if (job.length === 0) return null
        return (
            <div id='sunburst-header' className='relative'>
            <h2 className='mb1 mt1 pt4 f1'>
-           { metadata.version }
+           { job }
            </h2>
-           <p className='ibm-plex-mono f6 mt0 pt0 pl2'> from job {metadata.job} in bucket {metadata.bucket}</p>
-           <p className='ibm-plex-mono f6 mb1 pt0 pl2'>Data Gathered on {metadata.timestamp}</p>
+           <p className='ibm-plex-mono f6 mt0 pt0 pl2'> from {bucket}</p>
            </div>
        )
      }
 
      export default connect(
-       'selectMetadata',
+       'selectBucket',
+       'selectJob',
        SunburstHeader
      )
 
@@ -2918,20 +2972,36 @@ export default () => (
     import TestsContainer from '../components/tests-container'
     // import ActiveTestSequence from '../components/active-test-sequence'
 
-    function MainPage () {
-      return (
-        <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
-          {/*<FilterContainer />*/}
-          <UseragentsSearchContainer />
-          <TestTagsSearchContainer />
-          <SunburstAndSummary />
-          <TestsContainer />
-          {/* <ActiveTestSequence /> */}
-        </main>
-      )
+    function MainPage (props) {
+      const {
+        endpointsResourceShouldUpdate,
+        metadataResourceIsStale} = props
+
+      if (endpointsResourceShouldUpdate || metadataResourceIsStale) {
+        return (
+            <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
+            <h2>loading...</h2>
+          </main>
+
+        )
+
+      } else {
+        return (
+            <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
+            {/*<FilterContainer />*/}
+            <UseragentsSearchContainer />
+            <TestTagsSearchContainer />
+            <SunburstAndSummary />
+            <TestsContainer />
+            {/* <ActiveTestSequence /> */}
+          </main>
+        )
+      }
     }
 
     export default connect(
+      'selectMetadataResourceIsStale',
+      'selectEndpointsResourceShouldUpdate',
       MainPage
     )
     #+END_SRC
