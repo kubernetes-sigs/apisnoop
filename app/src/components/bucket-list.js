@@ -7,8 +7,7 @@ function BucketList (props) {
                  'ci-kubernetes-e2e-gce-cos-k8sstable3-default/1116369525902675974',
                  'ci-kubernetes-e2e-gce-cos-k8sstable2-default/1116461866978119689',
                  'ci-kubernetes-e2e-gce-cos-k8sstable1-default/1116466143159128064',
-                 'ci-kubernetes-e2e-gce-cos-k8sbeta-default/1116430159767932928',
-                 'ci-kubernetes-e2e-gci-gce/1120531338168897538'
+                 'ci-kubernetes-e2e-gce-cos-k8sbeta-default/1116430159767932928'
                 ]
 
   const { doUpdateQuery,
@@ -21,8 +20,13 @@ function BucketList (props) {
   return (
       <div className='min-vh-80'>
       <h1>Select A Bucket</h1>
-      <ul>
-      {buckets.map((bucket, i) => <li key={`bucket_${i}`}><a href='#' onClick={handleClick}>{bucket}</a></li>)}
+      <ul className="list">
+      {buckets.map((bucket, i) => {
+        return (
+            <li className='pb2' key={`bucket_${i}`}>
+               <a href='#' onClick={handleClick} className='link black hover-mid-gray'>{bucket}</a>
+            </li>)
+      })}
     </ul>
       </div>
   )
