@@ -7,15 +7,15 @@ const config = {
 export default {
   name: 'config',
   reducer: (state = config) => state,
-  selectStorage: (state) => state.config,
+  selectConfig: (state) => state.config,
   selectGsPath: createSelector(
     'selectQueryObject',
-    'selectStorage',
-    (query, storage) => {
+    'selectConfig',
+    (query, config) => {
       if (query && query.bucket) {
-        return storage.provider.concat(query.bucket)
+        return config.provider.concat(query.bucket)
       }
-      return storage.provider.concat(storage.bucket)
+      return config.provider.concat(config.bucket)
     }
   )
 }

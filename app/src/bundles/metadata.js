@@ -12,12 +12,19 @@ export default {
    }
   ),
   selectBucket: createSelector(
+    'selectConfig',
     'selectQueryObject',
-    (query) => {
+    (config, query) => {
       let bucket = ''
-      if (query.bucket === undefined )return bucket
-      bucket = query.bucket.split('apisnoop/spyglass/')[1]
-      return bucket
+      if (query.bucket === undefined && config.bucket == undefined) {
+        return bucket
+      } else if (config.bucket && !query.bucket) {
+        bucket = config.bucket.split('apisnoop/spyglass/')[1]
+        return bucket
+      } else {
+        bucket = query.bucket.split('apisnoop/spyglass/')[1]
+        return bucket
+      }
    }
   )
 }

@@ -17,16 +17,20 @@ function BucketList (props) {
           doMarkTestSequencesResourceAsOutdated,
           doMarkTestTagsResourceAsOutdated,
           doMarkUseragentsResourceAsOutdated,
+          bucket
         } = props
   return (
       <div id='bucket-list'>
       <h2>Select a Bucket</h2>
       <ul className="list flex flex-wrap pl0">
-      {buckets.map((bucket, i) => {
+      {buckets.map((b, i) => {
         return (
             <li className='pr2 pb2' key={`bucket_${i}`}>
-               <button onClick={handleClick}
-                       className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent'>{bucket}</button>
+            {(b === bucket) &&
+                <button onClick={handleClick}
+              className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-washed-red magic-pointer'>{b}</button>}
+            {(b !== bucket) && <button onClick={handleClick}
+              className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent magic-pointer'>{b}</button>}
             </li>)
       })}
     </ul>
@@ -55,5 +59,6 @@ export default connect(
   'doMarkTestSequencesResourceAsOutdated',
   'doMarkTestTagsResourceAsOutdated',
   'doMarkUseragentsResourceAsOutdated',
+  'selectBucket',
   BucketList
 )
