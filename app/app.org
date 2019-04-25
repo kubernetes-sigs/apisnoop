@@ -630,14 +630,18 @@ The downside of this is that apisnoop developers should be doing it from within 
          'selectEndpoints',
          'selectOpIdsHitByFilteredUseragents',
          'selectOpIdsHitByFilteredTestTags',
+         'selectOpIdsHitByFilteredTests',
          'selectZoom',
-         (endpoints, useragentOpIds, testTagOpIds, zoom) => {
+         (endpoints, useragentOpIds, testTagOpIds, testsOpIds, zoom) => {
            if (endpoints == null) return null
            if (Array.isArray(useragentOpIds) && useragentOpIds.length > 0) {
              endpoints = filterBy(useragentOpIds, endpoints)
            }
            if (Array.isArray(testTagOpIds) && testTagOpIds.length > 0) {
              endpoints = filterBy(testTagOpIds, endpoints)
+           }
+           if (Array.isArray(testsOpIds) && testsOpIds.length > 0) {
+             endpoints = filterBy(testsOpIds, endpoints)
            }
            if (!isEmpty(zoom) && (zoom.depth === 'operationId' || zoom.depth === 'category')) {
              endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
@@ -1102,14 +1106,42 @@ The downside of this is that apisnoop developers should be doing it from within 
    #+NAME: Tests Bundle
    #+BEGIN_SRC js
      import { createSelector } from 'redux-bundler'
-     import { pickBy } from 'lodash'
+     import { pickBy, uniq } from 'lodash'
 
      export default {
        name: 'tests',
+       <<Tests Reducer>>,
        <<selectActiveTests>>,
-       <<selectActiveTest>>
+       <<selectActiveTest>>,
+       <<selectTestsInput>>,
+       <<selectTestsFilteredByInput>>,
+       <<selectTestsFilteredByQuery>>,
+       <<selectNamesTestsFilteredByQuery>>,
+       <<selectOpIdsHitByFilteredTests>>,
+       <<doUpdateTestsInput>>
      }
    #+END_SRC
+*** Tests Reducer
+
+    **Action -> TestState**
+    Received action and its payload and returns the new Teststate(containing changes based on payload).
+    If no action is given, returns the initial state.
+
+    #+NAME: Tests Reducer
+    #+BEGIN_SRC js :tangle no
+      getReducer: () => {
+        const initialState = {
+          filterInput: ''
+        }
+        return (state=initialState, {type, payload}) => {
+          if (type  === 'TESTS_INPUT_UPDATED') {
+            return {...state, filterInput: payload}
+          }
+          return state
+        }
+      }
+    #+END_SRC
+
 *** selectActiveTests
     *◊Endpoint ◊Tests -> ◊ActiveTests*
     /Return all the tests whose array of endpoints contain the given endpoint/
@@ -1144,6 +1176,123 @@ The downside of this is that apisnoop developers should be doing it from within 
          }
        )
     #+END_SRC
+*** selectTestsInput
+    **TestState -> String**
+    _selects the input state from test_
+    #+NAME: selectTestsInput
+    #+BEGIN_SRC js :tangle no
+      selectTestsInput: (state) => state.tests.filterInput
+    #+END_SRC
+
+*** selectTestsFilteredByInput
+    **Regex -> ◊TestsNames**
+    _Given a regex filter, return an array of names that match this regex_
+
+    #+NAME: selectTestsFilteredByInput
+    #+BEGIN_SRC js :tangle no
+      selectTestsFilteredByInput: createSelector(
+        'selectTestsResource',
+        'selectTestsInput',
+        (tests, input) => {
+          if (tests == null || input === '') return []
+          let testsNames = Object.keys(tests)
+          let isValid = true
+          try {
+            new RegExp(input)
+          } catch (err) {
+            isValid = false
+          }
+          if (!isValid) return ['not valid regex']
+
+          return testsNames.filter(ua => {
+            let inputAsRegex = new RegExp(input)
+            return inputAsRegex.test(ua)
+          })
+        }
+      )
+
+    #+END_SRC
+
+*** selectTestsFilteredByQuery
+    **◊Tests ◊Query -> ◊Tests**
+    _Return a filtered Tests based on query.test_
+
+     #+NAME: selectTestsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectTestsFilteredByQuery: createSelector(
+         'selectTestsResource',
+         'selectQueryObject',
+         (tests, query) => {
+           if (tests == null || !query) return []
+           if (query.tests_filter && query.tests_filter.length) {
+             return pickBy(tests, (val, key) => {
+               var inputAsRegex = new RegExp(query.tests_filter)
+               return inputAsRegex.test(key)
+             })
+           } else {
+             return []
+           }
+         }
+       )
+     #+END_SRC
+
+*** selectNamesTestsFilteredByQuery
+    **◊Tests -> ◊TestNames**
+    //Returns an array of Keys from our Tests Object.  In other words: their names//
+
+     #+NAME: selectNamesTestsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectNamesTestsFilteredByQuery: createSelector(
+         'selectTestsFilteredByQuery',
+         (tests) => {
+           return Object.keys(tests)
+         }
+       )
+     #+END_SRC
+
+*** selectOpIdsHitByFilteredTests
+    **◊Tests -> ◊Endpoints**
+    _Given a set of tests that contain endpoints, return an array of just the unique endpoints._
+    This won't be the ultimate filter.  Rather, we wanna setup a nice selection to use in our endpoint bundle as a filter.  So the key here is to make an array of endpoints that is useful for future filtering.
+
+   #+NAME: selectOpIdsHitByFilteredTests
+   #+BEGIN_SRC js :tangle no
+     selectOpIdsHitByFilteredTests: createSelector(
+       'selectTestsFilteredByQuery',
+       (tests) => {
+         let opIdsHit = []
+         let opIds = Object.keys(tests)
+         let opId, opIdIndex;
+
+         if (tests == null)  {
+           return opIdsHit
+         }
+         for (opIdIndex = 0; opIdIndex < opIds.length; opIdIndex++) {
+           opId = opIds[opIdIndex]
+           opIdsHit.push(tests[opId])
+         }
+         return uniq(opIdsHit.flat())
+       }
+     )
+   #+END_SRC
+
+  NOTE this kinda works now, but I'm realizing that we don't need bucket,job,release...since we are only pulling ua's from a single release at the page load.  What we really need is to match on level, category, name, method...but the level and category are not a part of this.  Is it possible for an endoint to exist in beta/stable or in multiple categories?  If so, this would be inaccurate.
+
+*** doUpdateTestInput
+    **String -> Action**
+    _Returns an action for our reducer with type "TEST_INPUT_UPDATED' and String as payload_
+
+    #+NAME: doUpdateTestsInput
+    #+BEGIN_SRC js :tangle no
+      doUpdateTestsInput: (payload) => ({dispatch}) => {
+        dispatch({
+          type: 'TESTS_INPUT_UPDATED',
+          payload
+        })
+      }
+
+    #+END_SRC
+
 ** TestSequences Resource
    :PROPERTIES:
    :header-args: :tangle ./src/bundles/test-sequences-resource.js :noweb yes
@@ -2668,6 +2817,48 @@ The downside of this is that apisnoop developers should be doing it from within 
      )
    #+END_SRC
 
+** Tests Search Container
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/tests-search-container.js
+   :END:
+
+   I don't wanna have a name clash with filtering a single test (to see its sequence) so we are calling this one "tests_filter"
+
+   #+NAME: Tests Search Container
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+     import SearchBar from './search-bar'
+     import SearchResults from './search-results'
+     import ActiveFilter from './active-filter'
+
+
+     function TestsSearchContainer (props) {
+       const {
+         doUpdateTestsInput,
+         namesTestsFilteredByQuery,
+         testsInput,
+         testsFilteredByInput
+       } = props
+
+       return (
+         <div id='tests-search'>
+           <h2>Filter by test names</h2>
+           <SearchBar searchFilter={'tests_filter'} doUpdateInput={doUpdateTestsInput} input={testsInput} />
+           <SearchResults searchFilter={'tests_filter'} results={testsFilteredByInput} />
+           <ActiveFilter searchFilter={'tests_filter'} results={namesTestsFilteredByQuery}/>
+         </div>
+       )
+     }
+     export default connect(
+       'doUpdateTestsInput',
+       'selectTestsInput',
+       'selectTestsFilteredByInput',
+       'selectNamesTestsFilteredByQuery',
+       TestsSearchContainer
+     )
+   #+END_SRC
+
 ** Useragents Search Container
    :PROPERTIES:
    :header-args: :tangle ./src/components/useragents-search-container.js
@@ -2884,6 +3075,7 @@ The downside of this is that apisnoop developers should be doing it from within 
          let filters = {
            useragents: queryObject.useragents,
            test_tags: queryObject.test_tags,
+           tests_filter: queryObject.tests_filter,
            bucket: queryObject.bucket
          }
          filters[searchFilter] = e.target[0].value
@@ -2967,6 +3159,7 @@ The downside of this is that apisnoop developers should be doing it from within 
     // import FilterContainer from '../components/filter-container' # a regex filter for endpoints.
     import UseragentsSearchContainer from '../components/useragents-search-container'
     import TestTagsSearchContainer from '../components/test-tags-search-container'
+    import TestsSearchContainer from '../components/tests-search-container'
     import SunburstAndSummary from '../components/sunburst-and-summary'
     import TestsContainer from '../components/tests-container'
     import BucketList from '../components/bucket-list'
@@ -2979,6 +3172,7 @@ The downside of this is that apisnoop developers should be doing it from within 
             <BucketList />
             <UseragentsSearchContainer />
             <TestTagsSearchContainer />
+            <TestsSearchContainer />
             <SunburstAndSummary />
             <TestsContainer />
             {/* <ActiveTestSequence /> */}
