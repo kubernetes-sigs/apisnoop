@@ -24,7 +24,8 @@ function SearchBar (props) {
     e.preventDefault()
     let filters = {
       useragents: queryObject.useragents,
-      test_tags: queryObject.test_tags
+      test_tags: queryObject.test_tags,
+      bucket: queryObject.bucket
     }
     filters[searchFilter] = e.target[0].value
     filters = pickBy(filters, (v,k) => v !== '' && v !== undefined)
