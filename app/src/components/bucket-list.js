@@ -19,12 +19,12 @@ function BucketList (props) {
           doMarkUseragentsResourceAsOutdated,
         } = props
   return (
-      <div className='min-vh-80'>
-      <h2 className='pa3'>Select a Bucket</h2>
-      <ul className="list flex flex-wrap">
+      <div id='bucket-list'>
+      <h2>Select a Bucket</h2>
+      <ul className="list flex flex-wrap pl0">
       {buckets.map((bucket, i) => {
         return (
-            <li className='pa2' key={`bucket_${i}`}>
+            <li className='pr2 pb2' key={`bucket_${i}`}>
                <button onClick={handleClick}
                        className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent'>{bucket}</button>
             </li>)

@@ -6,25 +6,14 @@ import UseragentsSearchContainer from '../components/useragents-search-container
 import TestTagsSearchContainer from '../components/test-tags-search-container'
 import SunburstAndSummary from '../components/sunburst-and-summary'
 import TestsContainer from '../components/tests-container'
+import BucketList from '../components/bucket-list'
 // import ActiveTestSequence from '../components/active-test-sequence'
 
 function MainPage (props) {
-  const {
-    endpointsResourceShouldUpdate,
-    metadataResourceIsStale} = props
-
-  if (endpointsResourceShouldUpdate || metadataResourceIsStale) {
-    return (
-        <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
-        <h2>loading...</h2>
-      </main>
-
-    )
-
-  } else {
     return (
         <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
         {/*<FilterContainer />*/}
+        <BucketList />
         <UseragentsSearchContainer />
         <TestTagsSearchContainer />
         <SunburstAndSummary />
@@ -32,11 +21,8 @@ function MainPage (props) {
         {/* <ActiveTestSequence /> */}
       </main>
     )
-  }
 }
 
 export default connect(
-  'selectMetadataResourceIsStale',
-  'selectEndpointsResourceShouldUpdate',
   MainPage
 )
