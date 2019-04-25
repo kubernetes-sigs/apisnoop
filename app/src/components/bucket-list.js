@@ -20,12 +20,13 @@ function BucketList (props) {
         } = props
   return (
       <div className='min-vh-80'>
-      <h1>Select a Bucket</h1>
-      <ul className="list">
+      <h2 className='pa3'>Select a Bucket</h2>
+      <ul className="list flex flex-wrap">
       {buckets.map((bucket, i) => {
         return (
-            <li className='pb2' key={`bucket_${i}`}>
-               <a href='#' onClick={handleClick} className='link black hover-mid-gray'>{bucket}</a>
+            <li className='pa2' key={`bucket_${i}`}>
+               <button onClick={handleClick}
+                       className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent'>{bucket}</button>
             </li>)
       })}
     </ul>
