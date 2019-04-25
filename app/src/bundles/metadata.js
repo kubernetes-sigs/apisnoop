@@ -16,7 +16,7 @@ export default {
     'selectQueryObject',
     (config, query) => {
       let bucket = ''
-      if (query.bucket === undefined && config.bucket == undefined) {
+      if (query.bucket === undefined && config.bucket === undefined) {
         return bucket
       } else if (config.bucket && !query.bucket) {
         bucket = config.bucket.split('apisnoop/spyglass/')[1]

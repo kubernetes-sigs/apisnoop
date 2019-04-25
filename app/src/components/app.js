@@ -4,7 +4,6 @@ import { connect } from 'redux-bundler-react'
 
 import Header from './header'
 import Footer from './footer'
-import BucketList from './bucket-list'
 import MainPage from '../pages/main-page'
 
 function App (props) {
