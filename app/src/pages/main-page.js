@@ -4,6 +4,7 @@ import { connect } from 'redux-bundler-react'
 // import FilterContainer from '../components/filter-container' # a regex filter for endpoints.
 import UseragentsSearchContainer from '../components/useragents-search-container'
 import TestTagsSearchContainer from '../components/test-tags-search-container'
+import TestsSearchContainer from '../components/tests-search-container'
 import SunburstAndSummary from '../components/sunburst-and-summary'
 import TestsContainer from '../components/tests-container'
 import BucketList from '../components/bucket-list'
@@ -16,6 +17,7 @@ function MainPage (props) {
         <BucketList />
         <UseragentsSearchContainer />
         <TestTagsSearchContainer />
+        <TestsSearchContainer />
         <SunburstAndSummary />
         <TestsContainer />
         {/* <ActiveTestSequence /> */}

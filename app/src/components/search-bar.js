@@ -25,6 +25,7 @@ function SearchBar (props) {
     let filters = {
       useragents: queryObject.useragents,
       test_tags: queryObject.test_tags,
+      tests_filter: queryObject.tests_filter,
       bucket: queryObject.bucket
     }
     filters[searchFilter] = e.target[0].value

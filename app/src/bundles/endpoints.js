@@ -40,14 +40,18 @@ export default {
     'selectEndpoints',
     'selectOpIdsHitByFilteredUseragents',
     'selectOpIdsHitByFilteredTestTags',
+    'selectOpIdsHitByFilteredTests',
     'selectZoom',
-    (endpoints, useragentOpIds, testTagOpIds, zoom) => {
+    (endpoints, useragentOpIds, testTagOpIds, testsOpIds, zoom) => {
       if (endpoints == null) return null
       if (Array.isArray(useragentOpIds) && useragentOpIds.length > 0) {
         endpoints = filterBy(useragentOpIds, endpoints)
       }
       if (Array.isArray(testTagOpIds) && testTagOpIds.length > 0) {
         endpoints = filterBy(testTagOpIds, endpoints)
+      }
+      if (Array.isArray(testsOpIds) && testsOpIds.length > 0) {
+        endpoints = filterBy(testsOpIds, endpoints)
       }
       if (!isEmpty(zoom) && (zoom.depth === 'operationId' || zoom.depth === 'category')) {
         endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
