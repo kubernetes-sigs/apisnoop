@@ -3,12 +3,13 @@ import { connect } from 'redux-bundler-react'
 
 
 function BucketList (props) {
-  let buckets = ['ci-kubernetes-e2e-gci-gce/1116453304528801792',
-                 'ci-kubernetes-e2e-gce-cos-k8sstable3-default/1116369525902675974',
-                 'ci-kubernetes-e2e-gce-cos-k8sstable2-default/1116461866978119689',
-                 'ci-kubernetes-e2e-gce-cos-k8sstable1-default/1116466143159128064',
-                 'ci-kubernetes-e2e-gce-cos-k8sbeta-default/1116430159767932928'
-                ]
+  let buckets = [
+      'ci-kubernetes-e2e-gce-cos-k8sstable3-default/1121083339638312961',
+      'ci-kubernetes-e2e-gce-cos-k8sstable2-default/1121457989778149377',
+      'ci-kubernetes-e2e-gce-cos-k8sstable1-default/1121581392354873344',
+      'ci-kubernetes-e2e-gce-cos-k8sbeta-default/1121564030004105216',
+      'ci-kubernetes-e2e-gci-gce/1121334929389522946',
+  ]
 
   const { doUpdateQuery,
           doMarkEndpointsResourceAsOutdated,
@@ -38,7 +39,7 @@ function BucketList (props) {
   )
 
   function handleClick (e) {
-    let storagePath = 'apisnoop/spyglass/'
+    let storagePath = 'apisnoop/default/'
     let bucket = e.target.innerHTML
     let fullPath = storagePath.concat(bucket)
     doMarkEndpointsResourceAsOutdated()
