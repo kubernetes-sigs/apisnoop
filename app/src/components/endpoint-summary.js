@@ -8,7 +8,6 @@ const EndpointSummary = (props) => {
   } = props
 
   if (endpoint == null) return null
-  console.log({endpoint})
   return (
     <div id='endpoint-summary'>
       <EndpointCategories endpoint={endpoint}/>
