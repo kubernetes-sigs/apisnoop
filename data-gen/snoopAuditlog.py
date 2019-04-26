@@ -236,7 +236,6 @@ def main():
     branch_or_tag = metadata["revision"].split("+")[1]
   else:
     branch_or_tag = "release-" + major + "." + minor
-  # import ipdb; ipdb.set_trace(context=60)
   openapi_uri = "https://raw.githubusercontent.com/kubernetes/kubernetes/%s/api/openapi-spec/swagger.json" % (branch_or_tag)
 
   openapi_spec = load_openapi_spec(openapi_uri)
@@ -247,6 +246,13 @@ def main():
   for key in report.keys():
     open(output_path+"/"+key+".json", 'w').write(
       json.dumps(report[key]))
+
+  md = finished['metadata']
+  for key in ['passed','result','timestamp']:
+    md[key] = finished[key]
+  open(output_path+"/metadata.json", 'w').write(
+    json.dumps(md))
+
   return  # we are done
 
 if __name__ == "__main__":
