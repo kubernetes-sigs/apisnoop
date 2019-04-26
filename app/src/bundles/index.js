@@ -6,6 +6,7 @@ import config from './config'
 import endpoints from './endpoints'
 import endpointsResource from './endpoints-resource'
 import metadataResource from './metadata-resource'
+import metadata from './metadata'
 import testsResource from './tests-resource'
 import testTagsResource from './test-tags-resource'
 import testSequencesResource from './test-sequences-resource'
@@ -25,6 +26,7 @@ export default composeBundles(
   endpoints,
   endpointsResource,
   metadataResource,
+  metadata,
   testsResource,
   testTagsResource,
   testSequencesResource,

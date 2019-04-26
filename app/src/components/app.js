@@ -6,15 +6,20 @@ import Header from './header'
 import Footer from './footer'
 import MainPage from '../pages/main-page'
 
-export default connect(
- 'doUpdateUrl',
-  ({doUpdateUrl}) => {
+function App (props) {
+  const {
+    doUpdateUrl,
+  } = props
     return (
         <div onClick={navHelper(doUpdateUrl)}>
         <Header />
-        <MainPage />
+       <MainPage />
         <Footer />
         </div>
     )
-  }
+}
+
+export default connect(
+ 'doUpdateUrl',
+  App
 )
