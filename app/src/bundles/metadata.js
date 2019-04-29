@@ -12,7 +12,7 @@ export default {
    }
   ),
   selectBucket: createSelector(
-    'selectConfig',
+    'selectConfigDUMP',
     'selectQueryObject',
     (config, query) => {
       let bucket = ''

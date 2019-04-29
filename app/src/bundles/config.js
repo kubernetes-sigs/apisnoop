@@ -10,12 +10,12 @@ const config = {
 export default {
   name: 'config',
   reducer: (state = config) => state,
-  selectConfig: (state) => state.config,
-  selectConfigTwo: (state) => state.configResource.data,
+  selectConfigDUMP: (state) => state.config,
+  selectConfig: (state) => state.configResource.data,
   selectProvider: (state) => state.config.provider,
   selectGsBucket: createSelector(
     'selectProvider',
-    'selectConfigTwo',
+    'selectConfig',
     (provider, config) => {
       let gsBucket;
       if  (config == null || config['gs-bucket'] === undefined) return gsBucket;
@@ -24,7 +24,7 @@ export default {
     }
   ),
   selectDefaultBucketJob: createSelector(
-    'selectConfigTwo',
+    'selectConfig',
     'selectGsBucket',
     (config, gsBucket) => {
       let defaultBucketJob, bucket, job = '';
