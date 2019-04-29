@@ -239,6 +239,7 @@ The downside of this is that apisnoop developers should be doing it from within 
       import { composeBundles } from 'redux-bundler'
 
       import activeLocation from './active-location'
+      import bucketList from './bucket-list'
       import colours from './colours'
       import config from './config'
       import configResource from './config-resource'
@@ -260,6 +261,7 @@ The downside of this is that apisnoop developers should be doing it from within 
 
       export default composeBundles(
         activeLocation,
+        bucketList,
         colours,
         config,
         configResource,
@@ -646,9 +648,6 @@ The downside of this is that apisnoop developers should be doing it from within 
        )
      }
    #+END_SRC
-
-**
-
 ** BucketList
   :PROPERTIES:
     :header-args: :tangle ./src/bundles/bucket-list.js :noweb yes
@@ -660,20 +659,52 @@ The downside of this is that apisnoop developers should be doing it from within 
     #+NAME: Buckets bundle
     #+BEGIN_SRC js
       import { createSelector } from 'redux-bundler'
+      import { flatten, map } from 'lodash'
 
       export default {
         name: 'bucketList',
-        <<selectBuckets>>
+        <<selectBuckets>>,
+        <<selectBucketJobPaths>>
       }
     #+END_SRC
 
 **** selectBuckets
-     **Config -> BucketObject**
+     **Config -> ◊BucketObject**
      //Brings out the bucket key from our config//
      #+NAME: selectBuckets
      #+BEGIN_SRC js :tangle no
+       selectBuckets: createSelector(
+         'selectConfig',
+         (config) => {
+           let buckets = {};
+           if (!config || !config.buckets) return buckets
+           buckets = config.buckets
+           return buckets
+         }
+       )
 
+     #+END_SRC
 
+**** selectBucketJobPaths
+     ** ◊BucketObject ◊GsBucket-> BucketJobPathList**
+     // Returns an array of BucketJobPaths to feed our bucketlist component//
+     #+NAME: selectBucketJobPaths
+     #+BEGIN_SRC js :tangle no
+       selectBucketJobPaths: createSelector(
+         'selectGsBucket',
+         'selectBuckets',
+         (gsBucket, buckets) => {
+           let bucketJobPaths = [];
+           if (!gsBucket || !buckets) return bucketJobPaths
+           bucketJobPaths = map(buckets, (value, key) => {
+             let bucket = key;
+             let paths = [];
+             value['jobs'].forEach(job => paths.push([gsBucket, bucket, job].join('/')))
+             return paths
+           })
+           return flatten(bucketJobPaths)
+         }
+       )
      #+END_SRC
 
 
@@ -2394,71 +2425,71 @@ The downside of this is that apisnoop developers should be doing it from within 
 
    #+NAME: BucketList
    #+BEGIN_SRC js
-          import React from 'react'
-          import { connect } from 'redux-bundler-react'
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
 
 
-          function BucketList (props) {
-            let buckets = [
-                'ci-kubernetes-e2e-gce-cos-k8sstable3-default/1121083339638312961',
-                'ci-kubernetes-e2e-gce-cos-k8sstable2-default/1121457989778149377',
-                'ci-kubernetes-e2e-gce-cos-k8sstable1-default/1121581392354873344',
-                'ci-kubernetes-e2e-gce-cos-k8sbeta-default/1121564030004105216',
-                'ci-kubernetes-e2e-gci-gce/1121334929389522946',
-            ]
+     function BucketList (props) {
+       let buckets = [
+           'ci-kubernetes-e2e-gce-cos-k8sstable3-default/1121083339638312961',
+           'ci-kubernetes-e2e-gce-cos-k8sstable2-default/1121457989778149377',
+           'ci-kubernetes-e2e-gce-cos-k8sstable1-default/1121581392354873344',
+           'ci-kubernetes-e2e-gce-cos-k8sbeta-default/1121564030004105216',
+           'ci-kubernetes-e2e-gci-gce/1121334929389522946',
+       ]
 
-            const { doUpdateQuery,
-                    doMarkEndpointsResourceAsOutdated,
-                    doMarkMetadataResourceAsOutdated,
-                    doMarkTestsResourceAsOutdated,
-                    doMarkTestSequencesResourceAsOutdated,
-                    doMarkTestTagsResourceAsOutdated,
-                    doMarkUseragentsResourceAsOutdated,
-                    bucket
-                  } = props
-            return (
-                <div id='bucket-list'>
-                <h2>Select a Bucket</h2>
-                <ul className="list flex flex-wrap pl0">
-                {buckets.map((b, i) => {
-                  return (
-                      <li className='pr2 pb2' key={`bucket_${i}`}>
-                      {(b === bucket) &&
-                          <button onClick={handleClick}
-                        className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-washed-red magic-pointer'>{b}</button>}
-                      {(b !== bucket) && <button onClick={handleClick}
-                        className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent magic-pointer'>{b}</button>}
-                      </li>)
-                })}
-              </ul>
-                </div>
-            )
+       const { doUpdateQuery,
+               doMarkEndpointsResourceAsOutdated,
+               doMarkMetadataResourceAsOutdated,
+               doMarkTestsResourceAsOutdated,
+               doMarkTestSequencesResourceAsOutdated,
+               doMarkTestTagsResourceAsOutdated,
+               doMarkUseragentsResourceAsOutdated,
+               bucketJobPaths,
+               bucket
+             } = props
+       return (
+           <div id='bucket-list'>
+           <h2>Select a Bucket</h2>
+           <ul className="list flex flex-wrap pl0">
+           {bucketJobPaths.map((b, i) => {
+             return (
+                 <li className='pr2 pb2' key={`bucket_${i}`}>
+                 {(b === bucket) &&
+                     <button onClick={handleClick}
+                   className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-washed-red magic-pointer'>{b}</button>}
+                 {(b !== bucket) && <button onClick={handleClick}
+                   className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent magic-pointer'>{b}</button>}
+                 </li>)
+           })}
+         </ul>
+           </div>
+       )
 
-            function handleClick (e) {
-              let storagePath = 'apisnoop/default/'
-              let bucket = e.target.innerHTML
-              let fullPath = storagePath.concat(bucket)
-              doMarkEndpointsResourceAsOutdated()
-              doMarkTestsResourceAsOutdated()
-              doMarkTestSequencesResourceAsOutdated()
-              doMarkTestTagsResourceAsOutdated()
-              doMarkMetadataResourceAsOutdated()
-              doMarkUseragentsResourceAsOutdated()
-              doUpdateQuery({bucket: fullPath})
-            }
-          }
+       function handleClick (e) {
+         let bucket = e.target.textContent
+         doMarkEndpointsResourceAsOutdated()
+         doMarkTestsResourceAsOutdated()
+         doMarkTestSequencesResourceAsOutdated()
+         doMarkTestTagsResourceAsOutdated()
+         doMarkMetadataResourceAsOutdated()
+         doMarkUseragentsResourceAsOutdated()
+         doUpdateQuery({bucket: bucket})
+       }
+     }
 
-          export default connect(
-            'doUpdateQuery',
-            'doMarkEndpointsResourceAsOutdated',
-            'doMarkTestsResourceAsOutdated',
-            'doMarkMetadataResourceAsOutdated',
-            'doMarkTestSequencesResourceAsOutdated',
-            'doMarkTestTagsResourceAsOutdated',
-            'doMarkUseragentsResourceAsOutdated',
-            'selectBucket',
-            BucketList
-          )
+     export default connect(
+       'doUpdateQuery',
+       'doMarkEndpointsResourceAsOutdated',
+       'doMarkTestsResourceAsOutdated',
+       'doMarkMetadataResourceAsOutdated',
+       'doMarkTestSequencesResourceAsOutdated',
+       'doMarkTestTagsResourceAsOutdated',
+       'doMarkUseragentsResourceAsOutdated',
+       'selectBucket',
+       'selectBucketJobPaths',
+       BucketList
+     )
    #+END_SRC
 
 ** Summary Container
@@ -3326,6 +3357,25 @@ The downside of this is that apisnoop developers should be doing it from within 
 
    #+END_SRC
 * Data Definitions
+** BucketObject (<<<◊BucketObject>>>)
+   This is an Object containing the bucket names pulled from ◊AuditSources, and a list of the jobs within each one
+   #+NAME: BucketObject Definition Example
+   #+BEGIN_EXAMPLE js
+     {
+       BUCKETNAME: {
+         jobs: [
+           'JOBNUMBER',
+         ]
+       },
+       ci-gci-gce: {
+         jobs: [
+           '1131312121',
+           '2221313112'
+         ]
+       }
+     }
+
+   #+END_EXAMPLE
 ** ColourState (<<<◊ColourState>>>)
 
    Colourstate is an Object, consisting of colours, moreColours, and categories.
@@ -3731,7 +3781,17 @@ The downside of this is that apisnoop developers should be doing it from within 
         bucket: Bucket.name
         job: Bucket.job
   #+END_SRC
-
+** BucketJobPathList(<<<◊BucketJobPathList>>>)
+   An array of url paths to feed into our bucketlist component.
+   each BucketJobPath is =GCSBUCKET/BUCKET/JOB= , like =apisnoop/default/gci-gce-something/112112312=
+   #+NAME: BucketJobPathList Definition Example
+   #+BEGIN_SRC js
+     [
+       'apisnoop/default/gci-gce-something-or-other/11131131311' ,
+       'apisnoop/default/gci-gce-something-or-other/11131131219' ,
+       'apisnoop/default/gci-gce-something-stable/11921919119',
+     ]
+   #+END_SRC
 * Glossary
 ** Bundle (<<<bundles>>> | <<<bundle>>>)
    a collection of redux code all organized by some concern or idea.  It's a marked difference from the typical organizing style, where you organize files by what they are (reducers, selectors, etc.).  This, instead, organizes files by their topic.
