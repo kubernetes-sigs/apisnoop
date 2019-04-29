@@ -3,13 +3,6 @@ import { connect } from 'redux-bundler-react'
 
 
 function BucketList (props) {
-  let buckets = [
-      'ci-kubernetes-e2e-gce-cos-k8sstable3-default/1121083339638312961',
-      'ci-kubernetes-e2e-gce-cos-k8sstable2-default/1121457989778149377',
-      'ci-kubernetes-e2e-gce-cos-k8sstable1-default/1121581392354873344',
-      'ci-kubernetes-e2e-gce-cos-k8sbeta-default/1121564030004105216',
-      'ci-kubernetes-e2e-gci-gce/1121334929389522946',
-  ]
 
   const { doUpdateQuery,
           doMarkEndpointsResourceAsOutdated,

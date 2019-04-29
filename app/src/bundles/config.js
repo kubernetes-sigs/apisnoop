@@ -27,10 +27,8 @@ export default {
     'selectConfig',
     'selectGsBucket',
     (config, gsBucket) => {
-      let defaultBucketJob, bucket, job = '';
-
+      let bucket, job = '';
       if (config == null || config['default-view'] === undefined) return '';
-
       bucket = trimEnd(config['default-view'].bucket, '/')
       job = trimEnd(config['default-view'].job, '/')
       return [gsBucket, bucket, job].join('/')
