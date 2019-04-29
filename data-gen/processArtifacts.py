@@ -58,13 +58,15 @@ def main(infolder,outfolder):
                  job_outfolder + "/metadata.json")
         copyfile(auditpath + '/finished.json',
                  job_outfolder + "/finished.json")
-        print("(")
+        #print("(")
         print(
             ' '.join(["python", auditLogPath,
                       auditfile, job_outfolder])
         )
-        print(")&")
-    print("wait $(jobs -p)")
+        #print(")&")
+    # The surrounding ( )& followed by wait let's us parralel process
+    # However memory usage is quick high, so for CI jobs I'm going to leave this to serial
+    #print("wait $(jobs -p)")
 
 
 if __name__ == "__main__":
