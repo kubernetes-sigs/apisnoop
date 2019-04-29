@@ -30,6 +30,11 @@ If the redux store feels like one big spreadsheet, then we are doing a good job.
     I refactor the org file more often than the code, to help future developers learn what it is we're doing and why. No important things should be held in a conversational memory, but instead linked and explained here.  The risk with this is verbosity.  So cleaning up sentence structure and explanations is as important as refactoring code.
 
 The downside of this is that apisnoop developers should be doing it from within the org file--but the strengths are strong enough to make this worthwhile I think.
+* Getting our Data
+  Apisnoop runs our data-gen processes on an audit log and then stores the results in a gs:// bucket whose folder structure mirrors the bucket and job of that audit log.  We determine which buckets and jobs to process, and where we store the processed data, using our audit-sources.yaml located in the top of the repo.  The audit-sources.yaml should match the structure outlined at ◊AuditSources
+
+  Our process log uses gsutil, and so we require the data to be on google storage.
+
 * Index.js
   :PROPERTIES:
   :header-args: :tangle ./src/index.js
@@ -236,6 +241,7 @@ The downside of this is that apisnoop developers should be doing it from within 
       import activeLocation from './active-location'
       import colours from './colours'
       import config from './config'
+      import configResource from './config-resource'
       import endpoints from './endpoints'
       import endpointsResource from './endpoints-resource'
       import metadataResource from './metadata-resource'
@@ -256,6 +262,7 @@ The downside of this is that apisnoop developers should be doing it from within 
         activeLocation,
         colours,
         config,
+        configResource,
         endpoints,
         endpointsResource,
         metadataResource,
@@ -330,6 +337,7 @@ The downside of this is that apisnoop developers should be doing it from within 
       )
 
     #+END_SRC
+
 ** Colours
    :PROPERTIES:
    :header-args: :tangle ./src/bundles/colours.js :noweb yes
@@ -548,6 +556,36 @@ The downside of this is that apisnoop developers should be doing it from within 
 
     #+END_SRC
 
+** ConfigResource
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/config-resource.js :noweb yes
+   :END:
+
+   Brings in the audit-sources.yaml located in our public folder to generate our storage-path and list of buckets and jobs to pull from that storage path.
+
+   #+NAME: Config Resource
+   #+BEGIN_SRC js
+     import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
+     import * as yaml from 'js-yaml'
+
+     const bundle = createAsyncResourceBundle({
+       name: 'configResource',
+       getPromise: () => {
+         return fetch('audit-sources.yaml').then(response => response.text()).then(text => yaml.safeLoad(text, 'utf8'))
+       }
+     })
+
+     bundle.reactConfigResourceFetch = createSelector(
+       'selectConfigResourceShouldUpdate',
+       (shouldUpdate) => {
+         if (!shouldUpdate) return
+         return { actionCreator: 'doFetchConfigResource' }
+       }
+     )
+
+     export default bundle
+   #+END_SRC
+
 ** Config
    :PROPERTIES:
    :header-args: :tangle ./src/bundles/config.js :noweb yes
@@ -558,27 +596,60 @@ The downside of this is that apisnoop developers should be doing it from within 
    #+NAME: config.js
    #+BEGIN_SRC js
      import { createSelector } from 'redux-bundler'
+     import { trimEnd } from 'lodash'
+
+     const STORAGE_PROVIDER = 'https://storage.googleapis.com/'
+
      const config = {
-       bucket: document.querySelector('meta[name="gs-bucket"]').getAttribute('content'),
-       provider: 'https://storage.googleapis.com/'
+       provider: STORAGE_PROVIDER
      }
 
      export default {
        name: 'config',
        reducer: (state = config) => state,
        selectConfig: (state) => state.config,
+       selectConfigTwo: (state) => state.configResource.data,
+       selectProvider: (state) => state.config.provider,
+       selectGsBucket: createSelector(
+         'selectProvider',
+         'selectConfigTwo',
+         (provider, config) => {
+           let gsBucket;
+           if  (config == null || config['gs-bucket'] === undefined) return gsBucket;
+           gsBucket = config['gs-bucket']
+           return trimEnd(gsBucket, '/')
+         }
+       ),
+       selectDefaultBucketJob: createSelector(
+         'selectConfigTwo',
+         'selectGsBucket',
+         (config, gsBucket) => {
+           let defaultBucketJob, bucket, job = '';
+
+           if (config == null || config['default-view'] === undefined) return '';
+
+           bucket = trimEnd(config['default-view'].bucket, '/')
+           job = trimEnd(config['default-view'].job, '/')
+           return [gsBucket, bucket, job].join('/')
+         }
+       ),
        selectGsPath: createSelector(
+         'selectProvider',
          'selectQueryObject',
-         'selectConfig',
-         (query, config) => {
+         'selectDefaultBucketJob',
+         (provider, query, bucketJob) => {
            if (query && query.bucket) {
-             return config.provider.concat(query.bucket)
+             return provider.concat(query.bucket)
            }
-           return config.provider.concat(config.bucket)
+           return provider.concat(bucketJob)
          }
        )
      }
    #+END_SRC
+
+**
+
+** BucketList
 ** Endpoints
   :PROPERTIES:
     :header-args: :tangle ./src/bundles/endpoints.js :noweb yes
@@ -3615,6 +3686,25 @@ The downside of this is that apisnoop developers should be doing it from within 
     depth: "endpoint"
   }
 #+END_EXAMPLE
+** AuditSources (<<<◊AuditSources>>>)
+  AuditSources is a yaml file, named audit-sources.yaml, that is located at the top level of the apisnoop repo.  It determines which buckets we should generate apisnoop data for, and where it should be stored.   This allows other people to put in their own data and make apisnoop more dynamic
+  #+NAME: AuditSources Definition Example
+  #+BEGIN_SRC yaml
+      storage-provider: String
+      buckets:
+        - name: String
+          jobs:
+          - Integer
+        - name: String
+          futureX: (some value that could be added later)
+          jobs:
+          - Integer
+          - Integer
+      default-view: // which bucket job gets loaded on page load, before anything is selected
+        bucket: Bucket.name
+        job: Bucket.job
+  #+END_SRC
+
 * Glossary
 ** Bundle (<<<bundles>>> | <<<bundle>>>)
    a collection of redux code all organized by some concern or idea.  It's a marked difference from the typical organizing style, where you organize files by what they are (reducers, selectors, etc.).  This, instead, organizes files by their topic.
@@ -3971,14 +4061,47 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
    it's being calculated again everytime the query updates.  And we are having to calculate it for the entire tree every time.
    Perhaps we sest the color first on general "colored or not", then in sunburst we determine "faded or not"?  This would remove 1 or 2 if statements from beiong calcualted each time...i think?
 ** IDEA Refactor TestedStats for Recursion and proper FP
-** TODO  [0/4] Create initial page that lists possible buckets to check out
-   upon visiting the site, you can see a list of buckets we've run apisnoop on.  Clicking on oned brings you to the MainPage, with the sunburst and all that, with the bucket put in as the bucket query param.
-*** IDEA Initial Logic of "if query.bucket show mainpage, otherwise show ChoicePage"
-*** TODO WRite out Choice Page with List of Buckets to hit.  When clicked, they update the bucket query.
-*** TODO Verify that the data is showing from the correct bucket
-*** TODO Adjust our Metadata bundle to not be hardcoded.
+** TODO  [2/5] Load buckets and jobs dynamically from yaml file
+  [[https://github.com/cncf/apisnoop/issues/193][Github Issue #193]]: given an audit-sources.yaml, determine which buckets and jobs should be loaded into the app for visualization.
+*** DONE Define what audit-sources.yaml should look like
+    CLOSED: [2019-04-29 Mon 09:58]
+    See ◊AuditSources
+*** DONE Create audit-sources.yaml for our existing data (based on sources. yaml
+    CLOSED: [2019-04-29 Mon 10:05]
 
 
+*** BLOCKED symlink audit-sources.yaml to app/public/audit-sources.yaml
+    #+NAME: symlink audit-sources.yaml
+    #+BEGIN_SRC shell :dir ../ :results output raw
+   ln -s audit-sources.yaml app/public/audit-sources.yaml
+   tree app/public
+    #+END_SRC
+
+    #+RESULTS: symlink audit-sources.yaml
+    app/public
+    ├── assets
+    │   ├── apisnoop_logo_v1.png
+    │   ├── cncf.png
+    │   ├── loading_icon.gif
+    │   ├── logo.gif
+    │   └── packet.png
+    ├── audit-sources.yaml -> audit-sources.yaml
+    ├── favicon.ico
+    ├── index.html
+    └── stylesheet.css
+
+    1 directory, 9 files
+    apisnoop/public [error opening dir]
+
+    0 directories, 0 files
+
+    I had an issue with the symlink and wondering if it is even necessary.  This whole thing works if we have an audit-sources.yaml in our public folder...but this presumes that we did the parsing of the audit-sources.yaml in data-gen....so what if we don't include an audit-sources.yaml by default, and make the copying of it part of our data-gen work?  So whedn data-gen is finished, it copies audit-sources.yaml into app/public, and that's how we know it's ready.  we could even include a check in our build script that says "if there is not this file available stop build and send back response of 'you need to process data first'"
+*** IN-PROGRESS pull in and parse this yaml file within our 'configResource' bundle
+*** TODO Default Bucket chosen for initial view
+   I figure th is should just be the first bucket in the list...nah, cos the buckets will be an objcet not a list.  we could have a setting called default: true.
+*** TODO Bring up GoogleStorage requirement.  do i understand it right, that we do require this?
+*** TODO Need for CORS talk and maybe error message for if a CORS issue comes up?
+    if peopleare uploading to their own buckets, they also need to add us as a reader of tha tsame bucket.
 
 * Finished Tasks
 ** DONE Port over Useragents Bundle
