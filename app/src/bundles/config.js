@@ -1,21 +1,50 @@
 import { createSelector } from 'redux-bundler'
+import { trimEnd } from 'lodash'
+
+const STORAGE_PROVIDER = 'https://storage.googleapis.com/'
+
 const config = {
-  bucket: document.querySelector('meta[name="gs-bucket"]').getAttribute('content'),
-  provider: 'https://storage.googleapis.com/'
+  provider: STORAGE_PROVIDER
 }
 
 export default {
   name: 'config',
   reducer: (state = config) => state,
   selectConfig: (state) => state.config,
+  selectConfigTwo: (state) => state.configResource.data,
+  selectProvider: (state) => state.config.provider,
+  selectGsBucket: createSelector(
+    'selectProvider',
+    'selectConfigTwo',
+    (provider, config) => {
+      let gsBucket;
+      if  (config == null || config['gs-bucket'] === undefined) return gsBucket;
+      gsBucket = config['gs-bucket']
+      return trimEnd(gsBucket, '/')
+    }
+  ),
+  selectDefaultBucketJob: createSelector(
+    'selectConfigTwo',
+    'selectGsBucket',
+    (config, gsBucket) => {
+      let defaultBucketJob, bucket, job = '';
+
+      if (config == null || config['default-view'] === undefined) return '';
+
+      bucket = trimEnd(config['default-view'].bucket, '/')
+      job = trimEnd(config['default-view'].job, '/')
+      return [gsBucket, bucket, job].join('/')
+    }
+  ),
   selectGsPath: createSelector(
+    'selectProvider',
     'selectQueryObject',
-    'selectConfig',
-    (query, config) => {
+    'selectDefaultBucketJob',
+    (provider, query, bucketJob) => {
       if (query && query.bucket) {
-        return config.provider.concat(query.bucket)
+        return provider.concat(query.bucket)
       }
-      return config.provider.concat(config.bucket)
+      return provider.concat(bucketJob)
     }
   )
 }
