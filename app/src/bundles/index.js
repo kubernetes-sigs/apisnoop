@@ -1,8 +1,10 @@
 import { composeBundles } from 'redux-bundler'
 
 import activeLocation from './active-location'
+import bucketList from './bucket-list'
 import colours from './colours'
 import config from './config'
+import configResource from './config-resource'
 import endpoints from './endpoints'
 import endpointsResource from './endpoints-resource'
 import metadataResource from './metadata-resource'
@@ -21,8 +23,10 @@ import zoom from './zoom'
 
 export default composeBundles(
   activeLocation,
+  bucketList,
   colours,
   config,
+  configResource,
   endpoints,
   endpointsResource,
   metadataResource,

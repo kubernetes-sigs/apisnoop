@@ -18,13 +18,14 @@ function BucketList (props) {
           doMarkTestSequencesResourceAsOutdated,
           doMarkTestTagsResourceAsOutdated,
           doMarkUseragentsResourceAsOutdated,
+          bucketJobPaths,
           bucket
         } = props
   return (
       <div id='bucket-list'>
       <h2>Select a Bucket</h2>
       <ul className="list flex flex-wrap pl0">
-      {buckets.map((b, i) => {
+      {bucketJobPaths.map((b, i) => {
         return (
             <li className='pr2 pb2' key={`bucket_${i}`}>
             {(b === bucket) &&
@@ -39,16 +40,14 @@ function BucketList (props) {
   )
 
   function handleClick (e) {
-    let storagePath = 'apisnoop/default/'
-    let bucket = e.target.innerHTML
-    let fullPath = storagePath.concat(bucket)
+    let bucket = e.target.textContent
     doMarkEndpointsResourceAsOutdated()
     doMarkTestsResourceAsOutdated()
     doMarkTestSequencesResourceAsOutdated()
     doMarkTestTagsResourceAsOutdated()
     doMarkMetadataResourceAsOutdated()
     doMarkUseragentsResourceAsOutdated()
-    doUpdateQuery({bucket: fullPath})
+    doUpdateQuery({bucket: bucket})
   }
 }
 
@@ -61,5 +60,6 @@ export default connect(
   'doMarkTestTagsResourceAsOutdated',
   'doMarkUseragentsResourceAsOutdated',
   'selectBucket',
+  'selectBucketJobPaths',
   BucketList
 )
