@@ -1,10 +1,10 @@
 import { createAsyncResourceBundle, createSelector } from 'redux-bundler'
-import * as yaml from 'yaml'
+import * as yaml from 'js-yaml'
 
 const bundle = createAsyncResourceBundle({
   name: 'configResource',
   getPromise: () => {
-    return fetch('audit-sources.yaml').then(response => response.text()).then(text => yaml.parse(text, 'utf8'))
+    return fetch('audit-sources.yaml').then(response => response.text()).then(text => yaml.safeLoad(text, 'utf8'))
   }
 })
 
