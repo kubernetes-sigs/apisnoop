@@ -3,23 +3,23 @@ import { connect } from 'redux-bundler-react'
 
 const SunburstHeader = (props) => {
   const {
-    job,
-    bucket
+    jobVersion,
+    spyglassLink
   } = props
 
-  if (job.length === 0) return null
+  if (jobVersion.length === 0) return null
   return (
-      <div id='sunburst-header' className='relative'>
+      <div id='sunburst-header' className='relative mb2'>
       <h2 className='mb1 mt1 pt4 f1'>
-      { job }
+      { jobVersion }
       </h2>
-      <p className='ibm-plex-mono f6 mt0 pt0 pl2'> from {bucket}</p>
+      <a href={spyglassLink} target="_blank">View this job on Spyglass</a>
       </div>
   )
 }
 
 export default connect(
-  'selectBucket',
-  'selectJob',
+  'selectJobVersion',
+  'selectSpyglassLink',
   SunburstHeader
 )
