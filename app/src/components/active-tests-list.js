@@ -10,7 +10,7 @@ function TestItem (props) {
 
   return (
       <li className='mb3 dim'key='test_{ testItem._id }'>
-      <button className='but-no-style link mid-gray magic-pointer' onClick={()=> handleClick(queryObject, testItem)} title={'info for ' + testItem}>{ testItem }</button>
+      <button className='tl but-no-style link mid-gray magic-pointer' onClick={()=> handleClick(queryObject, testItem)} title={'info for ' + testItem}>{ testItem }</button>
       </li>
   )
 
@@ -32,7 +32,7 @@ function TestList (props) {
 
   if (activeTestsIndex == null || isEmpty(activeEndpoint)) return null
   return (
-      <div id='tests-list' className='tests-section min-vh-100 mt4'>
+      <div id='tests-list' className='tests-section min-vh-100 mt4 w-75'>
       <h2 className='f1'>Tests for <span className='fw2'>{activeEndpoint.level} / {activeEndpoint.category} / {activeEndpoint.operationId} </span></h2>
       <ul className='list pl0'>
       {map(activeTestsIndex, (testItem) => {

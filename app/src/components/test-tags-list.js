@@ -17,7 +17,7 @@ function TestTagsList (props) {
   if (activeTestTags.length === 0) return null
 
   return (
-    <div className="mt4 pl0">
+    <div className="mt0 pl3">
       <p>Tests are coming from:</p>
       <div className="scrollbox">
       <ul className='list pl0 ml0'>
