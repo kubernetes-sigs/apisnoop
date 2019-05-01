@@ -8,6 +8,7 @@ import TestsSearchContainer from '../components/tests-search-container'
 import SunburstAndSummary from '../components/sunburst-and-summary'
 import TestsContainer from '../components/tests-container'
 import BucketList from '../components/bucket-list'
+import FiltersContainer from '../components/filters-container'
 // import ActiveTestSequence from '../components/active-test-sequence'
 
 function MainPage (props) {
@@ -15,9 +16,7 @@ function MainPage (props) {
         <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
         {/*<FilterContainer />*/}
         <BucketList />
-        <UseragentsSearchContainer />
-        <TestTagsSearchContainer />
-        <TestsSearchContainer />
+        <FiltersContainer />
         <SunburstAndSummary />
         <TestsContainer />
         {/* <ActiveTestSequence /> */}

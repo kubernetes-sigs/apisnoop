@@ -12,8 +12,10 @@ function SearchBar (props) {
 
   return (
       <form onSubmit={handleSubmit}>
-      <input name='ua-filter' type='text' value={input} onChange={handleInput}/>
+      <label>by {searchFilter}:
+      <input name='ua-filter' type='text' value={input} onChange={handleInput} placeholder='regex pattern' className='pa1'/>
       <input type='submit' value='submit' />
+      </label>
       </form>
       )
 
@@ -25,13 +27,13 @@ function SearchBar (props) {
     let filters = {
       useragents: queryObject.useragents,
       test_tags: queryObject.test_tags,
-      tests_filter: queryObject.tests_filter,
+      tests: queryObject.tests,
       bucket: queryObject.bucket
     }
     filters[searchFilter] = e.target[0].value
     filters = pickBy(filters, (v,k) => v !== '' && v !== undefined)
     doUpdateQuery({...filters})
-    doUpdateInput('')
+    doUpdateInput(undefined)
   }
 }
 
