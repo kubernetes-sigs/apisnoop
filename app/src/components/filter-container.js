@@ -42,7 +42,7 @@ function FilterContainer (props) {
         /{queryObject[filter]}/
         </button>
         <button onClick={()=>clearQuery(filter)}
-      className='f6 link dim w1 bn b--near-black pv1 mb1 dib ml0 ph3 black bg-light-blue magic-pointer flex items-center justify-center'
+      className='border-none f6 link dim w1 bt bb b--light-blue pv1 shadow-0 dib ml0 ph3 black bg-light-blue magic-pointer flex items-center justify-center'
         >
         X
       </button>
