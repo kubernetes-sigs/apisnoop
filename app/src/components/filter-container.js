@@ -24,7 +24,7 @@ function FilterContainer (props) {
   // no filter set
   if (input === undefined && !queryObject[filter]) {
     return(
-        <div className='relative mb1 pb1 mt0 ml3'>
+        <div className='relative mb1 pb1 mt0'>
         <p className='ttsc pt0 pb0 f3 flex align-center'>{filter}
         <button className={unsetFilterClasses} onClick={()=>doUpdateInput('')}>Set Regex Pattern</button>
         </p>
@@ -34,7 +34,7 @@ function FilterContainer (props) {
   // filter set
   if (input === undefined && queryObject[filter]) {
     return(
-        <div className='relative mb1 pb1 mt0 ml3'>
+        <div className='relative mb1 pb1 mt0'>
         <p className='ttsc pt0 pb0 f3 flex align-center'>{filter.replace('_', ' ')}
         <button
       className={filterBoxClasses}
@@ -58,7 +58,7 @@ function FilterContainer (props) {
 
   //actively setting a filter
   return (
-      <div className='relative mb1 pb1 mt0 ml3'>
+      <div className='relative mb1 pb1 mt0'>
       <SearchBar searchFilter={filter} doUpdateInput={doUpdateInput} input={input} />
       <SearchResults searchFilter={filter} results={filteredByInput} />
       </div>

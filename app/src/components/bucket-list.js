@@ -22,13 +22,14 @@ function BucketList (props) {
       <p><em>Jobs are coming from {config.source}</em></p>
       <ul className="list flex flex-wrap pl0">
       {map(bucketJobPaths, (fullPath, bucketJob, bucketJobPath)=> {
+        let bucket = bucketJob.split('/')[0]
         return (
             <li className='pr2 pb2' key={fullPath}>
             {(bucketJob === activeBucketJob) &&
              <button onClick={() => handleClick(fullPath)}
-              className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-washed-red magic-pointer'>{bucketJob}</button>}
+              className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-washed-red magic-pointer'>{bucket}</button>}
           {(bucketJob !== activeBucketJob) && <button onClick={() => handleClick(fullPath)}
-              className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent magic-pointer'>{bucketJob}</button>}
+              className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent magic-pointer'>{bucket}</button>}
           </li>
         )
       })}
