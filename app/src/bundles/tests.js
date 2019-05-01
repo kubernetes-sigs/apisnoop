@@ -103,8 +103,8 @@ export default {
     (tests, testsHitByQuery) => {
       if (tests == null || testsHitByQuery == null) return {}
       return {
-        totalTests: Object.keys(tests).length || 0,
-        testHitByQuery: Object.keys(testsHitByQuery).length || 0
+        total: Object.keys(tests).length || 0,
+        hitByQuery: Object.keys(testsHitByQuery).length || 0
       }
     }
   ),

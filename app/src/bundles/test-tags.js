@@ -96,7 +96,7 @@ export default {
       if (testTags == null || testTagsHitByQuery == null) return {}
       return {
         total: Object.keys(testTags).length || 0,
-        HitByQuery: Object.keys(testTagsHitByQuery).length || 0
+        hitByQuery: Object.keys(testTagsHitByQuery).length || 0
       }
     }
   ),

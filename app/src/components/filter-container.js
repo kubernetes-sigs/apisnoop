@@ -14,6 +14,7 @@ function FilterContainer (props) {
     doUpdateQuery,
     namesFilteredByQuery,
     filteredByInput,
+    ratio,
     queryObject
   } = props
 
@@ -23,7 +24,7 @@ function FilterContainer (props) {
   // no filter set
   if (input === undefined && !queryObject[filter]) {
     return(
-        <div className='relative mb1 pb1'>
+        <div className='relative mb1 pb1 mt0 ml3'>
         <p className='ttsc pt0 pb0 f3 flex align-center'>{filter}
         <button className={unsetFilterClasses} onClick={()=>doUpdateInput('')}>Set Regex Pattern</button>
         </p>
@@ -33,19 +34,20 @@ function FilterContainer (props) {
   // filter set
   if (input === undefined && queryObject[filter]) {
     return(
-        <div className='relative  mb1 pb1'>
-        <p className='ttsc pt0 pb0 f3 flex align-center'>{filter}
+        <div className='relative mb1 pb1 mt0 ml3'>
+        <p className='ttsc pt0 pb0 f3 flex align-center'>{filter.replace('_', ' ')}
         <button
       className={filterBoxClasses}
       onClick={()=>doUpdateInput(queryObject[filter])}>
         /{queryObject[filter]}/
         </button>
         <button onClick={()=>clearQuery(filter)}
-      className='f6 link dim w1 bn b--near-black pv1 dib ml0 ph3 black bg-light-blue magic-pointer flex items-center justify-center'
+      className='f6 link dim w1 bn b--near-black pv1 mb1 dib ml0 ph3 black bg-light-blue magic-pointer flex items-center justify-center'
         >
         X
       </button>
         </p>
+        <em className='f6 mb1'>Pattern matches {ratio.hitByQuery} of {ratio.total} {filter.replace('_',' ')}</em>
         <details className='f5 mb1'>
         <summary>See All Matches</summary>
         <ActiveFilter searchFilter={filter} results={namesFilteredByQuery}/>
@@ -56,7 +58,7 @@ function FilterContainer (props) {
 
   //actively setting a filter
   return (
-      <div className='relative mb1 pb1'>
+      <div className='relative mb1 pb1 mt0 ml3'>
       <SearchBar searchFilter={filter} doUpdateInput={doUpdateInput} input={input} />
       <SearchResults searchFilter={filter} results={filteredByInput} />
       </div>

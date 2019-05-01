@@ -87,7 +87,7 @@ export default {
       if (useragents == null || useragentsHitByQuery == null) return {}
       return {
         total: Object.keys(useragents).length || 0,
-        HitByQuery: Object.keys(useragentsHitByQuery).length || 0
+        hitByQuery: Object.keys(useragentsHitByQuery).length || 0
       }
     }
   ),

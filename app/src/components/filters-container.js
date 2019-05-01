@@ -17,17 +17,21 @@ const FiltersContainer = (props) => {
     doUpdateTestTagsInput,
     useragentsInput,
     namesUseragentsFilteredByQuery,
+    ratioUseragentsFilteredByQuery,
+    ratioTestTagsFilteredByQuery,
+    ratioTestsFilteredByQuery,
     useragentsFilteredByInput,
     doUpdateUseragentsInput,
   } = props
 
   return(
       <section id="filters" className='relative'>
-      <h2 className="magic-pointer">Filters</h2>
+      <h2 className="magic-pointer f3 mb0">Filters</h2>
       <div className='flex flex-column flex-wrap align-center justify-start relative'>
 
       <FilterContainer filter={'useragents'}
         input={useragentsInput}
+        ratio={ratioUseragentsFilteredByQuery}
         doUpdateInput={doUpdateUseragentsInput}
         namesFilteredByQuery={namesUseragentsFilteredByQuery}
         filteredByInput={useragentsFilteredByInput}
@@ -35,6 +39,7 @@ const FiltersContainer = (props) => {
 
       <FilterContainer filter={'test_tags'}
         input={testTagsInput}
+        ratio={ratioTestTagsFilteredByQuery}
         doUpdateInput={doUpdateTestTagsInput}
         namesFilteredByQuery={namesTestTagsFilteredByQuery}
         filteredByInput={testTagsFilteredByInput}
@@ -42,6 +47,7 @@ const FiltersContainer = (props) => {
 
       <FilterContainer filter={'tests'}
         input={testsInput}
+        ratio={ratioTestsFilteredByQuery}
         doUpdateInput={doUpdateTestsInput}
         namesFilteredByQuery={namesTestsFilteredByQuery}
         filteredByInput={testsFilteredByInput}
@@ -55,14 +61,17 @@ export default connect(
   'selectTestsInput',
   'selectNamesTestsFilteredByQuery',
   'selectTestsFilteredByInput',
-  'doUpdateTestsInput',
+  'selectRatioTestsFilteredByQuery',
   'selectTestTagsInput',
   'selectNamesTestTagsFilteredByQuery',
   'selectTestTagsFilteredByInput',
-  'doUpdateTestTagsInput',
+  'selectRatioTestTagsFilteredByQuery',
   'selectUseragentsInput',
   'selectNamesUseragentsFilteredByQuery',
   'selectUseragentsFilteredByInput',
+  'selectRatioUseragentsFilteredByQuery',
+  'doUpdateTestsInput',
+  'doUpdateTestTagsInput',
   'doUpdateUseragentsInput',
   FiltersContainer
 )
