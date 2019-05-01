@@ -1,5 +1,5 @@
 import { createSelector } from 'redux-bundler'
-import { flatten, map } from 'lodash'
+import { forEach } from 'lodash'
 
 export default {
   name: 'bucketList',
@@ -17,15 +17,30 @@ export default {
     'selectGsBucket',
     'selectBuckets',
     (gsBucket, buckets) => {
-      let bucketJobPaths = [];
-      if (!gsBucket || !buckets) return bucketJobPaths
-      bucketJobPaths = map(buckets, (value, key) => {
-        let bucket = key;
-        let paths = [];
-        value['jobs'].forEach(job => paths.push([gsBucket, bucket, job].join('/')))
-        return paths
-      })
-      return flatten(bucketJobPaths)
+      if (!gsBucket || !buckets) return {};
+      let bucketJobPaths = {};
+      let bucketNames = Object.keys(buckets);
+      let i;
+      for (i = 0; i < bucketNames.length; i++) {
+        console.log(buckets)
+        let bucket = bucketNames[i];
+        let jobs = buckets[bucket].jobs
+        forEach(jobs, (job) => {
+          let bucketJob = [bucket, job].join('/')
+          let fullPath = [gsBucket, bucket, job].join('/')
+          bucketJobPaths[bucketJob] = fullPath;
+        })
+      }
+      return bucketJobPaths;
+    }
+  ),
+  selectActiveBucketJob: createSelector(
+    'selectBucketJobPaths',
+    'selectQueryObject',
+    (bucketJobPaths, query) => {
+      if (bucketJobPaths == null || query.bucket === undefined) return '';
+      let bucketJobs = Object.keys(bucketJobPaths)
+      return bucketJobs.find(bucketJob => bucketJobPaths[bucketJob] === query.bucket)
     }
   )
 }
