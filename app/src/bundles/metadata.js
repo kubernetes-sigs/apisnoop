@@ -2,7 +2,7 @@ import { createSelector } from 'redux-bundler'
 
 export default {
   name: 'metadata',
-  selectJob: createSelector(
+  selectJobVersion: createSelector(
     'selectMetadataResource',
     (metadata) => {
       let job = ''
@@ -11,20 +11,12 @@ export default {
       return job
    }
   ),
-  selectBucket: createSelector(
-    'selectConfigDUMP',
-    'selectQueryObject',
-    (config, query) => {
-      let bucket = ''
-      if (query.bucket === undefined && config.bucket === undefined) {
-        return bucket
-      } else if (config.bucket && !query.bucket) {
-        bucket = config.bucket.split('apisnoop/spyglass/')[1]
-        return bucket
-      } else {
-        bucket = query.bucket.split('apisnoop/spyglass/')[1]
-        return bucket
-      }
-   }
+  selectSpyglassLink: createSelector(
+    'selectActiveBucketJob',
+    (bucketJob) => {
+      let spyglassPath = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs';
+      return [spyglassPath, bucketJob].join('/');
+    }
   )
+  
 }
