@@ -1,5 +1,5 @@
 import { createSelector } from 'redux-bundler'
-import { pickBy, uniq } from 'lodash'
+import { difference, pickBy, uniq } from 'lodash'
 
 export default {
   name: 'testTags',
@@ -24,6 +24,26 @@ export default {
         activeTestTags = pickBy(testTags, (testTag) => testTag.includes(endpoint.operationId))
         return uniq(Object.keys(activeTestTags))
       }
+    }
+  ),
+  selectFilteredTestTags: createSelector(
+    'selectFilteredEndpoints',
+    'selectTestTagsResource',
+    (endpoints, testTags) => {
+      if (endpoints == null || testTags == null) return []
+      let filteredTestTags = []
+      let endpointNames = Object.keys(endpoints)
+      let ttNames = Object.keys(testTags)
+      let i;
+      for (i = 0; i < ttNames.length; i++) {
+        let testTag = ttNames[i]
+        let ttEndpoints = testTags[testTag]
+        let endpointsNotHitByTestTag = difference(ttEndpoints, endpointNames)
+        if (endpointsNotHitByTestTag.length !== ttEndpoints.length) {
+          filteredTestTags.push(testTag)
+        }
+      }
+      return filteredTestTags
     }
   ),
   selectTestTagsInput: (state) => state.testTags.filterInput,

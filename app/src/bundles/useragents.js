@@ -32,7 +32,6 @@ export default {
         let useragent = uaNames[i]
         let uaEndpoints = useragents[useragent]
         let endpointsNotHitByUseragent = difference(uaEndpoints, endpointNames)
-        console.log(endpointsNotHitByUseragent, uaEndpoints, endpointsNotHitByUseragent.length !== uaEndpoints.length)
         if (endpointsNotHitByUseragent.length !== uaEndpoints.length) {
           filteredUseragents.push(useragent)
         }
