@@ -22,9 +22,10 @@ const FiltersContainer = (props) => {
   } = props
 
   return(
-      <section id="filters" className='vh-50 relative'>
+      <section id="filters" className='relative'>
       <h2 className="magic-pointer">Filters</h2>
-      <div className='flex flex-row flex-wrap justify-around w-100 h5'>
+      <div className='flex flex-column flex-wrap align-center justify-start relative'>
+
       <FilterContainer filter={'useragents'}
         input={useragentsInput}
         doUpdateInput={doUpdateUseragentsInput}
@@ -32,17 +33,18 @@ const FiltersContainer = (props) => {
         filteredByInput={useragentsFilteredByInput}
       />
 
-      <FilterContainer filter={'tests'}
-        input={testsInput}
-        doUpdateInput={doUpdateTestsInput}
-        namesFilteredByQuery={namesTestsFilteredByQuery}
-        filteredByInput={testsFilteredByInput}
-      />
       <FilterContainer filter={'test_tags'}
         input={testTagsInput}
         doUpdateInput={doUpdateTestTagsInput}
         namesFilteredByQuery={namesTestTagsFilteredByQuery}
         filteredByInput={testTagsFilteredByInput}
+      />
+
+      <FilterContainer filter={'tests'}
+        input={testsInput}
+        doUpdateInput={doUpdateTestsInput}
+        namesFilteredByQuery={namesTestsFilteredByQuery}
+        filteredByInput={testsFilteredByInput}
       />
       </div>
       </section>
