@@ -80,6 +80,17 @@ export default {
       return Object.keys(useragents)
     }
   ),
+  selectRatioUseragentsFilteredByQuery: createSelector(
+    'selectFilteredUseragents',
+    'selectUseragentsFilteredByQuery',
+    (useragents, useragentsHitByQuery) => {
+      if (useragents == null || useragentsHitByQuery == null) return {}
+      return {
+        total: Object.keys(useragents).length || 0,
+        HitByQuery: Object.keys(useragentsHitByQuery).length || 0
+      }
+    }
+  ),
   selectOpIdsHitByFilteredUseragents: createSelector(
     'selectUseragentsFilteredByQuery',
     (useragents) => {

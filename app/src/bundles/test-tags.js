@@ -4,8 +4,9 @@ import { difference, pickBy, uniq } from 'lodash'
 export default {
   name: 'testTags',
   getReducer: () => {
+    let filterInput;
     const initialState = {
-      filterInput: ''
+      filterInput
     }
     return (state=initialState, {type, payload}) => {
       if (type  === 'TEST_TAGS_INPUT_UPDATED') {
@@ -48,11 +49,10 @@ export default {
   ),
   selectTestTagsInput: (state) => state.testTags.filterInput,
   selectTestTagsFilteredByInput: createSelector(
-    'selectTestTagsResource',
+    'selectFilteredTestTags',
     'selectTestTagsInput',
     (testTags, input) => {
       if (testTags == null || input === '') return []
-      let testTagsNames = Object.keys(testTags)
       let isValid = true
       try {
         new RegExp(input)
@@ -61,7 +61,7 @@ export default {
       }
       if (!isValid) return ['not valid regex']
   
-      return testTagsNames.filter(ua => {
+      return testTags.filter(ua => {
         let inputAsRegex = new RegExp(input)
         return inputAsRegex.test(ua)
       })
@@ -87,6 +87,17 @@ export default {
     'selectTestTagsFilteredByQuery',
     (testTags) => {
       return Object.keys(testTags)
+    }
+  ),
+  selectRatioTestTagsFilteredByQuery: createSelector(
+    'selectFilteredTestTags',
+    'selectTestTagsFilteredByQuery',
+    (testTags, testTagsHitByQuery) => {
+      if (testTags == null || testTagsHitByQuery == null) return {}
+      return {
+        total: Object.keys(testTags).length || 0,
+        HitByQuery: Object.keys(testTagsHitByQuery).length || 0
+      }
     }
   ),
   selectOpIdsHitByFilteredTestTags: createSelector(

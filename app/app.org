@@ -1228,17 +1228,19 @@ The downside of this is that apisnoop developers should be doing it from within 
    #+NAME: Tests Bundle
    #+BEGIN_SRC js
      import { createSelector } from 'redux-bundler'
-     import { pickBy, uniq } from 'lodash'
+     import { difference, pickBy, uniq } from 'lodash'
 
      export default {
        name: 'tests',
        <<Tests Reducer>>,
        <<selectActiveTests>>,
        <<selectActiveTest>>,
+       <<selectFilteredTests>>,
        <<selectTestsInput>>,
        <<selectTestsFilteredByInput>>,
        <<selectTestsFilteredByQuery>>,
        <<selectNamesTestsFilteredByQuery>>,
+       <<selectRatioTestsFilteredByQuery>>,
        <<selectOpIdsHitByFilteredTests>>,
        <<doUpdateTestsInput>>
      }
@@ -1307,6 +1309,32 @@ The downside of this is that apisnoop developers should be doing it from within 
       selectTestsInput: (state) => state.tests.filterInput
     #+END_SRC
 
+*** selectFilteredTests
+
+    #+NAME: selectFilteredTests
+    #+BEGIN_SRC js :tangle no
+      selectFilteredTests: createSelector(
+        'selectFilteredEndpoints',
+        'selectTestsResource',
+        (endpoints, tests) => {
+          if (endpoints == null || tests == null) return []
+          let filteredTests = []
+          let endpointNames = Object.keys(endpoints)
+          let testNames = Object.keys(tests)
+          let i;
+          for (i = 0; i < testNames.length; i++) {
+            let test = testNames[i]
+            let testEndpoints = tests[test]
+            let endpointsNotHitByTest = difference(testEndpoints, endpointNames)
+            if (endpointsNotHitByTest.length !== testEndpoints.length) {
+              filteredTests.push(test)
+            }
+          }
+          return filteredTests
+        }
+      )
+    #+END_SRC
+
 *** selectTestsFilteredByInput
     **Regex -> ◊TestsNames**
     _Given a regex filter, return an array of names that match this regex_
@@ -1314,11 +1342,10 @@ The downside of this is that apisnoop developers should be doing it from within 
     #+NAME: selectTestsFilteredByInput
     #+BEGIN_SRC js :tangle no
       selectTestsFilteredByInput: createSelector(
-        'selectTestsResource',
+        'selectFilteredTests',
         'selectTestsInput',
         (tests, input) => {
           if (tests == null || input === '') return []
-          let testsNames = Object.keys(tests)
           let isValid = true
           try {
             new RegExp(input)
@@ -1327,7 +1354,7 @@ The downside of this is that apisnoop developers should be doing it from within 
           }
           if (!isValid) return ['not valid regex']
 
-          return testsNames.filter(ua => {
+          return tests.filter(ua => {
             let inputAsRegex = new RegExp(input)
             return inputAsRegex.test(ua)
           })
@@ -1354,6 +1381,25 @@ The downside of this is that apisnoop developers should be doing it from within 
              })
            } else {
              return []
+           }
+         }
+       )
+     #+END_SRC
+
+*** selectRatioTestsFilteredByQuery
+    **◊FilteredTests ◊TestsfilteredByQuery -> Ratio**
+    /return two numbers, total number of filtered tests, and number of tests hit by query/
+
+     #+NAME: selectRatioTestsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectRatioTestsFilteredByQuery: createSelector(
+         'selectFilteredTests',
+         'selectTestsFilteredByQuery',
+         (tests, testsHitByQuery) => {
+           if (tests == null || testsHitByQuery == null) return {}
+           return {
+             totalTests: Object.keys(tests).length || 0,
+             testHitByQuery: Object.keys(testsHitByQuery).length || 0
            }
          }
        )
@@ -1398,9 +1444,6 @@ The downside of this is that apisnoop developers should be doing it from within 
        }
      )
    #+END_SRC
-
-  NOTE this kinda works now, but I'm realizing that we don't need bucket,job,release...since we are only pulling ua's from a single release at the page load.  What we really need is to match on level, category, name, method...but the level and category are not a part of this.  Is it possible for an endoint to exist in beta/stable or in multiple categories?  If so, this would be inaccurate.
-
 *** doUpdateTestInput
     **String -> Action**
     _Returns an action for our reducer with type "TEST_INPUT_UPDATED' and String as payload_
@@ -1497,6 +1540,7 @@ The downside of this is that apisnoop developers should be doing it from within 
        <<selectTestTagsFilteredByInput>>,
        <<selectTestTagsFilteredByQuery>>,
        <<selectNamesTestTagsFilteredByQuery>>,
+       <<selectRatioTestTagsFilteredByQuery>>,
        <<selectOpIdsHitByFilteredTestTags>>,
        <<doUpdateTestTagsInput>>
      }
@@ -1530,8 +1574,9 @@ The downside of this is that apisnoop developers should be doing it from within 
     #+NAME: TestTags Reducer
     #+BEGIN_SRC js :tangle no
       getReducer: () => {
+        let filterInput;
         const initialState = {
-          filterInput: ''
+          filterInput
         }
         return (state=initialState, {type, payload}) => {
           if (type  === 'TEST_TAGS_INPUT_UPDATED') {
@@ -1643,11 +1688,10 @@ The downside of this is that apisnoop developers should be doing it from within 
     #+NAME: selectTestTagsFilteredByInput
     #+BEGIN_SRC js :tangle no
       selectTestTagsFilteredByInput: createSelector(
-        'selectTestTagsResource',
+        'selectFilteredTestTags',
         'selectTestTagsInput',
         (testTags, input) => {
           if (testTags == null || input === '') return []
-          let testTagsNames = Object.keys(testTags)
           let isValid = true
           try {
             new RegExp(input)
@@ -1656,7 +1700,7 @@ The downside of this is that apisnoop developers should be doing it from within 
           }
           if (!isValid) return ['not valid regex']
 
-          return testTagsNames.filter(ua => {
+          return testTags.filter(ua => {
             let inputAsRegex = new RegExp(input)
             return inputAsRegex.test(ua)
           })
@@ -1730,6 +1774,25 @@ The downside of this is that apisnoop developers should be doing it from within 
          'selectTestTagsFilteredByQuery',
          (testTags) => {
            return Object.keys(testTags)
+         }
+       )
+     #+END_SRC
+
+*** selectRatioTestTagsFilteredByQuery
+    **◊FilteredTestTagss ◊TestTagsfilteredByQuery -> Ratio**
+    /return two numbers, total number of filtered tests, and number of tests hit by query/
+
+     #+NAME: selectRatioTestTagsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectRatioTestTagsFilteredByQuery: createSelector(
+         'selectFilteredTestTags',
+         'selectTestTagsFilteredByQuery',
+         (testTags, testTagsHitByQuery) => {
+           if (testTags == null || testTagsHitByQuery == null) return {}
+           return {
+             total: Object.keys(testTags).length || 0,
+             HitByQuery: Object.keys(testTagsHitByQuery).length || 0
+           }
          }
        )
      #+END_SRC
@@ -1834,6 +1897,7 @@ The downside of this is that apisnoop developers should be doing it from within 
        <<selectUseragentsFilteredByInput>>,
        <<selectUseragentsFilteredByQuery>>,
        <<selectNamesUseragentsFilteredByQuery>>,
+       <<selectRatioUseragentsFilteredByQuery>>,
        <<selectOpIdsHitByFilteredUseragents>>,
        <<doUpdateUseragentsInput>>
      }
@@ -2079,6 +2143,25 @@ The downside of this is that apisnoop developers should be doing it from within 
          'selectUseragentsFilteredByQuery',
          (useragents) => {
            return Object.keys(useragents)
+         }
+       )
+     #+END_SRC
+
+*** selectRatioUseragentsFilteredByQuery
+    **◊FilteredUseragentss ◊UseragentsfilteredByQuery -> Ratio**
+    /return two numbers, total number of filtered tests, and number of tests hit by query/
+
+     #+NAME: selectRatioUseragentsFilteredByQuery
+     #+BEGIN_SRC js :tangle no
+       selectRatioUseragentsFilteredByQuery: createSelector(
+         'selectFilteredUseragents',
+         'selectUseragentsFilteredByQuery',
+         (useragents, useragentsHitByQuery) => {
+           if (useragents == null || useragentsHitByQuery == null) return {}
+           return {
+             total: Object.keys(useragents).length || 0,
+             HitByQuery: Object.keys(useragentsHitByQuery).length || 0
+           }
          }
        )
      #+END_SRC
