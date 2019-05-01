@@ -1,5 +1,8 @@
-import { pickBy,
-         uniq } from 'lodash'
+import {
+  difference,
+  map,
+  pickBy,
+  uniq } from 'lodash'
 import { createSelector } from 'redux-bundler'
 export default {
   name: 'useragents',
@@ -16,12 +19,32 @@ export default {
     }
   },
   selectUseragentsInput: (state) => state.useragents.filterInput,
-  selectUseragentsFilteredByInput: createSelector(
+  selectFilteredUseragents: createSelector(
+    'selectFilteredEndpoints',
     'selectUseragentsResource',
+    (endpoints, useragents) => {
+      if (endpoints == null || useragents == null) return []
+      let filteredUseragents = []
+      let endpointNames = Object.keys(endpoints)
+      let uaNames = Object.keys(useragents)
+      let i;
+      for (i = 0; i < uaNames.length; i++) {
+        let useragent = uaNames[i]
+        let uaEndpoints = useragents[useragent]
+        let endpointsNotHitByUseragent = difference(uaEndpoints, endpointNames)
+        console.log(endpointsNotHitByUseragent, uaEndpoints, endpointsNotHitByUseragent.length !== uaEndpoints.length)
+        if (endpointsNotHitByUseragent.length !== uaEndpoints.length) {
+          filteredUseragents.push(useragent)
+        }
+      }
+      return filteredUseragents
+    }
+  ),
+  selectUseragentsFilteredByInput: createSelector(
+    'selectFilteredUseragents',
     'selectUseragentsInput',
     (useragents, input) => {
       if (useragents == null || input == undefined || input == '') return []
-      let useragentsNames = Object.keys(useragents)
       let isValid = true
       try {
         new RegExp(input)
@@ -30,7 +53,7 @@ export default {
       }
       if (!isValid) return ['not valid regex']
   
-      return useragentsNames.filter(ua => {
+      return useragents.filter(ua => {
         let inputAsRegex = new RegExp(input)
         return inputAsRegex.test(ua)
       })
