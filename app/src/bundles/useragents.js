@@ -4,8 +4,9 @@ import { createSelector } from 'redux-bundler'
 export default {
   name: 'useragents',
   getReducer: () => {
+    let filterInput;
     const initialState = {
-      filterInput: ''
+      filterInput
     }
     return (state=initialState, {type, payload}) => {
       if (type  === 'USERAGENT_INPUT_UPDATED') {
@@ -19,7 +20,7 @@ export default {
     'selectUseragentsResource',
     'selectUseragentsInput',
     (useragents, input) => {
-      if (useragents == null || input === '') return []
+      if (useragents == null || input == undefined || input == '') return []
       let useragentsNames = Object.keys(useragents)
       let isValid = true
       try {

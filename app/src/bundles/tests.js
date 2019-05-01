@@ -4,8 +4,9 @@ import { pickBy, uniq } from 'lodash'
 export default {
   name: 'tests',
   getReducer: () => {
+    let filterInput
     const initialState = {
-      filterInput: ''
+      filterInput
     }
     return (state=initialState, {type, payload}) => {
       if (type  === 'TESTS_INPUT_UPDATED') {
@@ -61,9 +62,9 @@ export default {
     'selectQueryObject',
     (tests, query) => {
       if (tests == null || !query) return []
-      if (query.tests_filter && query.tests_filter.length) {
+      if (query.tests && query.tests.length) {
         return pickBy(tests, (val, key) => {
-          var inputAsRegex = new RegExp(query.tests_filter)
+          var inputAsRegex = new RegExp(query.tests)
           return inputAsRegex.test(key)
         })
       } else {
