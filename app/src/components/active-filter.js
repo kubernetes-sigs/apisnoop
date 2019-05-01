@@ -5,8 +5,7 @@ function ActiveFilter (props) {
   const {results, searchFilter} = props
   if(results == null || results.length <= 0) return null
   return (
-      <div className=''>
-      <p className='ml0 pl0 b f5'>Currently Filtered To:</p>
+      <div className='h-100 overflow-y-scroll overflow-x-hidden'>
       <ul className='pl0 ml0 mt0'>
       {results.map((result, index) => {
         return <li className='list f6 dib mr3 ttsc' key={`${searchFilter}`.concat(index)}>
