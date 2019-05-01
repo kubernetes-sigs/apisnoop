@@ -245,13 +245,13 @@ The downside of this is that apisnoop developers should be doing it from within 
       import configResource from './config-resource'
       import endpoints from './endpoints'
       import endpointsResource from './endpoints-resource'
+      import filters from './filters'
       import metadataResource from './metadata-resource'
       import metadata from './metadata'
       import testsResource from './tests-resource'
       import testTagsResource from './test-tags-resource'
       import testSequencesResource from './test-sequences-resource'
       import useragentsResource from './useragents-resource'
-      import jobResultsMetadata from './job-results-metadata'
       import sunburst from './sunburst'
       import testedStats from './tested-stats'
       import tests from './tests'
@@ -266,6 +266,7 @@ The downside of this is that apisnoop developers should be doing it from within 
         config,
         configResource,
         endpoints,
+        filters,
         endpointsResource,
         metadataResource,
         metadata,
@@ -273,7 +274,6 @@ The downside of this is that apisnoop developers should be doing it from within 
         testTagsResource,
         testSequencesResource,
         useragentsResource,
-        jobResultsMetadata,
         sunburst,
         testedStats,
         tests,
@@ -657,12 +657,13 @@ The downside of this is that apisnoop developers should be doing it from within 
     #+NAME: Buckets bundle
     #+BEGIN_SRC js
       import { createSelector } from 'redux-bundler'
-      import { flatten, map } from 'lodash'
+      import { forEach } from 'lodash'
 
       export default {
         name: 'bucketList',
         <<selectBuckets>>,
-        <<selectBucketJobPaths>>
+        <<selectBucketJobPaths>>,
+        <<selectActiveBucketJob>>
       }
     #+END_SRC
 
@@ -685,25 +686,51 @@ The downside of this is that apisnoop developers should be doing it from within 
 
 **** selectBucketJobPaths
      ** ◊BucketObject ◊GsBucket-> BucketJobPathList**
-     // Returns an array of BucketJobPaths to feed our bucketlist component//
+     // Returns buckets with their full gsPath and shortName path//
+     a bucket will have a jobs value, which is an array of jobs.  We want to be able to feed our bucketList component quickly, so we shouldn't have to dive iknto each bucket and retrieve its values.  Instead, we can make an object whose name is the bucket shortPath (bucket/job) and whose value is the bucket longpath (gsBucket, bucket, value)
      #+NAME: selectBucketJobPaths
      #+BEGIN_SRC js :tangle no
        selectBucketJobPaths: createSelector(
          'selectGsBucket',
          'selectBuckets',
          (gsBucket, buckets) => {
-           let bucketJobPaths = [];
-           if (!gsBucket || !buckets) return bucketJobPaths
-           bucketJobPaths = map(buckets, (value, key) => {
-             let bucket = key;
-             let paths = [];
-             value['jobs'].forEach(job => paths.push([gsBucket, bucket, job].join('/')))
-             return paths
-           })
-           return flatten(bucketJobPaths)
+           if (!gsBucket || !buckets) return {};
+           let bucketJobPaths = {};
+           let bucketNames = Object.keys(buckets);
+           let i;
+           for (i = 0; i < bucketNames.length; i++) {
+             console.log(buckets)
+             let bucket = bucketNames[i];
+             let jobs = buckets[bucket].jobs
+             forEach(jobs, (job) => {
+               let bucketJob = [bucket, job].join('/')
+               let fullPath = [gsBucket, bucket, job].join('/')
+               bucketJobPaths[bucketJob] = fullPath;
+             })
+           }
+           return bucketJobPaths;
          }
        )
      #+END_SRC
+
+**** selectActiveBucketJob
+     **◊QueryObject BucketJobPaths -> BucketJob**
+     //Returns bucketJob as a string where bucketJob matches current queryBucket.//
+     the querybucket will be the full path, or the value of the bucket, e.g. (gsPath/bucket/job)
+     #+NAME: selectActiveBucketJob
+     #+BEGIN_SRC js :tangle no
+       selectActiveBucketJob: createSelector(
+         'selectBucketJobPaths',
+         'selectQueryObject',
+         (bucketJobPaths, query) => {
+           if (bucketJobPaths == null || query.bucket === undefined) return '';
+           let bucketJobs = Object.keys(bucketJobPaths)
+           return bucketJobs.find(bucketJob => bucketJobPaths[bucketJob] === query.bucket)
+         }
+       )
+     #+END_SRC
+
+
 
 
 ** Endpoints
@@ -881,85 +908,38 @@ The downside of this is that apisnoop developers should be doing it from within 
 
      export default bundle
    #+END_SRC
-** JobResultsMetadata
-  :PROPERTIES:
-    :header-args: :tangle ./src/bundles/job-results-metadata.js :noweb yes :mkdirp yes
-    :END:
+** Filters
+   :PROPERTIES:
+   :header-args: :tangle ./src/bundles/filters.js :noweb yes
+   :END:
+   #+NAME: Filters Bundle
+   #+BEGIN_SRC js
+     export  default {
+       name: 'filters',
+       getReducer: () => {
+         const initialState = {
+           displayFilters: false
+         }
+         return (state=initialState, {type, payload}) => {
+           if (type === 'FILTERS_TOGGLED') {
+             return {
+               ...state,
+               displayFilters: !state.displayFilters
+             }
 
-  Metadata from job results used to populate our header information
+           }
+           return state
+         }
+       },
+       selectDisplayFilters: (state) => state.filters.displayFilters,
+       doToggleFilters: () => ({dispatch}) => {
+         dispatch({
+           type: "FILTERS_TOGGLED"
+         })
+       }
+     }
 
-****  Layout
-    #+NAME: JobResultsMetadata bundle
-    #+BEGIN_SRC js
-      import jobResultsMetadata from '../data/job-results-metadata.json'
-
-      export default {
-        name: 'jobResultsMetadata',
-        <<JobResultsMetadata Reducer>>,
-        <<selectMetadata>>
-      }
-    #+END_SRC
-**** Tests Layout
-     color as an example to draw from.
-     #+NAME: Colours Tests Setup
-     #+BEGIN_SRC js :tangle no
-       import { Reducer, Selector } from 'redux-testkit'
-       import {composeBundlesRaw} from 'redux-bundler'
-       import colours from './colours.js'
-
-       const store = composeBundlesRaw(colours)
-       const state = store().getState()
-
-       <<Colours Initial State>>
-
-       describe('Colours Reducer', () => {
-         <<Colours Reducer Test>>
-       })
-
-       describe('Colours Selectors', () => {
-         <<selectLevelColours Test>>
-         <<selectCategoryColours Test>>
-       })
-     #+END_SRC
-
-**** Reducer
-
-     **Action -> JRMState**
-    Receives any actions and, no matter its payload, returns the initial JRMState.
-    JRMState is ◊JobResultsMetadata , and draws from our =data= folder
-
-
-     #+NAME: JobResultsMetadata Reducer Test
-     #+BEGIN_SRC js :tangle no
-       it('should have initial state', () => {
-         expect(colours.getReducer()()).toEqual(initialState)
-       })
-       it('should not have unknown actions affect state', ()=> {
-         Reducer(colours.getReducer())
-           .expect({type: 'NOT_EXISTING'})
-           .toReturnState(initialState)
-       })
-     #+END_SRC
-
-     #+NAME: JobResultsMetadata Reducer
-     #+BEGIN_SRC js :tangle no
-        getReducer: () => {
-       const initialState = jobResultsMetadata
-          return (state=initialState, action) => {
-            return state
-          }
-        }
-     #+END_SRC
-
-**** selectMetadata
-     **JRMState -> JRMState**
-     selects entire output of the JRM State to be used in our components.
-
-
-     #+NAME: selectMetadata
-     #+BEGIN_SRC js :tangle no
-    selectMetadata: (state) => state.jobResultsMetadata
-    #+END_SRC
+   #+END_SRC
 ** Sunburst
   :PROPERTIES:
   :header-args: :tangle ./src/bundles/sunburst.js :noweb yes
@@ -1151,17 +1131,17 @@ The downside of this is that apisnoop developers should be doing it from within 
 
      export default {
        name: 'metadata',
-       <<selectJob>>,
-       <<selectBucket>>
+       <<selectJobVersion>>,
+       <<selectSpyglassLink>>
      }
    #+END_SRC
-*** selectJob
+*** selectJobVersion
     *◊MetadataResource -> ◊Job*
     /Return a string of the Job name (minus the commit) from our metadata resource/
 
-    #+NAME: selectJob
+    #+NAME: selectJobVersion
     #+BEGIN_SRC js :tangle no
-      selectJob: createSelector(
+      selectJobVersion: createSelector(
         'selectMetadataResource',
         (metadata) => {
           let job = ''
@@ -1194,6 +1174,21 @@ The downside of this is that apisnoop developers should be doing it from within 
        }
       )
      #+END_SRC
+*** selectSpyglassLink
+    **Bucket Job -> SpyglassLink**
+    /Appends bucket and job to the default path of a spyglass view/
+    #+NAME: selectSpyglassLink
+    #+BEGIN_SRC js :tangle no
+      selectSpyglassLink: createSelector(
+        'selectActiveBucketJob',
+        (bucketJob) => {
+          let spyglassPath = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs';
+          return [spyglassPath, bucketJob].join('/');
+        }
+      )
+
+    #+END_SRC
+
 ** Tests Resource
    :PROPERTIES:
    :header-args: :tangle ./src/bundles/tests-resource.js :noweb yes
@@ -1257,8 +1252,9 @@ The downside of this is that apisnoop developers should be doing it from within 
     #+NAME: Tests Reducer
     #+BEGIN_SRC js :tangle no
       getReducer: () => {
+        let filterInput
         const initialState = {
-          filterInput: ''
+          filterInput
         }
         return (state=initialState, {type, payload}) => {
           if (type  === 'TESTS_INPUT_UPDATED') {
@@ -1351,9 +1347,9 @@ The downside of this is that apisnoop developers should be doing it from within 
          'selectQueryObject',
          (tests, query) => {
            if (tests == null || !query) return []
-           if (query.tests_filter && query.tests_filter.length) {
+           if (query.tests && query.tests.length) {
              return pickBy(tests, (val, key) => {
-               var inputAsRegex = new RegExp(query.tests_filter)
+               var inputAsRegex = new RegExp(query.tests)
                return inputAsRegex.test(key)
              })
            } else {
@@ -1872,8 +1868,9 @@ The downside of this is that apisnoop developers should be doing it from within 
     #+NAME: Useragents Reducer
     #+BEGIN_SRC js :tangle no
       getReducer: () => {
+        let filterInput;
         const initialState = {
-          filterInput: ''
+          filterInput
         }
         return (state=initialState, {type, payload}) => {
           if (type  === 'USERAGENT_INPUT_UPDATED') {
@@ -1941,7 +1938,7 @@ The downside of this is that apisnoop developers should be doing it from within 
         'selectUseragentsResource',
         'selectUseragentsInput',
         (useragents, input) => {
-          if (useragents == null || input === '') return []
+          if (useragents == null || input == undefined || input == '') return []
           let useragentsNames = Object.keys(useragents)
           let isValid = true
           try {
@@ -2425,6 +2422,7 @@ The downside of this is that apisnoop developers should be doing it from within 
    #+BEGIN_SRC js
      import React from 'react'
      import { connect } from 'redux-bundler-react'
+     import { map } from 'lodash'
 
 
      function BucketList (props) {
@@ -2436,29 +2434,32 @@ The downside of this is that apisnoop developers should be doing it from within 
                doMarkTestSequencesResourceAsOutdated,
                doMarkTestTagsResourceAsOutdated,
                doMarkUseragentsResourceAsOutdated,
+               config,
                bucketJobPaths,
-               bucket
+               activeBucketJob
              } = props
+       if (config == null) return null
        return (
            <div id='bucket-list'>
-           <h2>Select a Bucket</h2>
+           <p><em>Jobs are coming from {config.source}</em></p>
            <ul className="list flex flex-wrap pl0">
-           {bucketJobPaths.map((b, i) => {
+           {map(bucketJobPaths, (fullPath, bucketJob, bucketJobPath)=> {
              return (
-                 <li className='pr2 pb2' key={`bucket_${i}`}>
-                 {(b === bucket) &&
-                     <button onClick={handleClick}
-                   className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-washed-red magic-pointer'>{b}</button>}
-                 {(b !== bucket) && <button onClick={handleClick}
-                   className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent magic-pointer'>{b}</button>}
-                 </li>)
+                 <li className='pr2 pb2' key={fullPath}>
+                 {(bucketJob === activeBucketJob) &&
+                  <button onClick={() => handleClick(fullPath)}
+                   className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-washed-red magic-pointer'>{bucketJob}</button>}
+               {(bucketJob !== activeBucketJob) && <button onClick={() => handleClick(fullPath)}
+                   className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent magic-pointer'>{bucketJob}</button>}
+               </li>
+             )
            })}
          </ul>
            </div>
        )
 
-       function handleClick (e) {
-         let bucket = e.target.textContent
+       function handleClick (path) {
+         let bucket = path;
          doMarkEndpointsResourceAsOutdated()
          doMarkTestsResourceAsOutdated()
          doMarkTestSequencesResourceAsOutdated()
@@ -2477,8 +2478,9 @@ The downside of this is that apisnoop developers should be doing it from within 
        'doMarkTestSequencesResourceAsOutdated',
        'doMarkTestTagsResourceAsOutdated',
        'doMarkUseragentsResourceAsOutdated',
-       'selectBucket',
+       'selectActiveBucketJob',
        'selectBucketJobPaths',
+       'selectConfig',
        BucketList
      )
    #+END_SRC
@@ -2618,6 +2620,41 @@ The downside of this is that apisnoop developers should be doing it from within 
      )
    #+END_SRC
 
+** Filters Container
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/filters-container.js
+   :END:
+   #+NAME: FiltersContainer
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+
+     import UseragentsSearchContainer from './useragents-search-container'
+     import TestsFilterContainer from './tests-filter-container'
+
+     const FiltersContainer = (props) => {
+       const {
+         displayFilters,
+         doToggleFilters
+       } = props
+       return(
+           <section id="filters">
+           <h2 className="magic-pointer">Filters</h2>
+           <div className='flex flex-row flex-wrap justify-around w-100'>
+           <UseragentsSearchContainer />
+           <TestsFilterContainer />
+           </div>
+           </section>
+       )
+     }
+     export default connect(
+       'selectDisplayFilters',
+       'doToggleFilters',
+       FiltersContainer
+     )
+
+   #+END_SRC
+
 ** Sunburst And Summary
    :PROPERTIES:
    :header-args: :tangle ./src/components/sunburst-and-summary.js
@@ -2681,24 +2718,24 @@ The downside of this is that apisnoop developers should be doing it from within 
 
      const SunburstHeader = (props) => {
        const {
-         job,
-         bucket
+         jobVersion,
+         spyglassLink
        } = props
 
-       if (job.length === 0) return null
+       if (jobVersion.length === 0) return null
        return (
-           <div id='sunburst-header' className='relative'>
+           <div id='sunburst-header' className='relative mb2'>
            <h2 className='mb1 mt1 pt4 f1'>
-           { job }
+           { jobVersion }
            </h2>
-           <p className='ibm-plex-mono f6 mt0 pt0 pl2'> from {bucket}</p>
+           <a href={spyglassLink} target="_blank">View this job on Spyglass</a>
            </div>
        )
      }
 
      export default connect(
-       'selectBucket',
-       'selectJob',
+       'selectJobVersion',
+       'selectSpyglassLink',
        SunburstHeader
      )
 
@@ -2938,10 +2975,10 @@ The downside of this is that apisnoop developers should be doing it from within 
 
 ** Tests Search Container
    :PROPERTIES:
-   :header-args: :tangle ./src/components/tests-search-container.js
+   :header-args: :tangle no
    :END:
 
-   I don't wanna have a name clash with filtering a single test (to see its sequence) so we are calling this one "tests_filter"
+   I don't wanna have a name clash with filtering a single test (to see its sequence) so we are calling this one "tests"
 
    #+NAME: Tests Search Container
    #+BEGIN_SRC js
@@ -2963,9 +3000,9 @@ The downside of this is that apisnoop developers should be doing it from within 
        return (
          <div id='tests-search'>
            <h2>Filter by test names</h2>
-           <SearchBar searchFilter={'tests_filter'} doUpdateInput={doUpdateTestsInput} input={testsInput} />
-           <SearchResults searchFilter={'tests_filter'} results={testsFilteredByInput} />
-           <ActiveFilter searchFilter={'tests_filter'} results={namesTestsFilteredByQuery}/>
+           <SearchBar searchFilter={'tests'} doUpdateInput={doUpdateTestsInput} input={testsInput} />
+           <SearchResults searchFilter={'tests'} results={testsFilteredByInput} />
+           <ActiveFilter searchFilter={'tests'} results={namesTestsFilteredByQuery}/>
          </div>
        )
      }
@@ -2978,12 +3015,112 @@ The downside of this is that apisnoop developers should be doing it from within 
      )
    #+END_SRC
 
+** Filter Container
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/filter-container.js
+   :END:
+
+   A container, that sits below our releases and has a search bar displayed.  When you type into it, it shows the result of yoru regex filter below, by displaying the useragents that fit that filter
+
+   #+NAME: Filter Container
+   #+BEGIN_SRC js
+          import React from 'react'
+          import { connect } from 'redux-bundler-react'
+          import SearchBar from './search-bar'
+          import SearchResults from './search-results'
+          import ActiveFilter from './active-filter'
+
+
+          function FilterContainer (props) {
+            const {
+              filter,
+              input,
+              doUpdateInput,
+              namesFilteredByQuery,
+              filteredByInput,
+              queryObject
+            } = props
+
+            if (input === undefined && !queryObject[filter]) {
+              return(
+                  <div>
+                  <p>by {filter}: <button onClick={()=>doUpdateInput('')}>Set...</button> </p>
+                  </div>
+              )
+            }
+            if (input === undefined && queryObject[filter]) {
+              return(
+                  <div>
+                  <p>by {filter}:
+                  <button
+                className='f6 link dim ba b--black pv1 dib ml2 ph3 black bg-washed-blue magic-pointer'
+                onClick={()=>doUpdateInput(queryObject[filter])}>
+                  /{queryObject[filter]}/
+                  </button>
+                  </p>
+                  <ActiveFilter searchFilter={filter} results={namesFilteredByQuery}/>
+                  </div>
+              )
+            }
+
+            return (
+                <form>
+                <SearchBar searchFilter={filter} doUpdateInput={doUpdateInput} input={input} />
+                <SearchResults searchFilter={filter} results={filteredByInput} />
+                </form>
+            )
+          }
+          export default connect(
+            'selectQueryObject',
+            FilterContainer
+          )
+   #+END_SRC
+** Tests Filter Container
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/tests-filter-container.js
+   :END:
+   #+NAME: TestsFilterContainer
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+
+     import FilterContainer from './filter-container'
+
+     const TestsFilterContainer = (props) => {
+       const {
+         testsInput,
+         namesTestsFilteredByQuery,
+         testsFilteredByInput,
+         doUpdateTestsInput,
+       } = props
+
+       return(
+           <FilterContainer
+             filter={'tests'}
+             input={testsInput}
+             doUpdateInput={doUpdateTestsInput}
+             namesFilteredByQuery={namesTestsFilteredByQuery}
+             filteredByInput={testsFilteredByInput}
+           />
+       )
+     }
+
+     export default connect(
+       'selectTestsInput',
+       'selectNamesTestsFilteredByQuery',
+       'selectTestsFilteredByInput',
+       'doUpdateTestsInput',
+       TestsFilterContainer
+     )
+
+
+   #+END_SRC
 ** Useragents Search Container
    :PROPERTIES:
    :header-args: :tangle ./src/components/useragents-search-container.js
    :END:
 
-    A container, that sits below our releases and has a search bar displayed.  When you type into it, it shows the result of yoru regex filter below, by displaying the useragents that fit that filter
+   A container, that sits below our releases and has a search bar displayed.  When you type into it, it shows the result of yoru regex filter below, by displaying the useragents that fit that filter
 
    #+NAME: TestTags Search Container
    #+BEGIN_SRC js
@@ -2999,24 +3136,110 @@ The downside of this is that apisnoop developers should be doing it from within 
          doUpdateUseragentsInput,
          namesUseragentsFilteredByQuery,
          useragentsInput,
-         useragentsFilteredByInput
+         useragentsFilteredByInput,
+         queryObject
        } = props
 
+       if (useragentsInput === undefined && !queryObject.useragents) {
+         return(
+             <div className='inactive-filter'>
+             <p>by useragents: <button onClick={()=>doUpdateUseragentsInput('')}>Set...</button> </p>
+             </div>
+         )
+       }
+       if (useragentsInput === undefined && queryObject.useragents) {
+         return(
+             <div className='inactive-filter'>
+             <p>by useragents:
+             <button
+           className='f6 link dim ba b--black pv1 dib ml2 ph3 black bg-washed-blue magic-pointer'
+           onClick={()=>doUpdateUseragentsInput(queryObject.useragents)}>
+             /{queryObject.useragents}/
+             </button>
+             </p>
+             <ActiveFilter searchFilter={'useragents'} results={namesUseragentsFilteredByQuery}/>
+             </div>
+         )
+       }
+
        return (
-         <div id='test-tags-search'>
-           <h2>Filter by user-agents</h2>
+           <form id='test-tags-search'>
            <SearchBar searchFilter={'useragents'} doUpdateInput={doUpdateUseragentsInput} input={useragentsInput} />
            <SearchResults searchFilter={'useragents'} results={useragentsFilteredByInput} />
-           <ActiveFilter searchFilter={'useragents'} results={namesUseragentsFilteredByQuery}/>
-         </div>
+           </form>
        )
      }
      export default connect(
        'doUpdateUseragentsInput',
+       'selectQueryObject',
        'selectUseragentsInput',
        'selectUseragentsFilteredByInput',
        'selectNamesUseragentsFilteredByQuery',
        UseragentsSearchContainer
+     )
+   #+END_SRC
+
+** Tests Search Container
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/tests-search-container.js
+   :END:
+
+   A container, that sits below our releases and has a search bar displayed.  When you type into it, it shows the result of yoru regex filter below, by displaying the useragents that fit that filter
+
+   #+NAME: TestTags Search Container
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+     import SearchBar from './search-bar'
+     import SearchResults from './search-results'
+     import ActiveFilter from './active-filter'
+
+
+     function TestsSearchContainer (props) {
+       const {
+         doUpdateTestsInput,
+         namesTestsFilteredByQuery,
+         testsInput,
+         testsFilteredByInput,
+         queryObject
+       } = props
+
+       if (testsInput === undefined && !queryObject.tests) {
+         return(
+             <div>
+             <p>by tests: <button onClick={()=>doUpdateTestsInput('')}>Set...</button> </p>
+             </div>
+         )
+       }
+       if (testsInput === undefined && queryObject.tests) {
+         return(
+             <div>
+             <p>by tests:
+             <button
+           className='f6 link dim ba b--black pv1 dib ml2 ph3 black bg-washed-blue magic-pointer'
+           onClick={()=>doUpdateTestsInput(queryObject.tests)}>
+             /{queryObject.tests}/
+             </button>
+             </p>
+             <ActiveFilter searchFilter={'tests'} results={namesTestsFilteredByQuery}/>
+             </div>
+         )
+       }
+
+       return (
+           <form id='test-tags-search'>
+           <SearchBar searchFilter={'tests'} doUpdateInput={doUpdateTestsInput} input={testsInput} />
+           <SearchResults searchFilter={'tests'} results={testsFilteredByInput} />
+           </form>
+       )
+     }
+     export default connect(
+       'doUpdateTestsInput',
+       'selectQueryObject',
+       'selectTestsInput',
+       'selectTestsFilteredByInput',
+       'selectNamesTestsFilteredByQuery',
+       TestsSearchContainer
      )
    #+END_SRC
 
@@ -3181,8 +3404,10 @@ The downside of this is that apisnoop developers should be doing it from within 
 
        return (
            <form onSubmit={handleSubmit}>
-           <input name='ua-filter' type='text' value={input} onChange={handleInput}/>
+           <label>by {searchFilter}:
+           <input name='ua-filter' type='text' value={input} onChange={handleInput} placeholder='regex pattern' className='pa1'/>
            <input type='submit' value='submit' />
+           </label>
            </form>
            )
 
@@ -3194,13 +3419,13 @@ The downside of this is that apisnoop developers should be doing it from within 
          let filters = {
            useragents: queryObject.useragents,
            test_tags: queryObject.test_tags,
-           tests_filter: queryObject.tests_filter,
+           tests: queryObject.tests,
            bucket: queryObject.bucket
          }
          filters[searchFilter] = e.target[0].value
          filters = pickBy(filters, (v,k) => v !== '' && v !== undefined)
          doUpdateQuery({...filters})
-         doUpdateInput('')
+         doUpdateInput(undefined)
        }
      }
 
@@ -3247,11 +3472,11 @@ The downside of this is that apisnoop developers should be doing it from within 
        const {results, searchFilter} = props
        if(results == null || results.length <= 0) return null
        return (
-           <div className='ma3'>
-           <strong>Currently Filtered To:</strong>
-           <ul>
+           <div className=''>
+           <p className='ml0 pl0 b f5'>Currently Filtered To:</p>
+           <ul className='pl0 ml0 mt0'>
            {results.map((result, index) => {
-             return <li key={`${searchFilter}`.concat(index)}>
+             return <li className='list f6 dib mr3 ttsc' key={`${searchFilter}`.concat(index)}>
                { result }
              </li>
            })
@@ -3265,6 +3490,7 @@ The downside of this is that apisnoop developers should be doing it from within 
        ActiveFilter
      )
    #+END_SRC
+** something
 * Pages
 ** Main Page
   :PROPERTIES:
@@ -3282,6 +3508,7 @@ The downside of this is that apisnoop developers should be doing it from within 
     import SunburstAndSummary from '../components/sunburst-and-summary'
     import TestsContainer from '../components/tests-container'
     import BucketList from '../components/bucket-list'
+    import FiltersContainer from '../components/filters-container'
     // import ActiveTestSequence from '../components/active-test-sequence'
 
     function MainPage (props) {
@@ -3289,9 +3516,7 @@ The downside of this is that apisnoop developers should be doing it from within 
             <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
             {/*<FilterContainer />*/}
             <BucketList />
-            <UseragentsSearchContainer />
-            <TestTagsSearchContainer />
-            <TestsSearchContainer />
+            <FiltersContainer />
             <SunburstAndSummary />
             <TestsContainer />
             {/* <ActiveTestSequence /> */}
