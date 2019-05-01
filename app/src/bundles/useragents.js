@@ -1,6 +1,5 @@
 import {
   difference,
-  map,
   pickBy,
   uniq } from 'lodash'
 import { createSelector } from 'redux-bundler'
@@ -43,7 +42,7 @@ export default {
     'selectFilteredUseragents',
     'selectUseragentsInput',
     (useragents, input) => {
-      if (useragents == null || input == undefined || input == '') return []
+      if (useragents == null || input === undefined || input === '') return []
       let isValid = true
       try {
         new RegExp(input)

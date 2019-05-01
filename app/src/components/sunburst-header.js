@@ -13,7 +13,7 @@ const SunburstHeader = (props) => {
       <h2 className='mb1 mt1 pt4 f1'>
       { jobVersion }
       </h2>
-      <a href={spyglassLink} target="_blank">View this job on Spyglass</a>
+      <a href={spyglassLink} target="_blank" rel="noreferrer noopener">View this job on Spyglass</a>
       </div>
   )
 }

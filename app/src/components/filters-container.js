@@ -1,8 +1,6 @@
 import React from 'react'
 import { connect } from 'redux-bundler-react'
 
-import UseragentsSearchContainer from './useragents-search-container'
-import TestsFilterContainer from './tests-filter-container'
 import FilterContainer from './filter-container'
 
 const FiltersContainer = (props) => {
