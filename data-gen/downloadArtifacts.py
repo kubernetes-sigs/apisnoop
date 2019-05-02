@@ -69,40 +69,39 @@ def main(sources,dest):
     # https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
     # s = yaml.load(open(sources).read(),Loader=yaml.FullLoader)
     s = yaml.load(open(sources).read())
-    for top, level in s.items():
-        for sublevel, entry in level.items():
-            for bucket, jobs in entry.items():
-                bucket_path = dest + '/' + bucket
-                if not os.path.isdir(bucket_path):
-                    os.makedirs(bucket_path)
-                print("\nbucket: " + bucket)
-                print(gubernator + bucket)
-                bucket_local_path = dest + '/' + bucket + '/'
-                bucket_url = storage + bucket + '/'
-                for filename in bucket_files:
-                    url = bucket_url + filename
-                    full_path = bucket_local_path + filename
+    syaml = yaml.load(open(sources).read(),Loader=yaml.FullLoader)
+    for bucket, info in syaml['buckets'].items():
+        bucket_path = dest + '/' + bucket
+        if not os.path.isdir(bucket_path):
+            os.makedirs(bucket_path)
+        print("\nbucket: " + bucket)
+        print(gubernator + bucket)
+        bucket_local_path = dest + '/' + bucket + '/'
+        bucket_url = storage + bucket + '/'
+        for filename in bucket_files:
+            url = bucket_url + filename
+            full_path = bucket_local_path + filename
+            download_url_to_path(url, full_path)
+            for job in info['jobs']:
+                download_path = bucket + '/' + str(job) + '/'
+                for filename in job_files:
+                    file_path = download_path + filename
+                    full_path = dest + '/' + file_path
+                    url = storage + file_path
                     download_url_to_path(url, full_path)
-                for job in jobs:
-                    download_path = bucket + '/' + str(job) + '/'
-                    for filename in job_files:
-                        file_path = download_path + filename
-                        full_path = dest + '/' + file_path
-                        url = storage + file_path
-                        download_url_to_path(url, full_path)
-                        # import ipdb; ipdb.set_trace(context=60)
-                    artifacts_url = gcsweb + download_path + 'artifacts'
-                    soup = get_html(artifacts_url)
-                    master_link = soup.find(href=re.compile("master"))
-                    master_soup = get_html(
-                        "https://gcsweb.k8s.io" + master_link['href'])
-                    log_links = master_soup.find_all(
-                        href=re.compile("audit.log"))
-                    for link in log_links:
-                        log_path = dest + '/' + download_path + \
-                            os.path.basename(link['href'])
-                        download_url_to_path(link['href'], log_path)
-                    print(artifacts_url)
+                    # import ipdb; ipdb.set_trace(context=60)
+                artifacts_url = gcsweb + download_path + 'artifacts'
+                soup = get_html(artifacts_url)
+                master_link = soup.find(href=re.compile("master"))
+                master_soup = get_html(
+                    "https://gcsweb.k8s.io" + master_link['href'])
+                log_links = master_soup.find_all(
+                    href=re.compile("audit.log"))
+                for link in log_links:
+                    log_path = dest + '/' + download_path + \
+                        os.path.basename(link['href'])
+                    download_url_to_path(link['href'], log_path)
+                print(artifacts_url)
 
     for download in downloads.keys():
         # import ipdb; ipdb.set_trace(context=60)
