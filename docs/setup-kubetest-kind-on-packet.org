@@ -1,0 +1,124 @@
+#+TITLE: Setup kubetest & kind on Packet
+#+AUTHOR: Stephen Heywood
+#+EMAIL: stephen@ii.coop
+#+CREATOR: ii.coop
+#+DATE: 12th April, 2019
+#+PROPERTY: header-args:bash  :tangle ./setup-kubetest.sh
+#+PROPERTY: header-args:bash+ :noweb yes
+#+PROPERTY: header-args:bash+ :noeval
+#+PROPERTY: header-args:bash+ :comments org
+#+PROPERTY: header-args:bash+ :noweb-ref (nth 4 (org-heading-components))
+#+STARTUP: showeverything
+
+* Objective
+
+To get [[https://github.com/kubernetes/test-infra/tree/master/kubetest][kubetest]] working with [[https://kind.sigs.k8s.io/][kind]] on a server provided by [[https://www.packet.com/][Packet]]. Using their infrastucture, it gives a clean environment to iterate through an idea before automating it. 
+
+Details about using ~kubetest~ further are documented in this [[testing-kubernetes-with-kubetest.org][document]].
+
+* Install Dependencies
+
+** Install Docker
+
+#+BEGIN_SRC bash
+  TIME_START=$(date)
+  apt-get update
+  apt-get install -y \
+      apt-transport-https \
+      ca-certificates \
+      curl \
+      gnupg-agent \
+      software-properties-common
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+  add-apt-repository \
+     "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+     $(lsb_release -cs) \
+     stable"
+  apt-get install -y docker-ce docker-ce-cli containerd.io
+#+END_SRC
+
+** Install git & gcc
+
+#+BEGIN_SRC bash
+  apt-get install -y git gcc
+#+END_SRC
+
+** Install go
+
+#+BEGIN_SRC bash
+  curl -L https://dl.google.com/go/go1.12.4.linux-amd64.tar.gz | sudo tar -C /usr/local -xzf -
+  export GOROOT=/usr/local/go/
+  export GOPATH=~/go
+  export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
+  go version
+#+END_SRC
+
+** Install kubectl
+
+#+BEGIN_SRC bash
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee -a /etc/apt/sources.list.d/kubernetes.list
+sudo apt-get update
+sudo apt-get install -y kubectl
+#+END_SRC
+
+
+* Get Kubernetes, kubetest & KIND
+
+- Following feedback from [[https://kubernetes.slack.com/messages/CEKK1KTN2/convo/CEKK1KTN2-1555018633.255400/?thread_ts=1555018633.255400][@neolit123 on kubernetes.slack.com #kind]]
+
+#+BEGIN_SRC bash
+  echo "Getting Kubernetes..."
+  go get k8s.io/kubernetes
+  echo "Getting Kubetest..."
+  go get k8s.io/test-infra
+  echo "Getting Kind..."
+  go get sigs.k8s.io/kind
+#+END_SRC
+
+** Build kubetest
+
+#+BEGIN_SRC bash
+  echo "Build kubetest"
+  cd ~/go/src/k8s.io/test-infra/kubetest
+  go build
+  cp kubetest ../../kubernetes
+  cd ../../kubernetes
+  echo "Getting a cluster up with Kind..."
+  ./kubetest --deployment=kind --kind-binary-version=build --provider=skeleton --build --up
+#+END_SRC
+
+** Update .bashrc 
+
+We need the PATH, GOROOT & GOPATH variables set for future shell sessions.
+
+#+BEGIN_SRC bash
+cat <<EOF >> ~/.bashrc
+export GOROOT=/usr/local/go/
+export GOPATH=~/go
+export PATH=$PATH:$GOPATH/bin:/usr/local/go/bin:$GOPATH/src/k8s.io/test-infra/kubetest
+EOF
+#+END_SRC
+
+** Check on Docker
+
+#+BEGIN_SRC bash
+  echo -e "\nChecking on docker..."
+  docker ps -a
+  docker images
+#+END_SRC
+
+** Check Cluster State
+
+#+BEGIN_SRC bash
+  echo -e "\nCheck on the state of the cluster..."
+  ln -sf ~/.kube/kind-config-kind-kubetest ~/.kube/config
+  kubectl version
+  kubectl get nodes
+  echo "Waiting on all pods to start..."
+  sleep 70
+  kubectl get pods --all-namespaces
+
+  echo "Start:    $TIME_START"
+  echo "Finished: $(date)"
+#+END_SRC
