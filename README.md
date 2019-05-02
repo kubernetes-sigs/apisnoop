@@ -14,7 +14,7 @@ A secondary goal is to assist in the writing of new tests, by providing focus an
 In order to identify target applications to test, we define a Kubernetes API Consumer as a _KAPIC_. We inspect the [advanced audit logs](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/) to describe which APIs are called during KAPIC operations, mapping the API to the OpenAPI Spec to have consistent terminology.   We then visualize this data in a [Sunburst Partition Graphs](https://bl.ocks.org/mbostock/4063423) with stable/beta/alpha as the center, APIGroups(called categories in the OpenAPI Spec) as the second ring, and APICalls/Verbs (OperationID's in the spec) as the outer ring.e
 The fetching and processing of audit logs, and the deployment of the data visualization, is built into the pipeline of APISnoop, which means we can display different sets of data, and visuals, per branch and pull request.  Visualizing a specific set of data is as simple as opening a pull request on the APISnoop repo, with your audit-logs specified in our [audit-sources.yaml](./audit-sources.yaml)
 
-## Running APISNoop
+## Running APISnoop
 
 ### Start a Branch on this repo
 
