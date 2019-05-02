@@ -35,8 +35,8 @@ function TestList (props) {
       <div id='tests-list' className='tests-section min-vh-100 mt4 w-75'>
       <h2 className='f1'>Tests for <span className='fw2'>{activeEndpoint.level} / {activeEndpoint.category} / {activeEndpoint.operationId} </span></h2>
       <ul className='list pl0'>
-      {map(activeTestsIndex, (testItem) => {
-        return <TestItem testItem={ testItem } doUpdateQuery={ doUpdateQuery } queryObject={ queryObject } />
+      {map(activeTestsIndex, (testItem, i) => {
+        return <TestItem testItem={ testItem } doUpdateQuery={ doUpdateQuery } queryObject={ queryObject } key={'test_' + i} />
       })}
     </ul>
       </div>
