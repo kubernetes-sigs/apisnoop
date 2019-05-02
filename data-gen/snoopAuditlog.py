@@ -168,9 +168,9 @@ def generate_coverage_report(openapi_spec, audit_log):
       if test_name not in test_sequences.keys():
         test_sequences[test_name] = []
       # if len(test_sequences[test_name]) < 30 and method_op in discovery_ops:
-      if method_op in discovery_ops:
+      #if method_op in discovery_ops:
         # we should probably see if we can check if discovery is complete
-        continue # skip recording if we are using a discovery phase
+      #  continue # skip recording if we are using a discovery phase
       if operationId not in tests[test_name]:
         tests[test_name].append(operationId)
 

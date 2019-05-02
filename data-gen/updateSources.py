@@ -7,33 +7,31 @@ except Exception as e:
 import re
 from bs4 import BeautifulSoup
 import click
+import json
 
 gubernator = "https://gubernator.k8s.io/builds/kubernetes-jenkins/logs/"
 
-def get_html(url):
-    html = urlopen(url).read()
-    soup = BeautifulSoup(html, 'html.parser')
-    return soup
+gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
+
+def get_json(url):
+    body = urlopen(url).read()
+    data = json.loads(body)
+    return data
 
 @click.command()
 @click.argument('sources')
 def main(sources):
     # https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
     syaml = yaml.load(open(sources).read(),Loader=yaml.FullLoader)
-    for top, level in syaml.items():
-        for sublevel, entry in level.items():
-            for bucket, jobs in entry.items():
-                testgrid_history = get_html(gubernator + bucket)
-                latest_success= int(
-                    testgrid_history.find(
-                        title=re.compile("SUCCESS")
-                    ).parent.text.split(
-                        '\n'
-                    )[0].encode (
-                        'ascii','ignore'
-                    )
-                )
-                syaml[top][sublevel][bucket]=[latest_success]
+    for bucket, info in syaml['buckets'].items():
+        try:
+            testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
+        except:
+            import ipdb; ipdb.set_trace(context=60)
+        latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
+        syaml['buckets'][bucket]['jobs']=[str(latest_success)]
+        if bucket == syaml['default-view']['bucket']:
+            syaml['default-view']['job']=str(latest_success)
     with open(sources, "w") as f:
         yaml_content = yaml.dump(syaml,
                                  indent=4,
