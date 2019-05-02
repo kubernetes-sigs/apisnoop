@@ -1,0 +1,146 @@
+#+TITLE: Testing Kubernetes with kubetest
+#+AUTHOR: Stephen Heywood
+#+EMAIL: stephen@ii.coop
+#+CREATOR: ii.coop
+#+DATE:  1st May, 2019
+#+PROPERTY: header-args:bash  :tangle ./config-kubetest.sh
+#+PROPERTY: header-args:bash+ :noweb yes
+#+PROPERTY: header-args:bash+ :noeval
+#+PROPERTY: header-args:bash+ :comments org
+#+PROPERTY: header-args:bash+ :noweb-ref (nth 4 (org-heading-components))
+#+STARTUP: showeverything
+
+* Objective
+
+The end goal for this document is to show how to run a group of tests using ~kubetest~. It follows on from this [[setup-kubetest-kind-on-packet.org][setup document]]. 
+
+/Note: The setup requires using an account with 'root' privileges on the server./
+
+
+* Setup kubetest
+
+There's several key bits of software required to support [[https://github.com/kubernetes/test-infra/tree/master/kubetest][kubetest]] from [[https://www.docker.com/][docker]], [[https://kind.sigs.k8s.io/][kind]] and [[https://kubernetes.io/][kubernetes]]. Please make sure that those steps are completed first.
+
+
+* Update the current session
+
+We just installed a number of components, so we need the current shell session to be in sync with the new environment variables.
+
+#+BEGIN_SRC shell 
+. ~/.bashrc 
+env | grep GO
+#+END_SRC
+
+This should provide a result as below.
+
+#+BEGIN_EXAMPLE
+GOPATH=/root/go
+GOROOT=/usr/local/go/
+#+END_EXAMPLE
+
+
+* Let's run a group of tests
+
+With a Kubernetes cluster up and running from the end of the 'setup' process, it's time to check out the framework for how Kubernetes is tested.
+
+** Add setting from e2e.sh main()
+
+#+BEGIN_SRC bash
+ARTIFACTS="${ARTIFACTS:-${PWD}/_artifacts}"
+mkdir -p "${ARTIFACTS}"
+export ARTIFACTS
+#+END_SRC
+
+** Add Environment variables  
+
+#+BEGIN_SRC bash
+export KUBECONFIG="/root/.kube/kind-config-kind-kubetest"
+export SKIP="ginkgo skip regex"
+export FOCUS="ginkgo focus regex"
+#+END_SRC
+
+** Setup and export function ~run_tests~
+
+#+BEGIN_SRC bash
+run_tests() {
+    # base kubetest args
+    KUBETEST_ARGS="--provider=skeleton --test --check-version-skew=false"
+
+    # get the number of worker nodes
+    # TODO(bentheelder): this is kinda gross
+    NUM_NODES="$(kubectl get nodes \
+        -o=jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.taints}{"\n"}{end}' \
+        | grep -cv "node-role.kubernetes.io/master" \
+    )"
+
+    # ginkgo regexes
+    SKIP="${SKIP:-"Alpha|Kubectl|\\[(Disruptive|Feature:[^\\]]+|Flaky)\\]"}"
+    FOCUS="${FOCUS:-"\\[Conformance\\]"}"
+    # if we set PARALLEL=true, skip serial tests set --ginkgo-parallel
+    PARALLEL="${PARALLEL:-false}"
+    if [[ "${PARALLEL}" == "true" ]]; then
+        SKIP="\\[Serial\\]|${SKIP}"
+        KUBETEST_ARGS="${KUBETEST_ARGS} --ginkgo-parallel"
+    fi
+
+    # add ginkgo args
+    KUBETEST_ARGS="${KUBETEST_ARGS} --test_args=\"--ginkgo.focus=${FOCUS} --ginkgo.skip=${SKIP} --report-dir=${ARTIFACTS} --disable-log-dump=true --num-nodes=${NUM_NODES}\""
+
+    # setting this env prevents ginkg e2e from trying to run provider setup
+    export KUBERNETES_CONFORMANCE_TEST="y"
+
+    # run kubetest, if it fails clean up and exit failure
+    eval "kubetest ${KUBETEST_ARGS}"
+}
+export -f run_tests
+#+END_SRC
+
+** Move to k8s folder and start a new subshell
+
+#+BEGIN_SRC bash 
+cd $GOPATH/src/k8s.io/kubernetes
+bash
+#+END_SRC
+
+** Dry run without any tests
+
+#+BEGIN_SRC shell :eval no
+run_tests
+#+END_SRC
+
+With some log output as below
+
+#+BEGIN_EXAMPLE
+Running Suite: Kubernetes e2e suite
+===================================
+Random Seed: 1556676611 - Will randomize all specs
+Will run 0 of 3960 specs
+...
+Ran 0 of 3960 Specs in 0.071 seconds
+SUCCESS! -- 0 Passed | 0 Failed | 0 Pending | 3960 Skipped
+#+END_EXAMPLE
+
+** Run a group of tests
+
+Updating the variable ~FOCUS~ will give kubetest a smaller set of tests to process, therefore giving faster feedback. 
+
+#+BEGIN_SRC shell :eval no
+FOCUS="Secrets"
+run_tests
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+Running Suite: Kubernetes e2e suite
+===================================
+Random Seed: 1556768077 - Will randomize all specs
+Will run 13 of 3960 specs
+...
+Ran 13 of 3960 Specs in 855.336 seconds
+SUCCESS! -- 13 Passed | 0 Failed | 0 Pending | 3947 Skipped
+#+END_EXAMPLE
+
+* References
+
+- [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/e2e-tests.md#testing-against-local-clusters][Testing against local clusters]] 
+
+
