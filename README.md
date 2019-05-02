@@ -81,7 +81,8 @@ For each one, you can enter a Regex pattern, and we will create a grouping of us
 This can be useful for seeing the percentage of your tests or test tags that are not yet conformant and how many endpoints they hit, or seeing how many endpoints hit by your useragent that are not tested or conformance tested.
 
 You can clear the filter by hitting the X button next to the regex pattern.
-![apisnoop filters]('./docs/images/filters.png' "a list of three filters.  lasxt one isn't set and shows a button to set a regex pattern")
+
+![apisnoop filters](docs/images/filters.png "a list of three filters.  lasxt one isn't set and shows a button to set a regex pattern")
 
 ### Endpoint Summary and Test Sequences
 
@@ -92,7 +93,7 @@ When you are hovered/zoomed into an endpoint, a summary card will appear to the 
 
 In addition, A list of the tests that hit this endpoint  will appear below the sunburst.  You can click on any test to see its full test sequence.
 
-[example test sequence]('./docs/images/test_sequence.png' 'a list of endpoints with a timestamp for when they are hit')
+![example test sequence](docs/images/test_sequence.png 'a list of endpoints with a timestamp for when they are hit')
 
 ### Sharing your site/filters
 
