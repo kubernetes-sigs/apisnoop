@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 
 # Our main command line script
-APISNOOP_SOURCES=${APISNOOP_SOURCES:-"./data-gen/sources.yaml"}
+APISNOOP_SOURCES=${APISNOOP_SOURCES:-"./audit-sources.yaml"}
 APISNOOP_CACHE=${APISNOOP_CACHE:-"./data-gen/cache"}
 APISNOOP_DEST=${APISNOOP_DEST:-"./data-gen/processed"}
 APISNOOP_GCS_PREFIX=${APISNOOP_GCS_PREFIX:-"gs://apisnoop/dev/"}
