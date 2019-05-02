@@ -1,0 +1,257 @@
+#+TITLE: Support CNF-Testbed Audit Logging
+#+AUTHOR: Devan Carpenter
+#+EMAIL: devan@ii.coop
+#+CREATOR: ii.coop
+#+DATE: 30th of April, 2019
+
+* Summary
+
+CNF Testbed is an interesting target for gleaning insights on K8S API usage.
+This file documents the process of enabling auditlogs, followed by testing and finally retreival.
+Currently a WIP.
+
+*** Reference
+ - Upstream ticket "auditlogs for CNF testbed runs"
+   - https://github.com/cncf/cnf-testbed/issues/201
+ - Upstream PR to enable auditlogs (MERGED)
+   - https://github.com/crosscloudci/cross-cloud/pull/187
+
+
+* Cross-Cloud
+
+** Development Environment
+
+Clone and setup the Cross-Cloud source for development.
+
+#+BEGIN_SRC tmate
+  cd ~/
+  git clone git@github.com:ii/cross-cloud.git
+  cd ~/cross-cloud
+  git remote add upstream https://github.com/crosscloudci/cross-cloud.git
+  git remote set-url --push upstream no_push
+  git remote add ii git@github.com:ii/cross-cloud.git
+  . ~/.ssh/ssh-find-agent.sh
+  ssh-find-agent
+  eval $(ssh-find-agent | grep devan@ii.coop)
+  ssh-add -l
+#+END_SRC
+
+#+BEGIN_SRC tmate
+git fetch ii -a
+git fetch upstream -a
+git checkout -b audit-logging upstream/master
+#+END_SRC
+
+** Initial Reflections
+
+The [[file:~/cnf-testbed/tools/k8s-cluster.env.example::export%20K8S_RELEASE=v1.13.0][k8s-cluster.env.example]] defaults to 1.13.0 so let's focus on that release first.
+
+We may be able to override the terraform objects here, and not have to commit.
+
+[[file:~/cnf-testbed/tools/k8s_cluster_override.tf::module%20"master_templates"%20{]]
+
+The overrides are passed in as a file to the docker run command:
+
+[[file:~/cnf-testbed/tools/deploy_k8s_cluster.sh::docker%20run%20\][cnf-testbed/tools/deploy_k8s_cluster.sh]]
+
+The container in use is 
+  -ti registry.cidev.cncf.ci/cncf/cross-cloud/provisioning:master
+
+This container is likely built from source at:
+
+https://github.com/crosscloudci/cross-cloud/blob/master/Dockerfile#L187
+[[file:~/cross-cloud/Dockerfile::CMD%20%5B"bash",%20"-c",%20"/cncf/provision.sh"%5D]]
+
+
+Ensure we begin our session rebased on master!
+
+#+BEGIN_SRC tmate
+  git fetch upstream
+  git rebase upstream/master
+#+END_SRC
+
+** Changes
+
+Enabling audit logging is rather straight forward, and requires minimal changes in most cases.
+This is intentional; Participation should be simple and viable. 
+
+See the PR to view the changes:
+https://github.com/crosscloudci/cross-cloud/pull/187/files
+
+** Testing
+
+Deploy and verify auditlogs are being written.
+
+#+BEGIN_SRC tmate
+  export PACKET_AUTH_TOKEN=$(cat cnf-packet-key)
+  export PACKET_PROJECT_ID=7a44b778-41d2-49fa-9c92-99148516c600
+  docker run \
+    -v /tmp/data:/cncf/data \
+    --dns 147.75.69.23 --dns 8.8.8.8 \
+    -e NAME=cross-cloud \
+    -e CLOUD=packet    \
+    -e COMMAND=deploy \
+    -e BACKEND=file  \
+    -e PACKET_AUTH_TOKEN=${PACKET_AUTH_TOKEN} \
+    -e TF_VAR_packet_project_id=${PACKET_PROJECT_ID} \
+    -ti provisioning:latest
+#+END_SRC
+
+
+* CNF Testbed
+
+** CNF Testbed Development Environment
+
+#+BEGIN_SRC tmate
+  cd ~/
+  git clone git@github.com:cncf/cnf-testbed.git
+  cd ~/cnf-testbed
+  git remote add upstream https://github.com/cncf/cnf-testbed.git
+  git remote set-url --push upstream no_push
+  git remote add ii git@github.com:ii/cnf-testbed.git
+#+END_SRC
+
+Build Docker Images
+
+#+BEGIN_SRC tmate
+  cd ~/cnf-testbed/tools
+  docker build -t ubuntu:packet_api -f packet_api/Dockerfile  packet_api/
+  docker build -t cnfdeploytools:latest -f deploy/Dockerfile deploy/
+#+END_SRC
+
+
+Backup then overwrite /etc/resolv.conf with the Packet DNS resolver.
+This is so we can resolve the cluster namespace.
+
+#+BEGIN_SRC tmate 
+  cp /etc/resolv.conf ~/resolv.conf.backup
+  sudo su -
+  chattr -i /etc/resolv.conf
+  echo "nameserver 147.75.69.23" > /etc/resolv.conf
+  echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+  chattr +i /etc/resolv.conf
+  logout
+#+END_SRC
+
+Verify that it worked.
+
+#+BEGIN_SRC shell
+  cat /etc/resolv.conf
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_EXAMPLE :noeval t
+nameserver 147.75.69.23
+nameserver 8.8.8.8
+#+END_EXAMPLE
+
+Setup the env file: `tools/k8s-cluster.env`
+
+#+BEGIN_SRC sh :tangle ~/cnf-testbed/tools/k8s-cluster.env
+  export NAME=apisnoop
+  export K8S_DEPLOY_ENV=k8sworker
+  export MASTER_NODE_COUNT=1
+  export WORKER_NODE_COUNT=1
+  export MASTER_NODE_TYPE=t1.small
+  export WORKER_NODE_TYPE=m2.xlarge.x86
+  #export WORKER_NODE_TYPE=n2.xlarge.x86
+  export NODE_OS=ubuntu_18_04
+  export FACILITY=sjc1
+  export ETCD_VERSION=v3.2.8
+  export CNI_VERSION=v0.6.0
+  export K8S_RELEASE=v1.13.0
+  export PLAYBOOK=k8s_worker_vswitch_mellanox.yml
+  #export PLAYBOOK=k8s_worker_vswitch_quad_intel.yml
+  export PACKET_AUTH_TOKEN=$(cat ~/cross-cloud/cnf-packet-key)
+  export PACKET_PROJECT_ID=7a44b778-41d2-49fa-9c92-99148516c600
+#+END_SRC
+
+** Deploy CNF Testbed on k8s Cluster
+
+#+BEGIN_SRC tmate
+  cd ~/cnf-testbed/tools/
+  source k8s-cluster.env
+  ./deploy_k8s_cluster.sh
+#+END_SRC
+
+
+Verify contents of the kubeconfig
+
+_Don't commit results!_
+
+#+BEGIN_SRC shell
+  cat ~/cnf-testbed/tools/data/kubeconfig
+#+END_SRC
+
+
+** Debug
+
+Delete Cluster
+
+#+BEGIN_SRC tmate
+  cd ~/cnf-testbed/tools/
+  source k8s-cluster.env
+  ./destroy_k8s_cluster.sh
+#+END_SRC
+
+Delete kubeconfig
+
+#+BEGIN_SRC shell
+  rm ~/cnf-testbed/tools/data/kubeconfig
+#+END_SRC
+
+Verify Master TLS
+
+#+BEGIN_SRC shell
+  echo | openssl s_client -connect master.apisnoop.packet.local:443  2>/dev/null | grep subject=
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_EXAMPLE :noeval t
+subject=/CN=kubernetes
+#+END_EXAMPLE
+
+Manually run vppswitch install
+
+#+BEGIN_SRC tmate 
+  ${project_root}/tools/deploy_k8s_vppvswitch.sh $(pwd)/data/kubeconfig
+#+END_SRC
+
+
+* Footnotes
+  :PROPERTIES:
+  :VISIBILITY: folded
+  :END:
+
+#+PROPERTY: header-args:shell :results output code verbatim replace
+#+PROPERTY: header-args:shell+ :exports both
+#+PROPERTY: header-args:shell+ :wrap "EXAMPLE :noeval t"
+#+PROPERTY: header-args:shell+ :eval no-export
+#+PROPERTY: header-args:shell+ :noweb-ref (nth 4 (org-heading-components))
+#+PROPERTY: header-args:tmate  :socket (symbol-value 'socket)
+#+PROPERTY: header-args:tmate+ :session (concat (user-login-name) ":" (nth 4 (org-heading-components)))
+#+PROPERTY: header-args:tmate+ :noweb yes
+#+PROPERTY: header-args:json  :noweb yes
+#+PROPERTY: header-args:json+ :noweb-ref (nth 4 (org-heading-components))
+#+PROPERTY: header-args:yaml  :noweb yes
+#+PROPERTY: header-args:yaml+ :comments org
+#+PROPERTY: header-args:yaml+ :noweb-ref (nth 4 (org-heading-components))
+#+REVEAL_ROOT: http://cdn.jsdelivr.net/reveal.js/3.0.0/
+#+STARTUP: content
+# Local Variables:
+# eval: (set (make-local-variable 'org-file-dir) (file-name-directory buffer-file-name))
+# eval: (set (make-local-variable 'user-buffer) (concat user-login-name "." (file-name-base buffer-file-name)))
+# eval: (set (make-local-variable 'tmpdir) (make-temp-file (concat "/dev/shm/" user-buffer "-") t))
+# eval: (set (make-local-variable 'socket) (concat "/tmp/" user-buffer ".iisocket"))
+# eval: (set (make-local-variable 'select-enable-clipboard) t)
+# eval: (set (make-local-variable 'select-enable-primary) t)
+# eval: (set (make-local-variable 'start-tmate-command) (concat "tmate -S " socket " new-session -A -s " user-login-name " -n main \"tmate wait tmate-ready && tmate display -p '#{tmate_ssh}' | xclip -i -sel p -f | xclip -i -sel c; bash --login\""))
+# eval: (xclip-mode 1)
+# eval: (gui-select-text start-tmate-command)
+# eval: (xclip-mode 0)
+# org-babel-tmate-session-prefix: ""
+# org-babel-tmate-default-window-name: "main"
+# org-confirm-babel-evaluate: nil
+# org-use-property-inheritance: t
+# End:
+
