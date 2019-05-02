@@ -69,7 +69,6 @@ export default {
         }
       }
       if (zoom && zoom.depth === 'operationId') {
-        console.log({stats, zoom})
         return {
           labelX: stats[zoom.level][zoom.category][zoom.operationId].labelX,
           labelY: stats[zoom.level][zoom.category][zoom.operationId].labelY,

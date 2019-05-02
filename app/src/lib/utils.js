@@ -1,25 +1,7 @@
 import {
-  filter,
   isUndefined,
-  size,
   words,
   pickBy } from 'lodash'
-
-export function calculateCoverage (endpoints) {
-  var total = size(endpoints)
-  var tested = size(filter(endpoints, ['isTested', true]))
-  var percentage = (total, tested) => {
-    if (!tested && !total) return 'No Endpoints'
-    var percentageNumber = (100 * tested /total).toPrecision(3)
-    return `${percentageNumber}%`
-  }
-  return {
-    tested,
-    total,
-    percentage: percentage(total, tested),
-    ratio: `${tested}/${total}`
-  }
-}
 
 export function fadeColour (rgba, desiredOpacity) {
   var rgbaParts = words(rgba, /[^,|^(|^)]+/g)

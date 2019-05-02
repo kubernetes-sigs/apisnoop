@@ -3,7 +3,7 @@ import React from 'react'
 export default () => (
     <header className='flex flex-row pt2 pb2 pl4 pr4 h3_5 items-center justify-between bg-light-gray black shadow-3'>
       <div id='logo' className= 'flex flex-wrap items-center'>
-      <a href='/' className='link flex items-center'>
+      <a href='/' className='flex items-center'>
         <img className='h2' src='./assets/apisnoop_logo_v1.png' alt='logo for apisnoop, a magnifying glass with a sunburst graph inside.' />
         <h1 className='ma0 f4 fw4 pl2 avenir black'>APISnoop</h1>
       </a>

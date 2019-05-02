@@ -1,11 +1,14 @@
-import { pickBy,
-         uniq } from 'lodash'
+import {
+  difference,
+  pickBy,
+  uniq } from 'lodash'
 import { createSelector } from 'redux-bundler'
 export default {
   name: 'useragents',
   getReducer: () => {
+    let filterInput;
     const initialState = {
-      filterInput: ''
+      filterInput
     }
     return (state=initialState, {type, payload}) => {
       if (type  === 'USERAGENT_INPUT_UPDATED') {
@@ -15,12 +18,31 @@ export default {
     }
   },
   selectUseragentsInput: (state) => state.useragents.filterInput,
-  selectUseragentsFilteredByInput: createSelector(
+  selectFilteredUseragents: createSelector(
+    'selectFilteredEndpoints',
     'selectUseragentsResource',
+    (endpoints, useragents) => {
+      if (endpoints == null || useragents == null) return []
+      let filteredUseragents = []
+      let endpointNames = Object.keys(endpoints)
+      let uaNames = Object.keys(useragents)
+      let i;
+      for (i = 0; i < uaNames.length; i++) {
+        let useragent = uaNames[i]
+        let uaEndpoints = useragents[useragent]
+        let endpointsNotHitByUseragent = difference(uaEndpoints, endpointNames)
+        if (endpointsNotHitByUseragent.length !== uaEndpoints.length) {
+          filteredUseragents.push(useragent)
+        }
+      }
+      return filteredUseragents
+    }
+  ),
+  selectUseragentsFilteredByInput: createSelector(
+    'selectFilteredUseragents',
     'selectUseragentsInput',
     (useragents, input) => {
-      if (useragents == null || input === '') return []
-      let useragentsNames = Object.keys(useragents)
+      if (useragents == null || input === undefined || input === '') return []
       let isValid = true
       try {
         new RegExp(input)
@@ -29,7 +51,7 @@ export default {
       }
       if (!isValid) return ['not valid regex']
   
-      return useragentsNames.filter(ua => {
+      return useragents.filter(ua => {
         let inputAsRegex = new RegExp(input)
         return inputAsRegex.test(ua)
       })
@@ -55,6 +77,17 @@ export default {
     'selectUseragentsFilteredByQuery',
     (useragents) => {
       return Object.keys(useragents)
+    }
+  ),
+  selectRatioUseragentsFilteredByQuery: createSelector(
+    'selectFilteredUseragents',
+    'selectUseragentsFilteredByQuery',
+    (useragents, useragentsHitByQuery) => {
+      if (useragents == null || useragentsHitByQuery == null) return {}
+      return {
+        total: Object.keys(useragents).length || 0,
+        hitByQuery: Object.keys(useragentsHitByQuery).length || 0
+      }
     }
   ),
   selectOpIdsHitByFilteredUseragents: createSelector(

@@ -10,20 +10,42 @@ function TestsSearchContainer (props) {
     doUpdateTestsInput,
     namesTestsFilteredByQuery,
     testsInput,
-    testsFilteredByInput
+    testsFilteredByInput,
+    queryObject
   } = props
 
+  if (testsInput === undefined && !queryObject.tests) {
+    return(
+        <div>
+        <p>by tests: <button onClick={()=>doUpdateTestsInput('')}>Set...</button> </p>
+        </div>
+    )
+  }
+  if (testsInput === undefined && queryObject.tests) {
+    return(
+        <div>
+        <p>by tests:
+        <button
+      className='f6 link dim ba b--black pv1 dib ml2 ph3 black bg-washed-blue magic-pointer'
+      onClick={()=>doUpdateTestsInput(queryObject.tests)}>
+        /{queryObject.tests}/
+        </button>
+        </p>
+        <ActiveFilter searchFilter={'tests'} results={namesTestsFilteredByQuery}/>
+        </div>
+    )
+  }
+
   return (
-    <div id='tests-search'>
-      <h2>Filter by test names</h2>
-      <SearchBar searchFilter={'tests_filter'} doUpdateInput={doUpdateTestsInput} input={testsInput} />
-      <SearchResults searchFilter={'tests_filter'} results={testsFilteredByInput} />
-      <ActiveFilter searchFilter={'tests_filter'} results={namesTestsFilteredByQuery}/>
-    </div>
+      <form id='test-tags-search'>
+      <SearchBar searchFilter={'tests'} doUpdateInput={doUpdateTestsInput} input={testsInput} />
+      <SearchResults searchFilter={'tests'} results={testsFilteredByInput} />
+      </form>
   )
 }
 export default connect(
   'doUpdateTestsInput',
+  'selectQueryObject',
   'selectTestsInput',
   'selectTestsFilteredByInput',
   'selectNamesTestsFilteredByQuery',

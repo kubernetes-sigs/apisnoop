@@ -22,7 +22,6 @@ const SummaryContainer = (props) => {
       </div>
     )
   } else {
-    console.log({activeEndpoint})
     return (
       <div id='summary-container'>
         <EndpointSummary endpoint={activeEndpoint}/>

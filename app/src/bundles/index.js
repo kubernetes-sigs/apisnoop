@@ -7,13 +7,13 @@ import config from './config'
 import configResource from './config-resource'
 import endpoints from './endpoints'
 import endpointsResource from './endpoints-resource'
+import filters from './filters'
 import metadataResource from './metadata-resource'
 import metadata from './metadata'
 import testsResource from './tests-resource'
 import testTagsResource from './test-tags-resource'
 import testSequencesResource from './test-sequences-resource'
 import useragentsResource from './useragents-resource'
-import jobResultsMetadata from './job-results-metadata'
 import sunburst from './sunburst'
 import testedStats from './tested-stats'
 import tests from './tests'
@@ -28,6 +28,7 @@ export default composeBundles(
   config,
   configResource,
   endpoints,
+  filters,
   endpointsResource,
   metadataResource,
   metadata,
@@ -35,7 +36,6 @@ export default composeBundles(
   testTagsResource,
   testSequencesResource,
   useragentsResource,
-  jobResultsMetadata,
   sunburst,
   testedStats,
   tests,
