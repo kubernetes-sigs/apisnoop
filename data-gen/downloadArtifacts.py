@@ -68,8 +68,8 @@ downloads = {}
 def main(sources,dest):
     # https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
     # s = yaml.load(open(sources).read(),Loader=yaml.FullLoader)
-    s = yaml.load(open(sources).read())
-    syaml = yaml.load(open(sources).read(),Loader=yaml.FullLoader)
+    # s = yaml.load(open(sources).read())
+    syaml = yaml.load(open(sources).read())
     for bucket, info in syaml['buckets'].items():
         bucket_path = dest + '/' + bucket
         if not os.path.isdir(bucket_path):

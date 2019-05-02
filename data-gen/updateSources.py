@@ -22,7 +22,7 @@ def get_json(url):
 @click.argument('sources')
 def main(sources):
     # https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
-    syaml = yaml.load(open(sources).read(),Loader=yaml.FullLoader)
+    syaml = yaml.load(open(sources).read())
     for bucket, info in syaml['buckets'].items():
         try:
             testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
