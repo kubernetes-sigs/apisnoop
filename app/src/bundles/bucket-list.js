@@ -36,11 +36,20 @@ export default {
   ),
   selectActiveBucketJob: createSelector(
     'selectBucketJobPaths',
+    'selectConfig',
     'selectQueryObject',
-    (bucketJobPaths, query) => {
-      if (bucketJobPaths == null || query.bucket === undefined) return '';
+    (bucketJobPaths, config, query) => {
+      if (bucketJobPaths == null || config == null) return '';
+      let defaultBucket = [
+        config['gs-bucket'],
+        config['default-view'].bucket,
+        config['default-view'].job
+      ].join('/')
       let bucketJobs = Object.keys(bucketJobPaths)
-      return bucketJobs.find(bucketJob => bucketJobPaths[bucketJob] === query.bucket)
+      if (query.bucket) {
+        return bucketJobs.find(bucketJob => bucketJobPaths[bucketJob] === query.bucket)
+      }
+      return bucketJobs.find(bucketJob => bucketJobPaths[bucketJob] === defaultBucket)
     }
   )
 }
