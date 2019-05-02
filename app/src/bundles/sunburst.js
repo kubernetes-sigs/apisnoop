@@ -40,11 +40,11 @@ export default {
         width: '50%'
       },
       Y: {
-        fontSize: '1.2em,',
+        fontSize: '0.8em,',
         textAnchor: 'middle'
       },
       Z: {
-        fontSize: '1em',
+        fontSize: '0.8em',
         textAnchor: 'middle'
       }
     }
