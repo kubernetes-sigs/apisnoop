@@ -7,7 +7,7 @@ Our initial goal is to provide a useful indicator as to which Kubernetes APIs ar
 
 Our currently rough output is the most promising visualization of how api groups endpoints and verbs are used today. The APISnoop Visualization presents in very clear terms how poor our current coverage actually is. Our high level graph shows our stable API's are mostly untested (the grey sections of the outer ring).
 
-[![sunburst_screenshot.png](docs/images/sunburst_screenshot.png "A Sunburst of API endpoints")](http://apisnoop.cncf.ci)
+[![sunburst_screenshot.png](apisnoop.png "A Sunburst of API endpoints")](http://apisnoop.cncf.ci)
 
 
 We also export the data to a csv / google sheet that clearly shows the most popular untested API endpoints.
