@@ -11,6 +11,7 @@ curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar xfz -
 export PATH=$PWD/gsutil:$PATH
 
 # We may need to spend some time looping here and wait for it to exist...
+sleep 25m
 
 JOBID=$(gsutil cat gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/latest-build.txt)
 NEW_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$JOBID/artifacts/"
