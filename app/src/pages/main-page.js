@@ -11,7 +11,7 @@ function MainPage (props) {
     return (
         <main id='main-splash' className='min-vh-80 grid grid-gap-1 grid-bar-l'>
         <Sidebar />
-        <div>
+        <div className='pl3'>
         <SunburstAndSummary />
         <TestsContainer />
         </div>

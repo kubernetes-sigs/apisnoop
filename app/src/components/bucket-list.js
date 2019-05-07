@@ -17,21 +17,21 @@ function BucketList (props) {
         } = props
   if (config == null) return null
   return (
-      <div id='bucket-list' className='mb3'>
-      <h2 className='mb0'>Select a Bucket</h2>
-      <p className='i f6'>Jobs are coming from {config.source}</p>
-      <select className="list flex flex-wrap pl0" onChange={(e) => handleClick(e.target.value)}>
+      <div id='bucket-list' className='mb3 pa1'>
+      <h2 className='mb0 f5'>Select a Bucket</h2>
+      <p className='i f6 mt0'>Jobs are coming from {config.source}</p>
+      <select className="list flex flex-wrap pl0 w-100 f7" onChange={(e) => handleClick(e.target.value)}>
       {map(bucketJobPaths, (fullPath, bucketJob, bucketJobPath)=> {
         let bucket = bucketJob.split('/')[0]
         if (bucketJob === activeBucketJob) {
           return(
-              <option className='pr2 pb2' key={fullPath} value={fullPath} selected>
+              <option className='pr2 pb2 f7' key={fullPath} value={fullPath} selected>
               {bucket}
             </option>
           )
         } else{
           return(
-              <option className='pr2 pb2' key={fullPath} value={fullPath}>
+              <option className='pr2 pb2 f7' key={fullPath} value={fullPath}>
               {bucket}
             </option>
           )
