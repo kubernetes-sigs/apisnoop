@@ -2,7 +2,6 @@ import React from 'react'
 import { connect } from 'redux-bundler-react'
 import { map } from 'lodash'
 
-
 function BucketList (props) {
 
   const { doUpdateQuery,
@@ -18,22 +17,27 @@ function BucketList (props) {
         } = props
   if (config == null) return null
   return (
-      <div id='bucket-list'>
-      <p><em>Jobs are coming from {config.source}</em></p>
-      <ul className="list flex flex-wrap pl0">
+      <div id='bucket-list' className='mb3'>
+      <h2 className='mb0'>Select a Bucket</h2>
+      <p className='i f6'>Jobs are coming from {config.source}</p>
+      <select className="list flex flex-wrap pl0" onChange={(e) => handleClick(e.target.value)}>
       {map(bucketJobPaths, (fullPath, bucketJob, bucketJobPath)=> {
         let bucket = bucketJob.split('/')[0]
-        return (
-            <li className='pr2 pb2' key={fullPath}>
-            {(bucketJob === activeBucketJob) &&
-             <button onClick={() => handleClick(fullPath)}
-              className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-washed-red magic-pointer'>{bucket}</button>}
-          {(bucketJob !== activeBucketJob) && <button onClick={() => handleClick(fullPath)}
-              className='f6 link dim ba b--black ph3 pv2 mb2 dib black bg-transparent magic-pointer'>{bucket}</button>}
-          </li>
-        )
+        if (bucketJob === activeBucketJob) {
+          return(
+              <option className='pr2 pb2' key={fullPath} value={fullPath} selected>
+              {bucket}
+            </option>
+          )
+        } else{
+          return(
+              <option className='pr2 pb2' key={fullPath} value={fullPath}>
+              {bucket}
+            </option>
+          )
+        }
       })}
-    </ul>
+    </select>
       </div>
   )
 
