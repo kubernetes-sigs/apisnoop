@@ -13,6 +13,11 @@ export PATH=$PWD/gsutil:$PATH
 
 # JOBID=$(gsutil cat gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/latest-build.txt)
 JOB_ID=$(gsutil ls 'gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/*/artifacts/*/*/endpoints.json' | sort -n | tail -1 | awk -F/ '{print $6}')
+if [ -z ${JOB_ID+x} ]
+then
+  echo 'This job will need to run again, as there are not yet any completed jobs for this PR'
+  exit 1
+fi
 NEW_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$JOB_ID/artifacts/"
 
 echo $NEW_BUCKET >> audit-sources.yaml
