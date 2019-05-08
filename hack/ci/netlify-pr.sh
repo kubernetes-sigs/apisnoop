@@ -13,7 +13,7 @@ export PATH=$PWD/gsutil:$PATH
 
 # JOBID=$(gsutil cat gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/latest-build.txt)
 JOB_ID=$(gsutil ls "gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/*/artifacts/*/*/endpoints.json" | sort -n | tail -1 | awk -F/ '{print $6}')
-if [ -z ${JOB_ID+x} ]
+if [ "${JOB_ID}x" != "x" ]
 then
   echo 'This initial job / site will not load well until the data has generated'
   JOB_ID=$(gsutil ls "gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/*/started.json" | sort -n | tail -1 | awk -F/ '{print $6}')
