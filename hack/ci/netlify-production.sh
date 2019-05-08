@@ -22,7 +22,7 @@ export PATH=$PWD/gsutil:$PATH
 # the latest successful build.
 # JOBID=$(gsutil cat gs://apisnoop/logs/apisnoop-postprocess-audits/latest-build.txt)
 JOB_ID=$(gsutil ls 'gs://apisnoop/logs/apisnoop-postprocess-audits/*/artifacts/*/*/endpoints.json' | sort -n | sed s:finished.json:: | tail -1 | awk -F/ '{print $6}')
-NEW_BUCKET="gs-bucket: apisnoop/logs/apisnoop-postprocess-audits/$JOBID/artifacts/"
+NEW_BUCKET="gs-bucket: apisnoop/logs/apisnoop-postprocess-audits/$JOB_ID/artifacts/"
 # We only need to know which bucket to pull from:
 echo $NEW_BUCKET >> audit-sources.yaml
 cat audit-sources.yaml
