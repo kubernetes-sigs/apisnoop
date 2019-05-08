@@ -11,7 +11,7 @@ const Sidebar = (props) => {
   } = props
 
     return (
-      <div id='sidebar' className='min-vh-80 bg-moon-gray'>
+      <div id='sidebar' className='min-vh-80 bg-moon-gray pa1'>
       <Bucketlist />
       <FiltersContainer />
       </div>

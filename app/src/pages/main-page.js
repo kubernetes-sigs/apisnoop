@@ -9,9 +9,9 @@ import Sidebar from '../components/sidebar'
 
 function MainPage (props) {
     return (
-        <main id='main-splash' className='min-vh-80 grid grid-gap-1 grid-bar-l'>
+        <main id='main-splash' className='min-vh-80 grid grid-bar-l'>
         <Sidebar />
-        <div className='pl3'>
+        <div className='pa4 overflow-x-scroll'>
         <SunburstAndSummary />
         <TestsContainer />
         </div>
