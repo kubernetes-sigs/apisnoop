@@ -7,7 +7,7 @@
 
 * Objective
 
-The end goal for this document is to show how to run a group of tests using ~kubetest~. It follows on from this [[setup-kubetest-kind-on-packet.org][setup document]].
+The end goal for this document is to show how to run a single of test using ~kubetest~. It follows on from this [[setup-kubetest-kind-on-packet.org][setup document]].
 
 /Note: The setup requires using an account with 'root' privileges on the server./
 
@@ -33,7 +33,8 @@ GOPATH=/root/go
 GOROOT=/usr/local/go/
 #+END_EXAMPLE
 
-* Let's run a group of tests
+
+* Pretest setup
 
 With a Kubernetes cluster up and running from the end of the 'setup' process, it's time to check out the framework for how Kubernetes is tested.
 
@@ -47,7 +48,7 @@ export ARTIFACTS
 
 ** Add Environment variables
 
-#+BEGIN_SRC bash
+#+BEGIN_SRC tmate
 export KUBECONFIG="$HOME/.kube/kind-config-kind-kubetest"
 export SKIP="ginkgo skip regex"
 export FOCUS="ginkgo focus regex"
@@ -55,7 +56,7 @@ export FOCUS="ginkgo focus regex"
 
 ** Setup and export function ~run_tests~
 
-#+BEGIN_SRC bash
+#+BEGIN_SRC tmate
 run_tests() {
     # base kubetest args
     KUBETEST_ARGS="--provider=skeleton --test --check-version-skew=false"
@@ -77,6 +78,9 @@ run_tests() {
         KUBETEST_ARGS="${KUBETEST_ARGS} --ginkgo-parallel"
     fi
 
+    # Remove any spaces from current FOCUS variable
+    FOCUS=$(echo "$FOCUS" | sed "s/[[:space:]]/\./g")
+
     # add ginkgo args
     KUBETEST_ARGS="${KUBETEST_ARGS} --test_args=\"--ginkgo.focus=${FOCUS} --ginkgo.skip=${SKIP} --report-dir=${ARTIFACTS} --disable-log-dump=true --num-nodes=${NUM_NODES}\""
 
@@ -84,21 +88,21 @@ run_tests() {
     export KUBERNETES_CONFORMANCE_TEST="y"
 
     # run kubetest, if it fails clean up and exit failure
-    echo eval "kubetest ${KUBETEST_ARGS}"
+    echo "./kubetest ${KUBETEST_ARGS}"
+    eval "./kubetest ${KUBETEST_ARGS}"
 }
 export -f run_tests
 #+END_SRC
 
-** Move to k8s folder and start a new subshell
 
-#+BEGIN_SRC bash
-cd $GOPATH/src/k8s.io/kubernetes
-bash
-#+END_SRC
+* Running Tests
 
 ** Dry run without any tests
 
-#+BEGIN_SRC shell :eval no
+#+BEGIN_SRC tmate
+cd $GOPATH/src/k8s.io/kubernetes
+SKIP="ginkgo skip regex"
+FOCUS="ginkgo focus regex"
 run_tests
 #+END_SRC
 
@@ -118,7 +122,8 @@ SUCCESS! -- 0 Passed | 0 Failed | 0 Pending | 3960 Skipped
 
 Updating the variable ~FOCUS~ will give kubetest a smaller set of tests to process, therefore giving faster feedback.
 
-#+BEGIN_SRC shell :eval no
+#+BEGIN_SRC tmate
+cd $GOPATH/src/k8s.io/kubernetes
 FOCUS="Secrets"
 run_tests
 #+END_SRC
@@ -133,27 +138,46 @@ Ran 13 of 3960 Specs in 855.336 seconds
 SUCCESS! -- 13 Passed | 0 Failed | 0 Pending | 3947 Skipped
 #+END_EXAMPLE
 
-* Bashfile
-  :PROPERTIES:
-  :header-args:bash+: :tangle ./no-config-kubetest.sh
-  :header-args:tmate+: :session hippie:bashy
-  :END:
+** Running a single test
 
-** other things
-#+BEGIN_SRC bash
-<<Update the current session>>
+#+BEGIN_SRC tmate
+# This runs a single test without any issues
+cd $GOPATH/src/k8s.io/kubernetes
+FOCUS="Pods should be updated"
+run_tests
 #+END_SRC
 
 #+BEGIN_SRC tmate
-cat $HOME/apisnoop/docs/no-config-kubetest.sh
+# This should complete the same test as before but doesn't. Exit code is 0.
+cd $GOPATH/src/k8s.io/kubernetes
+FOCUS="[k8s.io] Pods should be updated [NodeConformance] [Conformance]"
+run_tests
 #+END_SRC
-** yet another things
-#+BEGIN_SRC bash
-id
+
+
+* Kubernetes Status
+
+#+BEGIN_SRC tmate
+kubectl get nodes
+kubectl get pods --all-namespaces
 #+END_SRC
+
+
+
+* Kubernetes Reset Cluster
+
+#+BEGIN_SRC tmate
+cd $GOPATH/src/k8s.io/kubernetes
+./kubetest --deployment=kind --kind-binary-version=build --provider=skeleton --down
+./kubetest --deployment=kind --kind-binary-version=build --provider=skeleton --up
+#+END_SRC
+
+
 * References
 
 - [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/e2e-tests.md#testing-against-local-clusters][Testing against local clusters]]
+
+
 * Footnotes
 
 #+PROPERTY: header-args:bash  :tangle ./config-kubetest.sh
