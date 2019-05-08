@@ -5,15 +5,14 @@ echo PR: PR Commit Netlify Deploy
 # https://www.netlify.com/docs/continuous-deployment/#environment-variables
 env
 
-find .
-
 curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar xfz -
 export PATH=$PWD/gsutil:$PATH
 
 # We may need to spend some time looping here and wait for it to exist...
-sleep 25m
+#sleep 25m
 
-JOBID=$(gsutil cat gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/latest-build.txt)
+# JOBID=$(gsutil cat gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/latest-build.txt)
+JOB_ID=$(gsutil ls 'gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/*/artifacts/*/*/endpoints.json' | sort -n | tail -1 | awk -F/ '{print $6}')
 NEW_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$JOBID/artifacts/"
 
 echo $NEW_BUCKET >> audit-sources.yaml

@@ -3,13 +3,8 @@ set -x
 #set -e
 echo PRODUCTION: Merge or Commit into Master
 # https://www.netlify.com/docs/continuous-deployment/#environment-variables
-env
-
-find .
-
 curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar xfz -
 export PATH=$PWD/gsutil:$PATH
-
 # We may need to spend some time looping here and wait for it to exist...
 #sleep 25m
 # There seems to be a hard time limit...
