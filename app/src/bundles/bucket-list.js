@@ -40,16 +40,17 @@ export default {
     'selectQueryObject',
     (bucketJobPaths, config, query) => {
       if (bucketJobPaths == null || config == null) return '';
-      let defaultBucket = [
-        config['gs-bucket'],
+      let defaultBucketJob = [
         config['default-view'].bucket,
         config['default-view'].job
       ].join('/')
+  
       let bucketJobs = Object.keys(bucketJobPaths)
+  
       if (query.bucket) {
         return bucketJobs.find(bucketJob => bucketJobPaths[bucketJob] === query.bucket)
       }
-      return bucketJobs.find(bucketJob => bucketJobPaths[bucketJob] === defaultBucket)
+      return bucketJobs.find(bucketJob => bucketJob === defaultBucketJob)
     }
   )
 }

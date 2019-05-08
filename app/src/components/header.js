@@ -1,7 +1,7 @@
 import React from 'react'
 
 export default () => (
-    <header className='flex flex-row pt2 pb2 pl4 pr4 h3_5 items-center justify-between bg-light-gray black shadow-3'>
+    <header className='flex flex-row pt2 pb2 pl4 pr4 h3_5 items-center justify-between bg-light-gray black shadow-3 w-100'>
       <div id='logo' className= 'flex flex-wrap items-center'>
       <a href='/' className='flex items-center link'>
         <img className='h2' src='./assets/apisnoop_logo_v1.png' alt='logo for apisnoop, a magnifying glass with a sunburst graph inside.' />

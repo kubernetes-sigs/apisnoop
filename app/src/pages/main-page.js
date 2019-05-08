@@ -5,14 +5,16 @@ import SunburstAndSummary from '../components/sunburst-and-summary'
 import TestsContainer from '../components/tests-container'
 import BucketList from '../components/bucket-list'
 import FiltersContainer from '../components/filters-container'
+import Sidebar from '../components/sidebar'
 
 function MainPage (props) {
     return (
-        <main id='main-splash' className='min-vh-80 pa4 ma4 flex flex-column'>
-        <BucketList />
-        <FiltersContainer />
+        <main id='main-splash' className='min-vh-80 grid grid-bar-l'>
+        <Sidebar />
+        <div className='pa4 overflow-x-scroll'>
         <SunburstAndSummary />
         <TestsContainer />
+        </div>
       </main>
     )
 }

@@ -10,17 +10,16 @@ function SearchBar (props) {
     searchFilter,
     queryObject } = props
 
-  const filterBoxClasses = 'f6 link dim ba w-20 b--light-blue pv1 dib ml2 ph3 black bg-washed-blue magic-pointer'
+  const filterBoxClasses = 'f6 link ba b--light-blue pv1 dib ph3 black bg-washed-blue magic-pointer'
 
   return (
-      <form onSubmit={handleSubmit} className='mt3'>
-      <label className='ttsc pb0 f3 flex align-center'>{searchFilter.replace('_',' ')}
+      <form onSubmit={handleSubmit} className='flex flex-column mb0'>
+      <label className='ttsc pb0 f6 mb2 mt2'>{searchFilter.replace('_',' ')}</label>
+      <span className='flex flex-column'>
       <input name='ua-filter' type='text' value={input} onChange={handleInput} placeholder='regex pattern' className={filterBoxClasses}/>
       <input type='submit' value='Search'
-        className='f6 link dim bn b--near-black pv1 dib ml0 ph3 black bg-light-blue magic-pointer flex items-center justify-center'
-
-      />
-      </label>
+        className='f6 link dim bn b--near-black pv1 dib ml0 ph3 black bg-light-blue magic-pointer flex items-center justify-center' />
+     </span>
       </form>
       )
 
