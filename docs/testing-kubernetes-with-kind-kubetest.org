@@ -21,12 +21,51 @@ There's several key bits of software required to support [[https://github.com/ku
 
 We just installed a number of components, so we need the current shell session to be in sync with the new environment variables.
 
+Ensure go is in your path and your happy with the default/detected GO variables.
+
+#+BEGIN_SRC shell
+go env
+#+END_SRC
+
+#+RESULTS:
+#+BEGIN_EXAMPLE :noeval t
+GOARCH="amd64"
+GOBIN=""
+GOCACHE="/home/hippie/.cache/go-build"
+GOEXE=""
+GOFLAGS=""
+GOHOSTARCH="amd64"
+GOHOSTOS="linux"
+GOOS="linux"
+GOPATH="/home/hippie/go"
+GOPROXY=""
+GORACE=""
+GOROOT="/usr/local/go"
+GOTMPDIR=""
+GOTOOLDIR="/usr/local/go/pkg/tool/linux_amd64"
+GCCGO="gccgo"
+CC="gcc"
+CXX="g++"
+CGO_ENABLED="1"
+GOMOD=""
+CGO_CFLAGS="-g -O2"
+CGO_CPPFLAGS=""
+CGO_CXXFLAGS="-g -O2"
+CGO_FFLAGS="-g -O2"
+CGO_LDFLAGS="-g -O2"
+PKG_CONFIG="pkg-config"
+GOGCCFLAGS="-fPIC -m64 -pthread -fmessage-length=0 -fdebug-prefix-map=/tmp/go-build423342456=/tmp/go-build -gno-record-gcc-switches"
+#+END_EXAMPLE
+
+
+They may or may not be present in your environment.
+
 #+BEGIN_SRC tmate
 . ~/.bashrc
 env | grep GO
 #+END_SRC
 
-This should provide a result as below.
+This could provide a result as below.
 
 #+BEGIN_EXAMPLE
 GOPATH=/root/go
@@ -37,6 +76,158 @@ GOROOT=/usr/local/go/
 * Pretest setup
 
 With a Kubernetes cluster up and running from the end of the 'setup' process, it's time to check out the framework for how Kubernetes is tested.
+
+
+NOTE: (it may be unclear to the reader which 'setup' process is refered to here... probably a link to the setup, a specified directory to be in, and quick check of the status of the cluster etc.
+
+Seems you don't need to check these out, kubetest and kind are external dependencies that can be installed via go get -u (update) and intall.)
+
+** updating kind and kubetest binaries
+
+#+BEGIN_SRC tmate
+go get -u sigs.k8s.io/kind
+go install sigs.k8s.io/kind
+go get -u k8s.io/test-infra/kubetest
+go install k8s.io/test-infra/kubetest
+#+END_SRC
+This builds a kubernetes cluster using master:
+** updating the k8s source
+#+BEGIN_SRC tmate
+cd ~/go/src/k8s.io/kubernetes
+git fetch origin master
+git checkout master
+git rebase origin/master
+#+END_SRC
+** building and starting cluster with kubetest + kind
+
+Maybe compare the speed of the bazel vs normal builds at some point:
+*** build
+#+BEGIN_SRC tmate
+kubetest --deployment=kind --kind-binary-version=build --provider=skeleton --build
+#+END_SRC
+*** bazel build
+#+BEGIN_SRC tmate
+kubetest --deployment=kind --kind-binary-version=build --provider=skeleton --build=bazel
+#+END_SRC
+*** up
+#+BEGIN_SRC tmate
+kubetest --deployment=kind --kind-binary-version=build --provider=skeleton --up
+#+END_SRC
+*** down
+#+BEGIN_SRC
+kubetest --deployment=kind --kind-binary-version=build --provider=skeleton --down
+#+END_SRC
+
+Just using kind to build an image from scratch (without kubetest):
+** bulding and starting cluster with only kind
+
+*** build
+#+BEGIN_SRC tmate
+time (
+    kind build base-image
+    kind build node-image --base-image kindest/base:latest --kube-root .*
+  )
+#+END_SRC
+
+*** start
+NOTE: You could SKIP all of the above ande just use the
+
+#+BEGIN_SRC tmate
+  time  kind create cluster --image kindest/node:latest
+#+END_SRC
+** start multinode cluster
+   Blatently copypasted from [[https://github.com/kubernetes-sigs/kind/blob/995aaccc7b7d6934ceea4c8ff10d727ad1918229/hack/ci/e2e.sh#L9][kind/hack/ci/e2e.sh]]
+*** ~/kind-config.yaml
+    Write this out.
+#+BEGIN_SRC yaml :tangle ~/kind-config.yaml
+kind: Cluster
+apiVersion: kind.sigs.k8s.io/v1alpha3
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+#+END_SRC
+*** create cluster w/ config.yaml
+#+BEGIN_SRC tmate
+kind create cluster \
+     --image=kindest/node:latest \
+     --retain \
+     --wait=1m \
+     --loglevel=debug \
+     "--config=$HOME/kind-config.yaml"
+export KUBECONFIG="$(kind get kubeconfig-path --name="kind")"
+kubectl cluster-info
+kubectl get nodes
+#+END_SRC
+
+** hack/e2e.go
+
+Possibly updating kubetest and providing parameters
+This is use in some older CI jobs to ensure kubetest is up to date, and to build the various clusters using it, then run the tests.
+
+#+BEGIN_SRC tmate
+go run hack/e2e.go -get -old 25h0m0s -- --help
+#+END_SRC
+
+* Working on your branch
+
+Check out your branch for creating the test.
+
+Make some changes, some commits
+
+#+BEGIN_SRC tmate
+git checkout -b MYTEST origin/master
+# if you want to ensure your working with the latest upstream changes:
+git fetch origin master
+git rebase origin/master
+#+END_SRC
+
+** updating your e2e.test binary to include your changes
+#+BEGIN_SRC tmate
+export GINKO_PARALLEL=y
+# Will run 179 of 1032 specs
+#export KUBECONFIG=~/.kube/config
+export KUBECONFIG="$HOME/.kube/kind-config-kind-kubetest"
+TEST_NAME='[sig-storage] Pod Disks should be able to delete a non-existent PD without error'
+TEST_NAME='[sig-cli] Kubectl client [k8s.io] Kubectl get componentstatuses should get componentstatuses'
+echo $TEST_NAME
+# [ => \[
+# ] => \]
+# :space: => .
+FOCUS=$(echo "$TEST_NAME" \
+  | sed "s/\[/\\\[/g" \
+  | sed "s/\]/\\\]/g" \
+  | sed "s/[[:space:]]/\./g")
+echo $FOCUS
+#+END_SRC
+
+*** with make
+
+Takes about 20 seconds
+
+#+BEGIN_SRC tmate
+time (
+make all WHAT=test/e2e/e2e.test
+PREFIX=./_output/local/go/bin/
+# use --provider=gce etc for other providers
+$PREFIX/e2e.test \
+  --provider=skeleton \
+  --ginkgo.focus="$FOCUS"
+)
+#+END_SRC
+
+*** with bazel
+
+Takes about 7 seconds
+
+#+BEGIN_SRC tmate
+time (
+bazel build //test/e2e:e2e.test
+PREFIX=./bazel-bin/test/e2e
+$PREFIX/e2e.test \
+  --ginkgo.focus="$FOCUS"
+)
+#+END_SRC
 
 ** Add setting from e2e.sh main()
 
@@ -50,8 +241,9 @@ export ARTIFACTS
 
 #+BEGIN_SRC tmate
 export KUBECONFIG="$HOME/.kube/kind-config-kind-kubetest"
-export SKIP="ginkgo skip regex"
-export FOCUS="ginkgo focus regex"
+# SKIP and FOCUS need to be a valid ginko regexps for example:
+export SKIP="\\[Flakey\\]"
+export FOCUS="\\[Conformance\\]"
 #+END_SRC
 
 ** Setup and export function ~run_tests~
@@ -101,8 +293,8 @@ export -f run_tests
 
 #+BEGIN_SRC tmate
 cd $GOPATH/src/k8s.io/kubernetes
-SKIP="ginkgo skip regex"
-FOCUS="ginkgo focus regex"
+SKIP="\\[Flakey\\]"
+FOCUS="\\[Conformance\\]"
 run_tests
 #+END_SRC
 
@@ -177,7 +369,38 @@ cd $GOPATH/src/k8s.io/kubernetes
 
 - [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/e2e-tests.md#testing-against-local-clusters][Testing against local clusters]]
 
+* TIL
 
+** Only supported for providers [gce] (not skeleton)
+
+If you try --provider=skeleton (or use kind) and your FOCUS maches a single test not supporting skeleton:
+
+#+BEGIN_SRC tmate
+FOCUS="\\[sig-storage\\].Pod.Disks.should.be.able.to.delete.a.non-existent.PD.without.error"
+echo $FOCUS
+$PREFIX/e2e.test \
+  --ginkgo.focus="$FOCUS"
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+Running Suite: Kubernetes e2e suite
+===================================
+Random Seed: 1557332776 - Will randomize all specs
+Will run 1 of 3964 specs
+#+END_EXAMPLE
+
+It may run you test, with info messages printing:
+
+#+BEGIN_EXAMPLE
+INFO: Only supported for providers [gce] (not skeleton)
+#+END_EXAMPLE
+
+However you test will be listed as skipeed in the output:
+
+#+BEGIN_EXAMPLE
+Ran 0 of 3964 Specs in 40.061 seconds
+SUCCESS! -- 0 Passed | 0 Failed | 0 Pending | 3964 Skipped
+#+END_EXAMPLE
 * Footnotes
 
 #+PROPERTY: header-args:bash  :tangle ./config-kubetest.sh
