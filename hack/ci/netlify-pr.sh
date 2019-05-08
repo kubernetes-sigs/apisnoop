@@ -13,7 +13,7 @@ export PATH=$PWD/gsutil:$PATH
 
 # JOBID=$(gsutil cat gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/latest-build.txt)
 JOB_ID=$(gsutil ls 'gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/*/artifacts/*/*/endpoints.json' | sort -n | tail -1 | awk -F/ '{print $6}')
-NEW_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$JOBID/artifacts/"
+NEW_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$JOB_ID/artifacts/"
 
 echo $NEW_BUCKET >> audit-sources.yaml
 cat audit-sources.yaml
