@@ -13,7 +13,8 @@ function BucketList (props) {
           doMarkUseragentsResourceAsOutdated,
           config,
           bucketJobPaths,
-          activeBucketJob
+          activeBucketJob,
+          queryObject
         } = props
   if (config == null) return null
   return (
@@ -49,7 +50,7 @@ function BucketList (props) {
     doMarkTestTagsResourceAsOutdated()
     doMarkMetadataResourceAsOutdated()
     doMarkUseragentsResourceAsOutdated()
-    doUpdateQuery({bucket: bucket})
+    doUpdateQuery({...queryObject, bucket})
   }
 }
 
@@ -64,5 +65,6 @@ export default connect(
   'selectActiveBucketJob',
   'selectBucketJobPaths',
   'selectConfig',
+  'selectQueryObject',
   BucketList
 )
