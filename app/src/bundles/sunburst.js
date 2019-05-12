@@ -13,6 +13,7 @@ export default {
     (endpointsByLevelAndCategoryAndOperatorId, levelColours, categoryColours, query, zoom) => {
       var sunburst = {
         name: 'root',
+        color: 'white',
         children: map(endpointsByLevelAndCategoryAndOperatorId, (endpointsByCategoryAndOperatorId, level) => {
           return {
             name: level,
@@ -40,11 +41,11 @@ export default {
         width: '50%'
       },
       Y: {
-        fontSize: '0.8em,',
+        fontSize: '1.2em,',
         textAnchor: 'middle'
       },
       Z: {
-        fontSize: '0.8em',
+        fontSize: '1em',
         textAnchor: 'middle'
       }
     }
