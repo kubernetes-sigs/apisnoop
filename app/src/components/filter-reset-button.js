@@ -1,10 +1,11 @@
 import React from 'react'
 import { connect } from 'redux-bundler-react'
 
-function FilterContainer (props) {
+function FilterResetButton (props) {
   const {
     doUpdateQuery,
-    queryObject
+    activeBucketJob,
+    bucketJobPaths
   } = props
 
   const filterContainerClasses = 'relative mb2 pa1 mt0'
@@ -17,13 +18,14 @@ function FilterContainer (props) {
     </div>
   )
   function handleClick () {
-    let bucket = queryObject.bucket
+    let bucket = bucketJobPaths[activeBucketJob]
     doUpdateQuery({ bucket })
   }
 }
 
 export default connect(
   'doUpdateQuery',
-  'selectQueryObject',
-  FilterContainer
+  'selectActiveBucketJob',
+  'selectBucketJobPaths',
+  FilterResetButton
 )
