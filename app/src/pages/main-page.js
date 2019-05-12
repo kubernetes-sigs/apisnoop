@@ -3,8 +3,6 @@ import { connect } from 'redux-bundler-react'
 
 import SunburstAndSummary from '../components/sunburst-and-summary'
 import TestsContainer from '../components/tests-container'
-import BucketList from '../components/bucket-list'
-import FiltersContainer from '../components/filters-container'
 import Sidebar from '../components/sidebar'
 
 function MainPage (props) {
