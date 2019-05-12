@@ -2,6 +2,8 @@ import React from 'react'
 import { connect } from 'redux-bundler-react'
 
 import FilterContainer from './filter-container'
+import FilterResetButton from './filter-reset-button'
+
 
 const FiltersContainer = (props) => {
   const {
@@ -49,6 +51,7 @@ const FiltersContainer = (props) => {
         namesFilteredByQuery={namesTestsFilteredByQuery}
         filteredByInput={testsFilteredByInput}
       />
+      <FilterResetButton />
       </div>
       </section>
   )
