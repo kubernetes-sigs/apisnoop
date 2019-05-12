@@ -27,7 +27,7 @@ const FiltersContainer = (props) => {
   return(
       <section id="filters" className='relative'>
       <h2 className="magic-pointer f5 mb0 mt1 pa1 pb0">Add A Filter</h2>
-      <div className='flex flex-column flex-wrap align-center justify-start relative mt0'>
+      <div className='flex flex-column flex-wrap align-center justify-start relative mt0 w-100'>
       <FilterContainer filter={'useragents'}
         input={useragentsInput}
         ratio={ratioUseragentsFilteredByQuery}

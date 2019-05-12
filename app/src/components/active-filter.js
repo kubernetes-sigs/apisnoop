@@ -6,7 +6,7 @@ function ActiveFilter (props) {
   if(results == null || results.length <= 0) return null
   return (
       <div className='h-100 mt2'>
-      <ul className='pl0 ml0 mt0'>
+      <ul className='pl0 ml0 mt0 w-100'>
       {results.map((result, index) => {
         return <li className='list f5 dib mr3 ttsc' key={`${searchFilter}`.concat(index)}>
           { result }
