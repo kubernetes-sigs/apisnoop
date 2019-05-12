@@ -22,7 +22,6 @@ const SunburstChart = (props) => {
   return (
       <div id='sunburst'>
       <Sunburst
-    hideRootNode
     colorType="literal"
     data={sunburst}
     height={600}
@@ -39,7 +38,6 @@ const SunburstChart = (props) => {
              ]}
      />}
       </Sunburst>
-      <button className='ttsc' onClick={handleReset}>Reset</button>
       </div>
   )
 

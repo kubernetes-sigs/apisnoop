@@ -9,7 +9,7 @@ function MainPage (props) {
     return (
         <main id='main-splash' className='min-vh-80 grid grid-bar-l'>
         <Sidebar />
-        <div className='pa4 overflow-x-scroll'>
+        <div className='pt3 pl5 pb4 pr4 overflow-x-scroll'>
         <SunburstAndSummary />
         <TestsContainer />
         </div>
