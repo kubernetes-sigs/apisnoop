@@ -1,0 +1,109 @@
+#+NAME: APISnoop
+#+AUTHOR: Hippie Hacker <hh@ii.coop>
+* email
+
+APISnoop is a tool to measure the Kubernetes APIs that are used by different applications and specifically to examine which ones don’t yet have conformance tests.
+
+We would like the opportunity to present APISnoop’s capabilities to the Sig-Arch, specifically with the hopes of highlighting what APISnoop can do and capturing specific feedback regarding how you would use and interact with the program given its capabilities. Please let us know logs
+
+Our initial features are Regex Filtering on User Agent, Test Tags, and the Tests themselves on summaries of some release-blocking jobs.
+
+APISnoop is a tool to measure the Kubernetes APIs that are used by different applications and specifically to examine which ones don’t yet have conformance tests.
+
+
+* Usage
+
+** Here are some examples of useful outputs from the tool:
+
+*** If we filter out any endpoints not hit by the e2e.test user-agent, we noted some completely untested stable endpoints in use by probably everybody:
+
+The regex ~[^e2e.test]~ allows us to filter endpoints to User-Agents/applications hitting the APIServer that are not directly tested.
+
+- 95 untested of [[https://apisnoop.cncf.io/?useragents=%5B^e2e.test%5D&zoomed=level-stable][237 stable endpoints]]
+- 41 untested of [[https://apisnoop.cncf.io/?useragents=%5B^e2e.test%5D&zoomed=category-stable-core][122 stable/core endpoints]]
+
+[[./docs/images/user-agent-e2e-filter.png]]
+
+These are endpoints that are not hit be e2e.test at all, but hit by other components of kubernetes.
+
+*** If we zoom into stable storage endpoints, we find only one conformance test, and 14 completely untested endpoints.
+
+[[https://apisnoop.cncf.io/?zoomed=category-stable-storage]]
+
+[[./docs/images/zoom-stable-storage.png]]
+
+*** If we filter user-agent for csi-attacher we find it hits 3 untested beta endpoints, and the untested stable/core/replaceCoreV1PersistentVolume:
+
+[[https://apisnoop.cncf.io/?useragents=csi-attacher]]
+
+It might be interesting to explore why we are hitting it during release-blocking. While it’s not being hit by the e2e.test binary itself, it may be a by-product of the testing.
+
+[[./docs/images/user-agent-e2e-filter-csi.png]]
+
+*** Filtering by tests tags allows us to easily get a summary of all endpoints and tests with matching tags:
+
+[sig-windows] has 4 tests which hit 75 endpoints, all of which are also hit by other [Conformance] tests:
+
+It might be interesting to see this output from a job running more of the windows tests again a windows cluster.
+
+By test_tags: [[https://apisnoop.cncf.io/?test_tags=\%5Bsig-windows\%5D]]
+By test name: [[https://apisnoop.cncf.io/?tests=\%5Bsig-windows\%5D]]
+
+Lastly we can filter on tests directly allowing us search for a group of tests, or focus on a single one:
+
+[[./docs/images/test-tag-filter-sig-windows.png]]
+
+[k8s.io] [sig-node] SSH should SSH to all nodes and run commands
+
+[[https://apisnoop.cncf.io/?tests=\%5Bk8s.io\%5D%20\%5Bsig-node\%5D]]
+
+SSH should SSH to all nodes and run commands
+
+We also allow zooming into a particular endpoint to see what Test and test tags hit it:
+
+[[https://apisnoop.cncf.io/?zoomed=operationId-stable-storage-getStorageV1APIResources]]
+
+[[./docs/images/zoom-getStorageResources-tests.png]]
+
+If you click on a test, you can see a summary of its interation with the k8s API:
+
+[[https://deploy-preview-241--apisnoop.netlify.com/?zoomed=operationId-stable-storage-getStorageV1APIResources&test=%255Bsig-apps%255D%2520Job%2520should%2520delete%2520a%2520job%2520%255BConformance%255D][https://apisnoop.cncf.io/?zoomed=operationId-stable-storage-getStorageV1APIResources&test={sig-apps} Job should delete a job {Conformance}]]
+
+[[./docs/images/zoom-getStorageResources-test.png]]
+
+
+* Data
+
+We’d love to help find more sources of audit logs and can assist if your sig needs help creating audit logs and ensuring they are generated regularly so we can provide ongoing insight to your sig/wg.
+
+Our first set of data comes from the conformance-gce testgrid buckets similar to this one for master:
+
+[[https://k8s-testgrid.appspot.com/sig-release-master-blocking#gce-cos-master-default]]
+
+Currently we have data for master, beta and the last three releases for these sig-gcp jobs:
+
+https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes/sig-gcp/sig-gcp-gce-config.yaml#L96
+
+These jobs provide feedback every 30 minutes for the current state of the branches they monitor:
+
+https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513
+
+These jobs are of particular interest because they have auditlogging enabled, and the logs are available as job artifacts via GCS:
+
+https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513/artifacts/bootstrap-e2e-master/
+
+#+BEGIN_SRC shell
+gsutil ls gs://kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log*
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+gs://kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log
+gs://kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log-20190509-1557423613.gz
+gs://kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log-20190509-1557424220.gz
+#+END_EXAMPLE
+
+APISnoop retrieves and and processes our communities logs based a yaml config:
+
+https://github.com/cncf/apisnoop/blob/master/audit-sources.yaml
+
+If you submit a PR with changes pointing to your repo with audit logs, a prow job will be rtiggered to process your data and a netlify site will by created to reference that data.
