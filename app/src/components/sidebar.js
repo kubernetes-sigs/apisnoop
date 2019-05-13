@@ -3,6 +3,7 @@ import { connect } from 'redux-bundler-react'
 
 import Bucketlist from './bucket-list'
 import FiltersContainer from './filters-container'
+import Legend from './legend'
 
 const Sidebar = (props) => {
   return (
@@ -13,6 +14,7 @@ const Sidebar = (props) => {
       </div>
       <Bucketlist />
       <FiltersContainer />
+      <Legend />
       </div>
   )
 }
