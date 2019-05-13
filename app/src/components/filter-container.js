@@ -18,7 +18,7 @@ function FilterContainer (props) {
     queryObject
   } = props
 
-  const filterContainerClasses = 'relative mb2 pa1 mt0'
+  const filterContainerClasses = 'relative mb2 pa1 mt0 w-100'
   const filterBoxClasses = 'f6 link dim ba w-20 b--light-blue pv1 dib w-100 black bg-washed-blue magic-pointer'
   const unsetFilterClasses = 'f6 link w-100 dim bw-20 bn pv1 dib ml0 ph3 mid-gray bg-light-gray magic-pointer'
 
@@ -36,7 +36,7 @@ function FilterContainer (props) {
     return(
         <div className={filterContainerClasses}>
         <p className='ttsc pt0 pb0 mb2 f6 flex align-center flex-column'>{filter.replace('_', ' ')}
-        <span className='flex pl0 ml0 w-100'>
+        <span className='flex pl0 ml0'>
         <button className={filterBoxClasses} onClick={()=>doUpdateInput(queryObject[filter])}>
         /{queryObject[filter]}/
         </button>
@@ -47,7 +47,7 @@ function FilterContainer (props) {
       </span>
         </p>
         <em className='f6 mb1'>Pattern matches {ratio.hitByQuery} of {ratio.total} {filter.replace('_',' ')}</em>
-        <details className='f5 mb1'>
+        <details className='f5 mb1 w-100 relative'>
         <summary>See All Matches</summary>
         <ActiveFilter searchFilter={filter} results={namesFilteredByQuery}/>
         </details>

@@ -2,6 +2,8 @@ import React from 'react'
 import { connect } from 'redux-bundler-react'
 
 import FilterContainer from './filter-container'
+import FilterResetButton from './filter-reset-button'
+
 
 const FiltersContainer = (props) => {
   const {
@@ -25,7 +27,7 @@ const FiltersContainer = (props) => {
   return(
       <section id="filters" className='relative'>
       <h2 className="magic-pointer f5 mb0 mt1 pa1 pb0">Add A Filter</h2>
-      <div className='flex flex-column flex-wrap align-center justify-start relative mt0'>
+      <div className='flex flex-column flex-wrap align-center justify-start relative mt0 w-100'>
       <FilterContainer filter={'useragents'}
         input={useragentsInput}
         ratio={ratioUseragentsFilteredByQuery}
@@ -49,6 +51,7 @@ const FiltersContainer = (props) => {
         namesFilteredByQuery={namesTestsFilteredByQuery}
         filteredByInput={testsFilteredByInput}
       />
+      <FilterResetButton />
       </div>
       </section>
   )

@@ -94,15 +94,16 @@ export default {
     'selectUseragentsFilteredByQuery',
     (useragents) => {
       let opIdsHit = []
-      let opIds = Object.keys(useragents)
-      let opId, opIdIndex;
+      let useragentsNames = Object.keys(useragents)
+      let useragentsIndex = 0;
   
       if (useragents == null)  {
         return opIdsHit
       }
-      for (opIdIndex = 0; opIdIndex < opIds.length; opIdIndex++) {
-        opId = opIds[opIdIndex]
-        opIdsHit.push(useragents[opId])
+      for (useragentsIndex; useragentsIndex < useragentsNames.length; useragentsIndex++) {
+        let useragent = useragentsNames[useragentsIndex]
+        console.log({useragent, useragents, useragentsNames})
+        opIdsHit.push(useragents[useragent])
       }
       return uniq(opIdsHit.flat())
     }

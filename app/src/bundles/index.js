@@ -7,7 +7,6 @@ import config from './config'
 import configResource from './config-resource'
 import endpoints from './endpoints'
 import endpointsResource from './endpoints-resource'
-import filters from './filters'
 import metadataResource from './metadata-resource'
 import metadata from './metadata'
 import testsResource from './tests-resource'
@@ -28,7 +27,6 @@ export default composeBundles(
   config,
   configResource,
   endpoints,
-  filters,
   endpointsResource,
   metadataResource,
   metadata,
