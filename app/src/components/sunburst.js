@@ -75,11 +75,6 @@ const SunburstChart = (props) => {
     })
   }
 
-  function handleReset () {
-    var resetQuery = omit(queryObject,['level', 'category', 'operationId', 'zoomed'])
-    doUpdateQuery(resetQuery)
-  }
-
   function getKeyPath (node) {
     if (!node.parent) {
       return ['root'];
