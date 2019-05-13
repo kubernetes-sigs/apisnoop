@@ -12,7 +12,7 @@ function TestsContainer (props) {
   if (queryObject == null) return null
 
   return(
-      <section id='tests'>
+      <section id='tests' className='mb5'>
       {queryObject && queryObject.test == null &&
        <ActiveTestsList />}
       {queryObject.test && (typeof queryObject.test == 'string') &&
