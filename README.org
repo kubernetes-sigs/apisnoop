@@ -20,123 +20,6 @@ A secondary goal is to assist in the writing of new tests, by providing focus an
 In order to identify target applications to test, we define a Kubernetes API Consumer as a _KAPIC_. We inspect the [[https://kubernetes.io/docs/tasks/debug-application-cluster/audit/][advanced audit logs]] to describe which APIs are called during KAPIC operations, mapping the API to the OpenAPI Spec to have consistent terminology.   We then visualize this data in a [[https://bl.ocks.org/mbostock/4063423][Sunburst Partition Graphs]] with stable/beta/alpha as the center, APIGroups(called categories in the OpenAPI Spec) as the second ring, and APICalls/Verbs (OperationID's in the spec) as the outer ring.e
 The fetching and processing of audit logs, and the deployment of the data visualization, is built into the pipeline of APISnoop, which means we can display different sets of data, and visuals, per branch and pull request.  Visualizing a specific set of data is as simple as opening a pull request on the APISnoop repo, with your audit-logs specified in our [[./audit-sources.yaml][audit-sources.yaml]]
 
-** Useful Insights
-
-*** Untested Stable Endpoints
-
-If we filter out any endpoints not hit by the e2e.test user-agent, we noted some completely untested stable endpoints in use by probably everybody:
-
-The regex ~[^e2e.test]~ allows us to filter endpoints to User-Agents/applications hitting the APIServer that are not directly tested.
-
-- 95 untested of [[https://apisnoop.cncf.io/?useragents=%5B^e2e.test%5D&zoomed=level-stable][237 stable endpoints]]
-- 41 untested of [[https://apisnoop.cncf.io/?useragents=%5B^e2e.test%5D&zoomed=category-stable-core][122 stable/core endpoints]]
-
-[[./docs/images/user-agent-e2e-filter.png]]
-
-These are endpoints that are not hit be e2e.test at all, but hit by other components of kubernetes.
-
-*** Stable/Storage Coverage
-
-If we zoom into stable storage endpoints, we find only one conformance test, and 14 completely untested endpoints.
-
-[[https://apisnoop.cncf.io/?zoomed=category-stable-storage]]
-
-[[./docs/images/zoom-stable-storage.png]]
-
-*** csi-attacher Coverage
-
-If we filter user-agent for csi-attacher we find it hits 3 untested beta endpoints, and the untested stable/core/replaceCoreV1PersistentVolume:
-
-[[https://apisnoop.cncf.io/?useragents=csi-attacher]]
-
-It might be interesting to explore why we are hitting it during release-blocking. While it’s not being hit by the e2e.test binary itself, it may be a by-product of the testing.
-
-[[./docs/images/user-agent-e2e-filter-csi.png]]
-
-*** [sig-windows] Coverage
-
-Filtering by tests tags allows us to easily get a summary of all endpoints and tests with matching tags:
-
-[sig-windows] has 4 tests which hit 75 endpoints, all of which are also hit by other [Conformance] tests:
-
-It might be interesting to see this output from a job running more of the windows tests again a windows cluster.
-
-By test_tags: [[https://apisnoop.cncf.io/?test_tags=\%5Bsig-windows\%5D]]
-By test name: [[https://apisnoop.cncf.io/?tests=\%5Bsig-windows\%5D]]
-
-Lastly we can filter on tests directly allowing us search for a group of tests, or focus on a single one:
-
-[[./docs/images/test-tag-filter-sig-windows.png]]
-
-[k8s.io] [sig-node] SSH should SSH to all nodes and run commands
-
-[[https://apisnoop.cncf.io/?tests=\%5Bk8s.io\%5D%20\%5Bsig-node\%5D]]
-
-SSH should SSH to all nodes and run commands
-
-We also allow zooming into a particular endpoint to see what Test and test tags hit it:
-
-[[https://apisnoop.cncf.io/?zoomed=operationId-stable-storage-getStorageV1APIResources]]
-
-[[./docs/images/zoom-getStorageResources-tests.png]]
-
-If you click on a test, you can see a summary of its interation with the k8s API:
-
-[[https://deploy-preview-241--apisnoop.netlify.com/?zoomed=operationId-stable-storage-getStorageV1APIResources&test=%255Bsig-apps%255D%2520Job%2520should%2520delete%2520a%2520job%2520%255BConformance%255D][https://apisnoop.cncf.io/?zoomed=operationId-stable-storage-getStorageV1APIResources&test={sig-apps} Job should delete a job {Conformance}]]
-
-[[./docs/images/zoom-getStorageResources-test.png]]
-
-** Running APISnoop
-
-*** Start a Branch on this repo
-
-This will allow for a new site to be deployed specifically for your data.
-
-*** Specifying Audit Logs
-
-The audit logs to process are outlined in our [[./audit-sources.yaml][audit-sources.yaml]], located in the root of this repo.  Each field in this yaml is required, and explained below.
-
-#+BEGIN_SRC yaml
-# where the raw audit logs are located.
-source: prow.k8s.io
-# which buckets you would like processed
-buckets:
-  ci-kubernetes-e2e-gce-cos-k8sstable3-default:
-# you can specify multiple jobs per bucket
-# job should be explicitly set as strings.
-    jobs:
-      - '1121083339638312961'
-  ci-kubernetes-e2e-gce-cos-k8sstable2-default:
-    jobs:
-      - '1121457989778149377'
-  ci-kubernetes-e2e-gce-cos-k8sstable1-default:
-    jobs:
-      - '1121581392354873344'
-  ci-kubernetes-e2e-gce-cos-k8sbeta-default:
-    jobs:
-      - '1121564030004105216'
-  ci-kubernetes-e2e-gci-gce:
-    jobs:
-      - '1121334929389522946'
-# which bucket and job shows on first page load of the site.
-default-view:
-  bucket: ci-kubernetes-e2e-gci-gce
-  job: '1121334929389522946'
-#+END_SRC
-
-*** Open a Pull Request in this repo
-
-This will trigger a number of jobs to occur, which you can track in the pull request.  The main things happening are:
-- We check ~audit-sources.yaml~ and use this to generate data.
-- We store this processed data on Google Storage, in a specific ~gs:/apisnoop bucket~.
-- A site is built from the code in ~app~ and deployed to netlify.
-- As part of the deployment we run ~./update.sh~ to copy ~audit-sources.yaml~ to the app's public folder, and query ~gs://apisnoop~ to get the path to the processed logs.
-- a deploy preview is generated by netlify, with a link provided in the details of our prow job.
-
-*** Viewing your Site
-
-You can grab the link for the netlify preview in the Checks panel of the pull request, by clicking the details link next to ~netlify/apisnoop/deploy-preview~
-
 ** Exploring the Data through the Site
 
 *** The Sunburst
@@ -173,18 +56,10 @@ In addition, A list of the tests that hit this endpoint  will appear below the s
 
 At any time you can share the URL of your site, which will retain the exact filtering you've set.  For example, you can share a view that has useragents and tests filters set, and which is locked into a specific endpoint, with the sequence for a specific test listed below.
 
-** Contributing
-
-*** Contribution to Data Processing
-
-As we make a fresh deployment per branchk, you can not only adjust the audit logs we look at, but the ways in which these audit logs are processed.
-
-The core of the data processing is written in Python, and held in our [[file:data-gen/][./data-gen]] folder.
-
-*** Contributions to the App
-
-Our front-end site is written with React and Redux, and held in our [[file:app/][./app]] folder.  There is a README located within that folder with more details on the structure and patterns of the site.
-
+** Documentation
+- [[file:data.org][How to Process Data]]
+- [[file:contributing.org][Contributing]]
+- [[file:insights.org][Current Insights]]
 ** Other Resources
 
 *** Meetings / Demos
@@ -192,40 +67,3 @@ Our front-end site is written with React and Redux, and held in our [[file:app/]
 - May 23rd, 2018 - Conformance WG - APISnoop: easing contribution and driving pod api utilization [[https://www.youtube.com/watch?v=XJgK6jw_mPc&t=720][Recording]]
 - [[https://docs.google.com/presentation/d/1JvWYSGWdiPq3YOINCJVUJaI4RVN642xSpzX9JY5HhTE/edit*slide=id.g37b1fc65d7_0_87][May 10th, 2018 - SIG Architecture - APISnoop Introduction]] & [[https://www.youtube.com/watch?v=gCTLdzsqzaY&feature=youtu.be&list=PL69nYSiGNLP2m6198LaLN6YahX7EEac5g&t=2635][Recording]]
 - [[https://docs.google.com/presentation/d/16_qeQ4wIbUMUUIRjQ22QabdcEbZ9yucUWSn7PykuF0c/edit*slide=id.p1][May 4th, 2018 - KubeCon Copenhagen - Deep Dive for Conformance WG]] & [[https://www.youtube.com/watch?v=LAGhshWmJAs&feature=youtu.be&list=PLj6h78yzYM2N8GdbjmhVU65KYm_68qBmo&t=2][Recording]]
-
-
-* Data
-
-We’d love to help find more sources of audit logs and can assist if your sig needs help creating audit logs and ensuring they are generated regularly so we can provide ongoing insight to your sig/wg.
-
-Our first set of data comes from the conformance-gce testgrid buckets similar to this one for master:
-
-[[https://k8s-testgrid.appspot.com/sig-release-master-blocking#gce-cos-master-default]]
-
-Currently we have data for master, beta and the last three releases for these sig-gcp jobs:
-
-https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes/sig-gcp/sig-gcp-gce-config.yaml#L96
-
-These jobs provide feedback every 30 minutes for the current state of the branches they monitor:
-
-https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513
-
-These jobs are of particular interest because they have auditlogging enabled, and the logs are available as job artifacts via GCS:
-
-https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513/artifacts/bootstrap-e2e-master/
-
-#+BEGIN_SRC shell
-gsutil ls gs://kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log*
-#+END_SRC
-
-#+BEGIN_EXAMPLE
-gs://kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log
-gs://kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log-20190509-1557423613.gz
-gs://kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1126538982159552513/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log-20190509-1557424220.gz
-#+END_EXAMPLE
-
-APISnoop retrieves and and processes our communities logs based a yaml config:
-
-https://github.com/cncf/apisnoop/blob/master/audit-sources.yaml
-
-If you submit a PR with changes pointing to your repo with audit logs, a prow job will be rtiggered to process your data and a netlify site will by created to reference that data.
