@@ -27,10 +27,10 @@ git remote -v
 git branch -av
 
 # Checking for changes to audit-sources and data-gen
-git diff master $BRANCH -- audit-sources.yaml  data-gen/
+git diff master HEAD -- audit-sources.yaml  data-gen/
 
 # Ensure there are no changes to audit-sources and data-gen
-if git diff --quiet master $BRANCH -- audit-sources.yaml  data-gen/
+if git diff --quiet master HEAD -- audit-sources.yaml  data-gen/
 then
   # If no changes, use the production
   BUCKET_PREFIX=$PRODUCTION_BUCKET
