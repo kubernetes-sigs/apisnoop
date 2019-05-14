@@ -11,7 +11,7 @@ const EndpointsList = ({filteredEndpoints}) => {
       <p className='i f6'>All endpoints matching your set filters. {Object.keys(endpoints).length} in total.</p>
       <div className="pa4">
         <div className="overflow-auto">
-        <table className="f6 w-100 mw8 center" cellSpacing="0">
+        <table className="f5 w-100 mw8 center" cellSpacing="0">
           <thead>
             <tr>
               <th className="fw6 bb b--black-20 tl pb3 pr3 bg-white">Endpoint</th>

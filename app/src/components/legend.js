@@ -4,7 +4,7 @@ import { connect } from 'redux-bundler-react'
 
 const CategoryLegend = ({ categories, colours}) => {
   return (
-    <div className='mb0 pb0' >
+    <div className='pb3 mb4' >
       <h3 className='f6 pa1 ttsc pb0 mb1'>Second Ring: groups/categories</h3>
       <ul className='list pa1 pl0 pr0 mt0 mb0 pb0'>
         {categories.map(category => {

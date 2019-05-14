@@ -27,16 +27,12 @@ function SearchBar (props) {
     doUpdateInput(e.target.value)
   }
   function handleSubmit (e) {
-    e.preventDefault()
-    let filters = {
-      useragents: queryObject.useragents,
-      test_tags: queryObject.test_tags,
-      tests: queryObject.tests,
-      bucket: queryObject.bucket
+    let query = queryObject
+    let searchInput = e.target[0].value
+    if (searchInput !== '' || searchInput !== undefined) {
+      query[searchFilter] = e.target[0].value
     }
-    filters[searchFilter] = e.target[0].value
-    filters = pickBy(filters, (v,k) => v !== '' && v !== undefined)
-    doUpdateQuery({...filters})
+    doUpdateQuery({...query})
     doUpdateInput(undefined)
   }
 }

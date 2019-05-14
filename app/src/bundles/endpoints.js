@@ -54,6 +54,11 @@ export default {
       if (Array.isArray(testsOpIds) && testsOpIds.length > 0) {
         endpoints = filterBy(testsOpIds, endpoints)
       }
+      if (query.showUnhit && query.showUnhit === 'false') {
+        endpoints = pickBy(endpoints, (val, key) => {
+          return (val.hits > 0)
+        })
+      }
       if (query.showUntested && query.showUntested === 'false') {
         endpoints = pickBy(endpoints, (val, key) => {
           return (val.testHits > 0)
