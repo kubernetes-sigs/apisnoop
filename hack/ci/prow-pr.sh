@@ -6,9 +6,11 @@ git fetch https://github.com/cncf/apisnoop master
 git branch -av
 
 localctl
-LC_ALL=en_US.UTF-8
-LANG=en_US.UTF-8
-LANGUAGE=en_US.en
+export LC_ALL=en_US.UTF-8
+export LANG=en_US.UTF-8
+export LANGUAGE=en_US.en
+export LC_TYPE=en_US.UTF-8
+localctl
 TMATE_TMPDIR=$(mktemp -d /tmp/tmate-ci-XXX)
 # install tmate
 curl -L \
