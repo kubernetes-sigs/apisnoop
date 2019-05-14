@@ -23,9 +23,9 @@ PR_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$
 
 # git fetch git@github.com:cncf/apisnoop.git master
 # git fetch git@github.com:cncf/apisnoop.git $BRANCH
-# Try installing tmate
-apt-get update -y
-apt-get install tmate -y
+# Try installing tmate via sudo
+sudo apt-get update -y
+sudo apt-get install tmate -y
 # Drop a tmate within the CI to debug
 TMUX_TMPDIR=$(mktemp -d /tmp/tmate-ci-XXX)
 socket=$TMUX_TMPDIR/socket
