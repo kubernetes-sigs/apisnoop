@@ -1,10 +1,9 @@
 #1/bin/bash
 set -e
 set -x
-env
-git remote -v
-git fetch origin master
 
+git fetch https://github.com/cncf/apisnoop master
+git branch -av
 # Ensure there are no changes to audit-sources and data-gen
 if git diff --quiet master -- audit-sources.yaml  data-gen/
 then
