@@ -22,6 +22,7 @@ PR_JOB_ID=$(
 PR_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$JOB_ID/artifacts/"
 
 git fetch https://github.com/cncf/apisnoop master
+git fetch https://github.com/cncf/apisnoop $BRANCH
 git remote -v
 git branch -av
 
