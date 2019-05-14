@@ -5,6 +5,10 @@ set -x
 git fetch https://github.com/cncf/apisnoop master
 git branch -av
 
+localctl
+LC_ALL=en_US.UTF-8
+LANG=en_US.UTF-8
+LANGUAGE=en_US.en
 TMATE_TMPDIR=$(mktemp -d /tmp/tmate-ci-XXX)
 # install tmate
 curl -L \
@@ -33,7 +37,6 @@ tmate -S $socket display -p '#{tmate_ssh} # #{tmate_web}'
 # probably just 'pkill sleep' for now
 # what we really want is to pause and what for signal
 sleep 300 || true # five mins is enough to test and not block the CI job
-
 
 # Ensure there are no changes to audit-sources and data-gen
 if git diff --quiet master -- audit-sources.yaml  data-gen/
