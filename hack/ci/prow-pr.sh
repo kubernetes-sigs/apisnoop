@@ -1,7 +1,7 @@
 #1/bin/bash
 set -e
 set -x
-
+env
 git remote -v
 git fetch origin master
 
