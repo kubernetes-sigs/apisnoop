@@ -26,5 +26,6 @@ export function fetchResource (gsPath, resource) {
       return response.json()
     })
     .catch((err) => {
+      console.log({fetchErr: err})
     })
 }

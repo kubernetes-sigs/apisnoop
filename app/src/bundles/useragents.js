@@ -102,6 +102,7 @@ export default {
       }
       for (useragentsIndex; useragentsIndex < useragentsNames.length; useragentsIndex++) {
         let useragent = useragentsNames[useragentsIndex]
+        console.log({useragent, useragents, useragentsNames})
         opIdsHit.push(useragents[useragent])
       }
       return uniq(opIdsHit.flat())

@@ -22,6 +22,7 @@ export default {
       let bucketNames = Object.keys(buckets);
       let i;
       for (i = 0; i < bucketNames.length; i++) {
+        console.log(buckets)
         let bucket = bucketNames[i];
         let jobs = buckets[bucket].jobs
         forEach(jobs, (job) => {

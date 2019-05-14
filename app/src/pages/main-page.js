@@ -10,6 +10,7 @@ function MainPage (props) {
   const {
     zoom
   } = props
+  console.log({zoom})
 
     return (
         <main id='main-splash' className='min-vh-80 grid grid-bar-l'>
