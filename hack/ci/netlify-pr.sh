@@ -76,7 +76,7 @@ else
   fi
 fi
 
-echo $NEW_BUCKET >> audit-sources.yaml
+echo $BUCKET_PREFIX >> audit-sources.yaml
 cat audit-sources.yaml
 cp audit-sources.yaml app/public/audit-sources.yaml
 
