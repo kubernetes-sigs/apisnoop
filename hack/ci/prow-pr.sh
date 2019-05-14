@@ -2,6 +2,7 @@
 set -e
 set -x
 
+git remote -v
 git fetch origin master
 
 # Ensure there are no changes to audit-sources and data-gen
