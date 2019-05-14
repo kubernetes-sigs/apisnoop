@@ -30,7 +30,7 @@ function TestList (props) {
     doUpdateQuery,
   } = props
 
-  if (activeTestsIndex == null || isEmpty(activeEndpoint)) return null
+  if (activeTestsIndex.length === 0 || isEmpty(activeEndpoint)) return null
   return (
       <div id='tests-list' className='tests-section min-vh-100 mt4 w-75'>
       <h2 className='f1'>Tests for <span className='fw2'>{activeEndpoint.level} / {activeEndpoint.category} / {activeEndpoint.operationId} </span></h2>
