@@ -4,7 +4,7 @@ set -x
 echo PR: PR Commit Netlify Deploy
 
 # https://www.netlify.com/docs/continuous-deployment/#environment-variables
-env
+# env
 
 curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar xfz -
 export PATH=$PWD/gsutil:$PATH
@@ -21,8 +21,9 @@ PR_JOB_ID=$(
     | sort -n | tail -1 | awk -F/ '{print $6}')
 PR_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$JOB_ID/artifacts/"
 
-git fetch https://github.com/cncf/apisnoop master
-git fetch https://github.com/cncf/apisnoop $BRANCH
+git fetch git@github.com:cncf/apisnoop.git master
+git fetch git@github.com:cncf/apisnoop.git $BRANCH
+# git fetch https://github.com/cncf/apisnoop $BRANCH
 git remote -v
 git branch -av
 
