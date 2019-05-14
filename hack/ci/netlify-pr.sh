@@ -27,7 +27,8 @@ git remote -v
 git branch -av
 
 # Checking for changes to audit-sources and data-gen
-git diff master HEAD -- audit-sources.yaml  data-gen/
+git diff master FETCH_HEAD -- audit-sources.yaml  data-gen/
+git diff master refs/$BRANCH -- audit-sources.yaml  data-gen/
 
 # Ensure there are no changes to audit-sources and data-gen
 if git diff --quiet master HEAD -- audit-sources.yaml  data-gen/
