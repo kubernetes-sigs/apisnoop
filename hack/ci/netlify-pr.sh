@@ -57,10 +57,10 @@ git remote add github https://github.com/cncf/apisnoop.git
 git fetch github master
 
 # Checking for changes to audit-sources and data-gen
-git diff github/master HEAD -- audit-sources.yaml  data-gen/
+git diff github/master HEAD audit-sources.yaml  data-gen/
 
 # Ensure there are no changes to audit-sources and data-gen
-if git diff --quiet github/master HEAD -- audit-sources.yaml  data-gen/
+if git diff --quiet github/master HEAD audit-sources.yaml  data-gen/
 then
   # If no changes, use the production
   BUCKET_PREFIX=$PRODUCTION_BUCKET
