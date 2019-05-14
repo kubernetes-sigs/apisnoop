@@ -2,7 +2,6 @@ import { createSelector } from 'redux-bundler'
 import {
   groupBy,
   isEmpty,
-  toString,
   mapValues,
   pickBy } from 'lodash'
 

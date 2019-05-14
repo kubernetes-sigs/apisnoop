@@ -1,6 +1,5 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { connect } from 'redux-bundler-react'
-import { toString } from 'lodash'
 
 const TestedToggle = (props) => {
   const {
@@ -13,15 +12,15 @@ const TestedToggle = (props) => {
   let conformanceTestedIsChecked = !queryObject.showConformanceTested || queryObject.showConformanceTested === 'true'
 
   return (
-    <fieldset>
+    <fieldset className='flex flex-row flex-wrap'>
       <legend>Visible Endpoints</legend>
-      <div>
+      <div className=''>
       <input type='checkbox' name='showUntested' id='untested' onInput={handleChange} checked={untestedIsChecked}/>
-        <label for='untested'>untested</label>
+        <label for='untested' className='mr2'>untested</label>
       <input type='checkbox' name='showTested' id='tested' onInput={handleChange} checked={testedIsChecked} />
-        <label for='untested'>tested</label>
+        <label for='untested' className='mr2'>tested</label>
       <input type='checkbox' name='showConformanceTested' id='conformanceTested' onInput={handleChange} checked={conformanceTestedIsChecked} />
-        <label for='untested'>conformance-tested</label>
+        <label for='untested' className='mr2'>conformance-tested</label>
       </div>
     </fieldset>
   )
@@ -31,16 +30,14 @@ const TestedToggle = (props) => {
     let name = e.target.name
     e.target.checked = !e.target.checked
     let isChecked = e.target.checked
-    let query = queryObject
-    query.showUntested = untestedIsChecked
-    query.showTested = testedIsChecked
-    query.showConformanceTested = conformanceTestedIsChecked
+    let query = {
+      ...queryObject,
+      showUntested: untestedIsChecked,
+      showTested: testedIsChecked,
+      showConformanceTested: conformanceTestedIsChecked
+    }
     query[name] = isChecked
     doUpdateQuery({ ...query })
-  }
-
-  function isTrue (string) {
-    return string === 'true'
   }
 }
 
