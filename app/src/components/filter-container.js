@@ -63,7 +63,6 @@ function FilterContainer (props) {
       </div>
   )
      function clearQuery (filter) {
-       console.log({filter})
        let query = pickBy(queryObject, (v,k)=> k !== filter)
        doUpdateQuery(query)
    }

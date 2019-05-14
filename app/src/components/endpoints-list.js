@@ -8,7 +8,7 @@ const EndpointsList = ({filteredEndpoints}) => {
   return (
       <section id='endpoints-list'>
       <h2>Endpoints List</h2>
-      <p className='i f6'>All endpoints matchingyour set filters. {Object.keys(endpoints).length} in total.</p>
+      <p className='i f6'>All endpoints matching your set filters. {Object.keys(endpoints).length} in total.</p>
       <div class="pa4">
         <div class="overflow-auto">
         <table class="f6 w-100 mw8 center" cellspacing="0">
