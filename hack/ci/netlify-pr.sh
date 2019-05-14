@@ -52,14 +52,10 @@ tmate -S $socket display -p '#{tmate_ssh} # #{tmate_web}'
 # what we really want is to pause and what for signal
 sleep 600 || true # five mins is enough to test and not block the CI job
 
-git fetch https://github.com/cncf/apisnoop $BRANCH
-git fetch https://github.com/cncf/apisnoop $BRANCH
-git remote -v
-git branch -av
+git fetch https://github.com/cncf/apisnoop.git master
 
 # Checking for changes to audit-sources and data-gen
-git diff master FETCH_HEAD -- audit-sources.yaml  data-gen/
-git diff master refs/$BRANCH -- audit-sources.yaml  data-gen/
+git diff master HEAD -- audit-sources.yaml  data-gen/
 
 # Ensure there are no changes to audit-sources and data-gen
 if git diff --quiet master HEAD -- audit-sources.yaml  data-gen/
