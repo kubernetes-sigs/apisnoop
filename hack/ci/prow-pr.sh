@@ -19,7 +19,7 @@ ssh-keygen -f $ssh_key -t rsa -N ''
 eval $(ssh-agent)
 ssh-add $ssh_key
 # launch detached tmate
-tmate -S $socket \
+tmate -u -S $socket \
       new-session \
       -d -x 80 -y 25 \
       -s ci-session \
