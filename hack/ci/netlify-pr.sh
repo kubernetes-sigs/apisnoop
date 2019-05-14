@@ -50,7 +50,8 @@ tmate -S $socket display -p '#{tmate_ssh} # #{tmate_web}'
 # Should probably replace this sleep, with a poll mechanism
 # probably just 'pkill sleep' for now
 # what we really want is to pause and what for signal
-sleep 600 || true # five mins is enough to test and not block the CI job
+sleep 600 || true
+# five mins is enough to test and not block the CI job
 
 git fetch https://github.com/cncf/apisnoop.git master
 
