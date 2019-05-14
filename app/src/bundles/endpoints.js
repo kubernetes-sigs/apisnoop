@@ -41,8 +41,9 @@ export default {
     'selectOpIdsHitByFilteredUseragents',
     'selectOpIdsHitByFilteredTestTags',
     'selectOpIdsHitByFilteredTests',
+    'selectQueryObject',
     'selectZoom',
-    (endpoints, useragentOpIds, testTagOpIds, testsOpIds, zoom) => {
+    (endpoints, useragentOpIds, testTagOpIds, testsOpIds, query, zoom) => {
       if (endpoints == null) return null
       if (Array.isArray(useragentOpIds) && useragentOpIds.length > 0) {
         endpoints = filterBy(useragentOpIds, endpoints)
@@ -52,6 +53,26 @@ export default {
       }
       if (Array.isArray(testsOpIds) && testsOpIds.length > 0) {
         endpoints = filterBy(testsOpIds, endpoints)
+      }
+      if (query.showUntested && query.showUntested === 'false') {
+        endpoints = pickBy(endpoints, (val, key) => {
+          return (val.testHits > 0)
+        })
+      }
+      if (query.showConformanceTested && query.showConformanceTested === 'false') {
+        endpoints = pickBy(endpoints, (val, key) => {
+          return (val.conformanceHits === 0)
+        })
+      }
+      if (query.showTested && query.showTested === 'false' && query.showConformanceTested === 'true') {
+        endpoints = pickBy(endpoints, (val, key) => {
+          return (val.testHits === 0 || val.conformanceHits > 0)
+        })
+      }
+      if (query.showTested && query.showTested === 'false' && query.showConformanceTested === 'false') {
+        endpoints = pickBy(endpoints, (val, key) => {
+          return (val.testHits === 0)
+        })
       }
       if (!isEmpty(zoom) && (zoom.depth === 'operationId' || zoom.depth === 'category')) {
         endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
@@ -84,6 +105,7 @@ export default {
 
 // opIds, endpoints => endpoints
 // if endpoint.opId is in the array of opIds keep it.
+
 function filterBy (filteredOpIds, opIds) {
  return pickBy(opIds, (val, key) => {
     return filteredOpIds.includes(val.operationId)

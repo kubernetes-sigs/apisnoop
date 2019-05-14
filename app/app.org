@@ -790,8 +790,9 @@ The downside of this is that apisnoop developers should be doing it from within 
          'selectOpIdsHitByFilteredUseragents',
          'selectOpIdsHitByFilteredTestTags',
          'selectOpIdsHitByFilteredTests',
+         'selectQueryObject',
          'selectZoom',
-         (endpoints, useragentOpIds, testTagOpIds, testsOpIds, zoom) => {
+         (endpoints, useragentOpIds, testTagOpIds, testsOpIds, query, zoom) => {
            if (endpoints == null) return null
            if (Array.isArray(useragentOpIds) && useragentOpIds.length > 0) {
              endpoints = filterBy(useragentOpIds, endpoints)
@@ -801,6 +802,26 @@ The downside of this is that apisnoop developers should be doing it from within 
            }
            if (Array.isArray(testsOpIds) && testsOpIds.length > 0) {
              endpoints = filterBy(testsOpIds, endpoints)
+           }
+           if (query.showUntested && query.showUntested === 'false') {
+             endpoints = pickBy(endpoints, (val, key) => {
+               return (val.testHits > 0)
+             })
+           }
+           if (query.showConformanceTested && query.showConformanceTested === 'false') {
+             endpoints = pickBy(endpoints, (val, key) => {
+               return (val.conformanceHits === 0)
+             })
+           }
+           if (query.showTested && query.showTested === 'false' && query.showConformanceTested === 'true') {
+             endpoints = pickBy(endpoints, (val, key) => {
+               return (val.testHits === 0 || val.conformanceHits > 0)
+             })
+           }
+           if (query.showTested && query.showTested === 'false' && query.showConformanceTested === 'false') {
+             endpoints = pickBy(endpoints, (val, key) => {
+               return (val.testHits === 0)
+             })
            }
            if (!isEmpty(zoom) && (zoom.depth === 'operationId' || zoom.depth === 'category')) {
              endpoints = pickBy(endpoints, (val, key) => val.level === zoom.level && val.category === zoom.category)
@@ -2824,12 +2845,14 @@ The downside of this is that apisnoop developers should be doing it from within 
 
      import Sunburst from './sunburst'
      import SunburstHeader from './sunburst-header'
+     import TestedToggle from './tested-toggle'
 
      const SunburstContainer = (props) => {
        return (
            <div id='sunburst-container' className='flex flex-column mr4'>
            <SunburstHeader />
            <Sunburst />
+           <TestedToggle />
            </div>
        )
      }
@@ -2974,6 +2997,63 @@ The downside of this is that apisnoop developers should be doing it from within 
         SunburstChart
       )
     #+END_SRC
+** Tested Toggle
+    :PROPERTIES:
+    :header-args: :tangle ./src/components/tested-toggle.js
+    :END:
+   This is a component to go beneath the sunburst, that determines whether we show untested, tested, and/or conformance-tested endpoints.
+   #+NAME: Tested Toggle
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+
+     const TestedToggle = (props) => {
+       const {
+         queryObject,
+         doUpdateQuery
+       } = props
+
+       let untestedIsChecked = !queryObject.showUntested || queryObject.showUntested === 'true'
+       let testedIsChecked = !queryObject.showTested || queryObject.showTested === 'true'
+       let conformanceTestedIsChecked = !queryObject.showConformanceTested || queryObject.showConformanceTested === 'true'
+
+       return (
+         <fieldset className='flex flex-row flex-wrap'>
+           <legend>Visible Endpoints</legend>
+           <div className=''>
+           <input type='checkbox' name='showUntested' id='untested' onInput={handleChange} checked={untestedIsChecked}/>
+             <label for='untested' className='mr2'>untested</label>
+           <input type='checkbox' name='showTested' id='tested' onInput={handleChange} checked={testedIsChecked} />
+             <label for='untested' className='mr2'>tested</label>
+           <input type='checkbox' name='showConformanceTested' id='conformanceTested' onInput={handleChange} checked={conformanceTestedIsChecked} />
+             <label for='untested' className='mr2'>conformance-tested</label>
+           </div>
+         </fieldset>
+       )
+
+       function handleChange (e) {
+         e.preventDefault()
+         let name = e.target.name
+         e.target.checked = !e.target.checked
+         let isChecked = e.target.checked
+         let query = {
+           ...queryObject,
+           showUntested: untestedIsChecked,
+           showTested: testedIsChecked,
+           showConformanceTested: conformanceTestedIsChecked
+         }
+         query[name] = isChecked
+         doUpdateQuery({ ...query })
+       }
+     }
+
+     export default connect(
+       'doUpdateQuery',
+       'selectQueryObject',
+       TestedToggle
+     )
+   #+END_SRC
+
 ** Summary Container
    :PROPERTIES:
    :header-args: :tangle ./src/components/summary-container.js
