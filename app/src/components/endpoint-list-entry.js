@@ -1,7 +1,13 @@
 import React from 'react';
+import { connect } from 'redux-bundler-react'
 
-const EndpointListEntry = ({endpoint}) => {
-  let isTested = () => {
+const EndpointListEntry = (props) => {
+  const {
+    categoryColours,
+    endpoint,
+    levelColours
+  } = props
+  let isTested = (endpoint) => {
     if (endpoint.testHits > 0 && endpoint.conformanceHits > 0) {
       return 'Conformance Tested'
     }
@@ -11,16 +17,30 @@ const EndpointListEntry = ({endpoint}) => {
       return 'Untested'
     }
   }
+  let testedStatus = isTested(endpoint)
+
+  let statusColor = () => {
+    let colors = {
+      'Untested': 'red',
+      'Tested': 'orange',
+      'Conformance Tested': 'green'
+    }
+    return colors[testedStatus]
+  }
 
   return (
       <tr>
-      <td class="pv3 pr3 bb b--black-20">{endpoint.operationId}</td>
-      <td class="pv3 pr3 bb b--black-20">{isTested()}</td>
-      <td class="pv3 pr3 bb b--black-20">{endpoint.level}</td>
-      <td class="pv3 pr3 bb b--black-20">{endpoint.category}</td>
-      <td class="pv3 pr3 bb b--black-20">{endpoint.kind}</td>
+      <td className="pv3 pr3 bb b--black-20">{endpoint.operationId}</td>
+      <td className="pv3 pr3 bb b--black-20" style={{color: statusColor()}}>{testedStatus}</td>
+      <td className="pv3 pr3 bb b--black-20" style={{color: levelColours[endpoint.level]}}>{endpoint.level}</td>
+      <td className="pv3 pr3 bb b--black-20" style={{color: categoryColours['category.'+ endpoint.category]}}>{endpoint.category}</td>
+      <td className="pv3 pr3 bb b--black-20">{endpoint.kind}</td>
       </tr>
   )
 }
 
-export default EndpointListEntry
+export default connect(
+  'selectCategoryColours',
+  'selectLevelColours',
+  EndpointListEntry
+)
