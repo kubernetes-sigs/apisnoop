@@ -21,7 +21,11 @@ PR_JOB_ID=$(
     | sort -n | tail -1 | awk -F/ '{print $6}')
 PR_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$JOB_ID/artifacts/"
 
-git fetch origin master
+git fetch https://github.com/cncf/apisnoop master
+git branch -av
+
+# Checking for changes to audit-sources and data-gen
+git diff master -- audit-sources.yaml  data-gen/
 
 # Ensure there are no changes to audit-sources and data-gen
 if git diff --quiet master -- audit-sources.yaml  data-gen/
