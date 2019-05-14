@@ -53,13 +53,14 @@ tmate -S $socket display -p '#{tmate_ssh} # #{tmate_web}'
 sleep 600 || true
 # five mins is enough to test and not block the CI job
 
-git fetch https://github.com/cncf/apisnoop.git master
+git remote add github https://github.com/cncf/apisnoop.git
+git fetch github master
 
 # Checking for changes to audit-sources and data-gen
-git diff master HEAD -- audit-sources.yaml  data-gen/
+git diff github/master HEAD -- audit-sources.yaml  data-gen/
 
 # Ensure there are no changes to audit-sources and data-gen
-if git diff --quiet master HEAD -- audit-sources.yaml  data-gen/
+if git diff --quiet github/master HEAD -- audit-sources.yaml  data-gen/
 then
   # If no changes, use the production
   BUCKET_PREFIX=$PRODUCTION_BUCKET
