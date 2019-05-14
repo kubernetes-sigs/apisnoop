@@ -15,12 +15,12 @@ const TestedToggle = (props) => {
     <fieldset className='flex flex-row flex-wrap'>
       <legend>Visible Endpoints</legend>
       <div className=''>
-      <input type='checkbox' name='showUntested' id='untested' onInput={handleChange} checked={untestedIsChecked}/>
-        <label for='untested' className='mr2'>untested</label>
-      <input type='checkbox' name='showTested' id='tested' onInput={handleChange} checked={testedIsChecked} />
-        <label for='untested' className='mr2'>tested</label>
-      <input type='checkbox' name='showConformanceTested' id='conformanceTested' onInput={handleChange} checked={conformanceTestedIsChecked} />
-        <label for='untested' className='mr2'>conformance-tested</label>
+      <input type='checkbox' name='showUntested' id='untested' onInput={handleChange} checked={untestedIsChecked} readOnly/>
+        <label htmlFor='untested' className='mr2'>untested</label>
+      <input type='checkbox' name='showTested' id='tested' onInput={handleChange} checked={testedIsChecked} readOnly/>
+        <label htmlFor='untested' className='mr2'>tested</label>
+      <input type='checkbox' name='showConformanceTested' id='conformanceTested' onInput={handleChange} checked={conformanceTestedIsChecked} readOnly/>
+        <label htmlFor='untested' className='mr2'>conformance-tested</label>
       </div>
     </fieldset>
   )

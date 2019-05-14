@@ -11,7 +11,7 @@ const CategoryLegend = ({ categories, colours}) => {
           let name = category.split('.')[1]
           let colour = colours[category]
           return (
-            <li className='pa1 tc white' style={{backgroundColor: colour}}>{name}</li>
+            <li className='pa1 tc white' style={{backgroundColor: colour}} key={name}>{name}</li>
           )
         })
         }
@@ -36,7 +36,7 @@ const Legend = (props) => {
       <h3 className='f6 pa1 ttsc pb0 mb1'>Inner Ring: levels</h3>
       <ul className='list pa1 pl0 pr0 mt0 mb0 pb0'>
         {levels.map(level => {
-          return <li className='pa1 tc white' style={{backgroundColor: levelColours[level]}}>{level}</li>
+          return <li className='pa1 tc white' style={{backgroundColor: levelColours[level]}} key={level}>{level}</li>
         })
         }
       </ul>

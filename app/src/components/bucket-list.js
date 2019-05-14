@@ -26,7 +26,7 @@ function BucketList (props) {
         let bucket = bucketJob.split('/')[0]
         if (bucketJob === activeBucketJob) {
           return(
-              <option className='pr2 pb2 f7' key={fullPath} value={fullPath} selected>
+              <option className='pr2 pb2 f7' key={fullPath} value={fullPath} defaultValue>
               {bucket}
             </option>
           )
