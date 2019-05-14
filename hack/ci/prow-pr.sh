@@ -36,10 +36,16 @@ tmate -S $socket display -p '#{tmate_ssh} # #{tmate_web}'
 # Should probably replace this sleep, with a poll mechanism
 # probably just 'pkill sleep' for now
 # what we really want is to pause and what for signal
-sleep 300 || true # five mins is enough to test and not block the CI job
+sleep 600 || true # five mins is enough to test and not block the CI job
 
 # Ensure there are no changes to audit-sources and data-gen
-if git diff --quiet master -- audit-sources.yaml  data-gen/
+git remote add github https://github.com/cncf/apisnoop.git
+git fetch github master
+
+# Checking for changes to audit-sources and data-gen
+git diff github/master HEAD audit-sources.yaml  data-gen/
+
+if git diff --quiet github/master HEAD audit-sources.yaml  data-gen/
 then
   echo "There are no changes from master"
   echo "Not generating new data"
