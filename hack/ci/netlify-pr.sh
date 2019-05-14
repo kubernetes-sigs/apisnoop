@@ -24,13 +24,12 @@ PR_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$
 git fetch https://github.com/cncf/apisnoop master
 git remote -v
 git branch -av
-find . -type d
 
 # Checking for changes to audit-sources and data-gen
-git diff master -- audit-sources.yaml  data-gen/
+git diff master $BRANCH -- audit-sources.yaml  data-gen/
 
 # Ensure there are no changes to audit-sources and data-gen
-if git diff --quiet master -- audit-sources.yaml  data-gen/
+if git diff --quiet master $BRANCH -- audit-sources.yaml  data-gen/
 then
   # If no changes, use the production
   BUCKET_PREFIX=$PRODUCTION_BUCKET
