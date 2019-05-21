@@ -3,8 +3,8 @@
 set -x
 
 # # we need UTF-8
-# apt-get update
-# apt-get install -y locales-all
+apt-get update
+apt-get install -y locales-all
 
 TMATE_TMPDIR=$(mktemp -d /tmp/tmate-ci-XXX)
 # # install tmate
