@@ -230,9 +230,8 @@ def main():
   major = semver.split('.')[0]
   minor = semver.split('.')[1]
 
-  # TODO: some better logic for retreiving the openapi spec to load
-  # We could look at the audit_log, rather than requiring it on the cli
-  if minor == '15':
+  # Pulling in minor from artifacts/metadata.json
+  if minor == '16':
     branch_or_tag = metadata["revision"].split("+")[1]
   else:
     branch_or_tag = "release-" + major + "." + minor
