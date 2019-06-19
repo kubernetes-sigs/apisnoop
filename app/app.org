@@ -802,6 +802,11 @@ The downside of this is that apisnoop developers should be doing it from within 
            if (Array.isArray(testsOpIds) && testsOpIds.length > 0) {
              endpoints = filterBy(testsOpIds, endpoints)
            }
+           if (query.showUnhit && query.showUnhit === 'false') {
+             endpoints = pickBy(endpoints, (val, key) => {
+               return (val.hits > 0)
+             })
+           }
            if (query.showUntested && query.showUntested === 'false') {
              endpoints = pickBy(endpoints, (val, key) => {
                return (val.testHits > 0)
@@ -2674,7 +2679,7 @@ The downside of this is that apisnoop developers should be doing it from within 
            <p className='i f6'>All endpoints matching your set filters. {Object.keys(endpoints).length} in total.</p>
            <div className="pa4">
              <div className="overflow-auto">
-             <table className="f6 w-100 mw8 center" cellSpacing="0">
+             <table className="f5 w-100 mw8 center" cellSpacing="0">
                <thead>
                  <tr>
                    <th className="fw6 bb b--black-20 tl pb3 pr3 bg-white">Endpoint</th>
@@ -2699,7 +2704,6 @@ The downside of this is that apisnoop developers should be doing it from within 
        EndpointsList
      )
    #+END_SRC
-
 
 
 ** EndpointsListEntry
@@ -2756,7 +2760,6 @@ The downside of this is that apisnoop developers should be doing it from within 
        EndpointListEntry
      )
    #+END_SRC
-
 
 
 ** EndpointCategories
@@ -2828,7 +2831,7 @@ The downside of this is that apisnoop developers should be doing it from within 
 
      const CategoryLegend = ({ categories, colours}) => {
        return (
-         <div className='mb0 pb0' >
+         <div className='pb3 mb4' >
            <h3 className='f6 pa1 ttsc pb0 mb1'>Second Ring: groups/categories</h3>
            <ul className='list pa1 pl0 pr0 mt0 mb0 pb0'>
              {categories.map(category => {
@@ -2891,16 +2894,18 @@ The downside of this is that apisnoop developers should be doing it from within 
 
      import Bucketlist from './bucket-list'
      import FiltersContainer from './filters-container'
+     import UsefulFilters from './useful-filters'
      import Legend from './legend'
 
      const Sidebar = (props) => {
        return (
-           <div id='sidebar' className='min-vh-80 bg-moon-gray pa1'>
+           <div id='sidebar' className='min-vh-80 bg-moon-gray pa1 pb3'>
            <div id='logo' className= 'flex flex-wrap items-center pa1 pb2'>
            <img className='h2' src='./assets/apisnoop_logo_v1.png' alt='logo for apisnoop, a magnifying glass with a sunburst graph inside.' />
            <h1 className='ma0 f4 fw4 pl2 avenir black'>APISnoop</h1>
            </div>
            <Bucketlist />
+           <UsefulFilters />
            <FiltersContainer />
            <Legend />
            </div>
@@ -2977,22 +2982,26 @@ The downside of this is that apisnoop developers should be doing it from within 
 
      const SunburstHeader = (props) => {
        const {
+         activeBucketJob,
          jobVersion,
          spyglassLink
        } = props
 
        if (jobVersion.length === 0) return null
+       let bucket = activeBucketJob.split('/')[0]
        return (
            <div id='sunburst-header' className='relative mb2'>
            <h2 className='mb1 mt0 pt0 f1'>
            { jobVersion }
            </h2>
+           <p className='i f7'>From <span className='ibm-plex-mono fs-normal f6'>{bucket}</span></p>
            <a href={spyglassLink} target="_blank" rel="noreferrer noopener">View this job on Spyglass</a>
            </div>
        )
      }
 
      export default connect(
+       'selectActiveBucketJob',
        'selectJobVersion',
        'selectSpyglassLink',
        SunburstHeader
@@ -3120,17 +3129,20 @@ The downside of this is that apisnoop developers should be doing it from within 
        let untestedIsChecked = !queryObject.showUntested || queryObject.showUntested === 'true'
        let testedIsChecked = !queryObject.showTested || queryObject.showTested === 'true'
        let conformanceTestedIsChecked = !queryObject.showConformanceTested || queryObject.showConformanceTested === 'true'
+       let unhitIsChecked = !queryObject.showUnhit || queryObject.showUnhit === 'true'
 
        return (
          <fieldset className='flex flex-row flex-wrap'>
            <legend>Visible Endpoints</legend>
            <div className=''>
+           <input type='checkbox' name='showUnhit' id='unhit' onInput={handleChange} checked={unhitIsChecked} readOnly/>
+             <label htmlFor='unhit' className='mr2 ml1'>not hit</label>
            <input type='checkbox' name='showUntested' id='untested' onInput={handleChange} checked={untestedIsChecked} readOnly/>
-             <label htmlFor='untested' className='mr2'>untested</label>
+             <label htmlFor='untested' className='mr2 ml1'>untested</label>
            <input type='checkbox' name='showTested' id='tested' onInput={handleChange} checked={testedIsChecked} readOnly/>
-             <label htmlFor='untested' className='mr2'>tested</label>
+             <label htmlFor='tested' className='mr2 ml1'>tested</label>
            <input type='checkbox' name='showConformanceTested' id='conformanceTested' onInput={handleChange} checked={conformanceTestedIsChecked} readOnly/>
-             <label htmlFor='untested' className='mr2'>conformance-tested</label>
+             <label htmlFor='conformanceTested' className='mr2 ml1'>conformance-tested</label>
            </div>
          </fieldset>
        )
@@ -3144,7 +3156,8 @@ The downside of this is that apisnoop developers should be doing it from within 
            ...queryObject,
            showUntested: untestedIsChecked,
            showTested: testedIsChecked,
-           showConformanceTested: conformanceTestedIsChecked
+           showConformanceTested: conformanceTestedIsChecked,
+           showUnhit: unhitIsChecked
          }
          query[name] = isChecked
          doUpdateQuery({ ...query })
@@ -3535,16 +3548,12 @@ The downside of this is that apisnoop developers should be doing it from within 
          doUpdateInput(e.target.value)
        }
        function handleSubmit (e) {
-         e.preventDefault()
-         let filters = {
-           useragents: queryObject.useragents,
-           test_tags: queryObject.test_tags,
-           tests: queryObject.tests,
-           bucket: queryObject.bucket
+         let query = queryObject
+         let searchInput = e.target[0].value
+         if (searchInput !== '' || searchInput !== undefined) {
+           query[searchFilter] = e.target[0].value
          }
-         filters[searchFilter] = e.target[0].value
-         filters = pickBy(filters, (v,k) => v !== '' && v !== undefined)
-         doUpdateQuery({...filters})
+         doUpdateQuery({...query})
          doUpdateInput(undefined)
        }
      }
@@ -3645,7 +3654,7 @@ The downside of this is that apisnoop developers should be doing it from within 
          doUpdateQuery,
        } = props
 
-       if (activeTestsIndex == null || isEmpty(activeEndpoint)) return null
+       if (activeTestsIndex.length === 0 || isEmpty(activeEndpoint)) return null
        return (
            <div id='tests-list' className='tests-section min-vh-100 mt4 w-75'>
            <h2 className='f1'>Tests for <span className='fw2'>{activeEndpoint.level} / {activeEndpoint.category} / {activeEndpoint.operationId} </span></h2>
@@ -3750,6 +3759,57 @@ The downside of this is that apisnoop developers should be doing it from within 
    Since we loading just the info for a particular release, it's far less overhead, so we can do things like add _all_ the tests to our reducer, and then just select the ones that matter to us...but their entire object.   Since this is just a basic filter, it still ends up fast.  Neat!
 
    When you click on a test it should add it to our query.   Then, the query learns to look for whether there is a Test showing and if so, to display the active test detail.
+** Useful Filters
+   :PROPERTIES:
+   :header-args: :tangle ./src/components/useful-filters.js
+   :END:
+   #+NAME: UsefulFilters
+   #+BEGIN_SRC js
+     import React from 'react'
+     import { connect } from 'redux-bundler-react'
+     import { startCase } from 'lodash'
+
+     const UsefulFilters = (props) => {
+       const {
+         queryObject,
+         doUpdateQuery
+       } = props
+
+       // Different Filters
+       let conformantApis = {
+         showConformanceTested: "true",
+         showTested: "false",
+         showUntested: "false",
+         zoomed: "level-stable"
+       }
+
+       const Filter = ({filter, name}) => {
+         return (
+             <button
+           onClick={()=>doUpdateQuery({...queryObject, ...filter})}
+           className='bg-transparent b--none magic-pointer f5 blue'
+             >
+             {startCase(name)}
+           </button>
+         )
+       }
+
+       return(
+         <section id="useful-filters" className='relative'>
+           <h2 className="magic-pointer f5 mb0 mt1 pa1 pb0">Useful Filters</h2>
+           <Filter filter={conformantApis} name='all conformant apis' />
+         </section>
+       )
+     }
+
+     export default connect(
+       'selectQueryObject',
+       'doUpdateQuery',
+       UsefulFilters
+     )
+   #+END_SRC
+
+** Padding
 * Pages
 ** Main Page
   :PROPERTIES:
@@ -4615,7 +4675,8 @@ And when we are filteirng we'd filter all the way down to the method, as the con
 
 Is there a simpler way for this?  it's a filter, then a prune essentially....If that method worked, we could use the same method for tests too and any other section.
 * Tasks
-** BLOCKED Port over metadata bundle
+** DONE Port over metadata bundle
+   CLOSED: [2019-05-15 Wed 10:10]
    Need this to be better filled out, to match the metadata i already have.
 
 ** TODO Create tests for existing bundles, using our test data
@@ -4629,6 +4690,9 @@ Is there a simpler way for this?  it's a filter, then a prune essentially....If 
    - [X] beneath that is 'see all matches'
    - [X] When you click on see all matches, div expands to display all.  We could likely do this with just a <details> tag
    - [ ] Make sure input filters are based on filteredEndpoints, instead of all endpoints
+** TODO rename tested Toggle, if it includes unhit
+** TODO investigate make filteredEndpoints less verbose (is there a quicker way to check the various sections?)
+** TODO investigate make the toggle component more DRY (is there  a way to turn each input into a function?)
 * Finished Tasks
 ** DONE Port over Useragents Bundle
    CLOSED: [2019-04-16 Tue 11:27]
