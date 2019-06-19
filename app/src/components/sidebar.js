@@ -14,7 +14,6 @@ const Sidebar = (props) => {
       <h1 className='ma0 f4 fw4 pl2 avenir black'>APISnoop</h1>
       </div>
       <Bucketlist />
-      <p>ugh</p>
       <UsefulFilters />
       <FiltersContainer />
       <Legend />
