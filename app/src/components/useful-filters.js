@@ -1,6 +1,5 @@
 import React from 'react'
 import { connect } from 'redux-bundler-react'
-import { startCase } from 'lodash'
 
 const UsefulFilters = (props) => {
   const {
@@ -44,7 +43,7 @@ const UsefulFilters = (props) => {
       onClick={()=>doUpdateQuery({...queryObject, ...filter})}
       className='bg-transparent b--none magic-pointer f5 blue tl'
         >
-        {startCase(name)}
+        {name}
       </button>
    </li>
     )
@@ -54,10 +53,10 @@ const UsefulFilters = (props) => {
     <section id="useful-filters" className='relative pt0 pb2'>
       <h2 className="f5 mb0 mt1 pa1 pb0 pt0">Useful Filters</h2>
       <ul className="list pl0">
-      <Filter filter={conformantApis} name='all conformant apis' />
-      <Filter filter={stableCoreTestedButNotConformant} name='stable-core tested, but not conformant' />
-      <Filter filter={stableHitButNotTested} name='stable endpoints hit, but not tested' />
-      <Filter filter={coreUntestedKubeComponents} name='core untested kube components' />
+      <Filter filter={conformantApis} name='All Conformant APIs' />
+      <Filter filter={stableCoreTestedButNotConformant} name='Stable-Core Tested, But Not Conformant' />
+      <Filter filter={stableHitButNotTested} name='Stable Endpoints Hit, But Not Tested' />
+      <Filter filter={coreUntestedKubeComponents} name='Core Untested k8s Components' />
       </ul>
     </section>
   )
