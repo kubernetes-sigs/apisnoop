@@ -37,10 +37,11 @@ const UsefulFilters = (props) => {
   }
 
   const Filter = ({filter, name}) => {
+      let bucket = queryObject.bucket || '';
     return (
         <li className="mb1">
         <button
-      onClick={()=>doUpdateQuery({...queryObject, ...filter})}
+      onClick={()=>doUpdateQuery({...bucket, ...filter})}
       className='bg-transparent b--none magic-pointer f5 blue tl'
         >
         {name}
