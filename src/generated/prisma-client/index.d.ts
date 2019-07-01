@@ -17,6 +17,7 @@ export type Maybe<T> = T | undefined | null;
 
 export interface Exists {
   auditLog: (where?: AuditLogWhereInput) => Promise<boolean>;
+  endpoint: (where?: EndpointWhereInput) => Promise<boolean>;
 }
 
 export interface Node {}
@@ -57,6 +58,25 @@ export interface Prisma {
     first?: Int;
     last?: Int;
   }) => AuditLogConnectionPromise;
+  endpoint: (where: EndpointWhereUniqueInput) => EndpointNullablePromise;
+  endpoints: (args?: {
+    where?: EndpointWhereInput;
+    orderBy?: EndpointOrderByInput;
+    skip?: Int;
+    after?: String;
+    before?: String;
+    first?: Int;
+    last?: Int;
+  }) => FragmentableArray<Endpoint>;
+  endpointsConnection: (args?: {
+    where?: EndpointWhereInput;
+    orderBy?: EndpointOrderByInput;
+    skip?: Int;
+    after?: String;
+    before?: String;
+    first?: Int;
+    last?: Int;
+  }) => EndpointConnectionPromise;
   node: (args: { id: ID_Output }) => Node;
 
   /**
@@ -79,6 +99,22 @@ export interface Prisma {
   }) => AuditLogPromise;
   deleteAuditLog: (where: AuditLogWhereUniqueInput) => AuditLogPromise;
   deleteManyAuditLogs: (where?: AuditLogWhereInput) => BatchPayloadPromise;
+  createEndpoint: (data: EndpointCreateInput) => EndpointPromise;
+  updateEndpoint: (args: {
+    data: EndpointUpdateInput;
+    where: EndpointWhereUniqueInput;
+  }) => EndpointPromise;
+  updateManyEndpoints: (args: {
+    data: EndpointUpdateManyMutationInput;
+    where?: EndpointWhereInput;
+  }) => BatchPayloadPromise;
+  upsertEndpoint: (args: {
+    where: EndpointWhereUniqueInput;
+    create: EndpointCreateInput;
+    update: EndpointUpdateInput;
+  }) => EndpointPromise;
+  deleteEndpoint: (where: EndpointWhereUniqueInput) => EndpointPromise;
+  deleteManyEndpoints: (where?: EndpointWhereInput) => BatchPayloadPromise;
 
   /**
    * Subscriptions
@@ -91,6 +127,9 @@ export interface Subscription {
   auditLog: (
     where?: AuditLogSubscriptionWhereInput
   ) => AuditLogSubscriptionPayloadSubscription;
+  endpoint: (
+    where?: EndpointSubscriptionWhereInput
+  ) => EndpointSubscriptionPayloadSubscription;
 }
 
 export interface ClientConstructor<T> {
@@ -100,6 +139,36 @@ export interface ClientConstructor<T> {
 /**
  * Types
  */
+
+export type EndpointOrderByInput =
+  | "id_ASC"
+  | "id_DESC"
+  | "createdAt_ASC"
+  | "createdAt_DESC"
+  | "operationID_ASC"
+  | "operationID_DESC"
+  | "level_ASC"
+  | "level_DESC"
+  | "category_ASC"
+  | "category_DESC"
+  | "kind_ASC"
+  | "kind_DESC"
+  | "group_ASC"
+  | "group_DESC"
+  | "description_ASC"
+  | "description_DESC"
+  | "version_ASC"
+  | "version_DESC"
+  | "path_ASC"
+  | "path_DESC"
+  | "hits_ASC"
+  | "hits_DESC"
+  | "testHits_ASC"
+  | "testHits_DESC"
+  | "conformanceHits_ASC"
+  | "conformanceHits_DESC"
+  | "isDeprecated_ASC"
+  | "isDeprecated_DESC";
 
 export type AuditLogOrderByInput =
   | "id_ASC"
@@ -130,6 +199,75 @@ export type AuditLogOrderByInput =
   | "timestamp_DESC";
 
 export type MutationType = "CREATED" | "UPDATED" | "DELETED";
+
+export interface EndpointUpdateManyWithoutAuditLogInput {
+  create?: Maybe<
+    EndpointCreateWithoutAuditLogInput[] | EndpointCreateWithoutAuditLogInput
+  >;
+  delete?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
+  connect?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
+  set?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
+  disconnect?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
+  update?: Maybe<
+    | EndpointUpdateWithWhereUniqueWithoutAuditLogInput[]
+    | EndpointUpdateWithWhereUniqueWithoutAuditLogInput
+  >;
+  upsert?: Maybe<
+    | EndpointUpsertWithWhereUniqueWithoutAuditLogInput[]
+    | EndpointUpsertWithWhereUniqueWithoutAuditLogInput
+  >;
+  deleteMany?: Maybe<EndpointScalarWhereInput[] | EndpointScalarWhereInput>;
+  updateMany?: Maybe<
+    | EndpointUpdateManyWithWhereNestedInput[]
+    | EndpointUpdateManyWithWhereNestedInput
+  >;
+}
+
+export type AuditLogWhereUniqueInput = AtLeastOne<{
+  id: Maybe<ID_Input>;
+}>;
+
+export interface AuditLogCreateOneWithoutEndpointsInput {
+  create?: Maybe<AuditLogCreateWithoutEndpointsInput>;
+  connect?: Maybe<AuditLogWhereUniqueInput>;
+}
+
+export interface EndpointUpdateManyWithWhereNestedInput {
+  where: EndpointScalarWhereInput;
+  data: EndpointUpdateManyDataInput;
+}
+
+export interface EndpointCreateInput {
+  id?: Maybe<ID_Input>;
+  auditLog: AuditLogCreateOneWithoutEndpointsInput;
+  operationID: String;
+  level: String;
+  category: String;
+  kind?: Maybe<String>;
+  group?: Maybe<String>;
+  description?: Maybe<String>;
+  version?: Maybe<String>;
+  path?: Maybe<String>;
+  hits: Int;
+  testHits: Int;
+  conformanceHits: Int;
+  isDeprecated: Boolean;
+}
+
+export interface EndpointUpdateWithoutAuditLogDataInput {
+  operationID?: Maybe<String>;
+  level?: Maybe<String>;
+  category?: Maybe<String>;
+  kind?: Maybe<String>;
+  group?: Maybe<String>;
+  description?: Maybe<String>;
+  version?: Maybe<String>;
+  path?: Maybe<String>;
+  hits?: Maybe<Int>;
+  testHits?: Maybe<Int>;
+  conformanceHits?: Maybe<Int>;
+  isDeprecated?: Maybe<Boolean>;
+}
 
 export interface AuditLogWhereInput {
   id?: Maybe<ID_Input>;
@@ -290,52 +428,12 @@ export interface AuditLogWhereInput {
   timestamp_lte?: Maybe<Int>;
   timestamp_gt?: Maybe<Int>;
   timestamp_gte?: Maybe<Int>;
+  endpoints_every?: Maybe<EndpointWhereInput>;
+  endpoints_some?: Maybe<EndpointWhereInput>;
+  endpoints_none?: Maybe<EndpointWhereInput>;
   AND?: Maybe<AuditLogWhereInput[] | AuditLogWhereInput>;
   OR?: Maybe<AuditLogWhereInput[] | AuditLogWhereInput>;
   NOT?: Maybe<AuditLogWhereInput[] | AuditLogWhereInput>;
-}
-
-export interface AuditLogCreateInput {
-  id?: Maybe<ID_Input>;
-  job: String;
-  bucket: String;
-  version: String;
-  jobVersion: String;
-  masterOsImage: String;
-  infraCommit: String;
-  nodeOsImage: String;
-  pod: String;
-  passed: Boolean;
-  result: String;
-  timestamp: Int;
-}
-
-export interface AuditLogUpdateInput {
-  job?: Maybe<String>;
-  bucket?: Maybe<String>;
-  version?: Maybe<String>;
-  jobVersion?: Maybe<String>;
-  masterOsImage?: Maybe<String>;
-  infraCommit?: Maybe<String>;
-  nodeOsImage?: Maybe<String>;
-  pod?: Maybe<String>;
-  passed?: Maybe<Boolean>;
-  result?: Maybe<String>;
-  timestamp?: Maybe<Int>;
-}
-
-export interface AuditLogUpdateManyMutationInput {
-  job?: Maybe<String>;
-  bucket?: Maybe<String>;
-  version?: Maybe<String>;
-  jobVersion?: Maybe<String>;
-  masterOsImage?: Maybe<String>;
-  infraCommit?: Maybe<String>;
-  nodeOsImage?: Maybe<String>;
-  pod?: Maybe<String>;
-  passed?: Maybe<Boolean>;
-  result?: Maybe<String>;
-  timestamp?: Maybe<Int>;
 }
 
 export interface AuditLogSubscriptionWhereInput {
@@ -353,12 +451,692 @@ export interface AuditLogSubscriptionWhereInput {
   >;
 }
 
-export type AuditLogWhereUniqueInput = AtLeastOne<{
+export interface AuditLogCreateInput {
+  id?: Maybe<ID_Input>;
+  job: String;
+  bucket: String;
+  version: String;
+  jobVersion: String;
+  masterOsImage: String;
+  infraCommit: String;
+  nodeOsImage: String;
+  pod: String;
+  passed: Boolean;
+  result: String;
+  timestamp: Int;
+  endpoints?: Maybe<EndpointCreateManyWithoutAuditLogInput>;
+}
+
+export interface AuditLogUpsertWithoutEndpointsInput {
+  update: AuditLogUpdateWithoutEndpointsDataInput;
+  create: AuditLogCreateWithoutEndpointsInput;
+}
+
+export interface EndpointCreateManyWithoutAuditLogInput {
+  create?: Maybe<
+    EndpointCreateWithoutAuditLogInput[] | EndpointCreateWithoutAuditLogInput
+  >;
+  connect?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
+}
+
+export interface AuditLogUpdateOneRequiredWithoutEndpointsInput {
+  create?: Maybe<AuditLogCreateWithoutEndpointsInput>;
+  update?: Maybe<AuditLogUpdateWithoutEndpointsDataInput>;
+  upsert?: Maybe<AuditLogUpsertWithoutEndpointsInput>;
+  connect?: Maybe<AuditLogWhereUniqueInput>;
+}
+
+export interface EndpointCreateWithoutAuditLogInput {
+  id?: Maybe<ID_Input>;
+  operationID: String;
+  level: String;
+  category: String;
+  kind?: Maybe<String>;
+  group?: Maybe<String>;
+  description?: Maybe<String>;
+  version?: Maybe<String>;
+  path?: Maybe<String>;
+  hits: Int;
+  testHits: Int;
+  conformanceHits: Int;
+  isDeprecated: Boolean;
+}
+
+export type EndpointWhereUniqueInput = AtLeastOne<{
   id: Maybe<ID_Input>;
 }>;
 
+export interface AuditLogUpdateInput {
+  job?: Maybe<String>;
+  bucket?: Maybe<String>;
+  version?: Maybe<String>;
+  jobVersion?: Maybe<String>;
+  masterOsImage?: Maybe<String>;
+  infraCommit?: Maybe<String>;
+  nodeOsImage?: Maybe<String>;
+  pod?: Maybe<String>;
+  passed?: Maybe<Boolean>;
+  result?: Maybe<String>;
+  timestamp?: Maybe<Int>;
+  endpoints?: Maybe<EndpointUpdateManyWithoutAuditLogInput>;
+}
+
+export interface EndpointWhereInput {
+  id?: Maybe<ID_Input>;
+  id_not?: Maybe<ID_Input>;
+  id_in?: Maybe<ID_Input[] | ID_Input>;
+  id_not_in?: Maybe<ID_Input[] | ID_Input>;
+  id_lt?: Maybe<ID_Input>;
+  id_lte?: Maybe<ID_Input>;
+  id_gt?: Maybe<ID_Input>;
+  id_gte?: Maybe<ID_Input>;
+  id_contains?: Maybe<ID_Input>;
+  id_not_contains?: Maybe<ID_Input>;
+  id_starts_with?: Maybe<ID_Input>;
+  id_not_starts_with?: Maybe<ID_Input>;
+  id_ends_with?: Maybe<ID_Input>;
+  id_not_ends_with?: Maybe<ID_Input>;
+  createdAt?: Maybe<DateTimeInput>;
+  createdAt_not?: Maybe<DateTimeInput>;
+  createdAt_in?: Maybe<DateTimeInput[] | DateTimeInput>;
+  createdAt_not_in?: Maybe<DateTimeInput[] | DateTimeInput>;
+  createdAt_lt?: Maybe<DateTimeInput>;
+  createdAt_lte?: Maybe<DateTimeInput>;
+  createdAt_gt?: Maybe<DateTimeInput>;
+  createdAt_gte?: Maybe<DateTimeInput>;
+  auditLog?: Maybe<AuditLogWhereInput>;
+  operationID?: Maybe<String>;
+  operationID_not?: Maybe<String>;
+  operationID_in?: Maybe<String[] | String>;
+  operationID_not_in?: Maybe<String[] | String>;
+  operationID_lt?: Maybe<String>;
+  operationID_lte?: Maybe<String>;
+  operationID_gt?: Maybe<String>;
+  operationID_gte?: Maybe<String>;
+  operationID_contains?: Maybe<String>;
+  operationID_not_contains?: Maybe<String>;
+  operationID_starts_with?: Maybe<String>;
+  operationID_not_starts_with?: Maybe<String>;
+  operationID_ends_with?: Maybe<String>;
+  operationID_not_ends_with?: Maybe<String>;
+  level?: Maybe<String>;
+  level_not?: Maybe<String>;
+  level_in?: Maybe<String[] | String>;
+  level_not_in?: Maybe<String[] | String>;
+  level_lt?: Maybe<String>;
+  level_lte?: Maybe<String>;
+  level_gt?: Maybe<String>;
+  level_gte?: Maybe<String>;
+  level_contains?: Maybe<String>;
+  level_not_contains?: Maybe<String>;
+  level_starts_with?: Maybe<String>;
+  level_not_starts_with?: Maybe<String>;
+  level_ends_with?: Maybe<String>;
+  level_not_ends_with?: Maybe<String>;
+  category?: Maybe<String>;
+  category_not?: Maybe<String>;
+  category_in?: Maybe<String[] | String>;
+  category_not_in?: Maybe<String[] | String>;
+  category_lt?: Maybe<String>;
+  category_lte?: Maybe<String>;
+  category_gt?: Maybe<String>;
+  category_gte?: Maybe<String>;
+  category_contains?: Maybe<String>;
+  category_not_contains?: Maybe<String>;
+  category_starts_with?: Maybe<String>;
+  category_not_starts_with?: Maybe<String>;
+  category_ends_with?: Maybe<String>;
+  category_not_ends_with?: Maybe<String>;
+  kind?: Maybe<String>;
+  kind_not?: Maybe<String>;
+  kind_in?: Maybe<String[] | String>;
+  kind_not_in?: Maybe<String[] | String>;
+  kind_lt?: Maybe<String>;
+  kind_lte?: Maybe<String>;
+  kind_gt?: Maybe<String>;
+  kind_gte?: Maybe<String>;
+  kind_contains?: Maybe<String>;
+  kind_not_contains?: Maybe<String>;
+  kind_starts_with?: Maybe<String>;
+  kind_not_starts_with?: Maybe<String>;
+  kind_ends_with?: Maybe<String>;
+  kind_not_ends_with?: Maybe<String>;
+  group?: Maybe<String>;
+  group_not?: Maybe<String>;
+  group_in?: Maybe<String[] | String>;
+  group_not_in?: Maybe<String[] | String>;
+  group_lt?: Maybe<String>;
+  group_lte?: Maybe<String>;
+  group_gt?: Maybe<String>;
+  group_gte?: Maybe<String>;
+  group_contains?: Maybe<String>;
+  group_not_contains?: Maybe<String>;
+  group_starts_with?: Maybe<String>;
+  group_not_starts_with?: Maybe<String>;
+  group_ends_with?: Maybe<String>;
+  group_not_ends_with?: Maybe<String>;
+  description?: Maybe<String>;
+  description_not?: Maybe<String>;
+  description_in?: Maybe<String[] | String>;
+  description_not_in?: Maybe<String[] | String>;
+  description_lt?: Maybe<String>;
+  description_lte?: Maybe<String>;
+  description_gt?: Maybe<String>;
+  description_gte?: Maybe<String>;
+  description_contains?: Maybe<String>;
+  description_not_contains?: Maybe<String>;
+  description_starts_with?: Maybe<String>;
+  description_not_starts_with?: Maybe<String>;
+  description_ends_with?: Maybe<String>;
+  description_not_ends_with?: Maybe<String>;
+  version?: Maybe<String>;
+  version_not?: Maybe<String>;
+  version_in?: Maybe<String[] | String>;
+  version_not_in?: Maybe<String[] | String>;
+  version_lt?: Maybe<String>;
+  version_lte?: Maybe<String>;
+  version_gt?: Maybe<String>;
+  version_gte?: Maybe<String>;
+  version_contains?: Maybe<String>;
+  version_not_contains?: Maybe<String>;
+  version_starts_with?: Maybe<String>;
+  version_not_starts_with?: Maybe<String>;
+  version_ends_with?: Maybe<String>;
+  version_not_ends_with?: Maybe<String>;
+  path?: Maybe<String>;
+  path_not?: Maybe<String>;
+  path_in?: Maybe<String[] | String>;
+  path_not_in?: Maybe<String[] | String>;
+  path_lt?: Maybe<String>;
+  path_lte?: Maybe<String>;
+  path_gt?: Maybe<String>;
+  path_gte?: Maybe<String>;
+  path_contains?: Maybe<String>;
+  path_not_contains?: Maybe<String>;
+  path_starts_with?: Maybe<String>;
+  path_not_starts_with?: Maybe<String>;
+  path_ends_with?: Maybe<String>;
+  path_not_ends_with?: Maybe<String>;
+  hits?: Maybe<Int>;
+  hits_not?: Maybe<Int>;
+  hits_in?: Maybe<Int[] | Int>;
+  hits_not_in?: Maybe<Int[] | Int>;
+  hits_lt?: Maybe<Int>;
+  hits_lte?: Maybe<Int>;
+  hits_gt?: Maybe<Int>;
+  hits_gte?: Maybe<Int>;
+  testHits?: Maybe<Int>;
+  testHits_not?: Maybe<Int>;
+  testHits_in?: Maybe<Int[] | Int>;
+  testHits_not_in?: Maybe<Int[] | Int>;
+  testHits_lt?: Maybe<Int>;
+  testHits_lte?: Maybe<Int>;
+  testHits_gt?: Maybe<Int>;
+  testHits_gte?: Maybe<Int>;
+  conformanceHits?: Maybe<Int>;
+  conformanceHits_not?: Maybe<Int>;
+  conformanceHits_in?: Maybe<Int[] | Int>;
+  conformanceHits_not_in?: Maybe<Int[] | Int>;
+  conformanceHits_lt?: Maybe<Int>;
+  conformanceHits_lte?: Maybe<Int>;
+  conformanceHits_gt?: Maybe<Int>;
+  conformanceHits_gte?: Maybe<Int>;
+  isDeprecated?: Maybe<Boolean>;
+  isDeprecated_not?: Maybe<Boolean>;
+  AND?: Maybe<EndpointWhereInput[] | EndpointWhereInput>;
+  OR?: Maybe<EndpointWhereInput[] | EndpointWhereInput>;
+  NOT?: Maybe<EndpointWhereInput[] | EndpointWhereInput>;
+}
+
+export interface AuditLogUpdateManyMutationInput {
+  job?: Maybe<String>;
+  bucket?: Maybe<String>;
+  version?: Maybe<String>;
+  jobVersion?: Maybe<String>;
+  masterOsImage?: Maybe<String>;
+  infraCommit?: Maybe<String>;
+  nodeOsImage?: Maybe<String>;
+  pod?: Maybe<String>;
+  passed?: Maybe<Boolean>;
+  result?: Maybe<String>;
+  timestamp?: Maybe<Int>;
+}
+
+export interface EndpointUpdateManyMutationInput {
+  operationID?: Maybe<String>;
+  level?: Maybe<String>;
+  category?: Maybe<String>;
+  kind?: Maybe<String>;
+  group?: Maybe<String>;
+  description?: Maybe<String>;
+  version?: Maybe<String>;
+  path?: Maybe<String>;
+  hits?: Maybe<Int>;
+  testHits?: Maybe<Int>;
+  conformanceHits?: Maybe<Int>;
+  isDeprecated?: Maybe<Boolean>;
+}
+
+export interface EndpointScalarWhereInput {
+  id?: Maybe<ID_Input>;
+  id_not?: Maybe<ID_Input>;
+  id_in?: Maybe<ID_Input[] | ID_Input>;
+  id_not_in?: Maybe<ID_Input[] | ID_Input>;
+  id_lt?: Maybe<ID_Input>;
+  id_lte?: Maybe<ID_Input>;
+  id_gt?: Maybe<ID_Input>;
+  id_gte?: Maybe<ID_Input>;
+  id_contains?: Maybe<ID_Input>;
+  id_not_contains?: Maybe<ID_Input>;
+  id_starts_with?: Maybe<ID_Input>;
+  id_not_starts_with?: Maybe<ID_Input>;
+  id_ends_with?: Maybe<ID_Input>;
+  id_not_ends_with?: Maybe<ID_Input>;
+  createdAt?: Maybe<DateTimeInput>;
+  createdAt_not?: Maybe<DateTimeInput>;
+  createdAt_in?: Maybe<DateTimeInput[] | DateTimeInput>;
+  createdAt_not_in?: Maybe<DateTimeInput[] | DateTimeInput>;
+  createdAt_lt?: Maybe<DateTimeInput>;
+  createdAt_lte?: Maybe<DateTimeInput>;
+  createdAt_gt?: Maybe<DateTimeInput>;
+  createdAt_gte?: Maybe<DateTimeInput>;
+  operationID?: Maybe<String>;
+  operationID_not?: Maybe<String>;
+  operationID_in?: Maybe<String[] | String>;
+  operationID_not_in?: Maybe<String[] | String>;
+  operationID_lt?: Maybe<String>;
+  operationID_lte?: Maybe<String>;
+  operationID_gt?: Maybe<String>;
+  operationID_gte?: Maybe<String>;
+  operationID_contains?: Maybe<String>;
+  operationID_not_contains?: Maybe<String>;
+  operationID_starts_with?: Maybe<String>;
+  operationID_not_starts_with?: Maybe<String>;
+  operationID_ends_with?: Maybe<String>;
+  operationID_not_ends_with?: Maybe<String>;
+  level?: Maybe<String>;
+  level_not?: Maybe<String>;
+  level_in?: Maybe<String[] | String>;
+  level_not_in?: Maybe<String[] | String>;
+  level_lt?: Maybe<String>;
+  level_lte?: Maybe<String>;
+  level_gt?: Maybe<String>;
+  level_gte?: Maybe<String>;
+  level_contains?: Maybe<String>;
+  level_not_contains?: Maybe<String>;
+  level_starts_with?: Maybe<String>;
+  level_not_starts_with?: Maybe<String>;
+  level_ends_with?: Maybe<String>;
+  level_not_ends_with?: Maybe<String>;
+  category?: Maybe<String>;
+  category_not?: Maybe<String>;
+  category_in?: Maybe<String[] | String>;
+  category_not_in?: Maybe<String[] | String>;
+  category_lt?: Maybe<String>;
+  category_lte?: Maybe<String>;
+  category_gt?: Maybe<String>;
+  category_gte?: Maybe<String>;
+  category_contains?: Maybe<String>;
+  category_not_contains?: Maybe<String>;
+  category_starts_with?: Maybe<String>;
+  category_not_starts_with?: Maybe<String>;
+  category_ends_with?: Maybe<String>;
+  category_not_ends_with?: Maybe<String>;
+  kind?: Maybe<String>;
+  kind_not?: Maybe<String>;
+  kind_in?: Maybe<String[] | String>;
+  kind_not_in?: Maybe<String[] | String>;
+  kind_lt?: Maybe<String>;
+  kind_lte?: Maybe<String>;
+  kind_gt?: Maybe<String>;
+  kind_gte?: Maybe<String>;
+  kind_contains?: Maybe<String>;
+  kind_not_contains?: Maybe<String>;
+  kind_starts_with?: Maybe<String>;
+  kind_not_starts_with?: Maybe<String>;
+  kind_ends_with?: Maybe<String>;
+  kind_not_ends_with?: Maybe<String>;
+  group?: Maybe<String>;
+  group_not?: Maybe<String>;
+  group_in?: Maybe<String[] | String>;
+  group_not_in?: Maybe<String[] | String>;
+  group_lt?: Maybe<String>;
+  group_lte?: Maybe<String>;
+  group_gt?: Maybe<String>;
+  group_gte?: Maybe<String>;
+  group_contains?: Maybe<String>;
+  group_not_contains?: Maybe<String>;
+  group_starts_with?: Maybe<String>;
+  group_not_starts_with?: Maybe<String>;
+  group_ends_with?: Maybe<String>;
+  group_not_ends_with?: Maybe<String>;
+  description?: Maybe<String>;
+  description_not?: Maybe<String>;
+  description_in?: Maybe<String[] | String>;
+  description_not_in?: Maybe<String[] | String>;
+  description_lt?: Maybe<String>;
+  description_lte?: Maybe<String>;
+  description_gt?: Maybe<String>;
+  description_gte?: Maybe<String>;
+  description_contains?: Maybe<String>;
+  description_not_contains?: Maybe<String>;
+  description_starts_with?: Maybe<String>;
+  description_not_starts_with?: Maybe<String>;
+  description_ends_with?: Maybe<String>;
+  description_not_ends_with?: Maybe<String>;
+  version?: Maybe<String>;
+  version_not?: Maybe<String>;
+  version_in?: Maybe<String[] | String>;
+  version_not_in?: Maybe<String[] | String>;
+  version_lt?: Maybe<String>;
+  version_lte?: Maybe<String>;
+  version_gt?: Maybe<String>;
+  version_gte?: Maybe<String>;
+  version_contains?: Maybe<String>;
+  version_not_contains?: Maybe<String>;
+  version_starts_with?: Maybe<String>;
+  version_not_starts_with?: Maybe<String>;
+  version_ends_with?: Maybe<String>;
+  version_not_ends_with?: Maybe<String>;
+  path?: Maybe<String>;
+  path_not?: Maybe<String>;
+  path_in?: Maybe<String[] | String>;
+  path_not_in?: Maybe<String[] | String>;
+  path_lt?: Maybe<String>;
+  path_lte?: Maybe<String>;
+  path_gt?: Maybe<String>;
+  path_gte?: Maybe<String>;
+  path_contains?: Maybe<String>;
+  path_not_contains?: Maybe<String>;
+  path_starts_with?: Maybe<String>;
+  path_not_starts_with?: Maybe<String>;
+  path_ends_with?: Maybe<String>;
+  path_not_ends_with?: Maybe<String>;
+  hits?: Maybe<Int>;
+  hits_not?: Maybe<Int>;
+  hits_in?: Maybe<Int[] | Int>;
+  hits_not_in?: Maybe<Int[] | Int>;
+  hits_lt?: Maybe<Int>;
+  hits_lte?: Maybe<Int>;
+  hits_gt?: Maybe<Int>;
+  hits_gte?: Maybe<Int>;
+  testHits?: Maybe<Int>;
+  testHits_not?: Maybe<Int>;
+  testHits_in?: Maybe<Int[] | Int>;
+  testHits_not_in?: Maybe<Int[] | Int>;
+  testHits_lt?: Maybe<Int>;
+  testHits_lte?: Maybe<Int>;
+  testHits_gt?: Maybe<Int>;
+  testHits_gte?: Maybe<Int>;
+  conformanceHits?: Maybe<Int>;
+  conformanceHits_not?: Maybe<Int>;
+  conformanceHits_in?: Maybe<Int[] | Int>;
+  conformanceHits_not_in?: Maybe<Int[] | Int>;
+  conformanceHits_lt?: Maybe<Int>;
+  conformanceHits_lte?: Maybe<Int>;
+  conformanceHits_gt?: Maybe<Int>;
+  conformanceHits_gte?: Maybe<Int>;
+  isDeprecated?: Maybe<Boolean>;
+  isDeprecated_not?: Maybe<Boolean>;
+  AND?: Maybe<EndpointScalarWhereInput[] | EndpointScalarWhereInput>;
+  OR?: Maybe<EndpointScalarWhereInput[] | EndpointScalarWhereInput>;
+  NOT?: Maybe<EndpointScalarWhereInput[] | EndpointScalarWhereInput>;
+}
+
+export interface EndpointUpsertWithWhereUniqueWithoutAuditLogInput {
+  where: EndpointWhereUniqueInput;
+  update: EndpointUpdateWithoutAuditLogDataInput;
+  create: EndpointCreateWithoutAuditLogInput;
+}
+
+export interface EndpointUpdateManyDataInput {
+  operationID?: Maybe<String>;
+  level?: Maybe<String>;
+  category?: Maybe<String>;
+  kind?: Maybe<String>;
+  group?: Maybe<String>;
+  description?: Maybe<String>;
+  version?: Maybe<String>;
+  path?: Maybe<String>;
+  hits?: Maybe<Int>;
+  testHits?: Maybe<Int>;
+  conformanceHits?: Maybe<Int>;
+  isDeprecated?: Maybe<Boolean>;
+}
+
+export interface EndpointUpdateWithWhereUniqueWithoutAuditLogInput {
+  where: EndpointWhereUniqueInput;
+  data: EndpointUpdateWithoutAuditLogDataInput;
+}
+
+export interface AuditLogUpdateWithoutEndpointsDataInput {
+  job?: Maybe<String>;
+  bucket?: Maybe<String>;
+  version?: Maybe<String>;
+  jobVersion?: Maybe<String>;
+  masterOsImage?: Maybe<String>;
+  infraCommit?: Maybe<String>;
+  nodeOsImage?: Maybe<String>;
+  pod?: Maybe<String>;
+  passed?: Maybe<Boolean>;
+  result?: Maybe<String>;
+  timestamp?: Maybe<Int>;
+}
+
+export interface EndpointSubscriptionWhereInput {
+  mutation_in?: Maybe<MutationType[] | MutationType>;
+  updatedFields_contains?: Maybe<String>;
+  updatedFields_contains_every?: Maybe<String[] | String>;
+  updatedFields_contains_some?: Maybe<String[] | String>;
+  node?: Maybe<EndpointWhereInput>;
+  AND?: Maybe<
+    EndpointSubscriptionWhereInput[] | EndpointSubscriptionWhereInput
+  >;
+  OR?: Maybe<EndpointSubscriptionWhereInput[] | EndpointSubscriptionWhereInput>;
+  NOT?: Maybe<
+    EndpointSubscriptionWhereInput[] | EndpointSubscriptionWhereInput
+  >;
+}
+
+export interface AuditLogCreateWithoutEndpointsInput {
+  id?: Maybe<ID_Input>;
+  job: String;
+  bucket: String;
+  version: String;
+  jobVersion: String;
+  masterOsImage: String;
+  infraCommit: String;
+  nodeOsImage: String;
+  pod: String;
+  passed: Boolean;
+  result: String;
+  timestamp: Int;
+}
+
+export interface EndpointUpdateInput {
+  auditLog?: Maybe<AuditLogUpdateOneRequiredWithoutEndpointsInput>;
+  operationID?: Maybe<String>;
+  level?: Maybe<String>;
+  category?: Maybe<String>;
+  kind?: Maybe<String>;
+  group?: Maybe<String>;
+  description?: Maybe<String>;
+  version?: Maybe<String>;
+  path?: Maybe<String>;
+  hits?: Maybe<Int>;
+  testHits?: Maybe<Int>;
+  conformanceHits?: Maybe<Int>;
+  isDeprecated?: Maybe<Boolean>;
+}
+
 export interface NodeNode {
   id: ID_Output;
+}
+
+export interface EndpointPreviousValues {
+  id: ID_Output;
+  createdAt: DateTimeOutput;
+  operationID: String;
+  level: String;
+  category: String;
+  kind?: String;
+  group?: String;
+  description?: String;
+  version?: String;
+  path?: String;
+  hits: Int;
+  testHits: Int;
+  conformanceHits: Int;
+  isDeprecated: Boolean;
+}
+
+export interface EndpointPreviousValuesPromise
+  extends Promise<EndpointPreviousValues>,
+    Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  operationID: () => Promise<String>;
+  level: () => Promise<String>;
+  category: () => Promise<String>;
+  kind: () => Promise<String>;
+  group: () => Promise<String>;
+  description: () => Promise<String>;
+  version: () => Promise<String>;
+  path: () => Promise<String>;
+  hits: () => Promise<Int>;
+  testHits: () => Promise<Int>;
+  conformanceHits: () => Promise<Int>;
+  isDeprecated: () => Promise<Boolean>;
+}
+
+export interface EndpointPreviousValuesSubscription
+  extends Promise<AsyncIterator<EndpointPreviousValues>>,
+    Fragmentable {
+  id: () => Promise<AsyncIterator<ID_Output>>;
+  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
+  operationID: () => Promise<AsyncIterator<String>>;
+  level: () => Promise<AsyncIterator<String>>;
+  category: () => Promise<AsyncIterator<String>>;
+  kind: () => Promise<AsyncIterator<String>>;
+  group: () => Promise<AsyncIterator<String>>;
+  description: () => Promise<AsyncIterator<String>>;
+  version: () => Promise<AsyncIterator<String>>;
+  path: () => Promise<AsyncIterator<String>>;
+  hits: () => Promise<AsyncIterator<Int>>;
+  testHits: () => Promise<AsyncIterator<Int>>;
+  conformanceHits: () => Promise<AsyncIterator<Int>>;
+  isDeprecated: () => Promise<AsyncIterator<Boolean>>;
+}
+
+export interface AggregateAuditLog {
+  count: Int;
+}
+
+export interface AggregateAuditLogPromise
+  extends Promise<AggregateAuditLog>,
+    Fragmentable {
+  count: () => Promise<Int>;
+}
+
+export interface AggregateAuditLogSubscription
+  extends Promise<AsyncIterator<AggregateAuditLog>>,
+    Fragmentable {
+  count: () => Promise<AsyncIterator<Int>>;
+}
+
+export interface AuditLog {
+  id: ID_Output;
+  createdAt: DateTimeOutput;
+  job: String;
+  bucket: String;
+  version: String;
+  jobVersion: String;
+  masterOsImage: String;
+  infraCommit: String;
+  nodeOsImage: String;
+  pod: String;
+  passed: Boolean;
+  result: String;
+  timestamp: Int;
+}
+
+export interface AuditLogPromise extends Promise<AuditLog>, Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  job: () => Promise<String>;
+  bucket: () => Promise<String>;
+  version: () => Promise<String>;
+  jobVersion: () => Promise<String>;
+  masterOsImage: () => Promise<String>;
+  infraCommit: () => Promise<String>;
+  nodeOsImage: () => Promise<String>;
+  pod: () => Promise<String>;
+  passed: () => Promise<Boolean>;
+  result: () => Promise<String>;
+  timestamp: () => Promise<Int>;
+  endpoints: <T = FragmentableArray<Endpoint>>(args?: {
+    where?: EndpointWhereInput;
+    orderBy?: EndpointOrderByInput;
+    skip?: Int;
+    after?: String;
+    before?: String;
+    first?: Int;
+    last?: Int;
+  }) => T;
+}
+
+export interface AuditLogSubscription
+  extends Promise<AsyncIterator<AuditLog>>,
+    Fragmentable {
+  id: () => Promise<AsyncIterator<ID_Output>>;
+  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
+  job: () => Promise<AsyncIterator<String>>;
+  bucket: () => Promise<AsyncIterator<String>>;
+  version: () => Promise<AsyncIterator<String>>;
+  jobVersion: () => Promise<AsyncIterator<String>>;
+  masterOsImage: () => Promise<AsyncIterator<String>>;
+  infraCommit: () => Promise<AsyncIterator<String>>;
+  nodeOsImage: () => Promise<AsyncIterator<String>>;
+  pod: () => Promise<AsyncIterator<String>>;
+  passed: () => Promise<AsyncIterator<Boolean>>;
+  result: () => Promise<AsyncIterator<String>>;
+  timestamp: () => Promise<AsyncIterator<Int>>;
+  endpoints: <T = Promise<AsyncIterator<EndpointSubscription>>>(args?: {
+    where?: EndpointWhereInput;
+    orderBy?: EndpointOrderByInput;
+    skip?: Int;
+    after?: String;
+    before?: String;
+    first?: Int;
+    last?: Int;
+  }) => T;
+}
+
+export interface AuditLogNullablePromise
+  extends Promise<AuditLog | null>,
+    Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  job: () => Promise<String>;
+  bucket: () => Promise<String>;
+  version: () => Promise<String>;
+  jobVersion: () => Promise<String>;
+  masterOsImage: () => Promise<String>;
+  infraCommit: () => Promise<String>;
+  nodeOsImage: () => Promise<String>;
+  pod: () => Promise<String>;
+  passed: () => Promise<Boolean>;
+  result: () => Promise<String>;
+  timestamp: () => Promise<Int>;
+  endpoints: <T = FragmentableArray<Endpoint>>(args?: {
+    where?: EndpointWhereInput;
+    orderBy?: EndpointOrderByInput;
+    skip?: Int;
+    after?: String;
+    before?: String;
+    first?: Int;
+    last?: Int;
+  }) => T;
 }
 
 export interface AuditLogEdge {
@@ -378,6 +1156,175 @@ export interface AuditLogEdgeSubscription
     Fragmentable {
   node: <T = AuditLogSubscription>() => T;
   cursor: () => Promise<AsyncIterator<String>>;
+}
+
+export interface PageInfo {
+  hasNextPage: Boolean;
+  hasPreviousPage: Boolean;
+  startCursor?: String;
+  endCursor?: String;
+}
+
+export interface PageInfoPromise extends Promise<PageInfo>, Fragmentable {
+  hasNextPage: () => Promise<Boolean>;
+  hasPreviousPage: () => Promise<Boolean>;
+  startCursor: () => Promise<String>;
+  endCursor: () => Promise<String>;
+}
+
+export interface PageInfoSubscription
+  extends Promise<AsyncIterator<PageInfo>>,
+    Fragmentable {
+  hasNextPage: () => Promise<AsyncIterator<Boolean>>;
+  hasPreviousPage: () => Promise<AsyncIterator<Boolean>>;
+  startCursor: () => Promise<AsyncIterator<String>>;
+  endCursor: () => Promise<AsyncIterator<String>>;
+}
+
+export interface EndpointSubscriptionPayload {
+  mutation: MutationType;
+  node: Endpoint;
+  updatedFields: String[];
+  previousValues: EndpointPreviousValues;
+}
+
+export interface EndpointSubscriptionPayloadPromise
+  extends Promise<EndpointSubscriptionPayload>,
+    Fragmentable {
+  mutation: () => Promise<MutationType>;
+  node: <T = EndpointPromise>() => T;
+  updatedFields: () => Promise<String[]>;
+  previousValues: <T = EndpointPreviousValuesPromise>() => T;
+}
+
+export interface EndpointSubscriptionPayloadSubscription
+  extends Promise<AsyncIterator<EndpointSubscriptionPayload>>,
+    Fragmentable {
+  mutation: () => Promise<AsyncIterator<MutationType>>;
+  node: <T = EndpointSubscription>() => T;
+  updatedFields: () => Promise<AsyncIterator<String[]>>;
+  previousValues: <T = EndpointPreviousValuesSubscription>() => T;
+}
+
+export interface Endpoint {
+  id: ID_Output;
+  createdAt: DateTimeOutput;
+  operationID: String;
+  level: String;
+  category: String;
+  kind?: String;
+  group?: String;
+  description?: String;
+  version?: String;
+  path?: String;
+  hits: Int;
+  testHits: Int;
+  conformanceHits: Int;
+  isDeprecated: Boolean;
+}
+
+export interface EndpointPromise extends Promise<Endpoint>, Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  auditLog: <T = AuditLogPromise>() => T;
+  operationID: () => Promise<String>;
+  level: () => Promise<String>;
+  category: () => Promise<String>;
+  kind: () => Promise<String>;
+  group: () => Promise<String>;
+  description: () => Promise<String>;
+  version: () => Promise<String>;
+  path: () => Promise<String>;
+  hits: () => Promise<Int>;
+  testHits: () => Promise<Int>;
+  conformanceHits: () => Promise<Int>;
+  isDeprecated: () => Promise<Boolean>;
+}
+
+export interface EndpointSubscription
+  extends Promise<AsyncIterator<Endpoint>>,
+    Fragmentable {
+  id: () => Promise<AsyncIterator<ID_Output>>;
+  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
+  auditLog: <T = AuditLogSubscription>() => T;
+  operationID: () => Promise<AsyncIterator<String>>;
+  level: () => Promise<AsyncIterator<String>>;
+  category: () => Promise<AsyncIterator<String>>;
+  kind: () => Promise<AsyncIterator<String>>;
+  group: () => Promise<AsyncIterator<String>>;
+  description: () => Promise<AsyncIterator<String>>;
+  version: () => Promise<AsyncIterator<String>>;
+  path: () => Promise<AsyncIterator<String>>;
+  hits: () => Promise<AsyncIterator<Int>>;
+  testHits: () => Promise<AsyncIterator<Int>>;
+  conformanceHits: () => Promise<AsyncIterator<Int>>;
+  isDeprecated: () => Promise<AsyncIterator<Boolean>>;
+}
+
+export interface EndpointNullablePromise
+  extends Promise<Endpoint | null>,
+    Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  auditLog: <T = AuditLogPromise>() => T;
+  operationID: () => Promise<String>;
+  level: () => Promise<String>;
+  category: () => Promise<String>;
+  kind: () => Promise<String>;
+  group: () => Promise<String>;
+  description: () => Promise<String>;
+  version: () => Promise<String>;
+  path: () => Promise<String>;
+  hits: () => Promise<Int>;
+  testHits: () => Promise<Int>;
+  conformanceHits: () => Promise<Int>;
+  isDeprecated: () => Promise<Boolean>;
+}
+
+export interface AuditLogSubscriptionPayload {
+  mutation: MutationType;
+  node: AuditLog;
+  updatedFields: String[];
+  previousValues: AuditLogPreviousValues;
+}
+
+export interface AuditLogSubscriptionPayloadPromise
+  extends Promise<AuditLogSubscriptionPayload>,
+    Fragmentable {
+  mutation: () => Promise<MutationType>;
+  node: <T = AuditLogPromise>() => T;
+  updatedFields: () => Promise<String[]>;
+  previousValues: <T = AuditLogPreviousValuesPromise>() => T;
+}
+
+export interface AuditLogSubscriptionPayloadSubscription
+  extends Promise<AsyncIterator<AuditLogSubscriptionPayload>>,
+    Fragmentable {
+  mutation: () => Promise<AsyncIterator<MutationType>>;
+  node: <T = AuditLogSubscription>() => T;
+  updatedFields: () => Promise<AsyncIterator<String[]>>;
+  previousValues: <T = AuditLogPreviousValuesSubscription>() => T;
+}
+
+export interface AuditLogConnection {
+  pageInfo: PageInfo;
+  edges: AuditLogEdge[];
+}
+
+export interface AuditLogConnectionPromise
+  extends Promise<AuditLogConnection>,
+    Fragmentable {
+  pageInfo: <T = PageInfoPromise>() => T;
+  edges: <T = FragmentableArray<AuditLogEdge>>() => T;
+  aggregate: <T = AggregateAuditLogPromise>() => T;
+}
+
+export interface AuditLogConnectionSubscription
+  extends Promise<AsyncIterator<AuditLogConnection>>,
+    Fragmentable {
+  pageInfo: <T = PageInfoSubscription>() => T;
+  edges: <T = Promise<AsyncIterator<AuditLogEdgeSubscription>>>() => T;
+  aggregate: <T = AggregateAuditLogSubscription>() => T;
 }
 
 export interface AuditLogPreviousValues {
@@ -432,27 +1379,20 @@ export interface AuditLogPreviousValuesSubscription
   timestamp: () => Promise<AsyncIterator<Int>>;
 }
 
-export interface PageInfo {
-  hasNextPage: Boolean;
-  hasPreviousPage: Boolean;
-  startCursor?: String;
-  endCursor?: String;
+export interface AggregateEndpoint {
+  count: Int;
 }
 
-export interface PageInfoPromise extends Promise<PageInfo>, Fragmentable {
-  hasNextPage: () => Promise<Boolean>;
-  hasPreviousPage: () => Promise<Boolean>;
-  startCursor: () => Promise<String>;
-  endCursor: () => Promise<String>;
-}
-
-export interface PageInfoSubscription
-  extends Promise<AsyncIterator<PageInfo>>,
+export interface AggregateEndpointPromise
+  extends Promise<AggregateEndpoint>,
     Fragmentable {
-  hasNextPage: () => Promise<AsyncIterator<Boolean>>;
-  hasPreviousPage: () => Promise<AsyncIterator<Boolean>>;
-  startCursor: () => Promise<AsyncIterator<String>>;
-  endCursor: () => Promise<AsyncIterator<String>>;
+  count: () => Promise<Int>;
+}
+
+export interface AggregateEndpointSubscription
+  extends Promise<AsyncIterator<AggregateEndpoint>>,
+    Fragmentable {
+  count: () => Promise<AsyncIterator<Int>>;
 }
 
 export interface BatchPayload {
@@ -471,158 +1411,45 @@ export interface BatchPayloadSubscription
   count: () => Promise<AsyncIterator<Long>>;
 }
 
-export interface AggregateAuditLog {
-  count: Int;
-}
-
-export interface AggregateAuditLogPromise
-  extends Promise<AggregateAuditLog>,
-    Fragmentable {
-  count: () => Promise<Int>;
-}
-
-export interface AggregateAuditLogSubscription
-  extends Promise<AsyncIterator<AggregateAuditLog>>,
-    Fragmentable {
-  count: () => Promise<AsyncIterator<Int>>;
-}
-
-export interface AuditLogSubscriptionPayload {
-  mutation: MutationType;
-  node: AuditLog;
-  updatedFields: String[];
-  previousValues: AuditLogPreviousValues;
-}
-
-export interface AuditLogSubscriptionPayloadPromise
-  extends Promise<AuditLogSubscriptionPayload>,
-    Fragmentable {
-  mutation: () => Promise<MutationType>;
-  node: <T = AuditLogPromise>() => T;
-  updatedFields: () => Promise<String[]>;
-  previousValues: <T = AuditLogPreviousValuesPromise>() => T;
-}
-
-export interface AuditLogSubscriptionPayloadSubscription
-  extends Promise<AsyncIterator<AuditLogSubscriptionPayload>>,
-    Fragmentable {
-  mutation: () => Promise<AsyncIterator<MutationType>>;
-  node: <T = AuditLogSubscription>() => T;
-  updatedFields: () => Promise<AsyncIterator<String[]>>;
-  previousValues: <T = AuditLogPreviousValuesSubscription>() => T;
-}
-
-export interface AuditLog {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-  job: String;
-  bucket: String;
-  version: String;
-  jobVersion: String;
-  masterOsImage: String;
-  infraCommit: String;
-  nodeOsImage: String;
-  pod: String;
-  passed: Boolean;
-  result: String;
-  timestamp: Int;
-}
-
-export interface AuditLogPromise extends Promise<AuditLog>, Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  job: () => Promise<String>;
-  bucket: () => Promise<String>;
-  version: () => Promise<String>;
-  jobVersion: () => Promise<String>;
-  masterOsImage: () => Promise<String>;
-  infraCommit: () => Promise<String>;
-  nodeOsImage: () => Promise<String>;
-  pod: () => Promise<String>;
-  passed: () => Promise<Boolean>;
-  result: () => Promise<String>;
-  timestamp: () => Promise<Int>;
-}
-
-export interface AuditLogSubscription
-  extends Promise<AsyncIterator<AuditLog>>,
-    Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  job: () => Promise<AsyncIterator<String>>;
-  bucket: () => Promise<AsyncIterator<String>>;
-  version: () => Promise<AsyncIterator<String>>;
-  jobVersion: () => Promise<AsyncIterator<String>>;
-  masterOsImage: () => Promise<AsyncIterator<String>>;
-  infraCommit: () => Promise<AsyncIterator<String>>;
-  nodeOsImage: () => Promise<AsyncIterator<String>>;
-  pod: () => Promise<AsyncIterator<String>>;
-  passed: () => Promise<AsyncIterator<Boolean>>;
-  result: () => Promise<AsyncIterator<String>>;
-  timestamp: () => Promise<AsyncIterator<Int>>;
-}
-
-export interface AuditLogNullablePromise
-  extends Promise<AuditLog | null>,
-    Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  job: () => Promise<String>;
-  bucket: () => Promise<String>;
-  version: () => Promise<String>;
-  jobVersion: () => Promise<String>;
-  masterOsImage: () => Promise<String>;
-  infraCommit: () => Promise<String>;
-  nodeOsImage: () => Promise<String>;
-  pod: () => Promise<String>;
-  passed: () => Promise<Boolean>;
-  result: () => Promise<String>;
-  timestamp: () => Promise<Int>;
-}
-
-export interface AuditLogConnection {
+export interface EndpointConnection {
   pageInfo: PageInfo;
-  edges: AuditLogEdge[];
+  edges: EndpointEdge[];
 }
 
-export interface AuditLogConnectionPromise
-  extends Promise<AuditLogConnection>,
+export interface EndpointConnectionPromise
+  extends Promise<EndpointConnection>,
     Fragmentable {
   pageInfo: <T = PageInfoPromise>() => T;
-  edges: <T = FragmentableArray<AuditLogEdge>>() => T;
-  aggregate: <T = AggregateAuditLogPromise>() => T;
+  edges: <T = FragmentableArray<EndpointEdge>>() => T;
+  aggregate: <T = AggregateEndpointPromise>() => T;
 }
 
-export interface AuditLogConnectionSubscription
-  extends Promise<AsyncIterator<AuditLogConnection>>,
+export interface EndpointConnectionSubscription
+  extends Promise<AsyncIterator<EndpointConnection>>,
     Fragmentable {
   pageInfo: <T = PageInfoSubscription>() => T;
-  edges: <T = Promise<AsyncIterator<AuditLogEdgeSubscription>>>() => T;
-  aggregate: <T = AggregateAuditLogSubscription>() => T;
+  edges: <T = Promise<AsyncIterator<EndpointEdgeSubscription>>>() => T;
+  aggregate: <T = AggregateEndpointSubscription>() => T;
 }
 
-/*
-The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
-*/
-export type String = string;
+export interface EndpointEdge {
+  node: Endpoint;
+  cursor: String;
+}
 
-/*
-DateTime scalar input type, allowing Date
-*/
-export type DateTimeInput = Date | string;
+export interface EndpointEdgePromise
+  extends Promise<EndpointEdge>,
+    Fragmentable {
+  node: <T = EndpointPromise>() => T;
+  cursor: () => Promise<String>;
+}
 
-/*
-DateTime scalar output type, which is always a string
-*/
-export type DateTimeOutput = string;
-
-export type Long = string;
-
-/*
-The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
-*/
-export type ID_Input = string | number;
-export type ID_Output = string;
+export interface EndpointEdgeSubscription
+  extends Promise<AsyncIterator<EndpointEdge>>,
+    Fragmentable {
+  node: <T = EndpointSubscription>() => T;
+  cursor: () => Promise<AsyncIterator<String>>;
+}
 
 /*
 The `Boolean` scalar type represents `true` or `false`.
@@ -634,6 +1461,29 @@ The `Int` scalar type represents non-fractional signed whole numeric values. Int
 */
 export type Int = number;
 
+export type Long = string;
+
+/*
+The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
+*/
+export type String = string;
+
+/*
+The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
+*/
+export type ID_Input = string | number;
+export type ID_Output = string;
+
+/*
+DateTime scalar input type, allowing Date
+*/
+export type DateTimeInput = Date | string;
+
+/*
+DateTime scalar output type, which is always a string
+*/
+export type DateTimeOutput = string;
+
 /**
  * Model Metadata
  */
@@ -641,6 +1491,10 @@ export type Int = number;
 export const models: Model[] = [
   {
     name: "AuditLog",
+    embedded: false
+  },
+  {
+    name: "Endpoint",
     embedded: false
   }
 ];

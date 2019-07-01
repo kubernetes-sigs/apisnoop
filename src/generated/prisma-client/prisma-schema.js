@@ -7,6 +7,10 @@ module.exports = {
   count: Int!
 }
 
+type AggregateEndpoint {
+  count: Int!
+}
+
 type AuditLog {
   id: ID!
   createdAt: DateTime!
@@ -21,6 +25,7 @@ type AuditLog {
   passed: Boolean!
   result: String!
   timestamp: Int!
+  endpoints(where: EndpointWhereInput, orderBy: EndpointOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [Endpoint!]
 }
 
 type AuditLogConnection {
@@ -30,6 +35,27 @@ type AuditLogConnection {
 }
 
 input AuditLogCreateInput {
+  id: ID
+  job: String!
+  bucket: String!
+  version: String!
+  jobVersion: String!
+  masterOsImage: String!
+  infraCommit: String!
+  nodeOsImage: String!
+  pod: String!
+  passed: Boolean!
+  result: String!
+  timestamp: Int!
+  endpoints: EndpointCreateManyWithoutAuditLogInput
+}
+
+input AuditLogCreateOneWithoutEndpointsInput {
+  create: AuditLogCreateWithoutEndpointsInput
+  connect: AuditLogWhereUniqueInput
+}
+
+input AuditLogCreateWithoutEndpointsInput {
   id: ID
   job: String!
   bucket: String!
@@ -124,6 +150,7 @@ input AuditLogUpdateInput {
   passed: Boolean
   result: String
   timestamp: Int
+  endpoints: EndpointUpdateManyWithoutAuditLogInput
 }
 
 input AuditLogUpdateManyMutationInput {
@@ -138,6 +165,32 @@ input AuditLogUpdateManyMutationInput {
   passed: Boolean
   result: String
   timestamp: Int
+}
+
+input AuditLogUpdateOneRequiredWithoutEndpointsInput {
+  create: AuditLogCreateWithoutEndpointsInput
+  update: AuditLogUpdateWithoutEndpointsDataInput
+  upsert: AuditLogUpsertWithoutEndpointsInput
+  connect: AuditLogWhereUniqueInput
+}
+
+input AuditLogUpdateWithoutEndpointsDataInput {
+  job: String
+  bucket: String
+  version: String
+  jobVersion: String
+  masterOsImage: String
+  infraCommit: String
+  nodeOsImage: String
+  pod: String
+  passed: Boolean
+  result: String
+  timestamp: Int
+}
+
+input AuditLogUpsertWithoutEndpointsInput {
+  update: AuditLogUpdateWithoutEndpointsDataInput!
+  create: AuditLogCreateWithoutEndpointsInput!
 }
 
 input AuditLogWhereInput {
@@ -299,6 +352,9 @@ input AuditLogWhereInput {
   timestamp_lte: Int
   timestamp_gt: Int
   timestamp_gte: Int
+  endpoints_every: EndpointWhereInput
+  endpoints_some: EndpointWhereInput
+  endpoints_none: EndpointWhereInput
   AND: [AuditLogWhereInput!]
   OR: [AuditLogWhereInput!]
   NOT: [AuditLogWhereInput!]
@@ -314,6 +370,565 @@ type BatchPayload {
 
 scalar DateTime
 
+type Endpoint {
+  id: ID!
+  createdAt: DateTime!
+  auditLog: AuditLog!
+  operationID: String!
+  level: String!
+  category: String!
+  kind: String
+  group: String
+  description: String
+  version: String
+  path: String
+  hits: Int!
+  testHits: Int!
+  conformanceHits: Int!
+  isDeprecated: Boolean!
+}
+
+type EndpointConnection {
+  pageInfo: PageInfo!
+  edges: [EndpointEdge]!
+  aggregate: AggregateEndpoint!
+}
+
+input EndpointCreateInput {
+  id: ID
+  auditLog: AuditLogCreateOneWithoutEndpointsInput!
+  operationID: String!
+  level: String!
+  category: String!
+  kind: String
+  group: String
+  description: String
+  version: String
+  path: String
+  hits: Int!
+  testHits: Int!
+  conformanceHits: Int!
+  isDeprecated: Boolean!
+}
+
+input EndpointCreateManyWithoutAuditLogInput {
+  create: [EndpointCreateWithoutAuditLogInput!]
+  connect: [EndpointWhereUniqueInput!]
+}
+
+input EndpointCreateWithoutAuditLogInput {
+  id: ID
+  operationID: String!
+  level: String!
+  category: String!
+  kind: String
+  group: String
+  description: String
+  version: String
+  path: String
+  hits: Int!
+  testHits: Int!
+  conformanceHits: Int!
+  isDeprecated: Boolean!
+}
+
+type EndpointEdge {
+  node: Endpoint!
+  cursor: String!
+}
+
+enum EndpointOrderByInput {
+  id_ASC
+  id_DESC
+  createdAt_ASC
+  createdAt_DESC
+  operationID_ASC
+  operationID_DESC
+  level_ASC
+  level_DESC
+  category_ASC
+  category_DESC
+  kind_ASC
+  kind_DESC
+  group_ASC
+  group_DESC
+  description_ASC
+  description_DESC
+  version_ASC
+  version_DESC
+  path_ASC
+  path_DESC
+  hits_ASC
+  hits_DESC
+  testHits_ASC
+  testHits_DESC
+  conformanceHits_ASC
+  conformanceHits_DESC
+  isDeprecated_ASC
+  isDeprecated_DESC
+}
+
+type EndpointPreviousValues {
+  id: ID!
+  createdAt: DateTime!
+  operationID: String!
+  level: String!
+  category: String!
+  kind: String
+  group: String
+  description: String
+  version: String
+  path: String
+  hits: Int!
+  testHits: Int!
+  conformanceHits: Int!
+  isDeprecated: Boolean!
+}
+
+input EndpointScalarWhereInput {
+  id: ID
+  id_not: ID
+  id_in: [ID!]
+  id_not_in: [ID!]
+  id_lt: ID
+  id_lte: ID
+  id_gt: ID
+  id_gte: ID
+  id_contains: ID
+  id_not_contains: ID
+  id_starts_with: ID
+  id_not_starts_with: ID
+  id_ends_with: ID
+  id_not_ends_with: ID
+  createdAt: DateTime
+  createdAt_not: DateTime
+  createdAt_in: [DateTime!]
+  createdAt_not_in: [DateTime!]
+  createdAt_lt: DateTime
+  createdAt_lte: DateTime
+  createdAt_gt: DateTime
+  createdAt_gte: DateTime
+  operationID: String
+  operationID_not: String
+  operationID_in: [String!]
+  operationID_not_in: [String!]
+  operationID_lt: String
+  operationID_lte: String
+  operationID_gt: String
+  operationID_gte: String
+  operationID_contains: String
+  operationID_not_contains: String
+  operationID_starts_with: String
+  operationID_not_starts_with: String
+  operationID_ends_with: String
+  operationID_not_ends_with: String
+  level: String
+  level_not: String
+  level_in: [String!]
+  level_not_in: [String!]
+  level_lt: String
+  level_lte: String
+  level_gt: String
+  level_gte: String
+  level_contains: String
+  level_not_contains: String
+  level_starts_with: String
+  level_not_starts_with: String
+  level_ends_with: String
+  level_not_ends_with: String
+  category: String
+  category_not: String
+  category_in: [String!]
+  category_not_in: [String!]
+  category_lt: String
+  category_lte: String
+  category_gt: String
+  category_gte: String
+  category_contains: String
+  category_not_contains: String
+  category_starts_with: String
+  category_not_starts_with: String
+  category_ends_with: String
+  category_not_ends_with: String
+  kind: String
+  kind_not: String
+  kind_in: [String!]
+  kind_not_in: [String!]
+  kind_lt: String
+  kind_lte: String
+  kind_gt: String
+  kind_gte: String
+  kind_contains: String
+  kind_not_contains: String
+  kind_starts_with: String
+  kind_not_starts_with: String
+  kind_ends_with: String
+  kind_not_ends_with: String
+  group: String
+  group_not: String
+  group_in: [String!]
+  group_not_in: [String!]
+  group_lt: String
+  group_lte: String
+  group_gt: String
+  group_gte: String
+  group_contains: String
+  group_not_contains: String
+  group_starts_with: String
+  group_not_starts_with: String
+  group_ends_with: String
+  group_not_ends_with: String
+  description: String
+  description_not: String
+  description_in: [String!]
+  description_not_in: [String!]
+  description_lt: String
+  description_lte: String
+  description_gt: String
+  description_gte: String
+  description_contains: String
+  description_not_contains: String
+  description_starts_with: String
+  description_not_starts_with: String
+  description_ends_with: String
+  description_not_ends_with: String
+  version: String
+  version_not: String
+  version_in: [String!]
+  version_not_in: [String!]
+  version_lt: String
+  version_lte: String
+  version_gt: String
+  version_gte: String
+  version_contains: String
+  version_not_contains: String
+  version_starts_with: String
+  version_not_starts_with: String
+  version_ends_with: String
+  version_not_ends_with: String
+  path: String
+  path_not: String
+  path_in: [String!]
+  path_not_in: [String!]
+  path_lt: String
+  path_lte: String
+  path_gt: String
+  path_gte: String
+  path_contains: String
+  path_not_contains: String
+  path_starts_with: String
+  path_not_starts_with: String
+  path_ends_with: String
+  path_not_ends_with: String
+  hits: Int
+  hits_not: Int
+  hits_in: [Int!]
+  hits_not_in: [Int!]
+  hits_lt: Int
+  hits_lte: Int
+  hits_gt: Int
+  hits_gte: Int
+  testHits: Int
+  testHits_not: Int
+  testHits_in: [Int!]
+  testHits_not_in: [Int!]
+  testHits_lt: Int
+  testHits_lte: Int
+  testHits_gt: Int
+  testHits_gte: Int
+  conformanceHits: Int
+  conformanceHits_not: Int
+  conformanceHits_in: [Int!]
+  conformanceHits_not_in: [Int!]
+  conformanceHits_lt: Int
+  conformanceHits_lte: Int
+  conformanceHits_gt: Int
+  conformanceHits_gte: Int
+  isDeprecated: Boolean
+  isDeprecated_not: Boolean
+  AND: [EndpointScalarWhereInput!]
+  OR: [EndpointScalarWhereInput!]
+  NOT: [EndpointScalarWhereInput!]
+}
+
+type EndpointSubscriptionPayload {
+  mutation: MutationType!
+  node: Endpoint
+  updatedFields: [String!]
+  previousValues: EndpointPreviousValues
+}
+
+input EndpointSubscriptionWhereInput {
+  mutation_in: [MutationType!]
+  updatedFields_contains: String
+  updatedFields_contains_every: [String!]
+  updatedFields_contains_some: [String!]
+  node: EndpointWhereInput
+  AND: [EndpointSubscriptionWhereInput!]
+  OR: [EndpointSubscriptionWhereInput!]
+  NOT: [EndpointSubscriptionWhereInput!]
+}
+
+input EndpointUpdateInput {
+  auditLog: AuditLogUpdateOneRequiredWithoutEndpointsInput
+  operationID: String
+  level: String
+  category: String
+  kind: String
+  group: String
+  description: String
+  version: String
+  path: String
+  hits: Int
+  testHits: Int
+  conformanceHits: Int
+  isDeprecated: Boolean
+}
+
+input EndpointUpdateManyDataInput {
+  operationID: String
+  level: String
+  category: String
+  kind: String
+  group: String
+  description: String
+  version: String
+  path: String
+  hits: Int
+  testHits: Int
+  conformanceHits: Int
+  isDeprecated: Boolean
+}
+
+input EndpointUpdateManyMutationInput {
+  operationID: String
+  level: String
+  category: String
+  kind: String
+  group: String
+  description: String
+  version: String
+  path: String
+  hits: Int
+  testHits: Int
+  conformanceHits: Int
+  isDeprecated: Boolean
+}
+
+input EndpointUpdateManyWithoutAuditLogInput {
+  create: [EndpointCreateWithoutAuditLogInput!]
+  delete: [EndpointWhereUniqueInput!]
+  connect: [EndpointWhereUniqueInput!]
+  set: [EndpointWhereUniqueInput!]
+  disconnect: [EndpointWhereUniqueInput!]
+  update: [EndpointUpdateWithWhereUniqueWithoutAuditLogInput!]
+  upsert: [EndpointUpsertWithWhereUniqueWithoutAuditLogInput!]
+  deleteMany: [EndpointScalarWhereInput!]
+  updateMany: [EndpointUpdateManyWithWhereNestedInput!]
+}
+
+input EndpointUpdateManyWithWhereNestedInput {
+  where: EndpointScalarWhereInput!
+  data: EndpointUpdateManyDataInput!
+}
+
+input EndpointUpdateWithoutAuditLogDataInput {
+  operationID: String
+  level: String
+  category: String
+  kind: String
+  group: String
+  description: String
+  version: String
+  path: String
+  hits: Int
+  testHits: Int
+  conformanceHits: Int
+  isDeprecated: Boolean
+}
+
+input EndpointUpdateWithWhereUniqueWithoutAuditLogInput {
+  where: EndpointWhereUniqueInput!
+  data: EndpointUpdateWithoutAuditLogDataInput!
+}
+
+input EndpointUpsertWithWhereUniqueWithoutAuditLogInput {
+  where: EndpointWhereUniqueInput!
+  update: EndpointUpdateWithoutAuditLogDataInput!
+  create: EndpointCreateWithoutAuditLogInput!
+}
+
+input EndpointWhereInput {
+  id: ID
+  id_not: ID
+  id_in: [ID!]
+  id_not_in: [ID!]
+  id_lt: ID
+  id_lte: ID
+  id_gt: ID
+  id_gte: ID
+  id_contains: ID
+  id_not_contains: ID
+  id_starts_with: ID
+  id_not_starts_with: ID
+  id_ends_with: ID
+  id_not_ends_with: ID
+  createdAt: DateTime
+  createdAt_not: DateTime
+  createdAt_in: [DateTime!]
+  createdAt_not_in: [DateTime!]
+  createdAt_lt: DateTime
+  createdAt_lte: DateTime
+  createdAt_gt: DateTime
+  createdAt_gte: DateTime
+  auditLog: AuditLogWhereInput
+  operationID: String
+  operationID_not: String
+  operationID_in: [String!]
+  operationID_not_in: [String!]
+  operationID_lt: String
+  operationID_lte: String
+  operationID_gt: String
+  operationID_gte: String
+  operationID_contains: String
+  operationID_not_contains: String
+  operationID_starts_with: String
+  operationID_not_starts_with: String
+  operationID_ends_with: String
+  operationID_not_ends_with: String
+  level: String
+  level_not: String
+  level_in: [String!]
+  level_not_in: [String!]
+  level_lt: String
+  level_lte: String
+  level_gt: String
+  level_gte: String
+  level_contains: String
+  level_not_contains: String
+  level_starts_with: String
+  level_not_starts_with: String
+  level_ends_with: String
+  level_not_ends_with: String
+  category: String
+  category_not: String
+  category_in: [String!]
+  category_not_in: [String!]
+  category_lt: String
+  category_lte: String
+  category_gt: String
+  category_gte: String
+  category_contains: String
+  category_not_contains: String
+  category_starts_with: String
+  category_not_starts_with: String
+  category_ends_with: String
+  category_not_ends_with: String
+  kind: String
+  kind_not: String
+  kind_in: [String!]
+  kind_not_in: [String!]
+  kind_lt: String
+  kind_lte: String
+  kind_gt: String
+  kind_gte: String
+  kind_contains: String
+  kind_not_contains: String
+  kind_starts_with: String
+  kind_not_starts_with: String
+  kind_ends_with: String
+  kind_not_ends_with: String
+  group: String
+  group_not: String
+  group_in: [String!]
+  group_not_in: [String!]
+  group_lt: String
+  group_lte: String
+  group_gt: String
+  group_gte: String
+  group_contains: String
+  group_not_contains: String
+  group_starts_with: String
+  group_not_starts_with: String
+  group_ends_with: String
+  group_not_ends_with: String
+  description: String
+  description_not: String
+  description_in: [String!]
+  description_not_in: [String!]
+  description_lt: String
+  description_lte: String
+  description_gt: String
+  description_gte: String
+  description_contains: String
+  description_not_contains: String
+  description_starts_with: String
+  description_not_starts_with: String
+  description_ends_with: String
+  description_not_ends_with: String
+  version: String
+  version_not: String
+  version_in: [String!]
+  version_not_in: [String!]
+  version_lt: String
+  version_lte: String
+  version_gt: String
+  version_gte: String
+  version_contains: String
+  version_not_contains: String
+  version_starts_with: String
+  version_not_starts_with: String
+  version_ends_with: String
+  version_not_ends_with: String
+  path: String
+  path_not: String
+  path_in: [String!]
+  path_not_in: [String!]
+  path_lt: String
+  path_lte: String
+  path_gt: String
+  path_gte: String
+  path_contains: String
+  path_not_contains: String
+  path_starts_with: String
+  path_not_starts_with: String
+  path_ends_with: String
+  path_not_ends_with: String
+  hits: Int
+  hits_not: Int
+  hits_in: [Int!]
+  hits_not_in: [Int!]
+  hits_lt: Int
+  hits_lte: Int
+  hits_gt: Int
+  hits_gte: Int
+  testHits: Int
+  testHits_not: Int
+  testHits_in: [Int!]
+  testHits_not_in: [Int!]
+  testHits_lt: Int
+  testHits_lte: Int
+  testHits_gt: Int
+  testHits_gte: Int
+  conformanceHits: Int
+  conformanceHits_not: Int
+  conformanceHits_in: [Int!]
+  conformanceHits_not_in: [Int!]
+  conformanceHits_lt: Int
+  conformanceHits_lte: Int
+  conformanceHits_gt: Int
+  conformanceHits_gte: Int
+  isDeprecated: Boolean
+  isDeprecated_not: Boolean
+  AND: [EndpointWhereInput!]
+  OR: [EndpointWhereInput!]
+  NOT: [EndpointWhereInput!]
+}
+
+input EndpointWhereUniqueInput {
+  id: ID
+}
+
 scalar Long
 
 type Mutation {
@@ -323,6 +938,12 @@ type Mutation {
   upsertAuditLog(where: AuditLogWhereUniqueInput!, create: AuditLogCreateInput!, update: AuditLogUpdateInput!): AuditLog!
   deleteAuditLog(where: AuditLogWhereUniqueInput!): AuditLog
   deleteManyAuditLogs(where: AuditLogWhereInput): BatchPayload!
+  createEndpoint(data: EndpointCreateInput!): Endpoint!
+  updateEndpoint(data: EndpointUpdateInput!, where: EndpointWhereUniqueInput!): Endpoint
+  updateManyEndpoints(data: EndpointUpdateManyMutationInput!, where: EndpointWhereInput): BatchPayload!
+  upsertEndpoint(where: EndpointWhereUniqueInput!, create: EndpointCreateInput!, update: EndpointUpdateInput!): Endpoint!
+  deleteEndpoint(where: EndpointWhereUniqueInput!): Endpoint
+  deleteManyEndpoints(where: EndpointWhereInput): BatchPayload!
 }
 
 enum MutationType {
@@ -346,11 +967,15 @@ type Query {
   auditLog(where: AuditLogWhereUniqueInput!): AuditLog
   auditLogs(where: AuditLogWhereInput, orderBy: AuditLogOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [AuditLog]!
   auditLogsConnection(where: AuditLogWhereInput, orderBy: AuditLogOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): AuditLogConnection!
+  endpoint(where: EndpointWhereUniqueInput!): Endpoint
+  endpoints(where: EndpointWhereInput, orderBy: EndpointOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [Endpoint]!
+  endpointsConnection(where: EndpointWhereInput, orderBy: EndpointOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): EndpointConnection!
   node(id: ID!): Node
 }
 
 type Subscription {
   auditLog(where: AuditLogSubscriptionWhereInput): AuditLogSubscriptionPayload
+  endpoint(where: EndpointSubscriptionWhereInput): EndpointSubscriptionPayload
 }
 `
       }

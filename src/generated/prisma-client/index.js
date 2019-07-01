@@ -7,6 +7,10 @@ var models = [
   {
     name: "AuditLog",
     embedded: false
+  },
+  {
+    name: "Endpoint",
+    embedded: false
   }
 ];
 exports.Prisma = prisma_lib_1.makePrismaClientClass({
