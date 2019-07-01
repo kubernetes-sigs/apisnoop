@@ -114,8 +114,12 @@ export type AuditLogOrderByInput =
   | "version_DESC"
   | "jobVersion_ASC"
   | "jobVersion_DESC"
+  | "masterOsImage_ASC"
+  | "masterOsImage_DESC"
   | "infraCommit_ASC"
   | "infraCommit_DESC"
+  | "nodeOsImage_ASC"
+  | "nodeOsImage_DESC"
   | "pod_ASC"
   | "pod_DESC"
   | "passed_ASC"
@@ -126,19 +130,6 @@ export type AuditLogOrderByInput =
   | "timestamp_DESC";
 
 export type MutationType = "CREATED" | "UPDATED" | "DELETED";
-
-export interface AuditLogCreateInput {
-  id?: Maybe<ID_Input>;
-  job?: Maybe<String>;
-  bucket: String;
-  version: String;
-  jobVersion: String;
-  infraCommit: String;
-  pod: String;
-  passed: Boolean;
-  result: String;
-  timestamp?: Maybe<String>;
-}
 
 export interface AuditLogWhereInput {
   id?: Maybe<ID_Input>;
@@ -219,6 +210,20 @@ export interface AuditLogWhereInput {
   jobVersion_not_starts_with?: Maybe<String>;
   jobVersion_ends_with?: Maybe<String>;
   jobVersion_not_ends_with?: Maybe<String>;
+  masterOsImage?: Maybe<String>;
+  masterOsImage_not?: Maybe<String>;
+  masterOsImage_in?: Maybe<String[] | String>;
+  masterOsImage_not_in?: Maybe<String[] | String>;
+  masterOsImage_lt?: Maybe<String>;
+  masterOsImage_lte?: Maybe<String>;
+  masterOsImage_gt?: Maybe<String>;
+  masterOsImage_gte?: Maybe<String>;
+  masterOsImage_contains?: Maybe<String>;
+  masterOsImage_not_contains?: Maybe<String>;
+  masterOsImage_starts_with?: Maybe<String>;
+  masterOsImage_not_starts_with?: Maybe<String>;
+  masterOsImage_ends_with?: Maybe<String>;
+  masterOsImage_not_ends_with?: Maybe<String>;
   infraCommit?: Maybe<String>;
   infraCommit_not?: Maybe<String>;
   infraCommit_in?: Maybe<String[] | String>;
@@ -233,6 +238,20 @@ export interface AuditLogWhereInput {
   infraCommit_not_starts_with?: Maybe<String>;
   infraCommit_ends_with?: Maybe<String>;
   infraCommit_not_ends_with?: Maybe<String>;
+  nodeOsImage?: Maybe<String>;
+  nodeOsImage_not?: Maybe<String>;
+  nodeOsImage_in?: Maybe<String[] | String>;
+  nodeOsImage_not_in?: Maybe<String[] | String>;
+  nodeOsImage_lt?: Maybe<String>;
+  nodeOsImage_lte?: Maybe<String>;
+  nodeOsImage_gt?: Maybe<String>;
+  nodeOsImage_gte?: Maybe<String>;
+  nodeOsImage_contains?: Maybe<String>;
+  nodeOsImage_not_contains?: Maybe<String>;
+  nodeOsImage_starts_with?: Maybe<String>;
+  nodeOsImage_not_starts_with?: Maybe<String>;
+  nodeOsImage_ends_with?: Maybe<String>;
+  nodeOsImage_not_ends_with?: Maybe<String>;
   pod?: Maybe<String>;
   pod_not?: Maybe<String>;
   pod_in?: Maybe<String[] | String>;
@@ -263,23 +282,32 @@ export interface AuditLogWhereInput {
   result_not_starts_with?: Maybe<String>;
   result_ends_with?: Maybe<String>;
   result_not_ends_with?: Maybe<String>;
-  timestamp?: Maybe<String>;
-  timestamp_not?: Maybe<String>;
-  timestamp_in?: Maybe<String[] | String>;
-  timestamp_not_in?: Maybe<String[] | String>;
-  timestamp_lt?: Maybe<String>;
-  timestamp_lte?: Maybe<String>;
-  timestamp_gt?: Maybe<String>;
-  timestamp_gte?: Maybe<String>;
-  timestamp_contains?: Maybe<String>;
-  timestamp_not_contains?: Maybe<String>;
-  timestamp_starts_with?: Maybe<String>;
-  timestamp_not_starts_with?: Maybe<String>;
-  timestamp_ends_with?: Maybe<String>;
-  timestamp_not_ends_with?: Maybe<String>;
+  timestamp?: Maybe<Int>;
+  timestamp_not?: Maybe<Int>;
+  timestamp_in?: Maybe<Int[] | Int>;
+  timestamp_not_in?: Maybe<Int[] | Int>;
+  timestamp_lt?: Maybe<Int>;
+  timestamp_lte?: Maybe<Int>;
+  timestamp_gt?: Maybe<Int>;
+  timestamp_gte?: Maybe<Int>;
   AND?: Maybe<AuditLogWhereInput[] | AuditLogWhereInput>;
   OR?: Maybe<AuditLogWhereInput[] | AuditLogWhereInput>;
   NOT?: Maybe<AuditLogWhereInput[] | AuditLogWhereInput>;
+}
+
+export interface AuditLogCreateInput {
+  id?: Maybe<ID_Input>;
+  job: String;
+  bucket: String;
+  version: String;
+  jobVersion: String;
+  masterOsImage: String;
+  infraCommit: String;
+  nodeOsImage: String;
+  pod: String;
+  passed: Boolean;
+  result: String;
+  timestamp: Int;
 }
 
 export interface AuditLogUpdateInput {
@@ -287,11 +315,13 @@ export interface AuditLogUpdateInput {
   bucket?: Maybe<String>;
   version?: Maybe<String>;
   jobVersion?: Maybe<String>;
+  masterOsImage?: Maybe<String>;
   infraCommit?: Maybe<String>;
+  nodeOsImage?: Maybe<String>;
   pod?: Maybe<String>;
   passed?: Maybe<Boolean>;
   result?: Maybe<String>;
-  timestamp?: Maybe<String>;
+  timestamp?: Maybe<Int>;
 }
 
 export interface AuditLogUpdateManyMutationInput {
@@ -299,11 +329,13 @@ export interface AuditLogUpdateManyMutationInput {
   bucket?: Maybe<String>;
   version?: Maybe<String>;
   jobVersion?: Maybe<String>;
+  masterOsImage?: Maybe<String>;
   infraCommit?: Maybe<String>;
+  nodeOsImage?: Maybe<String>;
   pod?: Maybe<String>;
   passed?: Maybe<Boolean>;
   result?: Maybe<String>;
-  timestamp?: Maybe<String>;
+  timestamp?: Maybe<Int>;
 }
 
 export interface AuditLogSubscriptionWhereInput {
@@ -351,15 +383,17 @@ export interface AuditLogEdgeSubscription
 export interface AuditLogPreviousValues {
   id: ID_Output;
   createdAt: DateTimeOutput;
-  job?: String;
+  job: String;
   bucket: String;
   version: String;
   jobVersion: String;
+  masterOsImage: String;
   infraCommit: String;
+  nodeOsImage: String;
   pod: String;
   passed: Boolean;
   result: String;
-  timestamp?: String;
+  timestamp: Int;
 }
 
 export interface AuditLogPreviousValuesPromise
@@ -371,11 +405,13 @@ export interface AuditLogPreviousValuesPromise
   bucket: () => Promise<String>;
   version: () => Promise<String>;
   jobVersion: () => Promise<String>;
+  masterOsImage: () => Promise<String>;
   infraCommit: () => Promise<String>;
+  nodeOsImage: () => Promise<String>;
   pod: () => Promise<String>;
   passed: () => Promise<Boolean>;
   result: () => Promise<String>;
-  timestamp: () => Promise<String>;
+  timestamp: () => Promise<Int>;
 }
 
 export interface AuditLogPreviousValuesSubscription
@@ -387,11 +423,13 @@ export interface AuditLogPreviousValuesSubscription
   bucket: () => Promise<AsyncIterator<String>>;
   version: () => Promise<AsyncIterator<String>>;
   jobVersion: () => Promise<AsyncIterator<String>>;
+  masterOsImage: () => Promise<AsyncIterator<String>>;
   infraCommit: () => Promise<AsyncIterator<String>>;
+  nodeOsImage: () => Promise<AsyncIterator<String>>;
   pod: () => Promise<AsyncIterator<String>>;
   passed: () => Promise<AsyncIterator<Boolean>>;
   result: () => Promise<AsyncIterator<String>>;
-  timestamp: () => Promise<AsyncIterator<String>>;
+  timestamp: () => Promise<AsyncIterator<Int>>;
 }
 
 export interface PageInfo {
@@ -477,15 +515,17 @@ export interface AuditLogSubscriptionPayloadSubscription
 export interface AuditLog {
   id: ID_Output;
   createdAt: DateTimeOutput;
-  job?: String;
+  job: String;
   bucket: String;
   version: String;
   jobVersion: String;
+  masterOsImage: String;
   infraCommit: String;
+  nodeOsImage: String;
   pod: String;
   passed: Boolean;
   result: String;
-  timestamp?: String;
+  timestamp: Int;
 }
 
 export interface AuditLogPromise extends Promise<AuditLog>, Fragmentable {
@@ -495,11 +535,13 @@ export interface AuditLogPromise extends Promise<AuditLog>, Fragmentable {
   bucket: () => Promise<String>;
   version: () => Promise<String>;
   jobVersion: () => Promise<String>;
+  masterOsImage: () => Promise<String>;
   infraCommit: () => Promise<String>;
+  nodeOsImage: () => Promise<String>;
   pod: () => Promise<String>;
   passed: () => Promise<Boolean>;
   result: () => Promise<String>;
-  timestamp: () => Promise<String>;
+  timestamp: () => Promise<Int>;
 }
 
 export interface AuditLogSubscription
@@ -511,11 +553,13 @@ export interface AuditLogSubscription
   bucket: () => Promise<AsyncIterator<String>>;
   version: () => Promise<AsyncIterator<String>>;
   jobVersion: () => Promise<AsyncIterator<String>>;
+  masterOsImage: () => Promise<AsyncIterator<String>>;
   infraCommit: () => Promise<AsyncIterator<String>>;
+  nodeOsImage: () => Promise<AsyncIterator<String>>;
   pod: () => Promise<AsyncIterator<String>>;
   passed: () => Promise<AsyncIterator<Boolean>>;
   result: () => Promise<AsyncIterator<String>>;
-  timestamp: () => Promise<AsyncIterator<String>>;
+  timestamp: () => Promise<AsyncIterator<Int>>;
 }
 
 export interface AuditLogNullablePromise
@@ -527,11 +571,13 @@ export interface AuditLogNullablePromise
   bucket: () => Promise<String>;
   version: () => Promise<String>;
   jobVersion: () => Promise<String>;
+  masterOsImage: () => Promise<String>;
   infraCommit: () => Promise<String>;
+  nodeOsImage: () => Promise<String>;
   pod: () => Promise<String>;
   passed: () => Promise<Boolean>;
   result: () => Promise<String>;
-  timestamp: () => Promise<String>;
+  timestamp: () => Promise<Int>;
 }
 
 export interface AuditLogConnection {
@@ -584,7 +630,7 @@ The `Boolean` scalar type represents `true` or `false`.
 export type Boolean = boolean;
 
 /*
-The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1. 
+The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.
 */
 export type Int = number;
 

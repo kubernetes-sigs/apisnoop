@@ -1,7 +1,7 @@
-function feed (parent, args, context, index)  {
+function auditLogs (parent, args, context, index)  {
     return context.prisma.auditLogs();
 };
 
 module.exports = {
-    feed
+    auditLogs
 };

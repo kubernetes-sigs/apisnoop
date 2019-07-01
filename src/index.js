@@ -5,21 +5,16 @@ const {
   GraphQLServer
 } = require('graphql-yoga');
 
-// const Query = require('./resolvers/Query')
+const Query = require('./resolvers/Query')
+const Mutation = require('./resolvers/Mutation')
 
-const typeDefs = `
-  type Query {
-    info: String! 
-  }
-`
 const resolvers = {
-  Query: {
-    info: () => `apisnoop v3 server active`
-  }
+  Query,
+  Mutation
 };
 
 const server = new GraphQLServer({
-  typeDefs,
+  typeDefs: `src/schema.graphql`,
   resolvers,
   context: request => {
     return {
@@ -29,4 +24,4 @@ const server = new GraphQLServer({
   }
 });
 
-server.start(() => console.log('server started on port 4000'));
+server.start(() => console.log('server started on port 4000, baby'));

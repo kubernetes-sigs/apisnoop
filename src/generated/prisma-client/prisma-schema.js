@@ -10,15 +10,17 @@ module.exports = {
 type AuditLog {
   id: ID!
   createdAt: DateTime!
-  job: String
+  job: String!
   bucket: String!
   version: String!
   jobVersion: String!
+  masterOsImage: String!
   infraCommit: String!
+  nodeOsImage: String!
   pod: String!
   passed: Boolean!
   result: String!
-  timestamp: String
+  timestamp: Int!
 }
 
 type AuditLogConnection {
@@ -29,15 +31,17 @@ type AuditLogConnection {
 
 input AuditLogCreateInput {
   id: ID
-  job: String
+  job: String!
   bucket: String!
   version: String!
   jobVersion: String!
+  masterOsImage: String!
   infraCommit: String!
+  nodeOsImage: String!
   pod: String!
   passed: Boolean!
   result: String!
-  timestamp: String
+  timestamp: Int!
 }
 
 type AuditLogEdge {
@@ -58,8 +62,12 @@ enum AuditLogOrderByInput {
   version_DESC
   jobVersion_ASC
   jobVersion_DESC
+  masterOsImage_ASC
+  masterOsImage_DESC
   infraCommit_ASC
   infraCommit_DESC
+  nodeOsImage_ASC
+  nodeOsImage_DESC
   pod_ASC
   pod_DESC
   passed_ASC
@@ -73,15 +81,17 @@ enum AuditLogOrderByInput {
 type AuditLogPreviousValues {
   id: ID!
   createdAt: DateTime!
-  job: String
+  job: String!
   bucket: String!
   version: String!
   jobVersion: String!
+  masterOsImage: String!
   infraCommit: String!
+  nodeOsImage: String!
   pod: String!
   passed: Boolean!
   result: String!
-  timestamp: String
+  timestamp: Int!
 }
 
 type AuditLogSubscriptionPayload {
@@ -107,11 +117,13 @@ input AuditLogUpdateInput {
   bucket: String
   version: String
   jobVersion: String
+  masterOsImage: String
   infraCommit: String
+  nodeOsImage: String
   pod: String
   passed: Boolean
   result: String
-  timestamp: String
+  timestamp: Int
 }
 
 input AuditLogUpdateManyMutationInput {
@@ -119,11 +131,13 @@ input AuditLogUpdateManyMutationInput {
   bucket: String
   version: String
   jobVersion: String
+  masterOsImage: String
   infraCommit: String
+  nodeOsImage: String
   pod: String
   passed: Boolean
   result: String
-  timestamp: String
+  timestamp: Int
 }
 
 input AuditLogWhereInput {
@@ -205,6 +219,20 @@ input AuditLogWhereInput {
   jobVersion_not_starts_with: String
   jobVersion_ends_with: String
   jobVersion_not_ends_with: String
+  masterOsImage: String
+  masterOsImage_not: String
+  masterOsImage_in: [String!]
+  masterOsImage_not_in: [String!]
+  masterOsImage_lt: String
+  masterOsImage_lte: String
+  masterOsImage_gt: String
+  masterOsImage_gte: String
+  masterOsImage_contains: String
+  masterOsImage_not_contains: String
+  masterOsImage_starts_with: String
+  masterOsImage_not_starts_with: String
+  masterOsImage_ends_with: String
+  masterOsImage_not_ends_with: String
   infraCommit: String
   infraCommit_not: String
   infraCommit_in: [String!]
@@ -219,6 +247,20 @@ input AuditLogWhereInput {
   infraCommit_not_starts_with: String
   infraCommit_ends_with: String
   infraCommit_not_ends_with: String
+  nodeOsImage: String
+  nodeOsImage_not: String
+  nodeOsImage_in: [String!]
+  nodeOsImage_not_in: [String!]
+  nodeOsImage_lt: String
+  nodeOsImage_lte: String
+  nodeOsImage_gt: String
+  nodeOsImage_gte: String
+  nodeOsImage_contains: String
+  nodeOsImage_not_contains: String
+  nodeOsImage_starts_with: String
+  nodeOsImage_not_starts_with: String
+  nodeOsImage_ends_with: String
+  nodeOsImage_not_ends_with: String
   pod: String
   pod_not: String
   pod_in: [String!]
@@ -249,20 +291,14 @@ input AuditLogWhereInput {
   result_not_starts_with: String
   result_ends_with: String
   result_not_ends_with: String
-  timestamp: String
-  timestamp_not: String
-  timestamp_in: [String!]
-  timestamp_not_in: [String!]
-  timestamp_lt: String
-  timestamp_lte: String
-  timestamp_gt: String
-  timestamp_gte: String
-  timestamp_contains: String
-  timestamp_not_contains: String
-  timestamp_starts_with: String
-  timestamp_not_starts_with: String
-  timestamp_ends_with: String
-  timestamp_not_ends_with: String
+  timestamp: Int
+  timestamp_not: Int
+  timestamp_in: [Int!]
+  timestamp_not_in: [Int!]
+  timestamp_lt: Int
+  timestamp_lte: Int
+  timestamp_gt: Int
+  timestamp_gte: Int
   AND: [AuditLogWhereInput!]
   OR: [AuditLogWhereInput!]
   NOT: [AuditLogWhereInput!]
