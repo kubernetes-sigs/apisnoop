@@ -10,8 +10,7 @@ function createAuditLog (root, args, context) {
     pod: args.pod,
     passed: args.passed,
     result: args.result,
-    timestamp: args.timestamp,
-    endpoints: []
+    timestamp: args.timestamp
   });
 };
 
@@ -33,7 +32,21 @@ function createEndpoint (root, args, context) {
   });
 }
 
+function createTest (root, args, context) {
+  return context.prisma.createTest({
+    auditLog: { connect: { id: args.auditLogId } },
+    name: args.name,
+    endpoints: { connect: args.endpoints.map(opID => {
+      return {
+          operationID: opID,
+          auditLog: { connect: {id: args.auditLogID} }
+      }
+    })}
+  })
+}
+
 module.exports = {
   createAuditLog,
-  createEndpoint
+  createEndpoint,
+  createTest
 };

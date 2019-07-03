@@ -9,12 +9,14 @@ const Query = require('./resolvers/Query');
 const Mutation = require('./resolvers/Mutation');
 const AuditLog = require('./resolvers/AuditLog');
 const Endpoint = require('./resolvers/Endpoint');
+const Test = require('./resolvers/Test');
 
 const resolvers = {
   Query,
   Mutation,
   AuditLog,
-  Endpoint
+  Endpoint,
+  Test
 };
 
 const server = new GraphQLServer({

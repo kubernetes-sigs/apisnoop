@@ -11,6 +11,10 @@ type AggregateEndpoint {
   count: Int!
 }
 
+type AggregateTest {
+  count: Int!
+}
+
 type AuditLog {
   id: ID!
   createdAt: DateTime!
@@ -48,6 +52,11 @@ input AuditLogCreateInput {
   result: String!
   timestamp: Int!
   endpoints: EndpointCreateManyWithoutAuditLogInput
+}
+
+input AuditLogCreateOneInput {
+  create: AuditLogCreateInput
+  connect: AuditLogWhereUniqueInput
 }
 
 input AuditLogCreateOneWithoutEndpointsInput {
@@ -138,6 +147,21 @@ input AuditLogSubscriptionWhereInput {
   NOT: [AuditLogSubscriptionWhereInput!]
 }
 
+input AuditLogUpdateDataInput {
+  job: String
+  bucket: String
+  version: String
+  jobVersion: String
+  masterOsImage: String
+  infraCommit: String
+  nodeOsImage: String
+  pod: String
+  passed: Boolean
+  result: String
+  timestamp: Int
+  endpoints: EndpointUpdateManyWithoutAuditLogInput
+}
+
 input AuditLogUpdateInput {
   job: String
   bucket: String
@@ -167,6 +191,13 @@ input AuditLogUpdateManyMutationInput {
   timestamp: Int
 }
 
+input AuditLogUpdateOneRequiredInput {
+  create: AuditLogCreateInput
+  update: AuditLogUpdateDataInput
+  upsert: AuditLogUpsertNestedInput
+  connect: AuditLogWhereUniqueInput
+}
+
 input AuditLogUpdateOneRequiredWithoutEndpointsInput {
   create: AuditLogCreateWithoutEndpointsInput
   update: AuditLogUpdateWithoutEndpointsDataInput
@@ -186,6 +217,11 @@ input AuditLogUpdateWithoutEndpointsDataInput {
   passed: Boolean
   result: String
   timestamp: Int
+}
+
+input AuditLogUpsertNestedInput {
+  update: AuditLogUpdateDataInput!
+  create: AuditLogCreateInput!
 }
 
 input AuditLogUpsertWithoutEndpointsInput {
@@ -409,6 +445,11 @@ input EndpointCreateInput {
   testHits: Int!
   conformanceHits: Int!
   isDeprecated: Boolean!
+}
+
+input EndpointCreateManyInput {
+  create: [EndpointCreateInput!]
+  connect: [EndpointWhereUniqueInput!]
 }
 
 input EndpointCreateManyWithoutAuditLogInput {
@@ -669,6 +710,22 @@ input EndpointSubscriptionWhereInput {
   NOT: [EndpointSubscriptionWhereInput!]
 }
 
+input EndpointUpdateDataInput {
+  auditLog: AuditLogUpdateOneRequiredWithoutEndpointsInput
+  operationID: String
+  level: String
+  category: String
+  kind: String
+  group: String
+  description: String
+  version: String
+  path: String
+  hits: Int
+  testHits: Int
+  conformanceHits: Int
+  isDeprecated: Boolean
+}
+
 input EndpointUpdateInput {
   auditLog: AuditLogUpdateOneRequiredWithoutEndpointsInput
   operationID: String
@@ -698,6 +755,18 @@ input EndpointUpdateManyDataInput {
   testHits: Int
   conformanceHits: Int
   isDeprecated: Boolean
+}
+
+input EndpointUpdateManyInput {
+  create: [EndpointCreateInput!]
+  update: [EndpointUpdateWithWhereUniqueNestedInput!]
+  upsert: [EndpointUpsertWithWhereUniqueNestedInput!]
+  delete: [EndpointWhereUniqueInput!]
+  connect: [EndpointWhereUniqueInput!]
+  set: [EndpointWhereUniqueInput!]
+  disconnect: [EndpointWhereUniqueInput!]
+  deleteMany: [EndpointScalarWhereInput!]
+  updateMany: [EndpointUpdateManyWithWhereNestedInput!]
 }
 
 input EndpointUpdateManyMutationInput {
@@ -747,9 +816,20 @@ input EndpointUpdateWithoutAuditLogDataInput {
   isDeprecated: Boolean
 }
 
+input EndpointUpdateWithWhereUniqueNestedInput {
+  where: EndpointWhereUniqueInput!
+  data: EndpointUpdateDataInput!
+}
+
 input EndpointUpdateWithWhereUniqueWithoutAuditLogInput {
   where: EndpointWhereUniqueInput!
   data: EndpointUpdateWithoutAuditLogDataInput!
+}
+
+input EndpointUpsertWithWhereUniqueNestedInput {
+  where: EndpointWhereUniqueInput!
+  update: EndpointUpdateDataInput!
+  create: EndpointCreateInput!
 }
 
 input EndpointUpsertWithWhereUniqueWithoutAuditLogInput {
@@ -944,6 +1024,11 @@ type Mutation {
   upsertEndpoint(where: EndpointWhereUniqueInput!, create: EndpointCreateInput!, update: EndpointUpdateInput!): Endpoint!
   deleteEndpoint(where: EndpointWhereUniqueInput!): Endpoint
   deleteManyEndpoints(where: EndpointWhereInput): BatchPayload!
+  createTest(data: TestCreateInput!): Test!
+  updateTest(data: TestUpdateInput!, where: TestWhereUniqueInput!): Test
+  upsertTest(where: TestWhereUniqueInput!, create: TestCreateInput!, update: TestUpdateInput!): Test!
+  deleteTest(where: TestWhereUniqueInput!): Test
+  deleteManyTests(where: TestWhereInput): BatchPayload!
 }
 
 enum MutationType {
@@ -970,12 +1055,111 @@ type Query {
   endpoint(where: EndpointWhereUniqueInput!): Endpoint
   endpoints(where: EndpointWhereInput, orderBy: EndpointOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [Endpoint]!
   endpointsConnection(where: EndpointWhereInput, orderBy: EndpointOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): EndpointConnection!
+  test(where: TestWhereUniqueInput!): Test
+  tests(where: TestWhereInput, orderBy: TestOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [Test]!
+  testsConnection(where: TestWhereInput, orderBy: TestOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): TestConnection!
   node(id: ID!): Node
 }
 
 type Subscription {
   auditLog(where: AuditLogSubscriptionWhereInput): AuditLogSubscriptionPayload
   endpoint(where: EndpointSubscriptionWhereInput): EndpointSubscriptionPayload
+  test(where: TestSubscriptionWhereInput): TestSubscriptionPayload
+}
+
+type Test {
+  id: ID!
+  createdAt: DateTime!
+  auditLog: AuditLog!
+  endpoints(where: EndpointWhereInput, orderBy: EndpointOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [Endpoint!]
+}
+
+type TestConnection {
+  pageInfo: PageInfo!
+  edges: [TestEdge]!
+  aggregate: AggregateTest!
+}
+
+input TestCreateInput {
+  id: ID
+  auditLog: AuditLogCreateOneInput!
+  endpoints: EndpointCreateManyInput
+}
+
+type TestEdge {
+  node: Test!
+  cursor: String!
+}
+
+enum TestOrderByInput {
+  id_ASC
+  id_DESC
+  createdAt_ASC
+  createdAt_DESC
+}
+
+type TestPreviousValues {
+  id: ID!
+  createdAt: DateTime!
+}
+
+type TestSubscriptionPayload {
+  mutation: MutationType!
+  node: Test
+  updatedFields: [String!]
+  previousValues: TestPreviousValues
+}
+
+input TestSubscriptionWhereInput {
+  mutation_in: [MutationType!]
+  updatedFields_contains: String
+  updatedFields_contains_every: [String!]
+  updatedFields_contains_some: [String!]
+  node: TestWhereInput
+  AND: [TestSubscriptionWhereInput!]
+  OR: [TestSubscriptionWhereInput!]
+  NOT: [TestSubscriptionWhereInput!]
+}
+
+input TestUpdateInput {
+  auditLog: AuditLogUpdateOneRequiredInput
+  endpoints: EndpointUpdateManyInput
+}
+
+input TestWhereInput {
+  id: ID
+  id_not: ID
+  id_in: [ID!]
+  id_not_in: [ID!]
+  id_lt: ID
+  id_lte: ID
+  id_gt: ID
+  id_gte: ID
+  id_contains: ID
+  id_not_contains: ID
+  id_starts_with: ID
+  id_not_starts_with: ID
+  id_ends_with: ID
+  id_not_ends_with: ID
+  createdAt: DateTime
+  createdAt_not: DateTime
+  createdAt_in: [DateTime!]
+  createdAt_not_in: [DateTime!]
+  createdAt_lt: DateTime
+  createdAt_lte: DateTime
+  createdAt_gt: DateTime
+  createdAt_gte: DateTime
+  auditLog: AuditLogWhereInput
+  endpoints_every: EndpointWhereInput
+  endpoints_some: EndpointWhereInput
+  endpoints_none: EndpointWhereInput
+  AND: [TestWhereInput!]
+  OR: [TestWhereInput!]
+  NOT: [TestWhereInput!]
+}
+
+input TestWhereUniqueInput {
+  id: ID
 }
 `
       }

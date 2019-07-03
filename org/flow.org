@@ -24,7 +24,34 @@
      node ./src/index.js
    #+END_SRC
 
+** View the Playground
+   From your browser, navigate to =localhost:4000=
+
 ** deploy new database model to our prisma database
+* Example Queries
+** Running Queries
+  -  [[** Navigate to our v3 Repo and start up server][Navigate to our v3 Repo and start up server]] 
+  [[*View the Playground][- View the Playground]] 
+  - Paste the query into the left side and hit play, or =ctrl-enter= 
+   
+** All AuditLogs and Endpoints, including endpoints hits
+   What's useful for this is to see that you can have an endpoint with the same opId and associated with different AuditLogs
+   #+BEGIN_SRC graphql
+     query{
+       auditLogs{
+         id
+         version
+         endpoints{
+           id
+           operationID
+           hits
+           conformanceHits
+           testHits
+         }
+       }
+     }
+   #+END_SRC
+
 * Dev Diary
 ** July
 *** 1st
@@ -129,11 +156,71 @@ I worked off the hackernews tutorial i did, simplifying and refacotring as neede
      :END:
      
 **** DONE Issue One: Setup Initial Backend
+*** 2nd
+    I did not do work on v3, as work was needed to be done on the current apisnoop, to add auditlogs for july 1st and june 1st, then debug when the pr preview was not displaying correctly.
+*** 3rd
+    Today is a small cross-roads.  I could keep working on putting individual entries into our db, to ensure we can successfully post new test_tags, useragents, and tests.  Or I could start to work on the data-gen script, so that we can start to put in actual audit logs.  
+    
+    If I work on the former, the downside is that our results back will still just be a Proof of Concept, with a single entry for each thing.  The upside is that I'll know exactly what the post should look like.
+    
+    If I work on the latter, I'll get closr to being able to populate it with real data (and could maybe try to get it to just post an auditlog's metadata and nothing else.)  The downside is that this si some big work to untangle, and I won't yet know how to post every bit of data that the datagen script is generating.
+    
+    I am making a choice to get our schema finished, with just basic entries for each thing, before moving to data-gen
+    
+*** DONE Write out tickets for getting test_tags, useragents, and tests into db.
+    CLOSED: [2019-07-03 Wed 09:24]
+    :LOGBOOK:
+    CLOCK: [2019-07-03 Wed 09:10]--[2019-07-03 Wed 09:24] =>  0:14
+    :END:
+    Added tickets for 14, 15, 16, 17, 18 and added them to this flow as TODO's.
+*** IN-PROGRESS #14 Write a mutation for populating tests in the db, that are connected to auditlogs and endpoints.
+    :LOGBOOK:
+    CLOCK: [2019-07-04 Thu 08:36]--[2019-07-04 Thu 09:02] =>  0:26
+    CLOCK: [2019-07-04 Thu 05:30]--[2019-07-04 Thu 06:55] =>  1:25
+    CLOCK: [2019-07-03 Wed 09:24]--[2019-07-03 Wed 11:58] =>  2:34
+    :END:
+    I want to make sure I can add a test for a specific auditlog, and then only connect it to endpoints that have the same auditlog.  The reasonb eing that there will be tests with the same name across auditlogs, and endpoints with the same name across auditlogs, and we need to ensure we aren't making duplicates.
+    
+    When I add a test, I won't know each of the endpoints id's.  I think it's well enough to match on operationID, as it should be a constant, and also auditLog.  So it's a question on whether I can do two arguments in the prisma ={ connect }= function. 
+
+**** [40%] Tasks to complete ticket:
+     - [X] populate db with another auditlog
+       - hoooo boy, this was harder than I expected!  I misunderstood what could be passed along when creating a new auditlog, after I'd made that endpoint connection.  I was thinking I needed to pass along an empty array...since auditLogs should now have an 'endpoints' field...just we don't know what'll go in them.  But you cannot add empty arrays in mutations, and i was getting a (cryptic) error message telling me this.
+       - I ended up signing up for a number of prisma forums and channels trying to find the answre to this, and got the answer within [[https://www.prisma.io/forum/t/mutation-failing-problem-with-non-nullable-array/5748][prisma.io/forum]].  This is useful though, as I now know the structure for extending this to include useragents, tests, etc and know what resources I have.
+     - [X] add an endpoint with same opId as one in there, but to this new auditlog
+       - Check it with this example query: [[** All AuditLogs and Endpoints, including endpoints hits][All AuditLogs and Endpoints, including endpoints hits]]  
+     - [ ] Write a test mutation with an AuditLog field, matching the endpoints field, and an endpoints field that connects based on endpoints opId and auditLog.
+       - having an issue with this, in that I am trying to connect all these endpoints based on their operationID, but cannot as that is not a @unique field.  We are going to have the same opID's across jobs, releases, buckets etc.
+       - The tests are going to end up with a list of endpoints they hit.  It will be the same testname across releases, though somtimes there might be an adjustment (e.g. when promoted to conformance).  They'll often have the same list of endpoints, but not always (if the test is written to hit less, but more specific ones, or more get added to it.)
+       - The test json now just includes a list of operationID's for the things they hit.  I'd like to connect this list to the actual endpoints, so if you query a test, you can also grab the relevant endpoint info in the same query.
+       - The issue is that the operationID's are not unique.  What's unique is operationID + auditLogID.
+       - So Options (ordered by my preference):
+         1. figure out how to run a map on just the args.endpoints before we do the mutation, to retrun an array of endpointID's (which are unique).  use this to connect.
+         2. create a new field which is opID+auditLogID and make this @unique.  I can then connect immediately to that.
+         3. don't connect tests to endpoints within the api, and expect people to do it as a separate query.
+       - Of the first two, option 2 seems easiest, but I can timebox how to do 1 first.  If not possible, I'll adjust our endpoints api for 2.
+         
+     - [ ] Add a new test to DB, with an existing endpoint included
+     - [ ] query the test and ensure the right endpoint comes back.
+
+     To test this, I'll need to 
+    
+    
+    
+*** TODO #15 Write a mutation for useragent, that's connected to an auditlog and endpoints.
+*** TODO #16 Write a query for useragent, to see its info including the audit log its connected to and endpoints it hits
+*** TODO #17 Write a query for tests, including its auditlog and endpints
+*** TODO #18 Write a query for test_tags, that includes its auditLog and endpoints
+
+    
+    
+*** TODO Issue #3: Develop Schema for tests, test_tags, useragents 
+    [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/3][Link to #3]]
 * Future Tasks
 ** NOW: Tasks of the highest priority
+** FUTURE: Cool ideas for the future
 *** TODO Write up tickets related to our datagen script work.
 *** TODO Work on DataGen script to populate database with actual audit log.
-** FUTURE: Cool ideas for the future
 *** TODO Add to discusion in issue 6 and issue 7
       - [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/6][Issue 6]]
       - [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/7][Issue 7]] 
