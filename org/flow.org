@@ -43,6 +43,78 @@
    - look at the Auditlog Event Go Type where it is sharply defined what the structure for an audit log entry is.  We can use this to define the schema for our mutations.
 ** Sample Audit Log stored in ./data/kube-apiserver-audit.log
    this is only on my local one, since it's a 400mb file.  future flow.org will have script to download it from a set bucket.
+** The kubernetes types.go Auditlog Event Struct
+   #+NAME: Audit Log Event Struct
+   #+BEGIN_SRC go
+     // Event captures all the information that can be included in an API audit log.
+     type Event struct {
+       metav1.TypeMeta `json:",inline"`
+
+       // AuditLevel at which event was generated
+       Level Level `json:"level" protobuf:"bytes,1,opt,name=level,casttype=Level"`
+
+       // Unique audit ID, generated for each request.
+       AuditID types.UID `json:"auditID" protobuf:"bytes,2,opt,name=auditID,casttype=k8s.io/apimachinery/pkg/types.UID"`
+       // Stage of the request handling when this event instance was generated.
+       Stage Stage `json:"stage" protobuf:"bytes,3,opt,name=stage,casttype=Stage"`
+
+       // RequestURI is the request URI as sent by the client to a server.
+       RequestURI string `json:"requestURI" protobuf:"bytes,4,opt,name=requestURI"`
+       // Verb is the kubernetes verb associated with the request.
+       // For non-resource requests, this is the lower-cased HTTP method.
+       Verb string `json:"verb" protobuf:"bytes,5,opt,name=verb"`
+       // Authenticated user information.
+       User authnv1.UserInfo `json:"user" protobuf:"bytes,6,opt,name=user"`
+       // Impersonated user information.
+       // +optional
+       ImpersonatedUser *authnv1.UserInfo `json:"impersonatedUser,omitempty" protobuf:"bytes,7,opt,name=impersonatedUser"`
+       // Source IPs, from where the request originated and intermediate proxies.
+       // +optional
+       SourceIPs []string `json:"sourceIPs,omitempty" protobuf:"bytes,8,rep,name=sourceIPs"`
+       // UserAgent records the user agent string reported by the client.
+       // Note that the UserAgent is provided by the client, and must not be trusted.
+       // +optional
+       UserAgent string `json:"userAgent,omitempty" protobuf:"bytes,16,opt,name=userAgent"`
+       // Object reference this request is targeted at.
+       // Does not apply for List-type requests, or non-resource requests.
+       // +optional
+       ObjectRef *ObjectReference `json:"objectRef,omitempty" protobuf:"bytes,9,opt,name=objectRef"`
+       // The response status, populated even when the ResponseObject is not a Status type.
+       // For successful responses, this will only include the Code and StatusSuccess.
+       // For non-status type error responses, this will be auto-populated with the error Message.
+       // +optional
+       ResponseStatus *metav1.Status `json:"responseStatus,omitempty" protobuf:"bytes,10,opt,name=responseStatus"`
+
+       // API object from the request, in JSON format. The RequestObject is recorded as-is in the request
+       // (possibly re-encoded as JSON), prior to version conversion, defaulting, admission or
+       // merging. It is an external versioned object type, and may not be a valid object on its own.
+       // Omitted for non-resource requests.  Only logged at Request Level and higher.
+       // +optional
+       RequestObject *runtime.Unknown `json:"requestObject,omitempty" protobuf:"bytes,11,opt,name=requestObject"`
+       // API object returned in the response, in JSON. The ResponseObject is recorded after conversion
+       // to the external type, and serialized as JSON.  Omitted for non-resource requests.  Only logged
+       // at Response Level.
+       // +optional
+       ResponseObject *runtime.Unknown `json:"responseObject,omitempty" protobuf:"bytes,12,opt,name=responseObject"`
+       // Time the request reached the apiserver.
+       // +optional
+       RequestReceivedTimestamp metav1.MicroTime `json:"requestReceivedTimestamp" protobuf:"bytes,13,opt,name=requestReceivedTimestamp"`
+       // Time the request reached current audit stage.
+       // +optional
+       StageTimestamp metav1.MicroTime `json:"stageTimestamp" protobuf:"bytes,14,opt,name=stageTimestamp"`
+
+       // Annotations is an unstructured key value map stored with an audit event that may be set by
+       // plugins invoked in the request serving chain, including authentication, authorization and
+       // admission plugins. Note that these annotations are for the audit event, and do not correspond
+       // to the metadata.annotations of the submitted object. Keys should uniquely identify the informing
+       // component to avoid name collisions (e.g. podsecuritypolicy.admission.k8s.io/policy). Values
+       // should be short. Annotations are included in the Metadata level.
+       // +optional
+       Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,15,rep,name=annotations"`
+     }
+   #+END_SRC
+
+   
 * Example Queries
 ** Running Queries
   -  [[** Navigate to our v3 Repo and start up server][Navigate to our v3 Repo and start up server]] 
@@ -197,12 +269,15 @@ I worked off the hackernews tutorial i did, simplifying and refacotring as neede
      CLOCK: [2019-07-03 Wed 09:10]--[2019-07-03 Wed 09:24] =>  0:14
      :END:
      Added tickets for 14, 15, 16, 17, 18 and added them to this flow as TODO's.
-**** IN-PROGRESS #14 Write a mutation for populating tests in the db, that are connected to auditlogs and endpoints.
+**** DONE #14 Write a mutation for populating tests in the db, that are connected to auditlogs and endpoints.
+     CLOSED: [2019-07-05 Fri 05:30]
      :LOGBOOK:
      CLOCK: [2019-07-04 Thu 08:36]--[2019-07-04 Thu 09:02] =>  0:26
      CLOCK: [2019-07-04 Thu 05:30]--[2019-07-04 Thu 06:55] =>  1:25
      CLOCK: [2019-07-03 Wed 09:24]--[2019-07-03 Wed 11:58] =>  2:34
      :END:
+     NOTE: didn't finish this, as convo with hh made us realize we could change tactics and d/l full auditlog instead and populate that to the db.
+
      I want to make sure I can add a test for a specific auditlog, and then only connect it to endpoints that have the same auditlog.  The reasonb eing that there will be tests with the same name across auditlogs, and endpoints with the same name across auditlogs, and we need to ensure we aren't making duplicates.
     
      When I add a test, I won't know each of the endpoints id's.  I think it's well enough to match on operationID, as it should be a constant, and also auditLog.  So it's a question on whether I can do two arguments in the prisma ={ connect }= function. 
@@ -231,15 +306,6 @@ I worked off the hackernews tutorial i did, simplifying and refacotring as neede
     
     
     
-**** TODO #15 Write a mutation for useragent, that's connected to an auditlog and endpoints.
-**** TODO #16 Write a query for useragent, to see its info including the audit log its connected to and endpoints it hits
-**** TODO #17 Write a query for tests, including its auditlog and endpints
-**** TODO #18 Write a query for test_tags, that includes its auditLog and endpoints
-
-    
-    
-**** TODO Issue #3: Develop Schema for tests, test_tags, useragents 
-     [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/3][Link to #3]]
 *** 4th
 **** DONE Write Up Tickets for our new Tasks, based on [[*Notes from talk with hh][Notes from talk with hh]]  
      CLOSED: [2019-07-05 Fri 04:20]
@@ -252,9 +318,10 @@ I worked off the hackernews tutorial i did, simplifying and refacotring as neede
      CLOCK: [2019-07-05 Fri 04:12]--[2019-07-05 Fri 04:15] =>  0:03
      :END:
      You can now find useful links within our resources: [[*Useful Links][Useful Links]] 
-**** IN-PROGRESS #19 look into our existing 'download-audits.sh' to grab an audit
+**** DONE #19 look into our existing 'download-audits.sh' to grab an audit
+     CLOSED: [2019-07-05 Fri 05:31]
      :LOGBOOK:
-     CLOCK: [2019-07-05 Fri 04:15]
+     CLOCK: [2019-07-05 Fri 04:15]--[2019-07-05 Fri 05:31] =>  1:16
      :END:
    [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/19][link to #19]]  
    I need to remember that the end goal is just to have an auditlog. And so instead of looking at code directly, i'll look at the prow job build logs from a pr, to see the lines actually run and where it's pulling data from.  Then I can do a =gsutil= to grab the relevant log.
@@ -267,8 +334,420 @@ I worked off the hackernews tutorial i did, simplifying and refacotring as neede
    - I gunzipped a random one, then ran =cat randomlog | jq keys=, then ran the same command on the =kube-apiserver-audit.log=.  The keys are the same, and so I could see they were the same _type_ of file, but broken into multiple sections to make the d/ling easier (I knew this, but wanted to confirm).
    - I took the kube-apiserver-audit.log and rsynced it down to this repo's =data= folder so we could explore further.
    - I noted the location within the resources of this flow.org (couldn't add a proper file link yet, and it felt like a rabbit hole)
-**** TODO #20 Investigate how our d/led audit log maps to the audit log struct type.
+**** IN-PROGRESS #20 Investigate how our d/led audit log maps to the audit log struct type.
+     :LOGBOOK:
+     CLOCK: [2019-07-05 Fri 06:05]
+     CLOCK: [2019-07-05 Fri 05:31]-[2019-07-05 Fri 06:05] =>  0:34
+     :END:
     [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/20][link to #20]] 
+    This is the Event Struct (also held in our resources here: [[*The kubernetes types.go Auditlog Event Struct][The kubernetes types.go Auditlog Event Struct]])
+    
+   #+NAME: Audit Log Event Struct
+   #+BEGIN_SRC go
+     // Event captures all the information that can be included in an API audit log.
+     type Event struct {
+       metav1.TypeMeta `json:",inline"`
+
+       // AuditLevel at which event was generated
+       Level Level `json:"level" protobuf:"bytes,1,opt,name=level,casttype=Level"`
+
+       // Unique audit ID, generated for each request.
+       AuditID types.UID `json:"auditID" protobuf:"bytes,2,opt,name=auditID,casttype=k8s.io/apimachinery/pkg/types.UID"`
+       // Stage of the request handling when this event instance was generated.
+       Stage Stage `json:"stage" protobuf:"bytes,3,opt,name=stage,casttype=Stage"`
+
+       // RequestURI is the request URI as sent by the client to a server.
+       RequestURI string `json:"requestURI" protobuf:"bytes,4,opt,name=requestURI"`
+       // Verb is the kubernetes verb associated with the request.
+       // For non-resource requests, this is the lower-cased HTTP method.
+       Verb string `json:"verb" protobuf:"bytes,5,opt,name=verb"`
+       // Authenticated user information.
+       User authnv1.UserInfo `json:"user" protobuf:"bytes,6,opt,name=user"`
+       // Impersonated user information.
+       // +optional
+       ImpersonatedUser *authnv1.UserInfo `json:"impersonatedUser,omitempty" protobuf:"bytes,7,opt,name=impersonatedUser"`
+       // Source IPs, from where the request originated and intermediate proxies.
+       // +optional
+       SourceIPs []string `json:"sourceIPs,omitempty" protobuf:"bytes,8,rep,name=sourceIPs"`
+       // UserAgent records the user agent string reported by the client.
+       // Note that the UserAgent is provided by the client, and must not be trusted.
+       // +optional
+       UserAgent string `json:"userAgent,omitempty" protobuf:"bytes,16,opt,name=userAgent"`
+       // Object reference this request is targeted at.
+       // Does not apply for List-type requests, or non-resource requests.
+       // +optional
+       ObjectRef *ObjectReference `json:"objectRef,omitempty" protobuf:"bytes,9,opt,name=objectRef"`
+       // The response status, populated even when the ResponseObject is not a Status type.
+       // For successful responses, this will only include the Code and StatusSuccess.
+       // For non-status type error responses, this will be auto-populated with the error Message.
+       // +optional
+       ResponseStatus *metav1.Status `json:"responseStatus,omitempty" protobuf:"bytes,10,opt,name=responseStatus"`
+
+       // API object from the request, in JSON format. The RequestObject is recorded as-is in the request
+       // (possibly re-encoded as JSON), prior to version conversion, defaulting, admission or
+       // merging. It is an external versioned object type, and may not be a valid object on its own.
+       // Omitted for non-resource requests.  Only logged at Request Level and higher.
+       // +optional
+       RequestObject *runtime.Unknown `json:"requestObject,omitempty" protobuf:"bytes,11,opt,name=requestObject"`
+       // API object returned in the response, in JSON. The ResponseObject is recorded after conversion
+       // to the external type, and serialized as JSON.  Omitted for non-resource requests.  Only logged
+       // at Response Level.
+       // +optional
+       ResponseObject *runtime.Unknown `json:"responseObject,omitempty" protobuf:"bytes,12,opt,name=responseObject"`
+       // Time the request reached the apiserver.
+       // +optional
+       RequestReceivedTimestamp metav1.MicroTime `json:"requestReceivedTimestamp" protobuf:"bytes,13,opt,name=requestReceivedTimestamp"`
+       // Time the request reached current audit stage.
+       // +optional
+       StageTimestamp metav1.MicroTime `json:"stageTimestamp" protobuf:"bytes,14,opt,name=stageTimestamp"`
+
+       // Annotations is an unstructured key value map stored with an audit event that may be set by
+       // plugins invoked in the request serving chain, including authentication, authorization and
+       // admission plugins. Note that these annotations are for the audit event, and do not correspond
+       // to the metadata.annotations of the submitted object. Keys should uniquely identify the informing
+       // component to avoid name collisions (e.g. podsecuritypolicy.admission.k8s.io/policy). Values
+       // should be short. Annotations are included in the Metadata level.
+       // +optional
+       Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,15,rep,name=annotations"`
+     }
+   #+END_SRC
+   
+   And without all the comments, just the struct, it is:
+
+   #+NAME: Compact Event Struct
+   #+BEGIN_SRC go
+     type Event struct {
+       metav1.TypeMeta `json:",inline"`
+       Level Level `json:"level" protobuf:"bytes,1,opt,name=level,casttype=Level"`
+       AuditID types.UID `json:"auditID" protobuf:"bytes,2,opt,name=auditID,casttype=k8s.io/apimachinery/pkg/types.UID"`
+       Stage Stage `json:"stage" protobuf:"bytes,3,opt,name=stage,casttype=Stage"`
+       RequestURI string `json:"requestURI" protobuf:"bytes,4,opt,name=requestURI"`
+       Verb string `json:"verb" protobuf:"bytes,5,opt,name=verb"`
+       User authnv1.UserInfo `json:"user" protobuf:"bytes,6,opt,name=user"`
+       ImpersonatedUser *authnv1.UserInfo `json:"impersonatedUser,omitempty" protobuf:"bytes,7,opt,name=impersonatedUser"`
+       SourceIPs []string `json:"sourceIPs,omitempty" protobuf:"bytes,8,rep,name=sourceIPs"`
+       UserAgent string `json:"userAgent,omitempty" protobuf:"bytes,16,opt,name=userAgent"`
+       ObjectRef *ObjectReference `json:"objectRef,omitempty" protobuf:"bytes,9,opt,name=objectRef"`
+       ResponseStatus *metav1.Status `json:"responseStatus,omitempty" protobuf:"bytes,10,opt,name=responseStatus"`
+       RequestObject *runtime.Unknown `json:"requestObject,omitempty" protobuf:"bytes,11,opt,name=requestObject"`
+       ResponseObject *runtime.Unknown `json:"responseObject,omitempty" protobuf:"bytes,12,opt,name=responseObject"`
+       RequestReceivedTimestamp metav1.MicroTime `json:"requestReceivedTimestamp" protobuf:"bytes,13,opt,name=requestReceivedTimestamp"`
+       StageTimestamp metav1.MicroTime `json:"stageTimestamp" protobuf:"bytes,14,opt,name=stageTimestamp"`
+       Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,15,rep,name=annotations"`
+     }
+   #+END_SRC
+
+    
+   We can compare this to the keys from an entry in our d/led auditlog
+   
+   #+NAME: Grab keys for one line of audit log
+   #+BEGIN_SRC shell
+     head -1 ../data/kube-apiserver-audit.log \
+          | jq keys
+   #+END_SRC
+   
+   #+RESULTS: Grab keys for one line of audit log
+   #+begin_EXAMPLE
+     [
+       "annotations",
+       "apiVersion",
+       "auditID",
+       "kind",
+       "level",
+       "objectRef",
+       "requestReceivedTimestamp",
+       "requestURI",
+       "responseStatus",
+       "sourceIPs",
+       "stage",
+       "stageTimestamp",
+       "user",
+       "userAgent",
+       "verb"
+     ]
+   #+end_EXAMPLE
+   
+   The keys are largely the same, and where there isn't the same key in the json, we can see that it was listed as 'json,omitempty'.  In Golang, this means that the field can be null, and if so to omit the key from the output json.  This is similar to the graphql schema of =Something: String= versus =Something: String!= where the former can be a null value, and the latter must have something. For more about this, see: [[https://www.sohamkamani.com/blog/golang/2018-07-19-golang-omitempty/]]
+   
+   The other one that's in the struct, but not the json, is metav1.TypeMeta.  I did a cursory google search for this, and every reference to this key is specific with kubernetes and, judging from [[https://groups.google.com/d/msg/kubernetes-sig-api-machinery/deP_LDaAdVs/TEen0KkkDgAJ][this kubernetes convo]], it's a legacy convention and not meant to be encoded into the json anyway.
+   In other words, it looks like we can map the Struct direct to a graphql schema, as long as we know what each of its type definitions mean.
+   
+   Since we are using prisma, it has a convention to write a graphql.schema but also a datamodel.prisma.  The datamodel is similar to defining tables in sql, but written in the graphql SDL (schema definition language).  It's use is literally to convert our graphql requests into the relevant sql requests.  These two type definitions are slightly different, and so I'll define both here.
+   
+   I'll also post out two events to help with type definitions
+   #+NAME: full event from audit.log
+   #+BEGIN_SRC shell
+     head -3 ../data/kube-apiserver-audit.log \
+          | jq .
+   #+END_SRC
+
+   #+RESULTS: full event from audit.log
+   #+begin_EXAMPLE
+   {
+     "kind": "Event",
+     "apiVersion": "audit.k8s.io/v1",
+     "level": "Request",
+     "auditID": "c0793350-e7fe-42ce-93e6-8436a0eb3b23",
+     "stage": "ResponseComplete",
+     "requestURI": "/api/v1/namespaces/kube-system/pods/etcd-empty-dir-cleanup-bootstrap-e2e-master",
+     "verb": "get",
+     "user": {
+       "username": "kubelet",
+       "groups": [
+         "system:nodes",
+         "system:authenticated"
+       ]
+     },
+     "sourceIPs": [
+       "34.83.72.130"
+     ],
+     "userAgent": "kubelet/v1.16.0 (linux/amd64) kubernetes/0e499be",
+     "objectRef": {
+       "resource": "pods",
+       "namespace": "kube-system",
+       "name": "etcd-empty-dir-cleanup-bootstrap-e2e-master",
+       "apiVersion": "v1"
+     },
+     "responseStatus": {
+       "metadata": {},
+       "status": "Failure",
+       "reason": "Forbidden",
+       "code": 403
+     },
+     "requestReceivedTimestamp": "2019-06-18T16:24:23.098849Z",
+     "stageTimestamp": "2019-06-18T16:24:23.099005Z",
+     "annotations": {
+       "authorization.k8s.io/decision": "forbid",
+       "authorization.k8s.io/reason": ""
+     }
+   }
+   {
+     "kind": "Event",
+     "apiVersion": "audit.k8s.io/v1",
+     "level": "Metadata",
+     "auditID": "8483e074-bd75-4811-a60c-689f33f83b54",
+     "stage": "ResponseComplete",
+     "requestURI": "/apis/coordination.k8s.io/v1beta1/namespaces/kube-node-lease/leases/bootstrap-e2e-master?timeout=10s",
+     "verb": "get",
+     "user": {
+       "username": "kubelet",
+       "groups": [
+         "system:nodes",
+         "system:authenticated"
+       ]
+     },
+     "sourceIPs": [
+       "34.83.72.130"
+     ],
+     "userAgent": "kubelet/v1.16.0 (linux/amd64) kubernetes/0e499be",
+     "objectRef": {
+       "resource": "leases",
+       "namespace": "kube-node-lease",
+       "name": "bootstrap-e2e-master",
+       "apiGroup": "coordination.k8s.io",
+       "apiVersion": "v1beta1"
+     },
+     "responseStatus": {
+       "metadata": {},
+       "status": "Failure",
+       "reason": "Forbidden",
+       "code": 403
+     },
+     "requestReceivedTimestamp": "2019-06-18T16:24:23.099973Z",
+     "stageTimestamp": "2019-06-18T16:24:23.100096Z",
+     "annotations": {
+       "authorization.k8s.io/decision": "forbid",
+       "authorization.k8s.io/reason": ""
+     }
+   }
+   {
+     "kind": "Event",
+     "apiVersion": "audit.k8s.io/v1",
+     "level": "Request",
+     "auditID": "7f702534-db23-416d-b5fd-0c9c2a33d257",
+     "stage": "ResponseComplete",
+     "requestURI": "/apis/storage.k8s.io/v1beta1/csidrivers?limit=500&resourceVersion=0",
+     "verb": "list",
+     "user": {
+       "username": "kubelet",
+       "groups": [
+         "system:nodes",
+         "system:authenticated"
+       ]
+     },
+     "sourceIPs": [
+       "34.83.72.130"
+     ],
+     "userAgent": "kubelet/v1.16.0 (linux/amd64) kubernetes/0e499be",
+     "objectRef": {
+       "resource": "csidrivers",
+       "apiGroup": "storage.k8s.io",
+       "apiVersion": "v1beta1"
+     },
+     "responseStatus": {
+       "metadata": {},
+       "status": "Failure",
+       "reason": "Forbidden",
+       "code": 403
+     },
+     "requestReceivedTimestamp": "2019-06-18T16:24:23.100718Z",
+     "stageTimestamp": "2019-06-18T16:24:23.100802Z",
+     "annotations": {
+       "authorization.k8s.io/decision": "forbid",
+       "authorization.k8s.io/reason": ""
+     }
+   }
+   #+end_EXAMPLE
+
+   
+   
+   #+NAME: Graphql Schema for Event
+   #+BEGIN_SRC graphql
+     type Metadata {
+       name: String
+     }
+
+     type ResponseStatus {
+       metadata: Metadata
+       status: String
+       reason: String
+       code: Int
+     }
+
+     type UserInfo {
+       username: String!
+      "example groups: system:nodes, system:authenticated"
+       groups: [String!]!
+     }
+
+     "ObjectReference contains enough information to let you inspect or modify the referred object."
+     type ObjectReference{
+       resource: String
+       namespace: String
+       name: String
+       uid: ID
+       "APIGroup is the name of the API group that contains the referred object."
+       "The empty string represents the core API group."
+       "+optional"
+       apiGroup: String
+       "APIVersion is the version of the API group that contains the referred object."
+       "+optional"
+       apiVersion: String
+       resourceVersion: String
+       subresource: String
+     }
+
+     "Event captures all the information that can be included in an API audit log."
+     type Event {
+       kind: String
+       "Auditlevel at which event was generated"
+       level: String!
+       "Unique audit ID, generated for each request."
+       auditID: ID
+       "Stage of the request handling when this event instance was generated."
+       Stage: String!
+       "RequestURI is the request URI as sent by the client to a server."
+       requestURI: String!
+       "Verb is the kubernetes verb associated with the request."
+       "For non-resource requests, this is the lower-cased HTTP method."
+       verb: String!
+       "Authenticated user information."
+       user: UserInfo!
+       "Impersonated user information."
+       "+optional"
+       impersonatedUser: UserInfo
+       "Source IPs, from where the request originated and intermediate proxies."
+       "+optional"
+       sourceIPs [String!]
+       "UserAgent records the user agent string reported by the client."
+       "Note that the UserAgent is provided by the client, and must not be trusted."
+       "+optional"
+       userAgent: String 
+       "Object reference this request is targeted at."
+       "Does not apply for List-type requests, or non-resource requests."
+       "+optional"
+       objectRef: ObjectReference
+       "The response status, populated even when the ResponseObject is not a Status type."
+       "For successful responses, this will only include the Code and StatusSuccess."
+       "For non-status type error responses, this will be auto-populated with the error Message."
+       "+optional"
+       responseStatus: ResponseStatus
+       "API object from the request, in JSON format. The RequestObject is recorded as-is in the request"
+       "(possibly re-encoded as JSON), prior to version conversion, defaulting, admission or"
+       "merging. It is an external versioned object type, and may not be a valid object on its own."
+       "Omitted for non-resource requests.  Only logged at Request Level and higher."
+       "+optional"
+       requestObject: ObjectReference
+       "Time the request reached the apiserver."
+       "+optional"
+       requestReceivedTimestamp: String
+       "Time the request reached current audit stage."
+       "+optional"
+       stateTimestamp: String
+       "Annotations is an unstructured key value map stored with an audit event that may be set by"
+       "plugins invoked in the request serving chain, including authentication, authorization and"
+       "admission plugins. Note that these annotations are for the audit event, and do not correspond"
+       "to the metadata.annotations of the submitted object. Keys should uniquely identify the informing"
+       "component to avoid name collisions (e.g. podsecuritypolicy.admission.k8s.io/policy). Values"
+       "should be short. Annotations are included in the Metadata level."
+       "+optional"
+       annotations: Json
+     }
+   #+END_SRC
+   
+   #+NAME: datamodel.prisma for event
+   #+BEGIN_SRC graphql
+     type Metadata {
+       name: String
+     }
+
+     type ResponseStatus {
+       metadata: Metadata
+       status: String
+       reason: String
+       code: Int
+     }
+
+     type UserInfo {
+       username: String!
+       groups: [String!]!
+     }
+
+     type ObjectReference{
+       resource: String
+       namespace: String
+       name: String
+       uid: ID @unique
+       apiGroup: String
+       apiVersion: String
+       resourceVersion: String
+       subresource: String
+     }
+
+     type Event {
+       id: ID! @id
+       createdAt: DateTime! @createdAt
+       kind: String
+       level: String!
+       auditID: ID @unique
+       Stage: String!
+       requestURI: String!
+       verb: String!
+       user: UserInfo!
+       impersonatedUser: UserInfo
+       sourceIPs [String!]
+       userAgent: String 
+       objectRef: ObjectReference
+       responseStatus: ResponseStatus
+       requestObject: ObjectReference
+       requestReceivedTimestamp: String
+       stateTimestamp: String
+       annotations: Json
+     }
+   #+END_SRC
+
+
+   
 **** TODO #21 build a mutation for the events in our d'led audit logs to be added to our db.
      [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/21][link to #21]] 
 **** TODO #22 build out a data-gen script that eats a d/led audit log and, per each line, posts to our db.
@@ -276,6 +755,10 @@ I worked off the hackernews tutorial i did, simplifying and refacotring as neede
     [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/23][Link to #23]] 
 * Future Tasks
 ** NOW: Tasks of the highest priority
+*** TODO make sure requestObject in our Event schema maps to something valid
+    I need to find an example of it in our Event Logs, or remove it if it never comes up.
+*** TODO Make sure Metadata is properly defined
+    in my examples its an empty object, should find a better example of it.
 ** FUTURE: Cool ideas for the future
 *** TODO Write up tickets related to our datagen script work.
 *** TODO Work on DataGen script to populate database with actual audit log.
