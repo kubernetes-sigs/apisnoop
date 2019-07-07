@@ -15,6 +15,22 @@ var models = [
   {
     name: "Test",
     embedded: false
+  },
+  {
+    name: "ResponseStatus",
+    embedded: false
+  },
+  {
+    name: "UserInfo",
+    embedded: false
+  },
+  {
+    name: "ObjectReference",
+    embedded: false
+  },
+  {
+    name: "Event",
+    embedded: false
   }
 ];
 exports.Prisma = prisma_lib_1.makePrismaClientClass({

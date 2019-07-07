@@ -344,6 +344,7 @@ I worked off the hackernews tutorial i did, simplifying and refacotring as neede
    - I noted the location within the resources of this flow.org (couldn't add a proper file link yet, and it felt like a rabbit hole)
 **** IN-PROGRESS #20 Investigate how our d/led audit log maps to the audit log struct type.
      :LOGBOOK:
+     CLOCK: [2019-07-08 Mon 06:44]
      CLOCK: [2019-07-05 Fri 06:05]--[2019-07-05 Fri 07:20] =>  1:15
      CLOCK: [2019-07-05 Fri 05:31]-[2019-07-05 Fri 06:05] =>  0:34
      :END:
@@ -607,8 +608,6 @@ I worked off the hackernews tutorial i did, simplifying and refacotring as neede
    }
    #+end_EXAMPLE
 
-   
-   
    #+NAME: Graphql Schema for Event
    #+BEGIN_SRC graphql
      type Metadata {
@@ -753,8 +752,96 @@ I worked off the hackernews tutorial i did, simplifying and refacotring as neede
        annotations: Json
      }
    #+END_SRC
+   
+   When I first tried this, the prisma deploy through a number of errors, for any time I had a referenced object (like user: UserInfo!).  I needed to setup a relation between the UserInfo type and the Event type.  I solved this for them by adding an `event` field  to each of these 'subtypes'.  
+
+The other error is whenever I had a scalarList like =[String]=, to get these to add correctly, I needed to add the directive =@scalarList(strategy: RELATION)=.  I got this from [[https://www.prisma.io/forum/t/valid-values-for-the-strategy-argument-of-scalarlist-are-relation/7154][a question in the prisma forums]], and agree with the poster that the docs are not clear.
+
+The last issue I had was that the user and impersonatedUser together was throwing an error, whereas it was successful when there were just users.   They said I needed to have a set 'myImpersonatedUser' relation table.  There's intricacies here that are _fascinating_, but I want to just have an auditLog working right now, and can plumb the depths later.
+
+So the datamodel ends up looking like so.
+
+#+NAME: adjusted datamodel.prisma
+#+BEGIN_SRC graphql
+  type ResponseStatus {
+    id: ID! @id
+    createdAt: DateTime! @createdAt
+    metadata: Json
+    status: String
+    reason: String
+    code: Int
+    event: Event!
+  }
+
+  type UserInfo {
+    id: ID! @id
+    createdAt: DateTime! @createdAt
+    username: String!
+    groups: [String!]! @scalarList(strategy: RELATION)
+    event: Event!
+  }
+
+  type ObjectReference{
+    id: ID! @id
+    createdAt: DateTime! @createdAt
+    resource: String
+    namespace: String
+    name: String
+    uid: ID @unique
+    apiGroup: String
+    apiVersion: String
+    resourceVersion: String
+    subresource: String
+    event: Event!
+  }
+
+  type Event {
+    id: ID! @id
+    createdAt: DateTime! @createdAt
+    kind: String
+    level: String!
+    auditID: ID @unique
+    stage: String!
+    requestURI: String!
+    verb: String!
+    user: UserInfo! @relation(link: INLINE)
+    sourceIPs: [String!] @scalarList(strategy: RELATION)
+    userAgent: String 
+    responseStatus: ResponseStatus @relation(link: INLINE)
+    requestObject: ObjectReference @relation(link: INLINE)
+    requestReceivedTimestamp: String
+    stageTimestamp: String
+    annotations: Json
+  }
+#+END_SRC
 
 
+So in the meantime, I looked at how often impersonatedUser comes up.
+
+we can take a look at how many entries are in an audit log, by checking its line number.
+
+#+NAME: audit log entries
+#+BEGIN_SRC shell
+cat ../data/kube-apiserver-audit.log | wc -l
+#+END_SRC
+
+Then compare it to how often impersonatedUser comes up
+#+NAME: audit log entries with impersonatedUser
+#+BEGIN_SRC shell
+cat ../data/kube-apiserver-audit.log | grep impersonatedUser | wc -l
+#+END_SRC
+
+If we compare the results, we see that there are 313k entries, and 74 of them have impersonatedUser.  I think it is okay to not include this field for right now.
+
+#+RESULTS: audit log entries
+#+begin_EXAMPLE
+313441
+#+end_EXAMPLE
+
+#+RESULTS: audit log entries with impersonatedUser
+#+begin_EXAMPLE
+74
+#+end_EXAMPLE
    
 **** TODO #21 build a mutation for the events in our d'led audit logs to be added to our db.
      [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/21][link to #21]] 
@@ -779,3 +866,4 @@ I worked off the hackernews tutorial i did, simplifying and refacotring as neede
 *** TODO figure out how to add org links to files within repo       :org:foo:
 *** TODO add our sample audit.log to a bucket for easy =wget=
 
+*** TODO Check how often impersonatedUser comes up in our audit log.
