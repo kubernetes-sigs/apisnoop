@@ -5,18 +5,11 @@ const {
   GraphQLServer
 } = require('graphql-yoga');
 
-const Query = require('./resolvers/Query');
+// const Query = require('./resolvers/Query');
 const Mutation = require('./resolvers/Mutation');
-const AuditLog = require('./resolvers/AuditLog');
-const Endpoint = require('./resolvers/Endpoint');
-const Test = require('./resolvers/Test');
 
 const resolvers = {
-  Query,
-  Mutation,
-  AuditLog,
-  Endpoint,
-  Test
+  Mutation
 };
 
 const server = new GraphQLServer({
@@ -30,4 +23,4 @@ const server = new GraphQLServer({
   }
 });
 
-server.start(() => console.log('server started on port 4000, baby'));
+server.start(() => console.log('server started on port 4000, my friend.'));

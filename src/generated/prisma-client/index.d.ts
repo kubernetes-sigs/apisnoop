@@ -16,12 +16,9 @@ export type AtLeastOne<T, U = { [K in keyof T]: Pick<T, K> }> = Partial<T> &
 export type Maybe<T> = T | undefined | null;
 
 export interface Exists {
-  auditLog: (where?: AuditLogWhereInput) => Promise<boolean>;
-  endpoint: (where?: EndpointWhereInput) => Promise<boolean>;
   event: (where?: EventWhereInput) => Promise<boolean>;
   objectReference: (where?: ObjectReferenceWhereInput) => Promise<boolean>;
   responseStatus: (where?: ResponseStatusWhereInput) => Promise<boolean>;
-  test: (where?: TestWhereInput) => Promise<boolean>;
   userInfo: (where?: UserInfoWhereInput) => Promise<boolean>;
 }
 
@@ -44,44 +41,6 @@ export interface Prisma {
    * Queries
    */
 
-  auditLog: (where: AuditLogWhereUniqueInput) => AuditLogNullablePromise;
-  auditLogs: (args?: {
-    where?: AuditLogWhereInput;
-    orderBy?: AuditLogOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => FragmentableArray<AuditLog>;
-  auditLogsConnection: (args?: {
-    where?: AuditLogWhereInput;
-    orderBy?: AuditLogOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => AuditLogConnectionPromise;
-  endpoint: (where: EndpointWhereUniqueInput) => EndpointNullablePromise;
-  endpoints: (args?: {
-    where?: EndpointWhereInput;
-    orderBy?: EndpointOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => FragmentableArray<Endpoint>;
-  endpointsConnection: (args?: {
-    where?: EndpointWhereInput;
-    orderBy?: EndpointOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => EndpointConnectionPromise;
   event: (where: EventWhereUniqueInput) => EventNullablePromise;
   events: (args?: {
     where?: EventWhereInput;
@@ -143,25 +102,6 @@ export interface Prisma {
     first?: Int;
     last?: Int;
   }) => ResponseStatusConnectionPromise;
-  test: (where: TestWhereUniqueInput) => TestNullablePromise;
-  tests: (args?: {
-    where?: TestWhereInput;
-    orderBy?: TestOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => FragmentableArray<Test>;
-  testsConnection: (args?: {
-    where?: TestWhereInput;
-    orderBy?: TestOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => TestConnectionPromise;
   userInfo: (where: UserInfoWhereUniqueInput) => UserInfoNullablePromise;
   userInfoes: (args?: {
     where?: UserInfoWhereInput;
@@ -187,38 +127,6 @@ export interface Prisma {
    * Mutations
    */
 
-  createAuditLog: (data: AuditLogCreateInput) => AuditLogPromise;
-  updateAuditLog: (args: {
-    data: AuditLogUpdateInput;
-    where: AuditLogWhereUniqueInput;
-  }) => AuditLogPromise;
-  updateManyAuditLogs: (args: {
-    data: AuditLogUpdateManyMutationInput;
-    where?: AuditLogWhereInput;
-  }) => BatchPayloadPromise;
-  upsertAuditLog: (args: {
-    where: AuditLogWhereUniqueInput;
-    create: AuditLogCreateInput;
-    update: AuditLogUpdateInput;
-  }) => AuditLogPromise;
-  deleteAuditLog: (where: AuditLogWhereUniqueInput) => AuditLogPromise;
-  deleteManyAuditLogs: (where?: AuditLogWhereInput) => BatchPayloadPromise;
-  createEndpoint: (data: EndpointCreateInput) => EndpointPromise;
-  updateEndpoint: (args: {
-    data: EndpointUpdateInput;
-    where: EndpointWhereUniqueInput;
-  }) => EndpointPromise;
-  updateManyEndpoints: (args: {
-    data: EndpointUpdateManyMutationInput;
-    where?: EndpointWhereInput;
-  }) => BatchPayloadPromise;
-  upsertEndpoint: (args: {
-    where: EndpointWhereUniqueInput;
-    create: EndpointCreateInput;
-    update: EndpointUpdateInput;
-  }) => EndpointPromise;
-  deleteEndpoint: (where: EndpointWhereUniqueInput) => EndpointPromise;
-  deleteManyEndpoints: (where?: EndpointWhereInput) => BatchPayloadPromise;
   createEvent: (data: EventCreateInput) => EventPromise;
   updateEvent: (args: {
     data: EventUpdateInput;
@@ -279,18 +187,6 @@ export interface Prisma {
   deleteManyResponseStatuses: (
     where?: ResponseStatusWhereInput
   ) => BatchPayloadPromise;
-  createTest: (data: TestCreateInput) => TestPromise;
-  updateTest: (args: {
-    data: TestUpdateInput;
-    where: TestWhereUniqueInput;
-  }) => TestPromise;
-  upsertTest: (args: {
-    where: TestWhereUniqueInput;
-    create: TestCreateInput;
-    update: TestUpdateInput;
-  }) => TestPromise;
-  deleteTest: (where: TestWhereUniqueInput) => TestPromise;
-  deleteManyTests: (where?: TestWhereInput) => BatchPayloadPromise;
   createUserInfo: (data: UserInfoCreateInput) => UserInfoPromise;
   updateUserInfo: (args: {
     data: UserInfoUpdateInput;
@@ -316,12 +212,6 @@ export interface Prisma {
 }
 
 export interface Subscription {
-  auditLog: (
-    where?: AuditLogSubscriptionWhereInput
-  ) => AuditLogSubscriptionPayloadSubscription;
-  endpoint: (
-    where?: EndpointSubscriptionWhereInput
-  ) => EndpointSubscriptionPayloadSubscription;
   event: (
     where?: EventSubscriptionWhereInput
   ) => EventSubscriptionPayloadSubscription;
@@ -331,9 +221,6 @@ export interface Subscription {
   responseStatus: (
     where?: ResponseStatusSubscriptionWhereInput
   ) => ResponseStatusSubscriptionPayloadSubscription;
-  test: (
-    where?: TestSubscriptionWhereInput
-  ) => TestSubscriptionPayloadSubscription;
   userInfo: (
     where?: UserInfoSubscriptionWhereInput
   ) => UserInfoSubscriptionPayloadSubscription;
@@ -347,69 +234,13 @@ export interface ClientConstructor<T> {
  * Types
  */
 
-export type EndpointOrderByInput =
-  | "id_ASC"
-  | "id_DESC"
-  | "createdAt_ASC"
-  | "createdAt_DESC"
-  | "operationID_ASC"
-  | "operationID_DESC"
-  | "level_ASC"
-  | "level_DESC"
-  | "category_ASC"
-  | "category_DESC"
-  | "kind_ASC"
-  | "kind_DESC"
-  | "group_ASC"
-  | "group_DESC"
-  | "description_ASC"
-  | "description_DESC"
-  | "version_ASC"
-  | "version_DESC"
-  | "path_ASC"
-  | "path_DESC"
-  | "hits_ASC"
-  | "hits_DESC"
-  | "testHits_ASC"
-  | "testHits_DESC"
-  | "conformanceHits_ASC"
-  | "conformanceHits_DESC"
-  | "isDeprecated_ASC"
-  | "isDeprecated_DESC";
-
-export type AuditLogOrderByInput =
-  | "id_ASC"
-  | "id_DESC"
-  | "createdAt_ASC"
-  | "createdAt_DESC"
-  | "job_ASC"
-  | "job_DESC"
-  | "bucket_ASC"
-  | "bucket_DESC"
-  | "version_ASC"
-  | "version_DESC"
-  | "jobVersion_ASC"
-  | "jobVersion_DESC"
-  | "masterOsImage_ASC"
-  | "masterOsImage_DESC"
-  | "infraCommit_ASC"
-  | "infraCommit_DESC"
-  | "nodeOsImage_ASC"
-  | "nodeOsImage_DESC"
-  | "pod_ASC"
-  | "pod_DESC"
-  | "passed_ASC"
-  | "passed_DESC"
-  | "result_ASC"
-  | "result_DESC"
-  | "timestamp_ASC"
-  | "timestamp_DESC";
-
 export type EventOrderByInput =
   | "id_ASC"
   | "id_DESC"
   | "createdAt_ASC"
   | "createdAt_DESC"
+  | "apiVersion_ASC"
+  | "apiVersion_DESC"
   | "kind_ASC"
   | "kind_DESC"
   | "level_ASC"
@@ -467,12 +298,6 @@ export type ResponseStatusOrderByInput =
   | "code_ASC"
   | "code_DESC";
 
-export type TestOrderByInput =
-  | "id_ASC"
-  | "id_DESC"
-  | "createdAt_ASC"
-  | "createdAt_DESC";
-
 export type UserInfoOrderByInput =
   | "id_ASC"
   | "id_DESC"
@@ -483,8 +308,18 @@ export type UserInfoOrderByInput =
 
 export type MutationType = "CREATED" | "UPDATED" | "DELETED";
 
+export interface UserInfoUpdategroupsInput {
+  set?: Maybe<String[] | String>;
+}
+
+export type EventWhereUniqueInput = AtLeastOne<{
+  id: Maybe<ID_Input>;
+  auditID?: Maybe<ID_Input>;
+}>;
+
 export interface EventCreateInput {
   id?: Maybe<ID_Input>;
+  apiVersion?: Maybe<String>;
   kind?: Maybe<String>;
   level: String;
   auditID?: Maybe<ID_Input>;
@@ -501,158 +336,32 @@ export interface EventCreateInput {
   annotations?: Maybe<Json>;
 }
 
-export type AuditLogWhereUniqueInput = AtLeastOne<{
-  id: Maybe<ID_Input>;
-}>;
+export interface EventUpdateOneRequiredWithoutRequestObjectInput {
+  create?: Maybe<EventCreateWithoutRequestObjectInput>;
+  update?: Maybe<EventUpdateWithoutRequestObjectDataInput>;
+  upsert?: Maybe<EventUpsertWithoutRequestObjectInput>;
+  connect?: Maybe<EventWhereUniqueInput>;
+}
 
-export interface EndpointCreateWithoutAuditLogInput {
+export interface UserInfoCreateOneWithoutEventInput {
+  create?: Maybe<UserInfoCreateWithoutEventInput>;
+  connect?: Maybe<UserInfoWhereUniqueInput>;
+}
+
+export interface ResponseStatusUpdateWithoutEventDataInput {
+  metadata?: Maybe<Json>;
+  status?: Maybe<String>;
+  reason?: Maybe<String>;
+  code?: Maybe<Int>;
+}
+
+export interface UserInfoCreateWithoutEventInput {
   id?: Maybe<ID_Input>;
-  operationID: String;
-  level: String;
-  category: String;
-  kind?: Maybe<String>;
-  group?: Maybe<String>;
-  description?: Maybe<String>;
-  version?: Maybe<String>;
-  path?: Maybe<String>;
-  hits: Int;
-  testHits: Int;
-  conformanceHits: Int;
-  isDeprecated: Boolean;
+  username: String;
+  groups?: Maybe<UserInfoCreategroupsInput>;
 }
 
-export interface EventUpsertWithoutRequestObjectInput {
-  update: EventUpdateWithoutRequestObjectDataInput;
-  create: EventCreateWithoutRequestObjectInput;
-}
-
-export interface AuditLogUpdateInput {
-  job?: Maybe<String>;
-  bucket?: Maybe<String>;
-  version?: Maybe<String>;
-  jobVersion?: Maybe<String>;
-  masterOsImage?: Maybe<String>;
-  infraCommit?: Maybe<String>;
-  nodeOsImage?: Maybe<String>;
-  pod?: Maybe<String>;
-  passed?: Maybe<Boolean>;
-  result?: Maybe<String>;
-  timestamp?: Maybe<Int>;
-  endpoints?: Maybe<EndpointUpdateManyWithoutAuditLogInput>;
-}
-
-export interface ResponseStatusCreateOneWithoutEventInput {
-  create?: Maybe<ResponseStatusCreateWithoutEventInput>;
-  connect?: Maybe<ResponseStatusWhereUniqueInput>;
-}
-
-export interface EndpointUpdateManyWithoutAuditLogInput {
-  create?: Maybe<
-    EndpointCreateWithoutAuditLogInput[] | EndpointCreateWithoutAuditLogInput
-  >;
-  delete?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
-  connect?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
-  set?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
-  disconnect?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
-  update?: Maybe<
-    | EndpointUpdateWithWhereUniqueWithoutAuditLogInput[]
-    | EndpointUpdateWithWhereUniqueWithoutAuditLogInput
-  >;
-  upsert?: Maybe<
-    | EndpointUpsertWithWhereUniqueWithoutAuditLogInput[]
-    | EndpointUpsertWithWhereUniqueWithoutAuditLogInput
-  >;
-  deleteMany?: Maybe<EndpointScalarWhereInput[] | EndpointScalarWhereInput>;
-  updateMany?: Maybe<
-    | EndpointUpdateManyWithWhereNestedInput[]
-    | EndpointUpdateManyWithWhereNestedInput
-  >;
-}
-
-export interface TestSubscriptionWhereInput {
-  mutation_in?: Maybe<MutationType[] | MutationType>;
-  updatedFields_contains?: Maybe<String>;
-  updatedFields_contains_every?: Maybe<String[] | String>;
-  updatedFields_contains_some?: Maybe<String[] | String>;
-  node?: Maybe<TestWhereInput>;
-  AND?: Maybe<TestSubscriptionWhereInput[] | TestSubscriptionWhereInput>;
-  OR?: Maybe<TestSubscriptionWhereInput[] | TestSubscriptionWhereInput>;
-  NOT?: Maybe<TestSubscriptionWhereInput[] | TestSubscriptionWhereInput>;
-}
-
-export interface EndpointUpdateWithWhereUniqueWithoutAuditLogInput {
-  where: EndpointWhereUniqueInput;
-  data: EndpointUpdateWithoutAuditLogDataInput;
-}
-
-export interface ObjectReferenceSubscriptionWhereInput {
-  mutation_in?: Maybe<MutationType[] | MutationType>;
-  updatedFields_contains?: Maybe<String>;
-  updatedFields_contains_every?: Maybe<String[] | String>;
-  updatedFields_contains_some?: Maybe<String[] | String>;
-  node?: Maybe<ObjectReferenceWhereInput>;
-  AND?: Maybe<
-    | ObjectReferenceSubscriptionWhereInput[]
-    | ObjectReferenceSubscriptionWhereInput
-  >;
-  OR?: Maybe<
-    | ObjectReferenceSubscriptionWhereInput[]
-    | ObjectReferenceSubscriptionWhereInput
-  >;
-  NOT?: Maybe<
-    | ObjectReferenceSubscriptionWhereInput[]
-    | ObjectReferenceSubscriptionWhereInput
-  >;
-}
-
-export interface EndpointUpdateWithoutAuditLogDataInput {
-  operationID?: Maybe<String>;
-  level?: Maybe<String>;
-  category?: Maybe<String>;
-  kind?: Maybe<String>;
-  group?: Maybe<String>;
-  description?: Maybe<String>;
-  version?: Maybe<String>;
-  path?: Maybe<String>;
-  hits?: Maybe<Int>;
-  testHits?: Maybe<Int>;
-  conformanceHits?: Maybe<Int>;
-  isDeprecated?: Maybe<Boolean>;
-}
-
-export interface EventSubscriptionWhereInput {
-  mutation_in?: Maybe<MutationType[] | MutationType>;
-  updatedFields_contains?: Maybe<String>;
-  updatedFields_contains_every?: Maybe<String[] | String>;
-  updatedFields_contains_some?: Maybe<String[] | String>;
-  node?: Maybe<EventWhereInput>;
-  AND?: Maybe<EventSubscriptionWhereInput[] | EventSubscriptionWhereInput>;
-  OR?: Maybe<EventSubscriptionWhereInput[] | EventSubscriptionWhereInput>;
-  NOT?: Maybe<EventSubscriptionWhereInput[] | EventSubscriptionWhereInput>;
-}
-
-export interface EndpointUpsertWithWhereUniqueWithoutAuditLogInput {
-  where: EndpointWhereUniqueInput;
-  update: EndpointUpdateWithoutAuditLogDataInput;
-  create: EndpointCreateWithoutAuditLogInput;
-}
-
-export interface AuditLogSubscriptionWhereInput {
-  mutation_in?: Maybe<MutationType[] | MutationType>;
-  updatedFields_contains?: Maybe<String>;
-  updatedFields_contains_every?: Maybe<String[] | String>;
-  updatedFields_contains_some?: Maybe<String[] | String>;
-  node?: Maybe<AuditLogWhereInput>;
-  AND?: Maybe<
-    AuditLogSubscriptionWhereInput[] | AuditLogSubscriptionWhereInput
-  >;
-  OR?: Maybe<AuditLogSubscriptionWhereInput[] | AuditLogSubscriptionWhereInput>;
-  NOT?: Maybe<
-    AuditLogSubscriptionWhereInput[] | AuditLogSubscriptionWhereInput
-  >;
-}
-
-export interface EndpointScalarWhereInput {
+export interface EventWhereInput {
   id?: Maybe<ID_Input>;
   id_not?: Maybe<ID_Input>;
   id_in?: Maybe<ID_Input[] | ID_Input>;
@@ -675,48 +384,20 @@ export interface EndpointScalarWhereInput {
   createdAt_lte?: Maybe<DateTimeInput>;
   createdAt_gt?: Maybe<DateTimeInput>;
   createdAt_gte?: Maybe<DateTimeInput>;
-  operationID?: Maybe<String>;
-  operationID_not?: Maybe<String>;
-  operationID_in?: Maybe<String[] | String>;
-  operationID_not_in?: Maybe<String[] | String>;
-  operationID_lt?: Maybe<String>;
-  operationID_lte?: Maybe<String>;
-  operationID_gt?: Maybe<String>;
-  operationID_gte?: Maybe<String>;
-  operationID_contains?: Maybe<String>;
-  operationID_not_contains?: Maybe<String>;
-  operationID_starts_with?: Maybe<String>;
-  operationID_not_starts_with?: Maybe<String>;
-  operationID_ends_with?: Maybe<String>;
-  operationID_not_ends_with?: Maybe<String>;
-  level?: Maybe<String>;
-  level_not?: Maybe<String>;
-  level_in?: Maybe<String[] | String>;
-  level_not_in?: Maybe<String[] | String>;
-  level_lt?: Maybe<String>;
-  level_lte?: Maybe<String>;
-  level_gt?: Maybe<String>;
-  level_gte?: Maybe<String>;
-  level_contains?: Maybe<String>;
-  level_not_contains?: Maybe<String>;
-  level_starts_with?: Maybe<String>;
-  level_not_starts_with?: Maybe<String>;
-  level_ends_with?: Maybe<String>;
-  level_not_ends_with?: Maybe<String>;
-  category?: Maybe<String>;
-  category_not?: Maybe<String>;
-  category_in?: Maybe<String[] | String>;
-  category_not_in?: Maybe<String[] | String>;
-  category_lt?: Maybe<String>;
-  category_lte?: Maybe<String>;
-  category_gt?: Maybe<String>;
-  category_gte?: Maybe<String>;
-  category_contains?: Maybe<String>;
-  category_not_contains?: Maybe<String>;
-  category_starts_with?: Maybe<String>;
-  category_not_starts_with?: Maybe<String>;
-  category_ends_with?: Maybe<String>;
-  category_not_ends_with?: Maybe<String>;
+  apiVersion?: Maybe<String>;
+  apiVersion_not?: Maybe<String>;
+  apiVersion_in?: Maybe<String[] | String>;
+  apiVersion_not_in?: Maybe<String[] | String>;
+  apiVersion_lt?: Maybe<String>;
+  apiVersion_lte?: Maybe<String>;
+  apiVersion_gt?: Maybe<String>;
+  apiVersion_gte?: Maybe<String>;
+  apiVersion_contains?: Maybe<String>;
+  apiVersion_not_contains?: Maybe<String>;
+  apiVersion_starts_with?: Maybe<String>;
+  apiVersion_not_starts_with?: Maybe<String>;
+  apiVersion_ends_with?: Maybe<String>;
+  apiVersion_not_ends_with?: Maybe<String>;
   kind?: Maybe<String>;
   kind_not?: Maybe<String>;
   kind_in?: Maybe<String[] | String>;
@@ -731,155 +412,131 @@ export interface EndpointScalarWhereInput {
   kind_not_starts_with?: Maybe<String>;
   kind_ends_with?: Maybe<String>;
   kind_not_ends_with?: Maybe<String>;
-  group?: Maybe<String>;
-  group_not?: Maybe<String>;
-  group_in?: Maybe<String[] | String>;
-  group_not_in?: Maybe<String[] | String>;
-  group_lt?: Maybe<String>;
-  group_lte?: Maybe<String>;
-  group_gt?: Maybe<String>;
-  group_gte?: Maybe<String>;
-  group_contains?: Maybe<String>;
-  group_not_contains?: Maybe<String>;
-  group_starts_with?: Maybe<String>;
-  group_not_starts_with?: Maybe<String>;
-  group_ends_with?: Maybe<String>;
-  group_not_ends_with?: Maybe<String>;
-  description?: Maybe<String>;
-  description_not?: Maybe<String>;
-  description_in?: Maybe<String[] | String>;
-  description_not_in?: Maybe<String[] | String>;
-  description_lt?: Maybe<String>;
-  description_lte?: Maybe<String>;
-  description_gt?: Maybe<String>;
-  description_gte?: Maybe<String>;
-  description_contains?: Maybe<String>;
-  description_not_contains?: Maybe<String>;
-  description_starts_with?: Maybe<String>;
-  description_not_starts_with?: Maybe<String>;
-  description_ends_with?: Maybe<String>;
-  description_not_ends_with?: Maybe<String>;
-  version?: Maybe<String>;
-  version_not?: Maybe<String>;
-  version_in?: Maybe<String[] | String>;
-  version_not_in?: Maybe<String[] | String>;
-  version_lt?: Maybe<String>;
-  version_lte?: Maybe<String>;
-  version_gt?: Maybe<String>;
-  version_gte?: Maybe<String>;
-  version_contains?: Maybe<String>;
-  version_not_contains?: Maybe<String>;
-  version_starts_with?: Maybe<String>;
-  version_not_starts_with?: Maybe<String>;
-  version_ends_with?: Maybe<String>;
-  version_not_ends_with?: Maybe<String>;
-  path?: Maybe<String>;
-  path_not?: Maybe<String>;
-  path_in?: Maybe<String[] | String>;
-  path_not_in?: Maybe<String[] | String>;
-  path_lt?: Maybe<String>;
-  path_lte?: Maybe<String>;
-  path_gt?: Maybe<String>;
-  path_gte?: Maybe<String>;
-  path_contains?: Maybe<String>;
-  path_not_contains?: Maybe<String>;
-  path_starts_with?: Maybe<String>;
-  path_not_starts_with?: Maybe<String>;
-  path_ends_with?: Maybe<String>;
-  path_not_ends_with?: Maybe<String>;
-  hits?: Maybe<Int>;
-  hits_not?: Maybe<Int>;
-  hits_in?: Maybe<Int[] | Int>;
-  hits_not_in?: Maybe<Int[] | Int>;
-  hits_lt?: Maybe<Int>;
-  hits_lte?: Maybe<Int>;
-  hits_gt?: Maybe<Int>;
-  hits_gte?: Maybe<Int>;
-  testHits?: Maybe<Int>;
-  testHits_not?: Maybe<Int>;
-  testHits_in?: Maybe<Int[] | Int>;
-  testHits_not_in?: Maybe<Int[] | Int>;
-  testHits_lt?: Maybe<Int>;
-  testHits_lte?: Maybe<Int>;
-  testHits_gt?: Maybe<Int>;
-  testHits_gte?: Maybe<Int>;
-  conformanceHits?: Maybe<Int>;
-  conformanceHits_not?: Maybe<Int>;
-  conformanceHits_in?: Maybe<Int[] | Int>;
-  conformanceHits_not_in?: Maybe<Int[] | Int>;
-  conformanceHits_lt?: Maybe<Int>;
-  conformanceHits_lte?: Maybe<Int>;
-  conformanceHits_gt?: Maybe<Int>;
-  conformanceHits_gte?: Maybe<Int>;
-  isDeprecated?: Maybe<Boolean>;
-  isDeprecated_not?: Maybe<Boolean>;
-  AND?: Maybe<EndpointScalarWhereInput[] | EndpointScalarWhereInput>;
-  OR?: Maybe<EndpointScalarWhereInput[] | EndpointScalarWhereInput>;
-  NOT?: Maybe<EndpointScalarWhereInput[] | EndpointScalarWhereInput>;
-}
-
-export interface UserInfoUpdateManyMutationInput {
-  username?: Maybe<String>;
-  groups?: Maybe<UserInfoUpdategroupsInput>;
-}
-
-export interface EndpointUpdateManyWithWhereNestedInput {
-  where: EndpointScalarWhereInput;
-  data: EndpointUpdateManyDataInput;
-}
-
-export interface EventUpdateWithoutUserDataInput {
-  kind?: Maybe<String>;
   level?: Maybe<String>;
+  level_not?: Maybe<String>;
+  level_in?: Maybe<String[] | String>;
+  level_not_in?: Maybe<String[] | String>;
+  level_lt?: Maybe<String>;
+  level_lte?: Maybe<String>;
+  level_gt?: Maybe<String>;
+  level_gte?: Maybe<String>;
+  level_contains?: Maybe<String>;
+  level_not_contains?: Maybe<String>;
+  level_starts_with?: Maybe<String>;
+  level_not_starts_with?: Maybe<String>;
+  level_ends_with?: Maybe<String>;
+  level_not_ends_with?: Maybe<String>;
   auditID?: Maybe<ID_Input>;
+  auditID_not?: Maybe<ID_Input>;
+  auditID_in?: Maybe<ID_Input[] | ID_Input>;
+  auditID_not_in?: Maybe<ID_Input[] | ID_Input>;
+  auditID_lt?: Maybe<ID_Input>;
+  auditID_lte?: Maybe<ID_Input>;
+  auditID_gt?: Maybe<ID_Input>;
+  auditID_gte?: Maybe<ID_Input>;
+  auditID_contains?: Maybe<ID_Input>;
+  auditID_not_contains?: Maybe<ID_Input>;
+  auditID_starts_with?: Maybe<ID_Input>;
+  auditID_not_starts_with?: Maybe<ID_Input>;
+  auditID_ends_with?: Maybe<ID_Input>;
+  auditID_not_ends_with?: Maybe<ID_Input>;
   stage?: Maybe<String>;
+  stage_not?: Maybe<String>;
+  stage_in?: Maybe<String[] | String>;
+  stage_not_in?: Maybe<String[] | String>;
+  stage_lt?: Maybe<String>;
+  stage_lte?: Maybe<String>;
+  stage_gt?: Maybe<String>;
+  stage_gte?: Maybe<String>;
+  stage_contains?: Maybe<String>;
+  stage_not_contains?: Maybe<String>;
+  stage_starts_with?: Maybe<String>;
+  stage_not_starts_with?: Maybe<String>;
+  stage_ends_with?: Maybe<String>;
+  stage_not_ends_with?: Maybe<String>;
   requestURI?: Maybe<String>;
+  requestURI_not?: Maybe<String>;
+  requestURI_in?: Maybe<String[] | String>;
+  requestURI_not_in?: Maybe<String[] | String>;
+  requestURI_lt?: Maybe<String>;
+  requestURI_lte?: Maybe<String>;
+  requestURI_gt?: Maybe<String>;
+  requestURI_gte?: Maybe<String>;
+  requestURI_contains?: Maybe<String>;
+  requestURI_not_contains?: Maybe<String>;
+  requestURI_starts_with?: Maybe<String>;
+  requestURI_not_starts_with?: Maybe<String>;
+  requestURI_ends_with?: Maybe<String>;
+  requestURI_not_ends_with?: Maybe<String>;
   verb?: Maybe<String>;
-  sourceIPs?: Maybe<EventUpdatesourceIPsInput>;
+  verb_not?: Maybe<String>;
+  verb_in?: Maybe<String[] | String>;
+  verb_not_in?: Maybe<String[] | String>;
+  verb_lt?: Maybe<String>;
+  verb_lte?: Maybe<String>;
+  verb_gt?: Maybe<String>;
+  verb_gte?: Maybe<String>;
+  verb_contains?: Maybe<String>;
+  verb_not_contains?: Maybe<String>;
+  verb_starts_with?: Maybe<String>;
+  verb_not_starts_with?: Maybe<String>;
+  verb_ends_with?: Maybe<String>;
+  verb_not_ends_with?: Maybe<String>;
+  user?: Maybe<UserInfoWhereInput>;
   userAgent?: Maybe<String>;
-  responseStatus?: Maybe<ResponseStatusUpdateOneWithoutEventInput>;
-  requestObject?: Maybe<ObjectReferenceUpdateOneWithoutEventInput>;
+  userAgent_not?: Maybe<String>;
+  userAgent_in?: Maybe<String[] | String>;
+  userAgent_not_in?: Maybe<String[] | String>;
+  userAgent_lt?: Maybe<String>;
+  userAgent_lte?: Maybe<String>;
+  userAgent_gt?: Maybe<String>;
+  userAgent_gte?: Maybe<String>;
+  userAgent_contains?: Maybe<String>;
+  userAgent_not_contains?: Maybe<String>;
+  userAgent_starts_with?: Maybe<String>;
+  userAgent_not_starts_with?: Maybe<String>;
+  userAgent_ends_with?: Maybe<String>;
+  userAgent_not_ends_with?: Maybe<String>;
+  responseStatus?: Maybe<ResponseStatusWhereInput>;
+  requestObject?: Maybe<ObjectReferenceWhereInput>;
   requestReceivedTimestamp?: Maybe<String>;
+  requestReceivedTimestamp_not?: Maybe<String>;
+  requestReceivedTimestamp_in?: Maybe<String[] | String>;
+  requestReceivedTimestamp_not_in?: Maybe<String[] | String>;
+  requestReceivedTimestamp_lt?: Maybe<String>;
+  requestReceivedTimestamp_lte?: Maybe<String>;
+  requestReceivedTimestamp_gt?: Maybe<String>;
+  requestReceivedTimestamp_gte?: Maybe<String>;
+  requestReceivedTimestamp_contains?: Maybe<String>;
+  requestReceivedTimestamp_not_contains?: Maybe<String>;
+  requestReceivedTimestamp_starts_with?: Maybe<String>;
+  requestReceivedTimestamp_not_starts_with?: Maybe<String>;
+  requestReceivedTimestamp_ends_with?: Maybe<String>;
+  requestReceivedTimestamp_not_ends_with?: Maybe<String>;
   stageTimestamp?: Maybe<String>;
-  annotations?: Maybe<Json>;
+  stageTimestamp_not?: Maybe<String>;
+  stageTimestamp_in?: Maybe<String[] | String>;
+  stageTimestamp_not_in?: Maybe<String[] | String>;
+  stageTimestamp_lt?: Maybe<String>;
+  stageTimestamp_lte?: Maybe<String>;
+  stageTimestamp_gt?: Maybe<String>;
+  stageTimestamp_gte?: Maybe<String>;
+  stageTimestamp_contains?: Maybe<String>;
+  stageTimestamp_not_contains?: Maybe<String>;
+  stageTimestamp_starts_with?: Maybe<String>;
+  stageTimestamp_not_starts_with?: Maybe<String>;
+  stageTimestamp_ends_with?: Maybe<String>;
+  stageTimestamp_not_ends_with?: Maybe<String>;
+  AND?: Maybe<EventWhereInput[] | EventWhereInput>;
+  OR?: Maybe<EventWhereInput[] | EventWhereInput>;
+  NOT?: Maybe<EventWhereInput[] | EventWhereInput>;
 }
 
-export interface EndpointUpdateManyDataInput {
-  operationID?: Maybe<String>;
-  level?: Maybe<String>;
-  category?: Maybe<String>;
-  kind?: Maybe<String>;
-  group?: Maybe<String>;
-  description?: Maybe<String>;
-  version?: Maybe<String>;
-  path?: Maybe<String>;
-  hits?: Maybe<Int>;
-  testHits?: Maybe<Int>;
-  conformanceHits?: Maybe<Int>;
-  isDeprecated?: Maybe<Boolean>;
+export interface UserInfoCreategroupsInput {
+  set?: Maybe<String[] | String>;
 }
 
-export interface UserInfoUpdateInput {
-  username?: Maybe<String>;
-  groups?: Maybe<UserInfoUpdategroupsInput>;
-  event?: Maybe<EventUpdateOneRequiredWithoutUserInput>;
-}
-
-export interface AuditLogUpdateManyMutationInput {
-  job?: Maybe<String>;
-  bucket?: Maybe<String>;
-  version?: Maybe<String>;
-  jobVersion?: Maybe<String>;
-  masterOsImage?: Maybe<String>;
-  infraCommit?: Maybe<String>;
-  nodeOsImage?: Maybe<String>;
-  pod?: Maybe<String>;
-  passed?: Maybe<Boolean>;
-  result?: Maybe<String>;
-  timestamp?: Maybe<Int>;
-}
-
-export interface UserInfoWhereInput {
+export interface ResponseStatusWhereInput {
   id?: Maybe<ID_Input>;
   id_not?: Maybe<ID_Input>;
   id_in?: Maybe<ID_Input[] | ID_Input>;
@@ -902,29 +559,244 @@ export interface UserInfoWhereInput {
   createdAt_lte?: Maybe<DateTimeInput>;
   createdAt_gt?: Maybe<DateTimeInput>;
   createdAt_gte?: Maybe<DateTimeInput>;
-  username?: Maybe<String>;
-  username_not?: Maybe<String>;
-  username_in?: Maybe<String[] | String>;
-  username_not_in?: Maybe<String[] | String>;
-  username_lt?: Maybe<String>;
-  username_lte?: Maybe<String>;
-  username_gt?: Maybe<String>;
-  username_gte?: Maybe<String>;
-  username_contains?: Maybe<String>;
-  username_not_contains?: Maybe<String>;
-  username_starts_with?: Maybe<String>;
-  username_not_starts_with?: Maybe<String>;
-  username_ends_with?: Maybe<String>;
-  username_not_ends_with?: Maybe<String>;
+  status?: Maybe<String>;
+  status_not?: Maybe<String>;
+  status_in?: Maybe<String[] | String>;
+  status_not_in?: Maybe<String[] | String>;
+  status_lt?: Maybe<String>;
+  status_lte?: Maybe<String>;
+  status_gt?: Maybe<String>;
+  status_gte?: Maybe<String>;
+  status_contains?: Maybe<String>;
+  status_not_contains?: Maybe<String>;
+  status_starts_with?: Maybe<String>;
+  status_not_starts_with?: Maybe<String>;
+  status_ends_with?: Maybe<String>;
+  status_not_ends_with?: Maybe<String>;
+  reason?: Maybe<String>;
+  reason_not?: Maybe<String>;
+  reason_in?: Maybe<String[] | String>;
+  reason_not_in?: Maybe<String[] | String>;
+  reason_lt?: Maybe<String>;
+  reason_lte?: Maybe<String>;
+  reason_gt?: Maybe<String>;
+  reason_gte?: Maybe<String>;
+  reason_contains?: Maybe<String>;
+  reason_not_contains?: Maybe<String>;
+  reason_starts_with?: Maybe<String>;
+  reason_not_starts_with?: Maybe<String>;
+  reason_ends_with?: Maybe<String>;
+  reason_not_ends_with?: Maybe<String>;
+  code?: Maybe<Int>;
+  code_not?: Maybe<Int>;
+  code_in?: Maybe<Int[] | Int>;
+  code_not_in?: Maybe<Int[] | Int>;
+  code_lt?: Maybe<Int>;
+  code_lte?: Maybe<Int>;
+  code_gt?: Maybe<Int>;
+  code_gte?: Maybe<Int>;
   event?: Maybe<EventWhereInput>;
-  AND?: Maybe<UserInfoWhereInput[] | UserInfoWhereInput>;
-  OR?: Maybe<UserInfoWhereInput[] | UserInfoWhereInput>;
-  NOT?: Maybe<UserInfoWhereInput[] | UserInfoWhereInput>;
+  AND?: Maybe<ResponseStatusWhereInput[] | ResponseStatusWhereInput>;
+  OR?: Maybe<ResponseStatusWhereInput[] | ResponseStatusWhereInput>;
+  NOT?: Maybe<ResponseStatusWhereInput[] | ResponseStatusWhereInput>;
+}
+
+export interface EventCreatesourceIPsInput {
+  set?: Maybe<String[] | String>;
+}
+
+export interface ResponseStatusSubscriptionWhereInput {
+  mutation_in?: Maybe<MutationType[] | MutationType>;
+  updatedFields_contains?: Maybe<String>;
+  updatedFields_contains_every?: Maybe<String[] | String>;
+  updatedFields_contains_some?: Maybe<String[] | String>;
+  node?: Maybe<ResponseStatusWhereInput>;
+  AND?: Maybe<
+    | ResponseStatusSubscriptionWhereInput[]
+    | ResponseStatusSubscriptionWhereInput
+  >;
+  OR?: Maybe<
+    | ResponseStatusSubscriptionWhereInput[]
+    | ResponseStatusSubscriptionWhereInput
+  >;
+  NOT?: Maybe<
+    | ResponseStatusSubscriptionWhereInput[]
+    | ResponseStatusSubscriptionWhereInput
+  >;
+}
+
+export interface ResponseStatusCreateOneWithoutEventInput {
+  create?: Maybe<ResponseStatusCreateWithoutEventInput>;
+  connect?: Maybe<ResponseStatusWhereUniqueInput>;
+}
+
+export interface EventSubscriptionWhereInput {
+  mutation_in?: Maybe<MutationType[] | MutationType>;
+  updatedFields_contains?: Maybe<String>;
+  updatedFields_contains_every?: Maybe<String[] | String>;
+  updatedFields_contains_some?: Maybe<String[] | String>;
+  node?: Maybe<EventWhereInput>;
+  AND?: Maybe<EventSubscriptionWhereInput[] | EventSubscriptionWhereInput>;
+  OR?: Maybe<EventSubscriptionWhereInput[] | EventSubscriptionWhereInput>;
+  NOT?: Maybe<EventSubscriptionWhereInput[] | EventSubscriptionWhereInput>;
+}
+
+export interface ResponseStatusCreateWithoutEventInput {
+  id?: Maybe<ID_Input>;
+  metadata?: Maybe<Json>;
+  status?: Maybe<String>;
+  reason?: Maybe<String>;
+  code?: Maybe<Int>;
+}
+
+export interface EventUpsertWithoutUserInput {
+  update: EventUpdateWithoutUserDataInput;
+  create: EventCreateWithoutUserInput;
+}
+
+export interface ObjectReferenceCreateOneWithoutEventInput {
+  create?: Maybe<ObjectReferenceCreateWithoutEventInput>;
+  connect?: Maybe<ObjectReferenceWhereUniqueInput>;
+}
+
+export type ObjectReferenceWhereUniqueInput = AtLeastOne<{
+  id: Maybe<ID_Input>;
+  uid?: Maybe<ID_Input>;
+}>;
+
+export interface ObjectReferenceCreateWithoutEventInput {
+  id?: Maybe<ID_Input>;
+  resource?: Maybe<String>;
+  namespace?: Maybe<String>;
+  name?: Maybe<String>;
+  uid?: Maybe<ID_Input>;
+  apiGroup?: Maybe<String>;
+  apiVersion?: Maybe<String>;
+  resourceVersion?: Maybe<String>;
+  subresource?: Maybe<String>;
+}
+
+export interface UserInfoUpdateInput {
+  username?: Maybe<String>;
+  groups?: Maybe<UserInfoUpdategroupsInput>;
+  event?: Maybe<EventUpdateOneRequiredWithoutUserInput>;
+}
+
+export interface EventUpdateInput {
+  apiVersion?: Maybe<String>;
+  kind?: Maybe<String>;
+  level?: Maybe<String>;
+  auditID?: Maybe<ID_Input>;
+  stage?: Maybe<String>;
+  requestURI?: Maybe<String>;
+  verb?: Maybe<String>;
+  user?: Maybe<UserInfoUpdateOneRequiredWithoutEventInput>;
+  sourceIPs?: Maybe<EventUpdatesourceIPsInput>;
+  userAgent?: Maybe<String>;
+  responseStatus?: Maybe<ResponseStatusUpdateOneWithoutEventInput>;
+  requestObject?: Maybe<ObjectReferenceUpdateOneWithoutEventInput>;
+  requestReceivedTimestamp?: Maybe<String>;
+  stageTimestamp?: Maybe<String>;
+  annotations?: Maybe<Json>;
+}
+
+export interface EventCreateOneWithoutUserInput {
+  create?: Maybe<EventCreateWithoutUserInput>;
+  connect?: Maybe<EventWhereUniqueInput>;
+}
+
+export interface UserInfoUpdateOneRequiredWithoutEventInput {
+  create?: Maybe<UserInfoCreateWithoutEventInput>;
+  update?: Maybe<UserInfoUpdateWithoutEventDataInput>;
+  upsert?: Maybe<UserInfoUpsertWithoutEventInput>;
+  connect?: Maybe<UserInfoWhereUniqueInput>;
+}
+
+export interface UserInfoCreateInput {
+  id?: Maybe<ID_Input>;
+  username: String;
+  groups?: Maybe<UserInfoCreategroupsInput>;
+  event: EventCreateOneWithoutUserInput;
+}
+
+export interface UserInfoUpdateWithoutEventDataInput {
+  username?: Maybe<String>;
+  groups?: Maybe<UserInfoUpdategroupsInput>;
+}
+
+export interface EventUpsertWithoutResponseStatusInput {
+  update: EventUpdateWithoutResponseStatusDataInput;
+  create: EventCreateWithoutResponseStatusInput;
+}
+
+export interface ResponseStatusCreateInput {
+  id?: Maybe<ID_Input>;
+  metadata?: Maybe<Json>;
+  status?: Maybe<String>;
+  reason?: Maybe<String>;
+  code?: Maybe<Int>;
+  event: EventCreateOneWithoutResponseStatusInput;
+}
+
+export type UserInfoWhereUniqueInput = AtLeastOne<{
+  id: Maybe<ID_Input>;
+}>;
+
+export interface UserInfoUpsertWithoutEventInput {
+  update: UserInfoUpdateWithoutEventDataInput;
+  create: UserInfoCreateWithoutEventInput;
+}
+
+export interface ResponseStatusUpdateInput {
+  metadata?: Maybe<Json>;
+  status?: Maybe<String>;
+  reason?: Maybe<String>;
+  code?: Maybe<Int>;
+  event?: Maybe<EventUpdateOneRequiredWithoutResponseStatusInput>;
+}
+
+export interface EventUpdatesourceIPsInput {
+  set?: Maybe<String[] | String>;
 }
 
 export interface EventCreateOneWithoutResponseStatusInput {
   create?: Maybe<EventCreateWithoutResponseStatusInput>;
   connect?: Maybe<EventWhereUniqueInput>;
+}
+
+export interface ResponseStatusUpdateOneWithoutEventInput {
+  create?: Maybe<ResponseStatusCreateWithoutEventInput>;
+  update?: Maybe<ResponseStatusUpdateWithoutEventDataInput>;
+  upsert?: Maybe<ResponseStatusUpsertWithoutEventInput>;
+  delete?: Maybe<Boolean>;
+  disconnect?: Maybe<Boolean>;
+  connect?: Maybe<ResponseStatusWhereUniqueInput>;
+}
+
+export interface UserInfoSubscriptionWhereInput {
+  mutation_in?: Maybe<MutationType[] | MutationType>;
+  updatedFields_contains?: Maybe<String>;
+  updatedFields_contains_every?: Maybe<String[] | String>;
+  updatedFields_contains_some?: Maybe<String[] | String>;
+  node?: Maybe<UserInfoWhereInput>;
+  AND?: Maybe<
+    UserInfoSubscriptionWhereInput[] | UserInfoSubscriptionWhereInput
+  >;
+  OR?: Maybe<UserInfoSubscriptionWhereInput[] | UserInfoSubscriptionWhereInput>;
+  NOT?: Maybe<
+    UserInfoSubscriptionWhereInput[] | UserInfoSubscriptionWhereInput
+  >;
+}
+
+export interface ObjectReferenceUpdateManyMutationInput {
+  resource?: Maybe<String>;
+  namespace?: Maybe<String>;
+  name?: Maybe<String>;
+  uid?: Maybe<ID_Input>;
+  apiGroup?: Maybe<String>;
+  apiVersion?: Maybe<String>;
+  resourceVersion?: Maybe<String>;
+  subresource?: Maybe<String>;
 }
 
 export interface ObjectReferenceWhereInput {
@@ -1068,179 +940,33 @@ export interface ObjectReferenceWhereInput {
   NOT?: Maybe<ObjectReferenceWhereInput[] | ObjectReferenceWhereInput>;
 }
 
-export interface ResponseStatusCreateInput {
-  id?: Maybe<ID_Input>;
-  metadata?: Maybe<Json>;
-  status?: Maybe<String>;
-  reason?: Maybe<String>;
-  code?: Maybe<Int>;
-  event: EventCreateOneWithoutResponseStatusInput;
+export interface ResponseStatusUpsertWithoutEventInput {
+  update: ResponseStatusUpdateWithoutEventDataInput;
+  create: ResponseStatusCreateWithoutEventInput;
 }
 
-export interface EventCreateWithoutUserInput {
-  id?: Maybe<ID_Input>;
-  kind?: Maybe<String>;
-  level: String;
-  auditID?: Maybe<ID_Input>;
-  stage: String;
-  requestURI: String;
-  verb: String;
-  sourceIPs?: Maybe<EventCreatesourceIPsInput>;
-  userAgent?: Maybe<String>;
-  responseStatus?: Maybe<ResponseStatusCreateOneWithoutEventInput>;
-  requestObject?: Maybe<ObjectReferenceCreateOneWithoutEventInput>;
-  requestReceivedTimestamp?: Maybe<String>;
-  stageTimestamp?: Maybe<String>;
-  annotations?: Maybe<Json>;
+export interface UserInfoUpdateManyMutationInput {
+  username?: Maybe<String>;
+  groups?: Maybe<UserInfoUpdategroupsInput>;
 }
 
-export interface EndpointCreateInput {
-  id?: Maybe<ID_Input>;
-  auditLog: AuditLogCreateOneWithoutEndpointsInput;
-  operationID: String;
-  level: String;
-  category: String;
-  kind?: Maybe<String>;
-  group?: Maybe<String>;
-  description?: Maybe<String>;
-  version?: Maybe<String>;
-  path?: Maybe<String>;
-  hits: Int;
-  testHits: Int;
-  conformanceHits: Int;
-  isDeprecated: Boolean;
+export interface ObjectReferenceUpdateOneWithoutEventInput {
+  create?: Maybe<ObjectReferenceCreateWithoutEventInput>;
+  update?: Maybe<ObjectReferenceUpdateWithoutEventDataInput>;
+  upsert?: Maybe<ObjectReferenceUpsertWithoutEventInput>;
+  delete?: Maybe<Boolean>;
+  disconnect?: Maybe<Boolean>;
+  connect?: Maybe<ObjectReferenceWhereUniqueInput>;
 }
 
-export interface UserInfoCreateInput {
-  id?: Maybe<ID_Input>;
-  username: String;
-  groups?: Maybe<UserInfoCreategroupsInput>;
-  event: EventCreateOneWithoutUserInput;
+export interface EventUpdateOneRequiredWithoutUserInput {
+  create?: Maybe<EventCreateWithoutUserInput>;
+  update?: Maybe<EventUpdateWithoutUserDataInput>;
+  upsert?: Maybe<EventUpsertWithoutUserInput>;
+  connect?: Maybe<EventWhereUniqueInput>;
 }
 
-export interface AuditLogCreateOneWithoutEndpointsInput {
-  create?: Maybe<AuditLogCreateWithoutEndpointsInput>;
-  connect?: Maybe<AuditLogWhereUniqueInput>;
-}
-
-export interface EndpointUpsertWithWhereUniqueNestedInput {
-  where: EndpointWhereUniqueInput;
-  update: EndpointUpdateDataInput;
-  create: EndpointCreateInput;
-}
-
-export interface AuditLogCreateWithoutEndpointsInput {
-  id?: Maybe<ID_Input>;
-  job: String;
-  bucket: String;
-  version: String;
-  jobVersion: String;
-  masterOsImage: String;
-  infraCommit: String;
-  nodeOsImage: String;
-  pod: String;
-  passed: Boolean;
-  result: String;
-  timestamp: Int;
-}
-
-export interface EndpointUpdateWithWhereUniqueNestedInput {
-  where: EndpointWhereUniqueInput;
-  data: EndpointUpdateDataInput;
-}
-
-export interface EndpointUpdateInput {
-  auditLog?: Maybe<AuditLogUpdateOneRequiredWithoutEndpointsInput>;
-  operationID?: Maybe<String>;
-  level?: Maybe<String>;
-  category?: Maybe<String>;
-  kind?: Maybe<String>;
-  group?: Maybe<String>;
-  description?: Maybe<String>;
-  version?: Maybe<String>;
-  path?: Maybe<String>;
-  hits?: Maybe<Int>;
-  testHits?: Maybe<Int>;
-  conformanceHits?: Maybe<Int>;
-  isDeprecated?: Maybe<Boolean>;
-}
-
-export type ResponseStatusWhereUniqueInput = AtLeastOne<{
-  id: Maybe<ID_Input>;
-}>;
-
-export interface AuditLogUpdateOneRequiredWithoutEndpointsInput {
-  create?: Maybe<AuditLogCreateWithoutEndpointsInput>;
-  update?: Maybe<AuditLogUpdateWithoutEndpointsDataInput>;
-  upsert?: Maybe<AuditLogUpsertWithoutEndpointsInput>;
-  connect?: Maybe<AuditLogWhereUniqueInput>;
-}
-
-export interface AuditLogUpdateDataInput {
-  job?: Maybe<String>;
-  bucket?: Maybe<String>;
-  version?: Maybe<String>;
-  jobVersion?: Maybe<String>;
-  masterOsImage?: Maybe<String>;
-  infraCommit?: Maybe<String>;
-  nodeOsImage?: Maybe<String>;
-  pod?: Maybe<String>;
-  passed?: Maybe<Boolean>;
-  result?: Maybe<String>;
-  timestamp?: Maybe<Int>;
-  endpoints?: Maybe<EndpointUpdateManyWithoutAuditLogInput>;
-}
-
-export interface AuditLogUpdateWithoutEndpointsDataInput {
-  job?: Maybe<String>;
-  bucket?: Maybe<String>;
-  version?: Maybe<String>;
-  jobVersion?: Maybe<String>;
-  masterOsImage?: Maybe<String>;
-  infraCommit?: Maybe<String>;
-  nodeOsImage?: Maybe<String>;
-  pod?: Maybe<String>;
-  passed?: Maybe<Boolean>;
-  result?: Maybe<String>;
-  timestamp?: Maybe<Int>;
-}
-
-export interface TestUpdateInput {
-  auditLog?: Maybe<AuditLogUpdateOneRequiredInput>;
-  endpoints?: Maybe<EndpointUpdateManyInput>;
-}
-
-export interface AuditLogUpsertWithoutEndpointsInput {
-  update: AuditLogUpdateWithoutEndpointsDataInput;
-  create: AuditLogCreateWithoutEndpointsInput;
-}
-
-export interface EndpointCreateManyInput {
-  create?: Maybe<EndpointCreateInput[] | EndpointCreateInput>;
-  connect?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
-}
-
-export interface EndpointUpdateManyMutationInput {
-  operationID?: Maybe<String>;
-  level?: Maybe<String>;
-  category?: Maybe<String>;
-  kind?: Maybe<String>;
-  group?: Maybe<String>;
-  description?: Maybe<String>;
-  version?: Maybe<String>;
-  path?: Maybe<String>;
-  hits?: Maybe<Int>;
-  testHits?: Maybe<Int>;
-  conformanceHits?: Maybe<Int>;
-  isDeprecated?: Maybe<Boolean>;
-}
-
-export interface AuditLogCreateOneInput {
-  create?: Maybe<AuditLogCreateInput>;
-  connect?: Maybe<AuditLogWhereUniqueInput>;
-}
-
-export interface ObjectReferenceUpdateManyMutationInput {
+export interface ObjectReferenceUpdateWithoutEventDataInput {
   resource?: Maybe<String>;
   namespace?: Maybe<String>;
   name?: Maybe<String>;
@@ -1251,41 +977,50 @@ export interface ObjectReferenceUpdateManyMutationInput {
   subresource?: Maybe<String>;
 }
 
-export interface ResponseStatusUpdateManyMutationInput {
-  metadata?: Maybe<Json>;
-  status?: Maybe<String>;
-  reason?: Maybe<String>;
-  code?: Maybe<Int>;
-}
-
-export interface UserInfoCreateOneWithoutEventInput {
-  create?: Maybe<UserInfoCreateWithoutEventInput>;
-  connect?: Maybe<UserInfoWhereUniqueInput>;
-}
-
-export type UserInfoWhereUniqueInput = AtLeastOne<{
+export type ResponseStatusWhereUniqueInput = AtLeastOne<{
   id: Maybe<ID_Input>;
 }>;
 
-export interface UserInfoCreateWithoutEventInput {
-  id?: Maybe<ID_Input>;
-  username: String;
-  groups?: Maybe<UserInfoCreategroupsInput>;
+export interface ObjectReferenceUpsertWithoutEventInput {
+  update: ObjectReferenceUpdateWithoutEventDataInput;
+  create: ObjectReferenceCreateWithoutEventInput;
 }
 
-export interface EventUpdateOneRequiredWithoutResponseStatusInput {
-  create?: Maybe<EventCreateWithoutResponseStatusInput>;
-  update?: Maybe<EventUpdateWithoutResponseStatusDataInput>;
-  upsert?: Maybe<EventUpsertWithoutResponseStatusInput>;
-  connect?: Maybe<EventWhereUniqueInput>;
+export interface EventUpdateWithoutResponseStatusDataInput {
+  apiVersion?: Maybe<String>;
+  kind?: Maybe<String>;
+  level?: Maybe<String>;
+  auditID?: Maybe<ID_Input>;
+  stage?: Maybe<String>;
+  requestURI?: Maybe<String>;
+  verb?: Maybe<String>;
+  user?: Maybe<UserInfoUpdateOneRequiredWithoutEventInput>;
+  sourceIPs?: Maybe<EventUpdatesourceIPsInput>;
+  userAgent?: Maybe<String>;
+  requestObject?: Maybe<ObjectReferenceUpdateOneWithoutEventInput>;
+  requestReceivedTimestamp?: Maybe<String>;
+  stageTimestamp?: Maybe<String>;
+  annotations?: Maybe<Json>;
 }
 
-export interface UserInfoCreategroupsInput {
-  set?: Maybe<String[] | String>;
+export interface EventUpdateManyMutationInput {
+  apiVersion?: Maybe<String>;
+  kind?: Maybe<String>;
+  level?: Maybe<String>;
+  auditID?: Maybe<ID_Input>;
+  stage?: Maybe<String>;
+  requestURI?: Maybe<String>;
+  verb?: Maybe<String>;
+  sourceIPs?: Maybe<EventUpdatesourceIPsInput>;
+  userAgent?: Maybe<String>;
+  requestReceivedTimestamp?: Maybe<String>;
+  stageTimestamp?: Maybe<String>;
+  annotations?: Maybe<Json>;
 }
 
 export interface EventCreateWithoutResponseStatusInput {
   id?: Maybe<ID_Input>;
+  apiVersion?: Maybe<String>;
   kind?: Maybe<String>;
   level: String;
   auditID?: Maybe<ID_Input>;
@@ -1301,27 +1036,12 @@ export interface EventCreateWithoutResponseStatusInput {
   annotations?: Maybe<Json>;
 }
 
-export interface EventCreatesourceIPsInput {
-  set?: Maybe<String[] | String>;
+export interface EventUpsertWithoutRequestObjectInput {
+  update: EventUpdateWithoutRequestObjectDataInput;
+  create: EventCreateWithoutRequestObjectInput;
 }
 
-export interface AuditLogCreateInput {
-  id?: Maybe<ID_Input>;
-  job: String;
-  bucket: String;
-  version: String;
-  jobVersion: String;
-  masterOsImage: String;
-  infraCommit: String;
-  nodeOsImage: String;
-  pod: String;
-  passed: Boolean;
-  result: String;
-  timestamp: Int;
-  endpoints?: Maybe<EndpointCreateManyWithoutAuditLogInput>;
-}
-
-export interface AuditLogWhereInput {
+export interface UserInfoWhereInput {
   id?: Maybe<ID_Input>;
   id_not?: Maybe<ID_Input>;
   id_in?: Maybe<ID_Input[] | ID_Input>;
@@ -1344,717 +1064,28 @@ export interface AuditLogWhereInput {
   createdAt_lte?: Maybe<DateTimeInput>;
   createdAt_gt?: Maybe<DateTimeInput>;
   createdAt_gte?: Maybe<DateTimeInput>;
-  job?: Maybe<String>;
-  job_not?: Maybe<String>;
-  job_in?: Maybe<String[] | String>;
-  job_not_in?: Maybe<String[] | String>;
-  job_lt?: Maybe<String>;
-  job_lte?: Maybe<String>;
-  job_gt?: Maybe<String>;
-  job_gte?: Maybe<String>;
-  job_contains?: Maybe<String>;
-  job_not_contains?: Maybe<String>;
-  job_starts_with?: Maybe<String>;
-  job_not_starts_with?: Maybe<String>;
-  job_ends_with?: Maybe<String>;
-  job_not_ends_with?: Maybe<String>;
-  bucket?: Maybe<String>;
-  bucket_not?: Maybe<String>;
-  bucket_in?: Maybe<String[] | String>;
-  bucket_not_in?: Maybe<String[] | String>;
-  bucket_lt?: Maybe<String>;
-  bucket_lte?: Maybe<String>;
-  bucket_gt?: Maybe<String>;
-  bucket_gte?: Maybe<String>;
-  bucket_contains?: Maybe<String>;
-  bucket_not_contains?: Maybe<String>;
-  bucket_starts_with?: Maybe<String>;
-  bucket_not_starts_with?: Maybe<String>;
-  bucket_ends_with?: Maybe<String>;
-  bucket_not_ends_with?: Maybe<String>;
-  version?: Maybe<String>;
-  version_not?: Maybe<String>;
-  version_in?: Maybe<String[] | String>;
-  version_not_in?: Maybe<String[] | String>;
-  version_lt?: Maybe<String>;
-  version_lte?: Maybe<String>;
-  version_gt?: Maybe<String>;
-  version_gte?: Maybe<String>;
-  version_contains?: Maybe<String>;
-  version_not_contains?: Maybe<String>;
-  version_starts_with?: Maybe<String>;
-  version_not_starts_with?: Maybe<String>;
-  version_ends_with?: Maybe<String>;
-  version_not_ends_with?: Maybe<String>;
-  jobVersion?: Maybe<String>;
-  jobVersion_not?: Maybe<String>;
-  jobVersion_in?: Maybe<String[] | String>;
-  jobVersion_not_in?: Maybe<String[] | String>;
-  jobVersion_lt?: Maybe<String>;
-  jobVersion_lte?: Maybe<String>;
-  jobVersion_gt?: Maybe<String>;
-  jobVersion_gte?: Maybe<String>;
-  jobVersion_contains?: Maybe<String>;
-  jobVersion_not_contains?: Maybe<String>;
-  jobVersion_starts_with?: Maybe<String>;
-  jobVersion_not_starts_with?: Maybe<String>;
-  jobVersion_ends_with?: Maybe<String>;
-  jobVersion_not_ends_with?: Maybe<String>;
-  masterOsImage?: Maybe<String>;
-  masterOsImage_not?: Maybe<String>;
-  masterOsImage_in?: Maybe<String[] | String>;
-  masterOsImage_not_in?: Maybe<String[] | String>;
-  masterOsImage_lt?: Maybe<String>;
-  masterOsImage_lte?: Maybe<String>;
-  masterOsImage_gt?: Maybe<String>;
-  masterOsImage_gte?: Maybe<String>;
-  masterOsImage_contains?: Maybe<String>;
-  masterOsImage_not_contains?: Maybe<String>;
-  masterOsImage_starts_with?: Maybe<String>;
-  masterOsImage_not_starts_with?: Maybe<String>;
-  masterOsImage_ends_with?: Maybe<String>;
-  masterOsImage_not_ends_with?: Maybe<String>;
-  infraCommit?: Maybe<String>;
-  infraCommit_not?: Maybe<String>;
-  infraCommit_in?: Maybe<String[] | String>;
-  infraCommit_not_in?: Maybe<String[] | String>;
-  infraCommit_lt?: Maybe<String>;
-  infraCommit_lte?: Maybe<String>;
-  infraCommit_gt?: Maybe<String>;
-  infraCommit_gte?: Maybe<String>;
-  infraCommit_contains?: Maybe<String>;
-  infraCommit_not_contains?: Maybe<String>;
-  infraCommit_starts_with?: Maybe<String>;
-  infraCommit_not_starts_with?: Maybe<String>;
-  infraCommit_ends_with?: Maybe<String>;
-  infraCommit_not_ends_with?: Maybe<String>;
-  nodeOsImage?: Maybe<String>;
-  nodeOsImage_not?: Maybe<String>;
-  nodeOsImage_in?: Maybe<String[] | String>;
-  nodeOsImage_not_in?: Maybe<String[] | String>;
-  nodeOsImage_lt?: Maybe<String>;
-  nodeOsImage_lte?: Maybe<String>;
-  nodeOsImage_gt?: Maybe<String>;
-  nodeOsImage_gte?: Maybe<String>;
-  nodeOsImage_contains?: Maybe<String>;
-  nodeOsImage_not_contains?: Maybe<String>;
-  nodeOsImage_starts_with?: Maybe<String>;
-  nodeOsImage_not_starts_with?: Maybe<String>;
-  nodeOsImage_ends_with?: Maybe<String>;
-  nodeOsImage_not_ends_with?: Maybe<String>;
-  pod?: Maybe<String>;
-  pod_not?: Maybe<String>;
-  pod_in?: Maybe<String[] | String>;
-  pod_not_in?: Maybe<String[] | String>;
-  pod_lt?: Maybe<String>;
-  pod_lte?: Maybe<String>;
-  pod_gt?: Maybe<String>;
-  pod_gte?: Maybe<String>;
-  pod_contains?: Maybe<String>;
-  pod_not_contains?: Maybe<String>;
-  pod_starts_with?: Maybe<String>;
-  pod_not_starts_with?: Maybe<String>;
-  pod_ends_with?: Maybe<String>;
-  pod_not_ends_with?: Maybe<String>;
-  passed?: Maybe<Boolean>;
-  passed_not?: Maybe<Boolean>;
-  result?: Maybe<String>;
-  result_not?: Maybe<String>;
-  result_in?: Maybe<String[] | String>;
-  result_not_in?: Maybe<String[] | String>;
-  result_lt?: Maybe<String>;
-  result_lte?: Maybe<String>;
-  result_gt?: Maybe<String>;
-  result_gte?: Maybe<String>;
-  result_contains?: Maybe<String>;
-  result_not_contains?: Maybe<String>;
-  result_starts_with?: Maybe<String>;
-  result_not_starts_with?: Maybe<String>;
-  result_ends_with?: Maybe<String>;
-  result_not_ends_with?: Maybe<String>;
-  timestamp?: Maybe<Int>;
-  timestamp_not?: Maybe<Int>;
-  timestamp_in?: Maybe<Int[] | Int>;
-  timestamp_not_in?: Maybe<Int[] | Int>;
-  timestamp_lt?: Maybe<Int>;
-  timestamp_lte?: Maybe<Int>;
-  timestamp_gt?: Maybe<Int>;
-  timestamp_gte?: Maybe<Int>;
-  endpoints_every?: Maybe<EndpointWhereInput>;
-  endpoints_some?: Maybe<EndpointWhereInput>;
-  endpoints_none?: Maybe<EndpointWhereInput>;
-  AND?: Maybe<AuditLogWhereInput[] | AuditLogWhereInput>;
-  OR?: Maybe<AuditLogWhereInput[] | AuditLogWhereInput>;
-  NOT?: Maybe<AuditLogWhereInput[] | AuditLogWhereInput>;
-}
-
-export interface UserInfoSubscriptionWhereInput {
-  mutation_in?: Maybe<MutationType[] | MutationType>;
-  updatedFields_contains?: Maybe<String>;
-  updatedFields_contains_every?: Maybe<String[] | String>;
-  updatedFields_contains_some?: Maybe<String[] | String>;
-  node?: Maybe<UserInfoWhereInput>;
-  AND?: Maybe<
-    UserInfoSubscriptionWhereInput[] | UserInfoSubscriptionWhereInput
-  >;
-  OR?: Maybe<UserInfoSubscriptionWhereInput[] | UserInfoSubscriptionWhereInput>;
-  NOT?: Maybe<
-    UserInfoSubscriptionWhereInput[] | UserInfoSubscriptionWhereInput
-  >;
-}
-
-export interface ResponseStatusCreateWithoutEventInput {
-  id?: Maybe<ID_Input>;
-  metadata?: Maybe<Json>;
-  status?: Maybe<String>;
-  reason?: Maybe<String>;
-  code?: Maybe<Int>;
-}
-
-export type EndpointWhereUniqueInput = AtLeastOne<{
-  id: Maybe<ID_Input>;
-}>;
-
-export interface ObjectReferenceCreateOneWithoutEventInput {
-  create?: Maybe<ObjectReferenceCreateWithoutEventInput>;
-  connect?: Maybe<ObjectReferenceWhereUniqueInput>;
-}
-
-export type EventWhereUniqueInput = AtLeastOne<{
-  id: Maybe<ID_Input>;
-  auditID?: Maybe<ID_Input>;
-}>;
-
-export interface ObjectReferenceCreateWithoutEventInput {
-  id?: Maybe<ID_Input>;
-  resource?: Maybe<String>;
-  namespace?: Maybe<String>;
-  name?: Maybe<String>;
-  uid?: Maybe<ID_Input>;
-  apiGroup?: Maybe<String>;
-  apiVersion?: Maybe<String>;
-  resourceVersion?: Maybe<String>;
-  subresource?: Maybe<String>;
-}
-
-export interface EventUpdateOneRequiredWithoutUserInput {
-  create?: Maybe<EventCreateWithoutUserInput>;
-  update?: Maybe<EventUpdateWithoutUserDataInput>;
-  upsert?: Maybe<EventUpsertWithoutUserInput>;
-  connect?: Maybe<EventWhereUniqueInput>;
-}
-
-export interface EventUpdateInput {
-  kind?: Maybe<String>;
-  level?: Maybe<String>;
-  auditID?: Maybe<ID_Input>;
-  stage?: Maybe<String>;
-  requestURI?: Maybe<String>;
-  verb?: Maybe<String>;
-  user?: Maybe<UserInfoUpdateOneRequiredWithoutEventInput>;
-  sourceIPs?: Maybe<EventUpdatesourceIPsInput>;
-  userAgent?: Maybe<String>;
-  responseStatus?: Maybe<ResponseStatusUpdateOneWithoutEventInput>;
-  requestObject?: Maybe<ObjectReferenceUpdateOneWithoutEventInput>;
-  requestReceivedTimestamp?: Maybe<String>;
-  stageTimestamp?: Maybe<String>;
-  annotations?: Maybe<Json>;
-}
-
-export interface ResponseStatusWhereInput {
-  id?: Maybe<ID_Input>;
-  id_not?: Maybe<ID_Input>;
-  id_in?: Maybe<ID_Input[] | ID_Input>;
-  id_not_in?: Maybe<ID_Input[] | ID_Input>;
-  id_lt?: Maybe<ID_Input>;
-  id_lte?: Maybe<ID_Input>;
-  id_gt?: Maybe<ID_Input>;
-  id_gte?: Maybe<ID_Input>;
-  id_contains?: Maybe<ID_Input>;
-  id_not_contains?: Maybe<ID_Input>;
-  id_starts_with?: Maybe<ID_Input>;
-  id_not_starts_with?: Maybe<ID_Input>;
-  id_ends_with?: Maybe<ID_Input>;
-  id_not_ends_with?: Maybe<ID_Input>;
-  createdAt?: Maybe<DateTimeInput>;
-  createdAt_not?: Maybe<DateTimeInput>;
-  createdAt_in?: Maybe<DateTimeInput[] | DateTimeInput>;
-  createdAt_not_in?: Maybe<DateTimeInput[] | DateTimeInput>;
-  createdAt_lt?: Maybe<DateTimeInput>;
-  createdAt_lte?: Maybe<DateTimeInput>;
-  createdAt_gt?: Maybe<DateTimeInput>;
-  createdAt_gte?: Maybe<DateTimeInput>;
-  status?: Maybe<String>;
-  status_not?: Maybe<String>;
-  status_in?: Maybe<String[] | String>;
-  status_not_in?: Maybe<String[] | String>;
-  status_lt?: Maybe<String>;
-  status_lte?: Maybe<String>;
-  status_gt?: Maybe<String>;
-  status_gte?: Maybe<String>;
-  status_contains?: Maybe<String>;
-  status_not_contains?: Maybe<String>;
-  status_starts_with?: Maybe<String>;
-  status_not_starts_with?: Maybe<String>;
-  status_ends_with?: Maybe<String>;
-  status_not_ends_with?: Maybe<String>;
-  reason?: Maybe<String>;
-  reason_not?: Maybe<String>;
-  reason_in?: Maybe<String[] | String>;
-  reason_not_in?: Maybe<String[] | String>;
-  reason_lt?: Maybe<String>;
-  reason_lte?: Maybe<String>;
-  reason_gt?: Maybe<String>;
-  reason_gte?: Maybe<String>;
-  reason_contains?: Maybe<String>;
-  reason_not_contains?: Maybe<String>;
-  reason_starts_with?: Maybe<String>;
-  reason_not_starts_with?: Maybe<String>;
-  reason_ends_with?: Maybe<String>;
-  reason_not_ends_with?: Maybe<String>;
-  code?: Maybe<Int>;
-  code_not?: Maybe<Int>;
-  code_in?: Maybe<Int[] | Int>;
-  code_not_in?: Maybe<Int[] | Int>;
-  code_lt?: Maybe<Int>;
-  code_lte?: Maybe<Int>;
-  code_gt?: Maybe<Int>;
-  code_gte?: Maybe<Int>;
-  event?: Maybe<EventWhereInput>;
-  AND?: Maybe<ResponseStatusWhereInput[] | ResponseStatusWhereInput>;
-  OR?: Maybe<ResponseStatusWhereInput[] | ResponseStatusWhereInput>;
-  NOT?: Maybe<ResponseStatusWhereInput[] | ResponseStatusWhereInput>;
-}
-
-export interface UserInfoUpdateOneRequiredWithoutEventInput {
-  create?: Maybe<UserInfoCreateWithoutEventInput>;
-  update?: Maybe<UserInfoUpdateWithoutEventDataInput>;
-  upsert?: Maybe<UserInfoUpsertWithoutEventInput>;
-  connect?: Maybe<UserInfoWhereUniqueInput>;
-}
-
-export interface EventCreateOneWithoutUserInput {
-  create?: Maybe<EventCreateWithoutUserInput>;
-  connect?: Maybe<EventWhereUniqueInput>;
-}
-
-export interface UserInfoUpdateWithoutEventDataInput {
   username?: Maybe<String>;
-  groups?: Maybe<UserInfoUpdategroupsInput>;
+  username_not?: Maybe<String>;
+  username_in?: Maybe<String[] | String>;
+  username_not_in?: Maybe<String[] | String>;
+  username_lt?: Maybe<String>;
+  username_lte?: Maybe<String>;
+  username_gt?: Maybe<String>;
+  username_gte?: Maybe<String>;
+  username_contains?: Maybe<String>;
+  username_not_contains?: Maybe<String>;
+  username_starts_with?: Maybe<String>;
+  username_not_starts_with?: Maybe<String>;
+  username_ends_with?: Maybe<String>;
+  username_not_ends_with?: Maybe<String>;
+  event?: Maybe<EventWhereInput>;
+  AND?: Maybe<UserInfoWhereInput[] | UserInfoWhereInput>;
+  OR?: Maybe<UserInfoWhereInput[] | UserInfoWhereInput>;
+  NOT?: Maybe<UserInfoWhereInput[] | UserInfoWhereInput>;
 }
-
-export interface EndpointUpdateDataInput {
-  auditLog?: Maybe<AuditLogUpdateOneRequiredWithoutEndpointsInput>;
-  operationID?: Maybe<String>;
-  level?: Maybe<String>;
-  category?: Maybe<String>;
-  kind?: Maybe<String>;
-  group?: Maybe<String>;
-  description?: Maybe<String>;
-  version?: Maybe<String>;
-  path?: Maybe<String>;
-  hits?: Maybe<Int>;
-  testHits?: Maybe<Int>;
-  conformanceHits?: Maybe<Int>;
-  isDeprecated?: Maybe<Boolean>;
-}
-
-export interface UserInfoUpdategroupsInput {
-  set?: Maybe<String[] | String>;
-}
-
-export interface AuditLogUpsertNestedInput {
-  update: AuditLogUpdateDataInput;
-  create: AuditLogCreateInput;
-}
-
-export interface UserInfoUpsertWithoutEventInput {
-  update: UserInfoUpdateWithoutEventDataInput;
-  create: UserInfoCreateWithoutEventInput;
-}
-
-export type TestWhereUniqueInput = AtLeastOne<{
-  id: Maybe<ID_Input>;
-}>;
-
-export interface EventUpdatesourceIPsInput {
-  set?: Maybe<String[] | String>;
-}
-
-export interface TestCreateInput {
-  id?: Maybe<ID_Input>;
-  auditLog: AuditLogCreateOneInput;
-  endpoints?: Maybe<EndpointCreateManyInput>;
-}
-
-export interface ResponseStatusUpdateOneWithoutEventInput {
-  create?: Maybe<ResponseStatusCreateWithoutEventInput>;
-  update?: Maybe<ResponseStatusUpdateWithoutEventDataInput>;
-  upsert?: Maybe<ResponseStatusUpsertWithoutEventInput>;
-  delete?: Maybe<Boolean>;
-  disconnect?: Maybe<Boolean>;
-  connect?: Maybe<ResponseStatusWhereUniqueInput>;
-}
-
-export interface EventUpdateWithoutResponseStatusDataInput {
-  kind?: Maybe<String>;
-  level?: Maybe<String>;
-  auditID?: Maybe<ID_Input>;
-  stage?: Maybe<String>;
-  requestURI?: Maybe<String>;
-  verb?: Maybe<String>;
-  user?: Maybe<UserInfoUpdateOneRequiredWithoutEventInput>;
-  sourceIPs?: Maybe<EventUpdatesourceIPsInput>;
-  userAgent?: Maybe<String>;
-  requestObject?: Maybe<ObjectReferenceUpdateOneWithoutEventInput>;
-  requestReceivedTimestamp?: Maybe<String>;
-  stageTimestamp?: Maybe<String>;
-  annotations?: Maybe<Json>;
-}
-
-export interface ResponseStatusUpdateWithoutEventDataInput {
-  metadata?: Maybe<Json>;
-  status?: Maybe<String>;
-  reason?: Maybe<String>;
-  code?: Maybe<Int>;
-}
-
-export interface ResponseStatusSubscriptionWhereInput {
-  mutation_in?: Maybe<MutationType[] | MutationType>;
-  updatedFields_contains?: Maybe<String>;
-  updatedFields_contains_every?: Maybe<String[] | String>;
-  updatedFields_contains_some?: Maybe<String[] | String>;
-  node?: Maybe<ResponseStatusWhereInput>;
-  AND?: Maybe<
-    | ResponseStatusSubscriptionWhereInput[]
-    | ResponseStatusSubscriptionWhereInput
-  >;
-  OR?: Maybe<
-    | ResponseStatusSubscriptionWhereInput[]
-    | ResponseStatusSubscriptionWhereInput
-  >;
-  NOT?: Maybe<
-    | ResponseStatusSubscriptionWhereInput[]
-    | ResponseStatusSubscriptionWhereInput
-  >;
-}
-
-export interface ResponseStatusUpsertWithoutEventInput {
-  update: ResponseStatusUpdateWithoutEventDataInput;
-  create: ResponseStatusCreateWithoutEventInput;
-}
-
-export interface EventUpsertWithoutUserInput {
-  update: EventUpdateWithoutUserDataInput;
-  create: EventCreateWithoutUserInput;
-}
-
-export interface ObjectReferenceUpdateOneWithoutEventInput {
-  create?: Maybe<ObjectReferenceCreateWithoutEventInput>;
-  update?: Maybe<ObjectReferenceUpdateWithoutEventDataInput>;
-  upsert?: Maybe<ObjectReferenceUpsertWithoutEventInput>;
-  delete?: Maybe<Boolean>;
-  disconnect?: Maybe<Boolean>;
-  connect?: Maybe<ObjectReferenceWhereUniqueInput>;
-}
-
-export interface EndpointWhereInput {
-  id?: Maybe<ID_Input>;
-  id_not?: Maybe<ID_Input>;
-  id_in?: Maybe<ID_Input[] | ID_Input>;
-  id_not_in?: Maybe<ID_Input[] | ID_Input>;
-  id_lt?: Maybe<ID_Input>;
-  id_lte?: Maybe<ID_Input>;
-  id_gt?: Maybe<ID_Input>;
-  id_gte?: Maybe<ID_Input>;
-  id_contains?: Maybe<ID_Input>;
-  id_not_contains?: Maybe<ID_Input>;
-  id_starts_with?: Maybe<ID_Input>;
-  id_not_starts_with?: Maybe<ID_Input>;
-  id_ends_with?: Maybe<ID_Input>;
-  id_not_ends_with?: Maybe<ID_Input>;
-  createdAt?: Maybe<DateTimeInput>;
-  createdAt_not?: Maybe<DateTimeInput>;
-  createdAt_in?: Maybe<DateTimeInput[] | DateTimeInput>;
-  createdAt_not_in?: Maybe<DateTimeInput[] | DateTimeInput>;
-  createdAt_lt?: Maybe<DateTimeInput>;
-  createdAt_lte?: Maybe<DateTimeInput>;
-  createdAt_gt?: Maybe<DateTimeInput>;
-  createdAt_gte?: Maybe<DateTimeInput>;
-  auditLog?: Maybe<AuditLogWhereInput>;
-  operationID?: Maybe<String>;
-  operationID_not?: Maybe<String>;
-  operationID_in?: Maybe<String[] | String>;
-  operationID_not_in?: Maybe<String[] | String>;
-  operationID_lt?: Maybe<String>;
-  operationID_lte?: Maybe<String>;
-  operationID_gt?: Maybe<String>;
-  operationID_gte?: Maybe<String>;
-  operationID_contains?: Maybe<String>;
-  operationID_not_contains?: Maybe<String>;
-  operationID_starts_with?: Maybe<String>;
-  operationID_not_starts_with?: Maybe<String>;
-  operationID_ends_with?: Maybe<String>;
-  operationID_not_ends_with?: Maybe<String>;
-  level?: Maybe<String>;
-  level_not?: Maybe<String>;
-  level_in?: Maybe<String[] | String>;
-  level_not_in?: Maybe<String[] | String>;
-  level_lt?: Maybe<String>;
-  level_lte?: Maybe<String>;
-  level_gt?: Maybe<String>;
-  level_gte?: Maybe<String>;
-  level_contains?: Maybe<String>;
-  level_not_contains?: Maybe<String>;
-  level_starts_with?: Maybe<String>;
-  level_not_starts_with?: Maybe<String>;
-  level_ends_with?: Maybe<String>;
-  level_not_ends_with?: Maybe<String>;
-  category?: Maybe<String>;
-  category_not?: Maybe<String>;
-  category_in?: Maybe<String[] | String>;
-  category_not_in?: Maybe<String[] | String>;
-  category_lt?: Maybe<String>;
-  category_lte?: Maybe<String>;
-  category_gt?: Maybe<String>;
-  category_gte?: Maybe<String>;
-  category_contains?: Maybe<String>;
-  category_not_contains?: Maybe<String>;
-  category_starts_with?: Maybe<String>;
-  category_not_starts_with?: Maybe<String>;
-  category_ends_with?: Maybe<String>;
-  category_not_ends_with?: Maybe<String>;
-  kind?: Maybe<String>;
-  kind_not?: Maybe<String>;
-  kind_in?: Maybe<String[] | String>;
-  kind_not_in?: Maybe<String[] | String>;
-  kind_lt?: Maybe<String>;
-  kind_lte?: Maybe<String>;
-  kind_gt?: Maybe<String>;
-  kind_gte?: Maybe<String>;
-  kind_contains?: Maybe<String>;
-  kind_not_contains?: Maybe<String>;
-  kind_starts_with?: Maybe<String>;
-  kind_not_starts_with?: Maybe<String>;
-  kind_ends_with?: Maybe<String>;
-  kind_not_ends_with?: Maybe<String>;
-  group?: Maybe<String>;
-  group_not?: Maybe<String>;
-  group_in?: Maybe<String[] | String>;
-  group_not_in?: Maybe<String[] | String>;
-  group_lt?: Maybe<String>;
-  group_lte?: Maybe<String>;
-  group_gt?: Maybe<String>;
-  group_gte?: Maybe<String>;
-  group_contains?: Maybe<String>;
-  group_not_contains?: Maybe<String>;
-  group_starts_with?: Maybe<String>;
-  group_not_starts_with?: Maybe<String>;
-  group_ends_with?: Maybe<String>;
-  group_not_ends_with?: Maybe<String>;
-  description?: Maybe<String>;
-  description_not?: Maybe<String>;
-  description_in?: Maybe<String[] | String>;
-  description_not_in?: Maybe<String[] | String>;
-  description_lt?: Maybe<String>;
-  description_lte?: Maybe<String>;
-  description_gt?: Maybe<String>;
-  description_gte?: Maybe<String>;
-  description_contains?: Maybe<String>;
-  description_not_contains?: Maybe<String>;
-  description_starts_with?: Maybe<String>;
-  description_not_starts_with?: Maybe<String>;
-  description_ends_with?: Maybe<String>;
-  description_not_ends_with?: Maybe<String>;
-  version?: Maybe<String>;
-  version_not?: Maybe<String>;
-  version_in?: Maybe<String[] | String>;
-  version_not_in?: Maybe<String[] | String>;
-  version_lt?: Maybe<String>;
-  version_lte?: Maybe<String>;
-  version_gt?: Maybe<String>;
-  version_gte?: Maybe<String>;
-  version_contains?: Maybe<String>;
-  version_not_contains?: Maybe<String>;
-  version_starts_with?: Maybe<String>;
-  version_not_starts_with?: Maybe<String>;
-  version_ends_with?: Maybe<String>;
-  version_not_ends_with?: Maybe<String>;
-  path?: Maybe<String>;
-  path_not?: Maybe<String>;
-  path_in?: Maybe<String[] | String>;
-  path_not_in?: Maybe<String[] | String>;
-  path_lt?: Maybe<String>;
-  path_lte?: Maybe<String>;
-  path_gt?: Maybe<String>;
-  path_gte?: Maybe<String>;
-  path_contains?: Maybe<String>;
-  path_not_contains?: Maybe<String>;
-  path_starts_with?: Maybe<String>;
-  path_not_starts_with?: Maybe<String>;
-  path_ends_with?: Maybe<String>;
-  path_not_ends_with?: Maybe<String>;
-  hits?: Maybe<Int>;
-  hits_not?: Maybe<Int>;
-  hits_in?: Maybe<Int[] | Int>;
-  hits_not_in?: Maybe<Int[] | Int>;
-  hits_lt?: Maybe<Int>;
-  hits_lte?: Maybe<Int>;
-  hits_gt?: Maybe<Int>;
-  hits_gte?: Maybe<Int>;
-  testHits?: Maybe<Int>;
-  testHits_not?: Maybe<Int>;
-  testHits_in?: Maybe<Int[] | Int>;
-  testHits_not_in?: Maybe<Int[] | Int>;
-  testHits_lt?: Maybe<Int>;
-  testHits_lte?: Maybe<Int>;
-  testHits_gt?: Maybe<Int>;
-  testHits_gte?: Maybe<Int>;
-  conformanceHits?: Maybe<Int>;
-  conformanceHits_not?: Maybe<Int>;
-  conformanceHits_in?: Maybe<Int[] | Int>;
-  conformanceHits_not_in?: Maybe<Int[] | Int>;
-  conformanceHits_lt?: Maybe<Int>;
-  conformanceHits_lte?: Maybe<Int>;
-  conformanceHits_gt?: Maybe<Int>;
-  conformanceHits_gte?: Maybe<Int>;
-  isDeprecated?: Maybe<Boolean>;
-  isDeprecated_not?: Maybe<Boolean>;
-  AND?: Maybe<EndpointWhereInput[] | EndpointWhereInput>;
-  OR?: Maybe<EndpointWhereInput[] | EndpointWhereInput>;
-  NOT?: Maybe<EndpointWhereInput[] | EndpointWhereInput>;
-}
-
-export interface ObjectReferenceUpdateWithoutEventDataInput {
-  resource?: Maybe<String>;
-  namespace?: Maybe<String>;
-  name?: Maybe<String>;
-  uid?: Maybe<ID_Input>;
-  apiGroup?: Maybe<String>;
-  apiVersion?: Maybe<String>;
-  resourceVersion?: Maybe<String>;
-  subresource?: Maybe<String>;
-}
-
-export interface EndpointUpdateManyInput {
-  create?: Maybe<EndpointCreateInput[] | EndpointCreateInput>;
-  update?: Maybe<
-    | EndpointUpdateWithWhereUniqueNestedInput[]
-    | EndpointUpdateWithWhereUniqueNestedInput
-  >;
-  upsert?: Maybe<
-    | EndpointUpsertWithWhereUniqueNestedInput[]
-    | EndpointUpsertWithWhereUniqueNestedInput
-  >;
-  delete?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
-  connect?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
-  set?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
-  disconnect?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
-  deleteMany?: Maybe<EndpointScalarWhereInput[] | EndpointScalarWhereInput>;
-  updateMany?: Maybe<
-    | EndpointUpdateManyWithWhereNestedInput[]
-    | EndpointUpdateManyWithWhereNestedInput
-  >;
-}
-
-export interface ObjectReferenceUpsertWithoutEventInput {
-  update: ObjectReferenceUpdateWithoutEventDataInput;
-  create: ObjectReferenceCreateWithoutEventInput;
-}
-
-export interface TestWhereInput {
-  id?: Maybe<ID_Input>;
-  id_not?: Maybe<ID_Input>;
-  id_in?: Maybe<ID_Input[] | ID_Input>;
-  id_not_in?: Maybe<ID_Input[] | ID_Input>;
-  id_lt?: Maybe<ID_Input>;
-  id_lte?: Maybe<ID_Input>;
-  id_gt?: Maybe<ID_Input>;
-  id_gte?: Maybe<ID_Input>;
-  id_contains?: Maybe<ID_Input>;
-  id_not_contains?: Maybe<ID_Input>;
-  id_starts_with?: Maybe<ID_Input>;
-  id_not_starts_with?: Maybe<ID_Input>;
-  id_ends_with?: Maybe<ID_Input>;
-  id_not_ends_with?: Maybe<ID_Input>;
-  createdAt?: Maybe<DateTimeInput>;
-  createdAt_not?: Maybe<DateTimeInput>;
-  createdAt_in?: Maybe<DateTimeInput[] | DateTimeInput>;
-  createdAt_not_in?: Maybe<DateTimeInput[] | DateTimeInput>;
-  createdAt_lt?: Maybe<DateTimeInput>;
-  createdAt_lte?: Maybe<DateTimeInput>;
-  createdAt_gt?: Maybe<DateTimeInput>;
-  createdAt_gte?: Maybe<DateTimeInput>;
-  auditLog?: Maybe<AuditLogWhereInput>;
-  endpoints_every?: Maybe<EndpointWhereInput>;
-  endpoints_some?: Maybe<EndpointWhereInput>;
-  endpoints_none?: Maybe<EndpointWhereInput>;
-  AND?: Maybe<TestWhereInput[] | TestWhereInput>;
-  OR?: Maybe<TestWhereInput[] | TestWhereInput>;
-  NOT?: Maybe<TestWhereInput[] | TestWhereInput>;
-}
-
-export interface EventUpdateManyMutationInput {
-  kind?: Maybe<String>;
-  level?: Maybe<String>;
-  auditID?: Maybe<ID_Input>;
-  stage?: Maybe<String>;
-  requestURI?: Maybe<String>;
-  verb?: Maybe<String>;
-  sourceIPs?: Maybe<EventUpdatesourceIPsInput>;
-  userAgent?: Maybe<String>;
-  requestReceivedTimestamp?: Maybe<String>;
-  stageTimestamp?: Maybe<String>;
-  annotations?: Maybe<Json>;
-}
-
-export interface ResponseStatusUpdateInput {
-  metadata?: Maybe<Json>;
-  status?: Maybe<String>;
-  reason?: Maybe<String>;
-  code?: Maybe<Int>;
-  event?: Maybe<EventUpdateOneRequiredWithoutResponseStatusInput>;
-}
-
-export interface ObjectReferenceCreateInput {
-  id?: Maybe<ID_Input>;
-  resource?: Maybe<String>;
-  namespace?: Maybe<String>;
-  name?: Maybe<String>;
-  uid?: Maybe<ID_Input>;
-  apiGroup?: Maybe<String>;
-  apiVersion?: Maybe<String>;
-  resourceVersion?: Maybe<String>;
-  subresource?: Maybe<String>;
-  event: EventCreateOneWithoutRequestObjectInput;
-}
-
-export interface EndpointSubscriptionWhereInput {
-  mutation_in?: Maybe<MutationType[] | MutationType>;
-  updatedFields_contains?: Maybe<String>;
-  updatedFields_contains_every?: Maybe<String[] | String>;
-  updatedFields_contains_some?: Maybe<String[] | String>;
-  node?: Maybe<EndpointWhereInput>;
-  AND?: Maybe<
-    EndpointSubscriptionWhereInput[] | EndpointSubscriptionWhereInput
-  >;
-  OR?: Maybe<EndpointSubscriptionWhereInput[] | EndpointSubscriptionWhereInput>;
-  NOT?: Maybe<
-    EndpointSubscriptionWhereInput[] | EndpointSubscriptionWhereInput
-  >;
-}
-
-export interface EventCreateOneWithoutRequestObjectInput {
-  create?: Maybe<EventCreateWithoutRequestObjectInput>;
-  connect?: Maybe<EventWhereUniqueInput>;
-}
-
-export type ObjectReferenceWhereUniqueInput = AtLeastOne<{
-  id: Maybe<ID_Input>;
-  uid?: Maybe<ID_Input>;
-}>;
 
 export interface EventUpdateWithoutRequestObjectDataInput {
+  apiVersion?: Maybe<String>;
   kind?: Maybe<String>;
   level?: Maybe<String>;
   auditID?: Maybe<ID_Input>;
@@ -2070,11 +1101,28 @@ export interface EventUpdateWithoutRequestObjectDataInput {
   annotations?: Maybe<Json>;
 }
 
-export interface EventUpdateOneRequiredWithoutRequestObjectInput {
-  create?: Maybe<EventCreateWithoutRequestObjectInput>;
-  update?: Maybe<EventUpdateWithoutRequestObjectDataInput>;
-  upsert?: Maybe<EventUpsertWithoutRequestObjectInput>;
-  connect?: Maybe<EventWhereUniqueInput>;
+export interface EventUpdateWithoutUserDataInput {
+  apiVersion?: Maybe<String>;
+  kind?: Maybe<String>;
+  level?: Maybe<String>;
+  auditID?: Maybe<ID_Input>;
+  stage?: Maybe<String>;
+  requestURI?: Maybe<String>;
+  verb?: Maybe<String>;
+  sourceIPs?: Maybe<EventUpdatesourceIPsInput>;
+  userAgent?: Maybe<String>;
+  responseStatus?: Maybe<ResponseStatusUpdateOneWithoutEventInput>;
+  requestObject?: Maybe<ObjectReferenceUpdateOneWithoutEventInput>;
+  requestReceivedTimestamp?: Maybe<String>;
+  stageTimestamp?: Maybe<String>;
+  annotations?: Maybe<Json>;
+}
+
+export interface ResponseStatusUpdateManyMutationInput {
+  metadata?: Maybe<Json>;
+  status?: Maybe<String>;
+  reason?: Maybe<String>;
+  code?: Maybe<Int>;
 }
 
 export interface ObjectReferenceUpdateInput {
@@ -2091,6 +1139,7 @@ export interface ObjectReferenceUpdateInput {
 
 export interface EventCreateWithoutRequestObjectInput {
   id?: Maybe<ID_Input>;
+  apiVersion?: Maybe<String>;
   kind?: Maybe<String>;
   level: String;
   auditID?: Maybe<ID_Input>;
@@ -2106,180 +1155,67 @@ export interface EventCreateWithoutRequestObjectInput {
   annotations?: Maybe<Json>;
 }
 
-export interface AuditLogUpdateOneRequiredInput {
-  create?: Maybe<AuditLogCreateInput>;
-  update?: Maybe<AuditLogUpdateDataInput>;
-  upsert?: Maybe<AuditLogUpsertNestedInput>;
-  connect?: Maybe<AuditLogWhereUniqueInput>;
+export interface EventCreateOneWithoutRequestObjectInput {
+  create?: Maybe<EventCreateWithoutRequestObjectInput>;
+  connect?: Maybe<EventWhereUniqueInput>;
 }
 
-export interface EventWhereInput {
+export interface ObjectReferenceCreateInput {
   id?: Maybe<ID_Input>;
-  id_not?: Maybe<ID_Input>;
-  id_in?: Maybe<ID_Input[] | ID_Input>;
-  id_not_in?: Maybe<ID_Input[] | ID_Input>;
-  id_lt?: Maybe<ID_Input>;
-  id_lte?: Maybe<ID_Input>;
-  id_gt?: Maybe<ID_Input>;
-  id_gte?: Maybe<ID_Input>;
-  id_contains?: Maybe<ID_Input>;
-  id_not_contains?: Maybe<ID_Input>;
-  id_starts_with?: Maybe<ID_Input>;
-  id_not_starts_with?: Maybe<ID_Input>;
-  id_ends_with?: Maybe<ID_Input>;
-  id_not_ends_with?: Maybe<ID_Input>;
-  createdAt?: Maybe<DateTimeInput>;
-  createdAt_not?: Maybe<DateTimeInput>;
-  createdAt_in?: Maybe<DateTimeInput[] | DateTimeInput>;
-  createdAt_not_in?: Maybe<DateTimeInput[] | DateTimeInput>;
-  createdAt_lt?: Maybe<DateTimeInput>;
-  createdAt_lte?: Maybe<DateTimeInput>;
-  createdAt_gt?: Maybe<DateTimeInput>;
-  createdAt_gte?: Maybe<DateTimeInput>;
+  resource?: Maybe<String>;
+  namespace?: Maybe<String>;
+  name?: Maybe<String>;
+  uid?: Maybe<ID_Input>;
+  apiGroup?: Maybe<String>;
+  apiVersion?: Maybe<String>;
+  resourceVersion?: Maybe<String>;
+  subresource?: Maybe<String>;
+  event: EventCreateOneWithoutRequestObjectInput;
+}
+
+export interface EventUpdateOneRequiredWithoutResponseStatusInput {
+  create?: Maybe<EventCreateWithoutResponseStatusInput>;
+  update?: Maybe<EventUpdateWithoutResponseStatusDataInput>;
+  upsert?: Maybe<EventUpsertWithoutResponseStatusInput>;
+  connect?: Maybe<EventWhereUniqueInput>;
+}
+
+export interface EventCreateWithoutUserInput {
+  id?: Maybe<ID_Input>;
+  apiVersion?: Maybe<String>;
   kind?: Maybe<String>;
-  kind_not?: Maybe<String>;
-  kind_in?: Maybe<String[] | String>;
-  kind_not_in?: Maybe<String[] | String>;
-  kind_lt?: Maybe<String>;
-  kind_lte?: Maybe<String>;
-  kind_gt?: Maybe<String>;
-  kind_gte?: Maybe<String>;
-  kind_contains?: Maybe<String>;
-  kind_not_contains?: Maybe<String>;
-  kind_starts_with?: Maybe<String>;
-  kind_not_starts_with?: Maybe<String>;
-  kind_ends_with?: Maybe<String>;
-  kind_not_ends_with?: Maybe<String>;
-  level?: Maybe<String>;
-  level_not?: Maybe<String>;
-  level_in?: Maybe<String[] | String>;
-  level_not_in?: Maybe<String[] | String>;
-  level_lt?: Maybe<String>;
-  level_lte?: Maybe<String>;
-  level_gt?: Maybe<String>;
-  level_gte?: Maybe<String>;
-  level_contains?: Maybe<String>;
-  level_not_contains?: Maybe<String>;
-  level_starts_with?: Maybe<String>;
-  level_not_starts_with?: Maybe<String>;
-  level_ends_with?: Maybe<String>;
-  level_not_ends_with?: Maybe<String>;
+  level: String;
   auditID?: Maybe<ID_Input>;
-  auditID_not?: Maybe<ID_Input>;
-  auditID_in?: Maybe<ID_Input[] | ID_Input>;
-  auditID_not_in?: Maybe<ID_Input[] | ID_Input>;
-  auditID_lt?: Maybe<ID_Input>;
-  auditID_lte?: Maybe<ID_Input>;
-  auditID_gt?: Maybe<ID_Input>;
-  auditID_gte?: Maybe<ID_Input>;
-  auditID_contains?: Maybe<ID_Input>;
-  auditID_not_contains?: Maybe<ID_Input>;
-  auditID_starts_with?: Maybe<ID_Input>;
-  auditID_not_starts_with?: Maybe<ID_Input>;
-  auditID_ends_with?: Maybe<ID_Input>;
-  auditID_not_ends_with?: Maybe<ID_Input>;
-  stage?: Maybe<String>;
-  stage_not?: Maybe<String>;
-  stage_in?: Maybe<String[] | String>;
-  stage_not_in?: Maybe<String[] | String>;
-  stage_lt?: Maybe<String>;
-  stage_lte?: Maybe<String>;
-  stage_gt?: Maybe<String>;
-  stage_gte?: Maybe<String>;
-  stage_contains?: Maybe<String>;
-  stage_not_contains?: Maybe<String>;
-  stage_starts_with?: Maybe<String>;
-  stage_not_starts_with?: Maybe<String>;
-  stage_ends_with?: Maybe<String>;
-  stage_not_ends_with?: Maybe<String>;
-  requestURI?: Maybe<String>;
-  requestURI_not?: Maybe<String>;
-  requestURI_in?: Maybe<String[] | String>;
-  requestURI_not_in?: Maybe<String[] | String>;
-  requestURI_lt?: Maybe<String>;
-  requestURI_lte?: Maybe<String>;
-  requestURI_gt?: Maybe<String>;
-  requestURI_gte?: Maybe<String>;
-  requestURI_contains?: Maybe<String>;
-  requestURI_not_contains?: Maybe<String>;
-  requestURI_starts_with?: Maybe<String>;
-  requestURI_not_starts_with?: Maybe<String>;
-  requestURI_ends_with?: Maybe<String>;
-  requestURI_not_ends_with?: Maybe<String>;
-  verb?: Maybe<String>;
-  verb_not?: Maybe<String>;
-  verb_in?: Maybe<String[] | String>;
-  verb_not_in?: Maybe<String[] | String>;
-  verb_lt?: Maybe<String>;
-  verb_lte?: Maybe<String>;
-  verb_gt?: Maybe<String>;
-  verb_gte?: Maybe<String>;
-  verb_contains?: Maybe<String>;
-  verb_not_contains?: Maybe<String>;
-  verb_starts_with?: Maybe<String>;
-  verb_not_starts_with?: Maybe<String>;
-  verb_ends_with?: Maybe<String>;
-  verb_not_ends_with?: Maybe<String>;
-  user?: Maybe<UserInfoWhereInput>;
+  stage: String;
+  requestURI: String;
+  verb: String;
+  sourceIPs?: Maybe<EventCreatesourceIPsInput>;
   userAgent?: Maybe<String>;
-  userAgent_not?: Maybe<String>;
-  userAgent_in?: Maybe<String[] | String>;
-  userAgent_not_in?: Maybe<String[] | String>;
-  userAgent_lt?: Maybe<String>;
-  userAgent_lte?: Maybe<String>;
-  userAgent_gt?: Maybe<String>;
-  userAgent_gte?: Maybe<String>;
-  userAgent_contains?: Maybe<String>;
-  userAgent_not_contains?: Maybe<String>;
-  userAgent_starts_with?: Maybe<String>;
-  userAgent_not_starts_with?: Maybe<String>;
-  userAgent_ends_with?: Maybe<String>;
-  userAgent_not_ends_with?: Maybe<String>;
-  responseStatus?: Maybe<ResponseStatusWhereInput>;
-  requestObject?: Maybe<ObjectReferenceWhereInput>;
+  responseStatus?: Maybe<ResponseStatusCreateOneWithoutEventInput>;
+  requestObject?: Maybe<ObjectReferenceCreateOneWithoutEventInput>;
   requestReceivedTimestamp?: Maybe<String>;
-  requestReceivedTimestamp_not?: Maybe<String>;
-  requestReceivedTimestamp_in?: Maybe<String[] | String>;
-  requestReceivedTimestamp_not_in?: Maybe<String[] | String>;
-  requestReceivedTimestamp_lt?: Maybe<String>;
-  requestReceivedTimestamp_lte?: Maybe<String>;
-  requestReceivedTimestamp_gt?: Maybe<String>;
-  requestReceivedTimestamp_gte?: Maybe<String>;
-  requestReceivedTimestamp_contains?: Maybe<String>;
-  requestReceivedTimestamp_not_contains?: Maybe<String>;
-  requestReceivedTimestamp_starts_with?: Maybe<String>;
-  requestReceivedTimestamp_not_starts_with?: Maybe<String>;
-  requestReceivedTimestamp_ends_with?: Maybe<String>;
-  requestReceivedTimestamp_not_ends_with?: Maybe<String>;
   stageTimestamp?: Maybe<String>;
-  stageTimestamp_not?: Maybe<String>;
-  stageTimestamp_in?: Maybe<String[] | String>;
-  stageTimestamp_not_in?: Maybe<String[] | String>;
-  stageTimestamp_lt?: Maybe<String>;
-  stageTimestamp_lte?: Maybe<String>;
-  stageTimestamp_gt?: Maybe<String>;
-  stageTimestamp_gte?: Maybe<String>;
-  stageTimestamp_contains?: Maybe<String>;
-  stageTimestamp_not_contains?: Maybe<String>;
-  stageTimestamp_starts_with?: Maybe<String>;
-  stageTimestamp_not_starts_with?: Maybe<String>;
-  stageTimestamp_ends_with?: Maybe<String>;
-  stageTimestamp_not_ends_with?: Maybe<String>;
-  AND?: Maybe<EventWhereInput[] | EventWhereInput>;
-  OR?: Maybe<EventWhereInput[] | EventWhereInput>;
-  NOT?: Maybe<EventWhereInput[] | EventWhereInput>;
+  annotations?: Maybe<Json>;
 }
 
-export interface EndpointCreateManyWithoutAuditLogInput {
-  create?: Maybe<
-    EndpointCreateWithoutAuditLogInput[] | EndpointCreateWithoutAuditLogInput
+export interface ObjectReferenceSubscriptionWhereInput {
+  mutation_in?: Maybe<MutationType[] | MutationType>;
+  updatedFields_contains?: Maybe<String>;
+  updatedFields_contains_every?: Maybe<String[] | String>;
+  updatedFields_contains_some?: Maybe<String[] | String>;
+  node?: Maybe<ObjectReferenceWhereInput>;
+  AND?: Maybe<
+    | ObjectReferenceSubscriptionWhereInput[]
+    | ObjectReferenceSubscriptionWhereInput
   >;
-  connect?: Maybe<EndpointWhereUniqueInput[] | EndpointWhereUniqueInput>;
-}
-
-export interface EventUpsertWithoutResponseStatusInput {
-  update: EventUpdateWithoutResponseStatusDataInput;
-  create: EventCreateWithoutResponseStatusInput;
+  OR?: Maybe<
+    | ObjectReferenceSubscriptionWhereInput[]
+    | ObjectReferenceSubscriptionWhereInput
+  >;
+  NOT?: Maybe<
+    | ObjectReferenceSubscriptionWhereInput[]
+    | ObjectReferenceSubscriptionWhereInput
+  >;
 }
 
 export interface NodeNode {
@@ -2311,124 +1247,103 @@ export interface UserInfoPreviousValuesSubscription
   groups: () => Promise<AsyncIterator<String[]>>;
 }
 
-export interface ResponseStatus {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-  metadata?: Json;
-  status?: String;
-  reason?: String;
-  code?: Int;
+export interface ObjectReferenceEdge {
+  node: ObjectReference;
+  cursor: String;
 }
 
-export interface ResponseStatusPromise
-  extends Promise<ResponseStatus>,
+export interface ObjectReferenceEdgePromise
+  extends Promise<ObjectReferenceEdge>,
+    Fragmentable {
+  node: <T = ObjectReferencePromise>() => T;
+  cursor: () => Promise<String>;
+}
+
+export interface ObjectReferenceEdgeSubscription
+  extends Promise<AsyncIterator<ObjectReferenceEdge>>,
+    Fragmentable {
+  node: <T = ObjectReferenceSubscription>() => T;
+  cursor: () => Promise<AsyncIterator<String>>;
+}
+
+export interface ObjectReferencePreviousValues {
+  id: ID_Output;
+  createdAt: DateTimeOutput;
+  resource?: String;
+  namespace?: String;
+  name?: String;
+  uid?: ID_Output;
+  apiGroup?: String;
+  apiVersion?: String;
+  resourceVersion?: String;
+  subresource?: String;
+}
+
+export interface ObjectReferencePreviousValuesPromise
+  extends Promise<ObjectReferencePreviousValues>,
     Fragmentable {
   id: () => Promise<ID_Output>;
   createdAt: () => Promise<DateTimeOutput>;
-  metadata: () => Promise<Json>;
-  status: () => Promise<String>;
-  reason: () => Promise<String>;
-  code: () => Promise<Int>;
-  event: <T = EventPromise>() => T;
+  resource: () => Promise<String>;
+  namespace: () => Promise<String>;
+  name: () => Promise<String>;
+  uid: () => Promise<ID_Output>;
+  apiGroup: () => Promise<String>;
+  apiVersion: () => Promise<String>;
+  resourceVersion: () => Promise<String>;
+  subresource: () => Promise<String>;
 }
 
-export interface ResponseStatusSubscription
-  extends Promise<AsyncIterator<ResponseStatus>>,
+export interface ObjectReferencePreviousValuesSubscription
+  extends Promise<AsyncIterator<ObjectReferencePreviousValues>>,
     Fragmentable {
   id: () => Promise<AsyncIterator<ID_Output>>;
   createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  metadata: () => Promise<AsyncIterator<Json>>;
-  status: () => Promise<AsyncIterator<String>>;
-  reason: () => Promise<AsyncIterator<String>>;
-  code: () => Promise<AsyncIterator<Int>>;
-  event: <T = EventSubscription>() => T;
+  resource: () => Promise<AsyncIterator<String>>;
+  namespace: () => Promise<AsyncIterator<String>>;
+  name: () => Promise<AsyncIterator<String>>;
+  uid: () => Promise<AsyncIterator<ID_Output>>;
+  apiGroup: () => Promise<AsyncIterator<String>>;
+  apiVersion: () => Promise<AsyncIterator<String>>;
+  resourceVersion: () => Promise<AsyncIterator<String>>;
+  subresource: () => Promise<AsyncIterator<String>>;
 }
 
-export interface ResponseStatusNullablePromise
-  extends Promise<ResponseStatus | null>,
+export interface ObjectReferenceConnection {
+  pageInfo: PageInfo;
+  edges: ObjectReferenceEdge[];
+}
+
+export interface ObjectReferenceConnectionPromise
+  extends Promise<ObjectReferenceConnection>,
     Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  metadata: () => Promise<Json>;
-  status: () => Promise<String>;
-  reason: () => Promise<String>;
-  code: () => Promise<Int>;
-  event: <T = EventPromise>() => T;
+  pageInfo: <T = PageInfoPromise>() => T;
+  edges: <T = FragmentableArray<ObjectReferenceEdge>>() => T;
+  aggregate: <T = AggregateObjectReferencePromise>() => T;
 }
 
-export interface Endpoint {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-  operationID: String;
-  level: String;
-  category: String;
-  kind?: String;
-  group?: String;
-  description?: String;
-  version?: String;
-  path?: String;
-  hits: Int;
-  testHits: Int;
-  conformanceHits: Int;
-  isDeprecated: Boolean;
-}
-
-export interface EndpointPromise extends Promise<Endpoint>, Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  auditLog: <T = AuditLogPromise>() => T;
-  operationID: () => Promise<String>;
-  level: () => Promise<String>;
-  category: () => Promise<String>;
-  kind: () => Promise<String>;
-  group: () => Promise<String>;
-  description: () => Promise<String>;
-  version: () => Promise<String>;
-  path: () => Promise<String>;
-  hits: () => Promise<Int>;
-  testHits: () => Promise<Int>;
-  conformanceHits: () => Promise<Int>;
-  isDeprecated: () => Promise<Boolean>;
-}
-
-export interface EndpointSubscription
-  extends Promise<AsyncIterator<Endpoint>>,
+export interface ObjectReferenceConnectionSubscription
+  extends Promise<AsyncIterator<ObjectReferenceConnection>>,
     Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  auditLog: <T = AuditLogSubscription>() => T;
-  operationID: () => Promise<AsyncIterator<String>>;
-  level: () => Promise<AsyncIterator<String>>;
-  category: () => Promise<AsyncIterator<String>>;
-  kind: () => Promise<AsyncIterator<String>>;
-  group: () => Promise<AsyncIterator<String>>;
-  description: () => Promise<AsyncIterator<String>>;
-  version: () => Promise<AsyncIterator<String>>;
-  path: () => Promise<AsyncIterator<String>>;
-  hits: () => Promise<AsyncIterator<Int>>;
-  testHits: () => Promise<AsyncIterator<Int>>;
-  conformanceHits: () => Promise<AsyncIterator<Int>>;
-  isDeprecated: () => Promise<AsyncIterator<Boolean>>;
+  pageInfo: <T = PageInfoSubscription>() => T;
+  edges: <T = Promise<AsyncIterator<ObjectReferenceEdgeSubscription>>>() => T;
+  aggregate: <T = AggregateObjectReferenceSubscription>() => T;
 }
 
-export interface EndpointNullablePromise
-  extends Promise<Endpoint | null>,
+export interface AggregateEvent {
+  count: Int;
+}
+
+export interface AggregateEventPromise
+  extends Promise<AggregateEvent>,
     Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  auditLog: <T = AuditLogPromise>() => T;
-  operationID: () => Promise<String>;
-  level: () => Promise<String>;
-  category: () => Promise<String>;
-  kind: () => Promise<String>;
-  group: () => Promise<String>;
-  description: () => Promise<String>;
-  version: () => Promise<String>;
-  path: () => Promise<String>;
-  hits: () => Promise<Int>;
-  testHits: () => Promise<Int>;
-  conformanceHits: () => Promise<Int>;
-  isDeprecated: () => Promise<Boolean>;
+  count: () => Promise<Int>;
+}
+
+export interface AggregateEventSubscription
+  extends Promise<AsyncIterator<AggregateEvent>>,
+    Fragmentable {
+  count: () => Promise<AsyncIterator<Int>>;
 }
 
 export interface UserInfo {
@@ -2464,682 +1379,6 @@ export interface UserInfoNullablePromise
   username: () => Promise<String>;
   groups: () => Promise<String[]>;
   event: <T = EventPromise>() => T;
-}
-
-export interface BatchPayload {
-  count: Long;
-}
-
-export interface BatchPayloadPromise
-  extends Promise<BatchPayload>,
-    Fragmentable {
-  count: () => Promise<Long>;
-}
-
-export interface BatchPayloadSubscription
-  extends Promise<AsyncIterator<BatchPayload>>,
-    Fragmentable {
-  count: () => Promise<AsyncIterator<Long>>;
-}
-
-export interface Event {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-  kind?: String;
-  level: String;
-  auditID?: ID_Output;
-  stage: String;
-  requestURI: String;
-  verb: String;
-  sourceIPs: String[];
-  userAgent?: String;
-  requestReceivedTimestamp?: String;
-  stageTimestamp?: String;
-  annotations?: Json;
-}
-
-export interface EventPromise extends Promise<Event>, Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  kind: () => Promise<String>;
-  level: () => Promise<String>;
-  auditID: () => Promise<ID_Output>;
-  stage: () => Promise<String>;
-  requestURI: () => Promise<String>;
-  verb: () => Promise<String>;
-  user: <T = UserInfoPromise>() => T;
-  sourceIPs: () => Promise<String[]>;
-  userAgent: () => Promise<String>;
-  responseStatus: <T = ResponseStatusPromise>() => T;
-  requestObject: <T = ObjectReferencePromise>() => T;
-  requestReceivedTimestamp: () => Promise<String>;
-  stageTimestamp: () => Promise<String>;
-  annotations: () => Promise<Json>;
-}
-
-export interface EventSubscription
-  extends Promise<AsyncIterator<Event>>,
-    Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  kind: () => Promise<AsyncIterator<String>>;
-  level: () => Promise<AsyncIterator<String>>;
-  auditID: () => Promise<AsyncIterator<ID_Output>>;
-  stage: () => Promise<AsyncIterator<String>>;
-  requestURI: () => Promise<AsyncIterator<String>>;
-  verb: () => Promise<AsyncIterator<String>>;
-  user: <T = UserInfoSubscription>() => T;
-  sourceIPs: () => Promise<AsyncIterator<String[]>>;
-  userAgent: () => Promise<AsyncIterator<String>>;
-  responseStatus: <T = ResponseStatusSubscription>() => T;
-  requestObject: <T = ObjectReferenceSubscription>() => T;
-  requestReceivedTimestamp: () => Promise<AsyncIterator<String>>;
-  stageTimestamp: () => Promise<AsyncIterator<String>>;
-  annotations: () => Promise<AsyncIterator<Json>>;
-}
-
-export interface EventNullablePromise
-  extends Promise<Event | null>,
-    Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  kind: () => Promise<String>;
-  level: () => Promise<String>;
-  auditID: () => Promise<ID_Output>;
-  stage: () => Promise<String>;
-  requestURI: () => Promise<String>;
-  verb: () => Promise<String>;
-  user: <T = UserInfoPromise>() => T;
-  sourceIPs: () => Promise<String[]>;
-  userAgent: () => Promise<String>;
-  responseStatus: <T = ResponseStatusPromise>() => T;
-  requestObject: <T = ObjectReferencePromise>() => T;
-  requestReceivedTimestamp: () => Promise<String>;
-  stageTimestamp: () => Promise<String>;
-  annotations: () => Promise<Json>;
-}
-
-export interface UserInfoEdge {
-  node: UserInfo;
-  cursor: String;
-}
-
-export interface UserInfoEdgePromise
-  extends Promise<UserInfoEdge>,
-    Fragmentable {
-  node: <T = UserInfoPromise>() => T;
-  cursor: () => Promise<String>;
-}
-
-export interface UserInfoEdgeSubscription
-  extends Promise<AsyncIterator<UserInfoEdge>>,
-    Fragmentable {
-  node: <T = UserInfoSubscription>() => T;
-  cursor: () => Promise<AsyncIterator<String>>;
-}
-
-export interface PageInfo {
-  hasNextPage: Boolean;
-  hasPreviousPage: Boolean;
-  startCursor?: String;
-  endCursor?: String;
-}
-
-export interface PageInfoPromise extends Promise<PageInfo>, Fragmentable {
-  hasNextPage: () => Promise<Boolean>;
-  hasPreviousPage: () => Promise<Boolean>;
-  startCursor: () => Promise<String>;
-  endCursor: () => Promise<String>;
-}
-
-export interface PageInfoSubscription
-  extends Promise<AsyncIterator<PageInfo>>,
-    Fragmentable {
-  hasNextPage: () => Promise<AsyncIterator<Boolean>>;
-  hasPreviousPage: () => Promise<AsyncIterator<Boolean>>;
-  startCursor: () => Promise<AsyncIterator<String>>;
-  endCursor: () => Promise<AsyncIterator<String>>;
-}
-
-export interface ResponseStatusPreviousValues {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-  metadata?: Json;
-  status?: String;
-  reason?: String;
-  code?: Int;
-}
-
-export interface ResponseStatusPreviousValuesPromise
-  extends Promise<ResponseStatusPreviousValues>,
-    Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  metadata: () => Promise<Json>;
-  status: () => Promise<String>;
-  reason: () => Promise<String>;
-  code: () => Promise<Int>;
-}
-
-export interface ResponseStatusPreviousValuesSubscription
-  extends Promise<AsyncIterator<ResponseStatusPreviousValues>>,
-    Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  metadata: () => Promise<AsyncIterator<Json>>;
-  status: () => Promise<AsyncIterator<String>>;
-  reason: () => Promise<AsyncIterator<String>>;
-  code: () => Promise<AsyncIterator<Int>>;
-}
-
-export interface AggregateUserInfo {
-  count: Int;
-}
-
-export interface AggregateUserInfoPromise
-  extends Promise<AggregateUserInfo>,
-    Fragmentable {
-  count: () => Promise<Int>;
-}
-
-export interface AggregateUserInfoSubscription
-  extends Promise<AsyncIterator<AggregateUserInfo>>,
-    Fragmentable {
-  count: () => Promise<AsyncIterator<Int>>;
-}
-
-export interface AggregateEndpoint {
-  count: Int;
-}
-
-export interface AggregateEndpointPromise
-  extends Promise<AggregateEndpoint>,
-    Fragmentable {
-  count: () => Promise<Int>;
-}
-
-export interface AggregateEndpointSubscription
-  extends Promise<AsyncIterator<AggregateEndpoint>>,
-    Fragmentable {
-  count: () => Promise<AsyncIterator<Int>>;
-}
-
-export interface UserInfoConnection {
-  pageInfo: PageInfo;
-  edges: UserInfoEdge[];
-}
-
-export interface UserInfoConnectionPromise
-  extends Promise<UserInfoConnection>,
-    Fragmentable {
-  pageInfo: <T = PageInfoPromise>() => T;
-  edges: <T = FragmentableArray<UserInfoEdge>>() => T;
-  aggregate: <T = AggregateUserInfoPromise>() => T;
-}
-
-export interface UserInfoConnectionSubscription
-  extends Promise<AsyncIterator<UserInfoConnection>>,
-    Fragmentable {
-  pageInfo: <T = PageInfoSubscription>() => T;
-  edges: <T = Promise<AsyncIterator<UserInfoEdgeSubscription>>>() => T;
-  aggregate: <T = AggregateUserInfoSubscription>() => T;
-}
-
-export interface TestConnection {
-  pageInfo: PageInfo;
-  edges: TestEdge[];
-}
-
-export interface TestConnectionPromise
-  extends Promise<TestConnection>,
-    Fragmentable {
-  pageInfo: <T = PageInfoPromise>() => T;
-  edges: <T = FragmentableArray<TestEdge>>() => T;
-  aggregate: <T = AggregateTestPromise>() => T;
-}
-
-export interface TestConnectionSubscription
-  extends Promise<AsyncIterator<TestConnection>>,
-    Fragmentable {
-  pageInfo: <T = PageInfoSubscription>() => T;
-  edges: <T = Promise<AsyncIterator<TestEdgeSubscription>>>() => T;
-  aggregate: <T = AggregateTestSubscription>() => T;
-}
-
-export interface AggregateTest {
-  count: Int;
-}
-
-export interface AggregateTestPromise
-  extends Promise<AggregateTest>,
-    Fragmentable {
-  count: () => Promise<Int>;
-}
-
-export interface AggregateTestSubscription
-  extends Promise<AsyncIterator<AggregateTest>>,
-    Fragmentable {
-  count: () => Promise<AsyncIterator<Int>>;
-}
-
-export interface Test {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-}
-
-export interface TestPromise extends Promise<Test>, Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  auditLog: <T = AuditLogPromise>() => T;
-  endpoints: <T = FragmentableArray<Endpoint>>(args?: {
-    where?: EndpointWhereInput;
-    orderBy?: EndpointOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => T;
-}
-
-export interface TestSubscription
-  extends Promise<AsyncIterator<Test>>,
-    Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  auditLog: <T = AuditLogSubscription>() => T;
-  endpoints: <T = Promise<AsyncIterator<EndpointSubscription>>>(args?: {
-    where?: EndpointWhereInput;
-    orderBy?: EndpointOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => T;
-}
-
-export interface TestNullablePromise
-  extends Promise<Test | null>,
-    Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  auditLog: <T = AuditLogPromise>() => T;
-  endpoints: <T = FragmentableArray<Endpoint>>(args?: {
-    where?: EndpointWhereInput;
-    orderBy?: EndpointOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => T;
-}
-
-export interface AuditLog {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-  job: String;
-  bucket: String;
-  version: String;
-  jobVersion: String;
-  masterOsImage: String;
-  infraCommit: String;
-  nodeOsImage: String;
-  pod: String;
-  passed: Boolean;
-  result: String;
-  timestamp: Int;
-}
-
-export interface AuditLogPromise extends Promise<AuditLog>, Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  job: () => Promise<String>;
-  bucket: () => Promise<String>;
-  version: () => Promise<String>;
-  jobVersion: () => Promise<String>;
-  masterOsImage: () => Promise<String>;
-  infraCommit: () => Promise<String>;
-  nodeOsImage: () => Promise<String>;
-  pod: () => Promise<String>;
-  passed: () => Promise<Boolean>;
-  result: () => Promise<String>;
-  timestamp: () => Promise<Int>;
-  endpoints: <T = FragmentableArray<Endpoint>>(args?: {
-    where?: EndpointWhereInput;
-    orderBy?: EndpointOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => T;
-}
-
-export interface AuditLogSubscription
-  extends Promise<AsyncIterator<AuditLog>>,
-    Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  job: () => Promise<AsyncIterator<String>>;
-  bucket: () => Promise<AsyncIterator<String>>;
-  version: () => Promise<AsyncIterator<String>>;
-  jobVersion: () => Promise<AsyncIterator<String>>;
-  masterOsImage: () => Promise<AsyncIterator<String>>;
-  infraCommit: () => Promise<AsyncIterator<String>>;
-  nodeOsImage: () => Promise<AsyncIterator<String>>;
-  pod: () => Promise<AsyncIterator<String>>;
-  passed: () => Promise<AsyncIterator<Boolean>>;
-  result: () => Promise<AsyncIterator<String>>;
-  timestamp: () => Promise<AsyncIterator<Int>>;
-  endpoints: <T = Promise<AsyncIterator<EndpointSubscription>>>(args?: {
-    where?: EndpointWhereInput;
-    orderBy?: EndpointOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => T;
-}
-
-export interface AuditLogNullablePromise
-  extends Promise<AuditLog | null>,
-    Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  job: () => Promise<String>;
-  bucket: () => Promise<String>;
-  version: () => Promise<String>;
-  jobVersion: () => Promise<String>;
-  masterOsImage: () => Promise<String>;
-  infraCommit: () => Promise<String>;
-  nodeOsImage: () => Promise<String>;
-  pod: () => Promise<String>;
-  passed: () => Promise<Boolean>;
-  result: () => Promise<String>;
-  timestamp: () => Promise<Int>;
-  endpoints: <T = FragmentableArray<Endpoint>>(args?: {
-    where?: EndpointWhereInput;
-    orderBy?: EndpointOrderByInput;
-    skip?: Int;
-    after?: String;
-    before?: String;
-    first?: Int;
-    last?: Int;
-  }) => T;
-}
-
-export interface ResponseStatusEdge {
-  node: ResponseStatus;
-  cursor: String;
-}
-
-export interface ResponseStatusEdgePromise
-  extends Promise<ResponseStatusEdge>,
-    Fragmentable {
-  node: <T = ResponseStatusPromise>() => T;
-  cursor: () => Promise<String>;
-}
-
-export interface ResponseStatusEdgeSubscription
-  extends Promise<AsyncIterator<ResponseStatusEdge>>,
-    Fragmentable {
-  node: <T = ResponseStatusSubscription>() => T;
-  cursor: () => Promise<AsyncIterator<String>>;
-}
-
-export interface AuditLogSubscriptionPayload {
-  mutation: MutationType;
-  node: AuditLog;
-  updatedFields: String[];
-  previousValues: AuditLogPreviousValues;
-}
-
-export interface AuditLogSubscriptionPayloadPromise
-  extends Promise<AuditLogSubscriptionPayload>,
-    Fragmentable {
-  mutation: () => Promise<MutationType>;
-  node: <T = AuditLogPromise>() => T;
-  updatedFields: () => Promise<String[]>;
-  previousValues: <T = AuditLogPreviousValuesPromise>() => T;
-}
-
-export interface AuditLogSubscriptionPayloadSubscription
-  extends Promise<AsyncIterator<AuditLogSubscriptionPayload>>,
-    Fragmentable {
-  mutation: () => Promise<AsyncIterator<MutationType>>;
-  node: <T = AuditLogSubscription>() => T;
-  updatedFields: () => Promise<AsyncIterator<String[]>>;
-  previousValues: <T = AuditLogPreviousValuesSubscription>() => T;
-}
-
-export interface AuditLogConnection {
-  pageInfo: PageInfo;
-  edges: AuditLogEdge[];
-}
-
-export interface AuditLogConnectionPromise
-  extends Promise<AuditLogConnection>,
-    Fragmentable {
-  pageInfo: <T = PageInfoPromise>() => T;
-  edges: <T = FragmentableArray<AuditLogEdge>>() => T;
-  aggregate: <T = AggregateAuditLogPromise>() => T;
-}
-
-export interface AuditLogConnectionSubscription
-  extends Promise<AsyncIterator<AuditLogConnection>>,
-    Fragmentable {
-  pageInfo: <T = PageInfoSubscription>() => T;
-  edges: <T = Promise<AsyncIterator<AuditLogEdgeSubscription>>>() => T;
-  aggregate: <T = AggregateAuditLogSubscription>() => T;
-}
-
-export interface AuditLogPreviousValues {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-  job: String;
-  bucket: String;
-  version: String;
-  jobVersion: String;
-  masterOsImage: String;
-  infraCommit: String;
-  nodeOsImage: String;
-  pod: String;
-  passed: Boolean;
-  result: String;
-  timestamp: Int;
-}
-
-export interface AuditLogPreviousValuesPromise
-  extends Promise<AuditLogPreviousValues>,
-    Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  job: () => Promise<String>;
-  bucket: () => Promise<String>;
-  version: () => Promise<String>;
-  jobVersion: () => Promise<String>;
-  masterOsImage: () => Promise<String>;
-  infraCommit: () => Promise<String>;
-  nodeOsImage: () => Promise<String>;
-  pod: () => Promise<String>;
-  passed: () => Promise<Boolean>;
-  result: () => Promise<String>;
-  timestamp: () => Promise<Int>;
-}
-
-export interface AuditLogPreviousValuesSubscription
-  extends Promise<AsyncIterator<AuditLogPreviousValues>>,
-    Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  job: () => Promise<AsyncIterator<String>>;
-  bucket: () => Promise<AsyncIterator<String>>;
-  version: () => Promise<AsyncIterator<String>>;
-  jobVersion: () => Promise<AsyncIterator<String>>;
-  masterOsImage: () => Promise<AsyncIterator<String>>;
-  infraCommit: () => Promise<AsyncIterator<String>>;
-  nodeOsImage: () => Promise<AsyncIterator<String>>;
-  pod: () => Promise<AsyncIterator<String>>;
-  passed: () => Promise<AsyncIterator<Boolean>>;
-  result: () => Promise<AsyncIterator<String>>;
-  timestamp: () => Promise<AsyncIterator<Int>>;
-}
-
-export interface ObjectReferenceEdge {
-  node: ObjectReference;
-  cursor: String;
-}
-
-export interface ObjectReferenceEdgePromise
-  extends Promise<ObjectReferenceEdge>,
-    Fragmentable {
-  node: <T = ObjectReferencePromise>() => T;
-  cursor: () => Promise<String>;
-}
-
-export interface ObjectReferenceEdgeSubscription
-  extends Promise<AsyncIterator<ObjectReferenceEdge>>,
-    Fragmentable {
-  node: <T = ObjectReferenceSubscription>() => T;
-  cursor: () => Promise<AsyncIterator<String>>;
-}
-
-export interface EndpointEdge {
-  node: Endpoint;
-  cursor: String;
-}
-
-export interface EndpointEdgePromise
-  extends Promise<EndpointEdge>,
-    Fragmentable {
-  node: <T = EndpointPromise>() => T;
-  cursor: () => Promise<String>;
-}
-
-export interface EndpointEdgeSubscription
-  extends Promise<AsyncIterator<EndpointEdge>>,
-    Fragmentable {
-  node: <T = EndpointSubscription>() => T;
-  cursor: () => Promise<AsyncIterator<String>>;
-}
-
-export interface TestPreviousValues {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-}
-
-export interface TestPreviousValuesPromise
-  extends Promise<TestPreviousValues>,
-    Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-}
-
-export interface TestPreviousValuesSubscription
-  extends Promise<AsyncIterator<TestPreviousValues>>,
-    Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-}
-
-export interface EndpointSubscriptionPayload {
-  mutation: MutationType;
-  node: Endpoint;
-  updatedFields: String[];
-  previousValues: EndpointPreviousValues;
-}
-
-export interface EndpointSubscriptionPayloadPromise
-  extends Promise<EndpointSubscriptionPayload>,
-    Fragmentable {
-  mutation: () => Promise<MutationType>;
-  node: <T = EndpointPromise>() => T;
-  updatedFields: () => Promise<String[]>;
-  previousValues: <T = EndpointPreviousValuesPromise>() => T;
-}
-
-export interface EndpointSubscriptionPayloadSubscription
-  extends Promise<AsyncIterator<EndpointSubscriptionPayload>>,
-    Fragmentable {
-  mutation: () => Promise<AsyncIterator<MutationType>>;
-  node: <T = EndpointSubscription>() => T;
-  updatedFields: () => Promise<AsyncIterator<String[]>>;
-  previousValues: <T = EndpointPreviousValuesSubscription>() => T;
-}
-
-export interface EventEdge {
-  node: Event;
-  cursor: String;
-}
-
-export interface EventEdgePromise extends Promise<EventEdge>, Fragmentable {
-  node: <T = EventPromise>() => T;
-  cursor: () => Promise<String>;
-}
-
-export interface EventEdgeSubscription
-  extends Promise<AsyncIterator<EventEdge>>,
-    Fragmentable {
-  node: <T = EventSubscription>() => T;
-  cursor: () => Promise<AsyncIterator<String>>;
-}
-
-export interface EndpointPreviousValues {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-  operationID: String;
-  level: String;
-  category: String;
-  kind?: String;
-  group?: String;
-  description?: String;
-  version?: String;
-  path?: String;
-  hits: Int;
-  testHits: Int;
-  conformanceHits: Int;
-  isDeprecated: Boolean;
-}
-
-export interface EndpointPreviousValuesPromise
-  extends Promise<EndpointPreviousValues>,
-    Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  operationID: () => Promise<String>;
-  level: () => Promise<String>;
-  category: () => Promise<String>;
-  kind: () => Promise<String>;
-  group: () => Promise<String>;
-  description: () => Promise<String>;
-  version: () => Promise<String>;
-  path: () => Promise<String>;
-  hits: () => Promise<Int>;
-  testHits: () => Promise<Int>;
-  conformanceHits: () => Promise<Int>;
-  isDeprecated: () => Promise<Boolean>;
-}
-
-export interface EndpointPreviousValuesSubscription
-  extends Promise<AsyncIterator<EndpointPreviousValues>>,
-    Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  operationID: () => Promise<AsyncIterator<String>>;
-  level: () => Promise<AsyncIterator<String>>;
-  category: () => Promise<AsyncIterator<String>>;
-  kind: () => Promise<AsyncIterator<String>>;
-  group: () => Promise<AsyncIterator<String>>;
-  description: () => Promise<AsyncIterator<String>>;
-  version: () => Promise<AsyncIterator<String>>;
-  path: () => Promise<AsyncIterator<String>>;
-  hits: () => Promise<AsyncIterator<Int>>;
-  testHits: () => Promise<AsyncIterator<Int>>;
-  conformanceHits: () => Promise<AsyncIterator<Int>>;
-  isDeprecated: () => Promise<AsyncIterator<Boolean>>;
 }
 
 export interface ObjectReference {
@@ -3203,42 +1442,427 @@ export interface ObjectReferenceNullablePromise
   event: <T = EventPromise>() => T;
 }
 
-export interface EndpointConnection {
-  pageInfo: PageInfo;
-  edges: EndpointEdge[];
+export interface BatchPayload {
+  count: Long;
 }
 
-export interface EndpointConnectionPromise
-  extends Promise<EndpointConnection>,
+export interface BatchPayloadPromise
+  extends Promise<BatchPayload>,
     Fragmentable {
-  pageInfo: <T = PageInfoPromise>() => T;
-  edges: <T = FragmentableArray<EndpointEdge>>() => T;
-  aggregate: <T = AggregateEndpointPromise>() => T;
+  count: () => Promise<Long>;
 }
 
-export interface EndpointConnectionSubscription
-  extends Promise<AsyncIterator<EndpointConnection>>,
+export interface BatchPayloadSubscription
+  extends Promise<AsyncIterator<BatchPayload>>,
     Fragmentable {
-  pageInfo: <T = PageInfoSubscription>() => T;
-  edges: <T = Promise<AsyncIterator<EndpointEdgeSubscription>>>() => T;
-  aggregate: <T = AggregateEndpointSubscription>() => T;
+  count: () => Promise<AsyncIterator<Long>>;
 }
 
-export interface TestEdge {
-  node: Test;
+export interface UserInfoEdge {
+  node: UserInfo;
   cursor: String;
 }
 
-export interface TestEdgePromise extends Promise<TestEdge>, Fragmentable {
-  node: <T = TestPromise>() => T;
+export interface UserInfoEdgePromise
+  extends Promise<UserInfoEdge>,
+    Fragmentable {
+  node: <T = UserInfoPromise>() => T;
   cursor: () => Promise<String>;
 }
 
-export interface TestEdgeSubscription
-  extends Promise<AsyncIterator<TestEdge>>,
+export interface UserInfoEdgeSubscription
+  extends Promise<AsyncIterator<UserInfoEdge>>,
     Fragmentable {
-  node: <T = TestSubscription>() => T;
+  node: <T = UserInfoSubscription>() => T;
   cursor: () => Promise<AsyncIterator<String>>;
+}
+
+export interface EventEdge {
+  node: Event;
+  cursor: String;
+}
+
+export interface EventEdgePromise extends Promise<EventEdge>, Fragmentable {
+  node: <T = EventPromise>() => T;
+  cursor: () => Promise<String>;
+}
+
+export interface EventEdgeSubscription
+  extends Promise<AsyncIterator<EventEdge>>,
+    Fragmentable {
+  node: <T = EventSubscription>() => T;
+  cursor: () => Promise<AsyncIterator<String>>;
+}
+
+export interface ResponseStatusPreviousValues {
+  id: ID_Output;
+  createdAt: DateTimeOutput;
+  metadata?: Json;
+  status?: String;
+  reason?: String;
+  code?: Int;
+}
+
+export interface ResponseStatusPreviousValuesPromise
+  extends Promise<ResponseStatusPreviousValues>,
+    Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  metadata: () => Promise<Json>;
+  status: () => Promise<String>;
+  reason: () => Promise<String>;
+  code: () => Promise<Int>;
+}
+
+export interface ResponseStatusPreviousValuesSubscription
+  extends Promise<AsyncIterator<ResponseStatusPreviousValues>>,
+    Fragmentable {
+  id: () => Promise<AsyncIterator<ID_Output>>;
+  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
+  metadata: () => Promise<AsyncIterator<Json>>;
+  status: () => Promise<AsyncIterator<String>>;
+  reason: () => Promise<AsyncIterator<String>>;
+  code: () => Promise<AsyncIterator<Int>>;
+}
+
+export interface ResponseStatus {
+  id: ID_Output;
+  createdAt: DateTimeOutput;
+  metadata?: Json;
+  status?: String;
+  reason?: String;
+  code?: Int;
+}
+
+export interface ResponseStatusPromise
+  extends Promise<ResponseStatus>,
+    Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  metadata: () => Promise<Json>;
+  status: () => Promise<String>;
+  reason: () => Promise<String>;
+  code: () => Promise<Int>;
+  event: <T = EventPromise>() => T;
+}
+
+export interface ResponseStatusSubscription
+  extends Promise<AsyncIterator<ResponseStatus>>,
+    Fragmentable {
+  id: () => Promise<AsyncIterator<ID_Output>>;
+  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
+  metadata: () => Promise<AsyncIterator<Json>>;
+  status: () => Promise<AsyncIterator<String>>;
+  reason: () => Promise<AsyncIterator<String>>;
+  code: () => Promise<AsyncIterator<Int>>;
+  event: <T = EventSubscription>() => T;
+}
+
+export interface ResponseStatusNullablePromise
+  extends Promise<ResponseStatus | null>,
+    Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  metadata: () => Promise<Json>;
+  status: () => Promise<String>;
+  reason: () => Promise<String>;
+  code: () => Promise<Int>;
+  event: <T = EventPromise>() => T;
+}
+
+export interface ResponseStatusEdge {
+  node: ResponseStatus;
+  cursor: String;
+}
+
+export interface ResponseStatusEdgePromise
+  extends Promise<ResponseStatusEdge>,
+    Fragmentable {
+  node: <T = ResponseStatusPromise>() => T;
+  cursor: () => Promise<String>;
+}
+
+export interface ResponseStatusEdgeSubscription
+  extends Promise<AsyncIterator<ResponseStatusEdge>>,
+    Fragmentable {
+  node: <T = ResponseStatusSubscription>() => T;
+  cursor: () => Promise<AsyncIterator<String>>;
+}
+
+export interface PageInfo {
+  hasNextPage: Boolean;
+  hasPreviousPage: Boolean;
+  startCursor?: String;
+  endCursor?: String;
+}
+
+export interface PageInfoPromise extends Promise<PageInfo>, Fragmentable {
+  hasNextPage: () => Promise<Boolean>;
+  hasPreviousPage: () => Promise<Boolean>;
+  startCursor: () => Promise<String>;
+  endCursor: () => Promise<String>;
+}
+
+export interface PageInfoSubscription
+  extends Promise<AsyncIterator<PageInfo>>,
+    Fragmentable {
+  hasNextPage: () => Promise<AsyncIterator<Boolean>>;
+  hasPreviousPage: () => Promise<AsyncIterator<Boolean>>;
+  startCursor: () => Promise<AsyncIterator<String>>;
+  endCursor: () => Promise<AsyncIterator<String>>;
+}
+
+export interface ResponseStatusSubscriptionPayload {
+  mutation: MutationType;
+  node: ResponseStatus;
+  updatedFields: String[];
+  previousValues: ResponseStatusPreviousValues;
+}
+
+export interface ResponseStatusSubscriptionPayloadPromise
+  extends Promise<ResponseStatusSubscriptionPayload>,
+    Fragmentable {
+  mutation: () => Promise<MutationType>;
+  node: <T = ResponseStatusPromise>() => T;
+  updatedFields: () => Promise<String[]>;
+  previousValues: <T = ResponseStatusPreviousValuesPromise>() => T;
+}
+
+export interface ResponseStatusSubscriptionPayloadSubscription
+  extends Promise<AsyncIterator<ResponseStatusSubscriptionPayload>>,
+    Fragmentable {
+  mutation: () => Promise<AsyncIterator<MutationType>>;
+  node: <T = ResponseStatusSubscription>() => T;
+  updatedFields: () => Promise<AsyncIterator<String[]>>;
+  previousValues: <T = ResponseStatusPreviousValuesSubscription>() => T;
+}
+
+export interface Event {
+  id: ID_Output;
+  createdAt: DateTimeOutput;
+  apiVersion?: String;
+  kind?: String;
+  level: String;
+  auditID?: ID_Output;
+  stage: String;
+  requestURI: String;
+  verb: String;
+  sourceIPs: String[];
+  userAgent?: String;
+  requestReceivedTimestamp?: String;
+  stageTimestamp?: String;
+  annotations?: Json;
+}
+
+export interface EventPromise extends Promise<Event>, Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  apiVersion: () => Promise<String>;
+  kind: () => Promise<String>;
+  level: () => Promise<String>;
+  auditID: () => Promise<ID_Output>;
+  stage: () => Promise<String>;
+  requestURI: () => Promise<String>;
+  verb: () => Promise<String>;
+  user: <T = UserInfoPromise>() => T;
+  sourceIPs: () => Promise<String[]>;
+  userAgent: () => Promise<String>;
+  responseStatus: <T = ResponseStatusPromise>() => T;
+  requestObject: <T = ObjectReferencePromise>() => T;
+  requestReceivedTimestamp: () => Promise<String>;
+  stageTimestamp: () => Promise<String>;
+  annotations: () => Promise<Json>;
+}
+
+export interface EventSubscription
+  extends Promise<AsyncIterator<Event>>,
+    Fragmentable {
+  id: () => Promise<AsyncIterator<ID_Output>>;
+  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
+  apiVersion: () => Promise<AsyncIterator<String>>;
+  kind: () => Promise<AsyncIterator<String>>;
+  level: () => Promise<AsyncIterator<String>>;
+  auditID: () => Promise<AsyncIterator<ID_Output>>;
+  stage: () => Promise<AsyncIterator<String>>;
+  requestURI: () => Promise<AsyncIterator<String>>;
+  verb: () => Promise<AsyncIterator<String>>;
+  user: <T = UserInfoSubscription>() => T;
+  sourceIPs: () => Promise<AsyncIterator<String[]>>;
+  userAgent: () => Promise<AsyncIterator<String>>;
+  responseStatus: <T = ResponseStatusSubscription>() => T;
+  requestObject: <T = ObjectReferenceSubscription>() => T;
+  requestReceivedTimestamp: () => Promise<AsyncIterator<String>>;
+  stageTimestamp: () => Promise<AsyncIterator<String>>;
+  annotations: () => Promise<AsyncIterator<Json>>;
+}
+
+export interface EventNullablePromise
+  extends Promise<Event | null>,
+    Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  apiVersion: () => Promise<String>;
+  kind: () => Promise<String>;
+  level: () => Promise<String>;
+  auditID: () => Promise<ID_Output>;
+  stage: () => Promise<String>;
+  requestURI: () => Promise<String>;
+  verb: () => Promise<String>;
+  user: <T = UserInfoPromise>() => T;
+  sourceIPs: () => Promise<String[]>;
+  userAgent: () => Promise<String>;
+  responseStatus: <T = ResponseStatusPromise>() => T;
+  requestObject: <T = ObjectReferencePromise>() => T;
+  requestReceivedTimestamp: () => Promise<String>;
+  stageTimestamp: () => Promise<String>;
+  annotations: () => Promise<Json>;
+}
+
+export interface UserInfoSubscriptionPayload {
+  mutation: MutationType;
+  node: UserInfo;
+  updatedFields: String[];
+  previousValues: UserInfoPreviousValues;
+}
+
+export interface UserInfoSubscriptionPayloadPromise
+  extends Promise<UserInfoSubscriptionPayload>,
+    Fragmentable {
+  mutation: () => Promise<MutationType>;
+  node: <T = UserInfoPromise>() => T;
+  updatedFields: () => Promise<String[]>;
+  previousValues: <T = UserInfoPreviousValuesPromise>() => T;
+}
+
+export interface UserInfoSubscriptionPayloadSubscription
+  extends Promise<AsyncIterator<UserInfoSubscriptionPayload>>,
+    Fragmentable {
+  mutation: () => Promise<AsyncIterator<MutationType>>;
+  node: <T = UserInfoSubscription>() => T;
+  updatedFields: () => Promise<AsyncIterator<String[]>>;
+  previousValues: <T = UserInfoPreviousValuesSubscription>() => T;
+}
+
+export interface UserInfoConnection {
+  pageInfo: PageInfo;
+  edges: UserInfoEdge[];
+}
+
+export interface UserInfoConnectionPromise
+  extends Promise<UserInfoConnection>,
+    Fragmentable {
+  pageInfo: <T = PageInfoPromise>() => T;
+  edges: <T = FragmentableArray<UserInfoEdge>>() => T;
+  aggregate: <T = AggregateUserInfoPromise>() => T;
+}
+
+export interface UserInfoConnectionSubscription
+  extends Promise<AsyncIterator<UserInfoConnection>>,
+    Fragmentable {
+  pageInfo: <T = PageInfoSubscription>() => T;
+  edges: <T = Promise<AsyncIterator<UserInfoEdgeSubscription>>>() => T;
+  aggregate: <T = AggregateUserInfoSubscription>() => T;
+}
+
+export interface ObjectReferenceSubscriptionPayload {
+  mutation: MutationType;
+  node: ObjectReference;
+  updatedFields: String[];
+  previousValues: ObjectReferencePreviousValues;
+}
+
+export interface ObjectReferenceSubscriptionPayloadPromise
+  extends Promise<ObjectReferenceSubscriptionPayload>,
+    Fragmentable {
+  mutation: () => Promise<MutationType>;
+  node: <T = ObjectReferencePromise>() => T;
+  updatedFields: () => Promise<String[]>;
+  previousValues: <T = ObjectReferencePreviousValuesPromise>() => T;
+}
+
+export interface ObjectReferenceSubscriptionPayloadSubscription
+  extends Promise<AsyncIterator<ObjectReferenceSubscriptionPayload>>,
+    Fragmentable {
+  mutation: () => Promise<AsyncIterator<MutationType>>;
+  node: <T = ObjectReferenceSubscription>() => T;
+  updatedFields: () => Promise<AsyncIterator<String[]>>;
+  previousValues: <T = ObjectReferencePreviousValuesSubscription>() => T;
+}
+
+export interface EventConnection {
+  pageInfo: PageInfo;
+  edges: EventEdge[];
+}
+
+export interface EventConnectionPromise
+  extends Promise<EventConnection>,
+    Fragmentable {
+  pageInfo: <T = PageInfoPromise>() => T;
+  edges: <T = FragmentableArray<EventEdge>>() => T;
+  aggregate: <T = AggregateEventPromise>() => T;
+}
+
+export interface EventConnectionSubscription
+  extends Promise<AsyncIterator<EventConnection>>,
+    Fragmentable {
+  pageInfo: <T = PageInfoSubscription>() => T;
+  edges: <T = Promise<AsyncIterator<EventEdgeSubscription>>>() => T;
+  aggregate: <T = AggregateEventSubscription>() => T;
+}
+
+export interface EventPreviousValues {
+  id: ID_Output;
+  createdAt: DateTimeOutput;
+  apiVersion?: String;
+  kind?: String;
+  level: String;
+  auditID?: ID_Output;
+  stage: String;
+  requestURI: String;
+  verb: String;
+  sourceIPs: String[];
+  userAgent?: String;
+  requestReceivedTimestamp?: String;
+  stageTimestamp?: String;
+  annotations?: Json;
+}
+
+export interface EventPreviousValuesPromise
+  extends Promise<EventPreviousValues>,
+    Fragmentable {
+  id: () => Promise<ID_Output>;
+  createdAt: () => Promise<DateTimeOutput>;
+  apiVersion: () => Promise<String>;
+  kind: () => Promise<String>;
+  level: () => Promise<String>;
+  auditID: () => Promise<ID_Output>;
+  stage: () => Promise<String>;
+  requestURI: () => Promise<String>;
+  verb: () => Promise<String>;
+  sourceIPs: () => Promise<String[]>;
+  userAgent: () => Promise<String>;
+  requestReceivedTimestamp: () => Promise<String>;
+  stageTimestamp: () => Promise<String>;
+  annotations: () => Promise<Json>;
+}
+
+export interface EventPreviousValuesSubscription
+  extends Promise<AsyncIterator<EventPreviousValues>>,
+    Fragmentable {
+  id: () => Promise<AsyncIterator<ID_Output>>;
+  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
+  apiVersion: () => Promise<AsyncIterator<String>>;
+  kind: () => Promise<AsyncIterator<String>>;
+  level: () => Promise<AsyncIterator<String>>;
+  auditID: () => Promise<AsyncIterator<ID_Output>>;
+  stage: () => Promise<AsyncIterator<String>>;
+  requestURI: () => Promise<AsyncIterator<String>>;
+  verb: () => Promise<AsyncIterator<String>>;
+  sourceIPs: () => Promise<AsyncIterator<String[]>>;
+  userAgent: () => Promise<AsyncIterator<String>>;
+  requestReceivedTimestamp: () => Promise<AsyncIterator<String>>;
+  stageTimestamp: () => Promise<AsyncIterator<String>>;
+  annotations: () => Promise<AsyncIterator<Json>>;
 }
 
 export interface EventSubscriptionPayload {
@@ -3282,56 +1906,20 @@ export interface AggregateResponseStatusSubscription
   count: () => Promise<AsyncIterator<Int>>;
 }
 
-export interface EventPreviousValues {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-  kind?: String;
-  level: String;
-  auditID?: ID_Output;
-  stage: String;
-  requestURI: String;
-  verb: String;
-  sourceIPs: String[];
-  userAgent?: String;
-  requestReceivedTimestamp?: String;
-  stageTimestamp?: String;
-  annotations?: Json;
+export interface AggregateUserInfo {
+  count: Int;
 }
 
-export interface EventPreviousValuesPromise
-  extends Promise<EventPreviousValues>,
+export interface AggregateUserInfoPromise
+  extends Promise<AggregateUserInfo>,
     Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  kind: () => Promise<String>;
-  level: () => Promise<String>;
-  auditID: () => Promise<ID_Output>;
-  stage: () => Promise<String>;
-  requestURI: () => Promise<String>;
-  verb: () => Promise<String>;
-  sourceIPs: () => Promise<String[]>;
-  userAgent: () => Promise<String>;
-  requestReceivedTimestamp: () => Promise<String>;
-  stageTimestamp: () => Promise<String>;
-  annotations: () => Promise<Json>;
+  count: () => Promise<Int>;
 }
 
-export interface EventPreviousValuesSubscription
-  extends Promise<AsyncIterator<EventPreviousValues>>,
+export interface AggregateUserInfoSubscription
+  extends Promise<AsyncIterator<AggregateUserInfo>>,
     Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  kind: () => Promise<AsyncIterator<String>>;
-  level: () => Promise<AsyncIterator<String>>;
-  auditID: () => Promise<AsyncIterator<ID_Output>>;
-  stage: () => Promise<AsyncIterator<String>>;
-  requestURI: () => Promise<AsyncIterator<String>>;
-  verb: () => Promise<AsyncIterator<String>>;
-  sourceIPs: () => Promise<AsyncIterator<String[]>>;
-  userAgent: () => Promise<AsyncIterator<String>>;
-  requestReceivedTimestamp: () => Promise<AsyncIterator<String>>;
-  stageTimestamp: () => Promise<AsyncIterator<String>>;
-  annotations: () => Promise<AsyncIterator<Json>>;
+  count: () => Promise<AsyncIterator<Int>>;
 }
 
 export interface AggregateObjectReference {
@@ -3348,242 +1936,6 @@ export interface AggregateObjectReferenceSubscription
   extends Promise<AsyncIterator<AggregateObjectReference>>,
     Fragmentable {
   count: () => Promise<AsyncIterator<Int>>;
-}
-
-export interface AggregateAuditLog {
-  count: Int;
-}
-
-export interface AggregateAuditLogPromise
-  extends Promise<AggregateAuditLog>,
-    Fragmentable {
-  count: () => Promise<Int>;
-}
-
-export interface AggregateAuditLogSubscription
-  extends Promise<AsyncIterator<AggregateAuditLog>>,
-    Fragmentable {
-  count: () => Promise<AsyncIterator<Int>>;
-}
-
-export interface AggregateEvent {
-  count: Int;
-}
-
-export interface AggregateEventPromise
-  extends Promise<AggregateEvent>,
-    Fragmentable {
-  count: () => Promise<Int>;
-}
-
-export interface AggregateEventSubscription
-  extends Promise<AsyncIterator<AggregateEvent>>,
-    Fragmentable {
-  count: () => Promise<AsyncIterator<Int>>;
-}
-
-export interface TestSubscriptionPayload {
-  mutation: MutationType;
-  node: Test;
-  updatedFields: String[];
-  previousValues: TestPreviousValues;
-}
-
-export interface TestSubscriptionPayloadPromise
-  extends Promise<TestSubscriptionPayload>,
-    Fragmentable {
-  mutation: () => Promise<MutationType>;
-  node: <T = TestPromise>() => T;
-  updatedFields: () => Promise<String[]>;
-  previousValues: <T = TestPreviousValuesPromise>() => T;
-}
-
-export interface TestSubscriptionPayloadSubscription
-  extends Promise<AsyncIterator<TestSubscriptionPayload>>,
-    Fragmentable {
-  mutation: () => Promise<AsyncIterator<MutationType>>;
-  node: <T = TestSubscription>() => T;
-  updatedFields: () => Promise<AsyncIterator<String[]>>;
-  previousValues: <T = TestPreviousValuesSubscription>() => T;
-}
-
-export interface ResponseStatusSubscriptionPayload {
-  mutation: MutationType;
-  node: ResponseStatus;
-  updatedFields: String[];
-  previousValues: ResponseStatusPreviousValues;
-}
-
-export interface ResponseStatusSubscriptionPayloadPromise
-  extends Promise<ResponseStatusSubscriptionPayload>,
-    Fragmentable {
-  mutation: () => Promise<MutationType>;
-  node: <T = ResponseStatusPromise>() => T;
-  updatedFields: () => Promise<String[]>;
-  previousValues: <T = ResponseStatusPreviousValuesPromise>() => T;
-}
-
-export interface ResponseStatusSubscriptionPayloadSubscription
-  extends Promise<AsyncIterator<ResponseStatusSubscriptionPayload>>,
-    Fragmentable {
-  mutation: () => Promise<AsyncIterator<MutationType>>;
-  node: <T = ResponseStatusSubscription>() => T;
-  updatedFields: () => Promise<AsyncIterator<String[]>>;
-  previousValues: <T = ResponseStatusPreviousValuesSubscription>() => T;
-}
-
-export interface AuditLogEdge {
-  node: AuditLog;
-  cursor: String;
-}
-
-export interface AuditLogEdgePromise
-  extends Promise<AuditLogEdge>,
-    Fragmentable {
-  node: <T = AuditLogPromise>() => T;
-  cursor: () => Promise<String>;
-}
-
-export interface AuditLogEdgeSubscription
-  extends Promise<AsyncIterator<AuditLogEdge>>,
-    Fragmentable {
-  node: <T = AuditLogSubscription>() => T;
-  cursor: () => Promise<AsyncIterator<String>>;
-}
-
-export interface ObjectReferencePreviousValues {
-  id: ID_Output;
-  createdAt: DateTimeOutput;
-  resource?: String;
-  namespace?: String;
-  name?: String;
-  uid?: ID_Output;
-  apiGroup?: String;
-  apiVersion?: String;
-  resourceVersion?: String;
-  subresource?: String;
-}
-
-export interface ObjectReferencePreviousValuesPromise
-  extends Promise<ObjectReferencePreviousValues>,
-    Fragmentable {
-  id: () => Promise<ID_Output>;
-  createdAt: () => Promise<DateTimeOutput>;
-  resource: () => Promise<String>;
-  namespace: () => Promise<String>;
-  name: () => Promise<String>;
-  uid: () => Promise<ID_Output>;
-  apiGroup: () => Promise<String>;
-  apiVersion: () => Promise<String>;
-  resourceVersion: () => Promise<String>;
-  subresource: () => Promise<String>;
-}
-
-export interface ObjectReferencePreviousValuesSubscription
-  extends Promise<AsyncIterator<ObjectReferencePreviousValues>>,
-    Fragmentable {
-  id: () => Promise<AsyncIterator<ID_Output>>;
-  createdAt: () => Promise<AsyncIterator<DateTimeOutput>>;
-  resource: () => Promise<AsyncIterator<String>>;
-  namespace: () => Promise<AsyncIterator<String>>;
-  name: () => Promise<AsyncIterator<String>>;
-  uid: () => Promise<AsyncIterator<ID_Output>>;
-  apiGroup: () => Promise<AsyncIterator<String>>;
-  apiVersion: () => Promise<AsyncIterator<String>>;
-  resourceVersion: () => Promise<AsyncIterator<String>>;
-  subresource: () => Promise<AsyncIterator<String>>;
-}
-
-export interface ObjectReferenceSubscriptionPayload {
-  mutation: MutationType;
-  node: ObjectReference;
-  updatedFields: String[];
-  previousValues: ObjectReferencePreviousValues;
-}
-
-export interface ObjectReferenceSubscriptionPayloadPromise
-  extends Promise<ObjectReferenceSubscriptionPayload>,
-    Fragmentable {
-  mutation: () => Promise<MutationType>;
-  node: <T = ObjectReferencePromise>() => T;
-  updatedFields: () => Promise<String[]>;
-  previousValues: <T = ObjectReferencePreviousValuesPromise>() => T;
-}
-
-export interface ObjectReferenceSubscriptionPayloadSubscription
-  extends Promise<AsyncIterator<ObjectReferenceSubscriptionPayload>>,
-    Fragmentable {
-  mutation: () => Promise<AsyncIterator<MutationType>>;
-  node: <T = ObjectReferenceSubscription>() => T;
-  updatedFields: () => Promise<AsyncIterator<String[]>>;
-  previousValues: <T = ObjectReferencePreviousValuesSubscription>() => T;
-}
-
-export interface UserInfoSubscriptionPayload {
-  mutation: MutationType;
-  node: UserInfo;
-  updatedFields: String[];
-  previousValues: UserInfoPreviousValues;
-}
-
-export interface UserInfoSubscriptionPayloadPromise
-  extends Promise<UserInfoSubscriptionPayload>,
-    Fragmentable {
-  mutation: () => Promise<MutationType>;
-  node: <T = UserInfoPromise>() => T;
-  updatedFields: () => Promise<String[]>;
-  previousValues: <T = UserInfoPreviousValuesPromise>() => T;
-}
-
-export interface UserInfoSubscriptionPayloadSubscription
-  extends Promise<AsyncIterator<UserInfoSubscriptionPayload>>,
-    Fragmentable {
-  mutation: () => Promise<AsyncIterator<MutationType>>;
-  node: <T = UserInfoSubscription>() => T;
-  updatedFields: () => Promise<AsyncIterator<String[]>>;
-  previousValues: <T = UserInfoPreviousValuesSubscription>() => T;
-}
-
-export interface EventConnection {
-  pageInfo: PageInfo;
-  edges: EventEdge[];
-}
-
-export interface EventConnectionPromise
-  extends Promise<EventConnection>,
-    Fragmentable {
-  pageInfo: <T = PageInfoPromise>() => T;
-  edges: <T = FragmentableArray<EventEdge>>() => T;
-  aggregate: <T = AggregateEventPromise>() => T;
-}
-
-export interface EventConnectionSubscription
-  extends Promise<AsyncIterator<EventConnection>>,
-    Fragmentable {
-  pageInfo: <T = PageInfoSubscription>() => T;
-  edges: <T = Promise<AsyncIterator<EventEdgeSubscription>>>() => T;
-  aggregate: <T = AggregateEventSubscription>() => T;
-}
-
-export interface ObjectReferenceConnection {
-  pageInfo: PageInfo;
-  edges: ObjectReferenceEdge[];
-}
-
-export interface ObjectReferenceConnectionPromise
-  extends Promise<ObjectReferenceConnection>,
-    Fragmentable {
-  pageInfo: <T = PageInfoPromise>() => T;
-  edges: <T = FragmentableArray<ObjectReferenceEdge>>() => T;
-  aggregate: <T = AggregateObjectReferencePromise>() => T;
-}
-
-export interface ObjectReferenceConnectionSubscription
-  extends Promise<AsyncIterator<ObjectReferenceConnection>>,
-    Fragmentable {
-  pageInfo: <T = PageInfoSubscription>() => T;
-  edges: <T = Promise<AsyncIterator<ObjectReferenceEdgeSubscription>>>() => T;
-  aggregate: <T = AggregateObjectReferenceSubscription>() => T;
 }
 
 export interface ResponseStatusConnection {
@@ -3606,6 +1958,15 @@ export interface ResponseStatusConnectionSubscription
   edges: <T = Promise<AsyncIterator<ResponseStatusEdgeSubscription>>>() => T;
   aggregate: <T = AggregateResponseStatusSubscription>() => T;
 }
+
+export type Json = any;
+
+export type Long = string;
+
+/*
+The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.
+*/
+export type Int = number;
 
 /*
 The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
@@ -3633,30 +1994,13 @@ The `Boolean` scalar type represents `true` or `false`.
 */
 export type Boolean = boolean;
 
-/*
-The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.
-*/
-export type Int = number;
-
-export type Json = any;
-
-export type Long = string;
-
 /**
  * Model Metadata
  */
 
 export const models: Model[] = [
   {
-    name: "AuditLog",
-    embedded: false
-  },
-  {
-    name: "Endpoint",
-    embedded: false
-  },
-  {
-    name: "Test",
+    name: "Event",
     embedded: false
   },
   {
@@ -3669,10 +2013,6 @@ export const models: Model[] = [
   },
   {
     name: "ObjectReference",
-    embedded: false
-  },
-  {
-    name: "Event",
     embedded: false
   }
 ];

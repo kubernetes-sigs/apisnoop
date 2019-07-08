@@ -3,15 +3,7 @@ module.exports = {
   // Please don't change this file manually but run `prisma generate` to update it.
   // For more information, please read the docs: https://www.prisma.io/docs/prisma-client/
 
-/* GraphQL */ `type AggregateAuditLog {
-  count: Int!
-}
-
-type AggregateEndpoint {
-  count: Int!
-}
-
-type AggregateEvent {
+/* GraphQL */ `type AggregateEvent {
   count: Int!
 }
 
@@ -23,397 +15,8 @@ type AggregateResponseStatus {
   count: Int!
 }
 
-type AggregateTest {
-  count: Int!
-}
-
 type AggregateUserInfo {
   count: Int!
-}
-
-type AuditLog {
-  id: ID!
-  createdAt: DateTime!
-  job: String!
-  bucket: String!
-  version: String!
-  jobVersion: String!
-  masterOsImage: String!
-  infraCommit: String!
-  nodeOsImage: String!
-  pod: String!
-  passed: Boolean!
-  result: String!
-  timestamp: Int!
-  endpoints(where: EndpointWhereInput, orderBy: EndpointOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [Endpoint!]
-}
-
-type AuditLogConnection {
-  pageInfo: PageInfo!
-  edges: [AuditLogEdge]!
-  aggregate: AggregateAuditLog!
-}
-
-input AuditLogCreateInput {
-  id: ID
-  job: String!
-  bucket: String!
-  version: String!
-  jobVersion: String!
-  masterOsImage: String!
-  infraCommit: String!
-  nodeOsImage: String!
-  pod: String!
-  passed: Boolean!
-  result: String!
-  timestamp: Int!
-  endpoints: EndpointCreateManyWithoutAuditLogInput
-}
-
-input AuditLogCreateOneInput {
-  create: AuditLogCreateInput
-  connect: AuditLogWhereUniqueInput
-}
-
-input AuditLogCreateOneWithoutEndpointsInput {
-  create: AuditLogCreateWithoutEndpointsInput
-  connect: AuditLogWhereUniqueInput
-}
-
-input AuditLogCreateWithoutEndpointsInput {
-  id: ID
-  job: String!
-  bucket: String!
-  version: String!
-  jobVersion: String!
-  masterOsImage: String!
-  infraCommit: String!
-  nodeOsImage: String!
-  pod: String!
-  passed: Boolean!
-  result: String!
-  timestamp: Int!
-}
-
-type AuditLogEdge {
-  node: AuditLog!
-  cursor: String!
-}
-
-enum AuditLogOrderByInput {
-  id_ASC
-  id_DESC
-  createdAt_ASC
-  createdAt_DESC
-  job_ASC
-  job_DESC
-  bucket_ASC
-  bucket_DESC
-  version_ASC
-  version_DESC
-  jobVersion_ASC
-  jobVersion_DESC
-  masterOsImage_ASC
-  masterOsImage_DESC
-  infraCommit_ASC
-  infraCommit_DESC
-  nodeOsImage_ASC
-  nodeOsImage_DESC
-  pod_ASC
-  pod_DESC
-  passed_ASC
-  passed_DESC
-  result_ASC
-  result_DESC
-  timestamp_ASC
-  timestamp_DESC
-}
-
-type AuditLogPreviousValues {
-  id: ID!
-  createdAt: DateTime!
-  job: String!
-  bucket: String!
-  version: String!
-  jobVersion: String!
-  masterOsImage: String!
-  infraCommit: String!
-  nodeOsImage: String!
-  pod: String!
-  passed: Boolean!
-  result: String!
-  timestamp: Int!
-}
-
-type AuditLogSubscriptionPayload {
-  mutation: MutationType!
-  node: AuditLog
-  updatedFields: [String!]
-  previousValues: AuditLogPreviousValues
-}
-
-input AuditLogSubscriptionWhereInput {
-  mutation_in: [MutationType!]
-  updatedFields_contains: String
-  updatedFields_contains_every: [String!]
-  updatedFields_contains_some: [String!]
-  node: AuditLogWhereInput
-  AND: [AuditLogSubscriptionWhereInput!]
-  OR: [AuditLogSubscriptionWhereInput!]
-  NOT: [AuditLogSubscriptionWhereInput!]
-}
-
-input AuditLogUpdateDataInput {
-  job: String
-  bucket: String
-  version: String
-  jobVersion: String
-  masterOsImage: String
-  infraCommit: String
-  nodeOsImage: String
-  pod: String
-  passed: Boolean
-  result: String
-  timestamp: Int
-  endpoints: EndpointUpdateManyWithoutAuditLogInput
-}
-
-input AuditLogUpdateInput {
-  job: String
-  bucket: String
-  version: String
-  jobVersion: String
-  masterOsImage: String
-  infraCommit: String
-  nodeOsImage: String
-  pod: String
-  passed: Boolean
-  result: String
-  timestamp: Int
-  endpoints: EndpointUpdateManyWithoutAuditLogInput
-}
-
-input AuditLogUpdateManyMutationInput {
-  job: String
-  bucket: String
-  version: String
-  jobVersion: String
-  masterOsImage: String
-  infraCommit: String
-  nodeOsImage: String
-  pod: String
-  passed: Boolean
-  result: String
-  timestamp: Int
-}
-
-input AuditLogUpdateOneRequiredInput {
-  create: AuditLogCreateInput
-  update: AuditLogUpdateDataInput
-  upsert: AuditLogUpsertNestedInput
-  connect: AuditLogWhereUniqueInput
-}
-
-input AuditLogUpdateOneRequiredWithoutEndpointsInput {
-  create: AuditLogCreateWithoutEndpointsInput
-  update: AuditLogUpdateWithoutEndpointsDataInput
-  upsert: AuditLogUpsertWithoutEndpointsInput
-  connect: AuditLogWhereUniqueInput
-}
-
-input AuditLogUpdateWithoutEndpointsDataInput {
-  job: String
-  bucket: String
-  version: String
-  jobVersion: String
-  masterOsImage: String
-  infraCommit: String
-  nodeOsImage: String
-  pod: String
-  passed: Boolean
-  result: String
-  timestamp: Int
-}
-
-input AuditLogUpsertNestedInput {
-  update: AuditLogUpdateDataInput!
-  create: AuditLogCreateInput!
-}
-
-input AuditLogUpsertWithoutEndpointsInput {
-  update: AuditLogUpdateWithoutEndpointsDataInput!
-  create: AuditLogCreateWithoutEndpointsInput!
-}
-
-input AuditLogWhereInput {
-  id: ID
-  id_not: ID
-  id_in: [ID!]
-  id_not_in: [ID!]
-  id_lt: ID
-  id_lte: ID
-  id_gt: ID
-  id_gte: ID
-  id_contains: ID
-  id_not_contains: ID
-  id_starts_with: ID
-  id_not_starts_with: ID
-  id_ends_with: ID
-  id_not_ends_with: ID
-  createdAt: DateTime
-  createdAt_not: DateTime
-  createdAt_in: [DateTime!]
-  createdAt_not_in: [DateTime!]
-  createdAt_lt: DateTime
-  createdAt_lte: DateTime
-  createdAt_gt: DateTime
-  createdAt_gte: DateTime
-  job: String
-  job_not: String
-  job_in: [String!]
-  job_not_in: [String!]
-  job_lt: String
-  job_lte: String
-  job_gt: String
-  job_gte: String
-  job_contains: String
-  job_not_contains: String
-  job_starts_with: String
-  job_not_starts_with: String
-  job_ends_with: String
-  job_not_ends_with: String
-  bucket: String
-  bucket_not: String
-  bucket_in: [String!]
-  bucket_not_in: [String!]
-  bucket_lt: String
-  bucket_lte: String
-  bucket_gt: String
-  bucket_gte: String
-  bucket_contains: String
-  bucket_not_contains: String
-  bucket_starts_with: String
-  bucket_not_starts_with: String
-  bucket_ends_with: String
-  bucket_not_ends_with: String
-  version: String
-  version_not: String
-  version_in: [String!]
-  version_not_in: [String!]
-  version_lt: String
-  version_lte: String
-  version_gt: String
-  version_gte: String
-  version_contains: String
-  version_not_contains: String
-  version_starts_with: String
-  version_not_starts_with: String
-  version_ends_with: String
-  version_not_ends_with: String
-  jobVersion: String
-  jobVersion_not: String
-  jobVersion_in: [String!]
-  jobVersion_not_in: [String!]
-  jobVersion_lt: String
-  jobVersion_lte: String
-  jobVersion_gt: String
-  jobVersion_gte: String
-  jobVersion_contains: String
-  jobVersion_not_contains: String
-  jobVersion_starts_with: String
-  jobVersion_not_starts_with: String
-  jobVersion_ends_with: String
-  jobVersion_not_ends_with: String
-  masterOsImage: String
-  masterOsImage_not: String
-  masterOsImage_in: [String!]
-  masterOsImage_not_in: [String!]
-  masterOsImage_lt: String
-  masterOsImage_lte: String
-  masterOsImage_gt: String
-  masterOsImage_gte: String
-  masterOsImage_contains: String
-  masterOsImage_not_contains: String
-  masterOsImage_starts_with: String
-  masterOsImage_not_starts_with: String
-  masterOsImage_ends_with: String
-  masterOsImage_not_ends_with: String
-  infraCommit: String
-  infraCommit_not: String
-  infraCommit_in: [String!]
-  infraCommit_not_in: [String!]
-  infraCommit_lt: String
-  infraCommit_lte: String
-  infraCommit_gt: String
-  infraCommit_gte: String
-  infraCommit_contains: String
-  infraCommit_not_contains: String
-  infraCommit_starts_with: String
-  infraCommit_not_starts_with: String
-  infraCommit_ends_with: String
-  infraCommit_not_ends_with: String
-  nodeOsImage: String
-  nodeOsImage_not: String
-  nodeOsImage_in: [String!]
-  nodeOsImage_not_in: [String!]
-  nodeOsImage_lt: String
-  nodeOsImage_lte: String
-  nodeOsImage_gt: String
-  nodeOsImage_gte: String
-  nodeOsImage_contains: String
-  nodeOsImage_not_contains: String
-  nodeOsImage_starts_with: String
-  nodeOsImage_not_starts_with: String
-  nodeOsImage_ends_with: String
-  nodeOsImage_not_ends_with: String
-  pod: String
-  pod_not: String
-  pod_in: [String!]
-  pod_not_in: [String!]
-  pod_lt: String
-  pod_lte: String
-  pod_gt: String
-  pod_gte: String
-  pod_contains: String
-  pod_not_contains: String
-  pod_starts_with: String
-  pod_not_starts_with: String
-  pod_ends_with: String
-  pod_not_ends_with: String
-  passed: Boolean
-  passed_not: Boolean
-  result: String
-  result_not: String
-  result_in: [String!]
-  result_not_in: [String!]
-  result_lt: String
-  result_lte: String
-  result_gt: String
-  result_gte: String
-  result_contains: String
-  result_not_contains: String
-  result_starts_with: String
-  result_not_starts_with: String
-  result_ends_with: String
-  result_not_ends_with: String
-  timestamp: Int
-  timestamp_not: Int
-  timestamp_in: [Int!]
-  timestamp_not_in: [Int!]
-  timestamp_lt: Int
-  timestamp_lte: Int
-  timestamp_gt: Int
-  timestamp_gte: Int
-  endpoints_every: EndpointWhereInput
-  endpoints_some: EndpointWhereInput
-  endpoints_none: EndpointWhereInput
-  AND: [AuditLogWhereInput!]
-  OR: [AuditLogWhereInput!]
-  NOT: [AuditLogWhereInput!]
-}
-
-input AuditLogWhereUniqueInput {
-  id: ID
 }
 
 type BatchPayload {
@@ -422,612 +25,10 @@ type BatchPayload {
 
 scalar DateTime
 
-type Endpoint {
-  id: ID!
-  createdAt: DateTime!
-  auditLog: AuditLog!
-  operationID: String!
-  level: String!
-  category: String!
-  kind: String
-  group: String
-  description: String
-  version: String
-  path: String
-  hits: Int!
-  testHits: Int!
-  conformanceHits: Int!
-  isDeprecated: Boolean!
-}
-
-type EndpointConnection {
-  pageInfo: PageInfo!
-  edges: [EndpointEdge]!
-  aggregate: AggregateEndpoint!
-}
-
-input EndpointCreateInput {
-  id: ID
-  auditLog: AuditLogCreateOneWithoutEndpointsInput!
-  operationID: String!
-  level: String!
-  category: String!
-  kind: String
-  group: String
-  description: String
-  version: String
-  path: String
-  hits: Int!
-  testHits: Int!
-  conformanceHits: Int!
-  isDeprecated: Boolean!
-}
-
-input EndpointCreateManyInput {
-  create: [EndpointCreateInput!]
-  connect: [EndpointWhereUniqueInput!]
-}
-
-input EndpointCreateManyWithoutAuditLogInput {
-  create: [EndpointCreateWithoutAuditLogInput!]
-  connect: [EndpointWhereUniqueInput!]
-}
-
-input EndpointCreateWithoutAuditLogInput {
-  id: ID
-  operationID: String!
-  level: String!
-  category: String!
-  kind: String
-  group: String
-  description: String
-  version: String
-  path: String
-  hits: Int!
-  testHits: Int!
-  conformanceHits: Int!
-  isDeprecated: Boolean!
-}
-
-type EndpointEdge {
-  node: Endpoint!
-  cursor: String!
-}
-
-enum EndpointOrderByInput {
-  id_ASC
-  id_DESC
-  createdAt_ASC
-  createdAt_DESC
-  operationID_ASC
-  operationID_DESC
-  level_ASC
-  level_DESC
-  category_ASC
-  category_DESC
-  kind_ASC
-  kind_DESC
-  group_ASC
-  group_DESC
-  description_ASC
-  description_DESC
-  version_ASC
-  version_DESC
-  path_ASC
-  path_DESC
-  hits_ASC
-  hits_DESC
-  testHits_ASC
-  testHits_DESC
-  conformanceHits_ASC
-  conformanceHits_DESC
-  isDeprecated_ASC
-  isDeprecated_DESC
-}
-
-type EndpointPreviousValues {
-  id: ID!
-  createdAt: DateTime!
-  operationID: String!
-  level: String!
-  category: String!
-  kind: String
-  group: String
-  description: String
-  version: String
-  path: String
-  hits: Int!
-  testHits: Int!
-  conformanceHits: Int!
-  isDeprecated: Boolean!
-}
-
-input EndpointScalarWhereInput {
-  id: ID
-  id_not: ID
-  id_in: [ID!]
-  id_not_in: [ID!]
-  id_lt: ID
-  id_lte: ID
-  id_gt: ID
-  id_gte: ID
-  id_contains: ID
-  id_not_contains: ID
-  id_starts_with: ID
-  id_not_starts_with: ID
-  id_ends_with: ID
-  id_not_ends_with: ID
-  createdAt: DateTime
-  createdAt_not: DateTime
-  createdAt_in: [DateTime!]
-  createdAt_not_in: [DateTime!]
-  createdAt_lt: DateTime
-  createdAt_lte: DateTime
-  createdAt_gt: DateTime
-  createdAt_gte: DateTime
-  operationID: String
-  operationID_not: String
-  operationID_in: [String!]
-  operationID_not_in: [String!]
-  operationID_lt: String
-  operationID_lte: String
-  operationID_gt: String
-  operationID_gte: String
-  operationID_contains: String
-  operationID_not_contains: String
-  operationID_starts_with: String
-  operationID_not_starts_with: String
-  operationID_ends_with: String
-  operationID_not_ends_with: String
-  level: String
-  level_not: String
-  level_in: [String!]
-  level_not_in: [String!]
-  level_lt: String
-  level_lte: String
-  level_gt: String
-  level_gte: String
-  level_contains: String
-  level_not_contains: String
-  level_starts_with: String
-  level_not_starts_with: String
-  level_ends_with: String
-  level_not_ends_with: String
-  category: String
-  category_not: String
-  category_in: [String!]
-  category_not_in: [String!]
-  category_lt: String
-  category_lte: String
-  category_gt: String
-  category_gte: String
-  category_contains: String
-  category_not_contains: String
-  category_starts_with: String
-  category_not_starts_with: String
-  category_ends_with: String
-  category_not_ends_with: String
-  kind: String
-  kind_not: String
-  kind_in: [String!]
-  kind_not_in: [String!]
-  kind_lt: String
-  kind_lte: String
-  kind_gt: String
-  kind_gte: String
-  kind_contains: String
-  kind_not_contains: String
-  kind_starts_with: String
-  kind_not_starts_with: String
-  kind_ends_with: String
-  kind_not_ends_with: String
-  group: String
-  group_not: String
-  group_in: [String!]
-  group_not_in: [String!]
-  group_lt: String
-  group_lte: String
-  group_gt: String
-  group_gte: String
-  group_contains: String
-  group_not_contains: String
-  group_starts_with: String
-  group_not_starts_with: String
-  group_ends_with: String
-  group_not_ends_with: String
-  description: String
-  description_not: String
-  description_in: [String!]
-  description_not_in: [String!]
-  description_lt: String
-  description_lte: String
-  description_gt: String
-  description_gte: String
-  description_contains: String
-  description_not_contains: String
-  description_starts_with: String
-  description_not_starts_with: String
-  description_ends_with: String
-  description_not_ends_with: String
-  version: String
-  version_not: String
-  version_in: [String!]
-  version_not_in: [String!]
-  version_lt: String
-  version_lte: String
-  version_gt: String
-  version_gte: String
-  version_contains: String
-  version_not_contains: String
-  version_starts_with: String
-  version_not_starts_with: String
-  version_ends_with: String
-  version_not_ends_with: String
-  path: String
-  path_not: String
-  path_in: [String!]
-  path_not_in: [String!]
-  path_lt: String
-  path_lte: String
-  path_gt: String
-  path_gte: String
-  path_contains: String
-  path_not_contains: String
-  path_starts_with: String
-  path_not_starts_with: String
-  path_ends_with: String
-  path_not_ends_with: String
-  hits: Int
-  hits_not: Int
-  hits_in: [Int!]
-  hits_not_in: [Int!]
-  hits_lt: Int
-  hits_lte: Int
-  hits_gt: Int
-  hits_gte: Int
-  testHits: Int
-  testHits_not: Int
-  testHits_in: [Int!]
-  testHits_not_in: [Int!]
-  testHits_lt: Int
-  testHits_lte: Int
-  testHits_gt: Int
-  testHits_gte: Int
-  conformanceHits: Int
-  conformanceHits_not: Int
-  conformanceHits_in: [Int!]
-  conformanceHits_not_in: [Int!]
-  conformanceHits_lt: Int
-  conformanceHits_lte: Int
-  conformanceHits_gt: Int
-  conformanceHits_gte: Int
-  isDeprecated: Boolean
-  isDeprecated_not: Boolean
-  AND: [EndpointScalarWhereInput!]
-  OR: [EndpointScalarWhereInput!]
-  NOT: [EndpointScalarWhereInput!]
-}
-
-type EndpointSubscriptionPayload {
-  mutation: MutationType!
-  node: Endpoint
-  updatedFields: [String!]
-  previousValues: EndpointPreviousValues
-}
-
-input EndpointSubscriptionWhereInput {
-  mutation_in: [MutationType!]
-  updatedFields_contains: String
-  updatedFields_contains_every: [String!]
-  updatedFields_contains_some: [String!]
-  node: EndpointWhereInput
-  AND: [EndpointSubscriptionWhereInput!]
-  OR: [EndpointSubscriptionWhereInput!]
-  NOT: [EndpointSubscriptionWhereInput!]
-}
-
-input EndpointUpdateDataInput {
-  auditLog: AuditLogUpdateOneRequiredWithoutEndpointsInput
-  operationID: String
-  level: String
-  category: String
-  kind: String
-  group: String
-  description: String
-  version: String
-  path: String
-  hits: Int
-  testHits: Int
-  conformanceHits: Int
-  isDeprecated: Boolean
-}
-
-input EndpointUpdateInput {
-  auditLog: AuditLogUpdateOneRequiredWithoutEndpointsInput
-  operationID: String
-  level: String
-  category: String
-  kind: String
-  group: String
-  description: String
-  version: String
-  path: String
-  hits: Int
-  testHits: Int
-  conformanceHits: Int
-  isDeprecated: Boolean
-}
-
-input EndpointUpdateManyDataInput {
-  operationID: String
-  level: String
-  category: String
-  kind: String
-  group: String
-  description: String
-  version: String
-  path: String
-  hits: Int
-  testHits: Int
-  conformanceHits: Int
-  isDeprecated: Boolean
-}
-
-input EndpointUpdateManyInput {
-  create: [EndpointCreateInput!]
-  update: [EndpointUpdateWithWhereUniqueNestedInput!]
-  upsert: [EndpointUpsertWithWhereUniqueNestedInput!]
-  delete: [EndpointWhereUniqueInput!]
-  connect: [EndpointWhereUniqueInput!]
-  set: [EndpointWhereUniqueInput!]
-  disconnect: [EndpointWhereUniqueInput!]
-  deleteMany: [EndpointScalarWhereInput!]
-  updateMany: [EndpointUpdateManyWithWhereNestedInput!]
-}
-
-input EndpointUpdateManyMutationInput {
-  operationID: String
-  level: String
-  category: String
-  kind: String
-  group: String
-  description: String
-  version: String
-  path: String
-  hits: Int
-  testHits: Int
-  conformanceHits: Int
-  isDeprecated: Boolean
-}
-
-input EndpointUpdateManyWithoutAuditLogInput {
-  create: [EndpointCreateWithoutAuditLogInput!]
-  delete: [EndpointWhereUniqueInput!]
-  connect: [EndpointWhereUniqueInput!]
-  set: [EndpointWhereUniqueInput!]
-  disconnect: [EndpointWhereUniqueInput!]
-  update: [EndpointUpdateWithWhereUniqueWithoutAuditLogInput!]
-  upsert: [EndpointUpsertWithWhereUniqueWithoutAuditLogInput!]
-  deleteMany: [EndpointScalarWhereInput!]
-  updateMany: [EndpointUpdateManyWithWhereNestedInput!]
-}
-
-input EndpointUpdateManyWithWhereNestedInput {
-  where: EndpointScalarWhereInput!
-  data: EndpointUpdateManyDataInput!
-}
-
-input EndpointUpdateWithoutAuditLogDataInput {
-  operationID: String
-  level: String
-  category: String
-  kind: String
-  group: String
-  description: String
-  version: String
-  path: String
-  hits: Int
-  testHits: Int
-  conformanceHits: Int
-  isDeprecated: Boolean
-}
-
-input EndpointUpdateWithWhereUniqueNestedInput {
-  where: EndpointWhereUniqueInput!
-  data: EndpointUpdateDataInput!
-}
-
-input EndpointUpdateWithWhereUniqueWithoutAuditLogInput {
-  where: EndpointWhereUniqueInput!
-  data: EndpointUpdateWithoutAuditLogDataInput!
-}
-
-input EndpointUpsertWithWhereUniqueNestedInput {
-  where: EndpointWhereUniqueInput!
-  update: EndpointUpdateDataInput!
-  create: EndpointCreateInput!
-}
-
-input EndpointUpsertWithWhereUniqueWithoutAuditLogInput {
-  where: EndpointWhereUniqueInput!
-  update: EndpointUpdateWithoutAuditLogDataInput!
-  create: EndpointCreateWithoutAuditLogInput!
-}
-
-input EndpointWhereInput {
-  id: ID
-  id_not: ID
-  id_in: [ID!]
-  id_not_in: [ID!]
-  id_lt: ID
-  id_lte: ID
-  id_gt: ID
-  id_gte: ID
-  id_contains: ID
-  id_not_contains: ID
-  id_starts_with: ID
-  id_not_starts_with: ID
-  id_ends_with: ID
-  id_not_ends_with: ID
-  createdAt: DateTime
-  createdAt_not: DateTime
-  createdAt_in: [DateTime!]
-  createdAt_not_in: [DateTime!]
-  createdAt_lt: DateTime
-  createdAt_lte: DateTime
-  createdAt_gt: DateTime
-  createdAt_gte: DateTime
-  auditLog: AuditLogWhereInput
-  operationID: String
-  operationID_not: String
-  operationID_in: [String!]
-  operationID_not_in: [String!]
-  operationID_lt: String
-  operationID_lte: String
-  operationID_gt: String
-  operationID_gte: String
-  operationID_contains: String
-  operationID_not_contains: String
-  operationID_starts_with: String
-  operationID_not_starts_with: String
-  operationID_ends_with: String
-  operationID_not_ends_with: String
-  level: String
-  level_not: String
-  level_in: [String!]
-  level_not_in: [String!]
-  level_lt: String
-  level_lte: String
-  level_gt: String
-  level_gte: String
-  level_contains: String
-  level_not_contains: String
-  level_starts_with: String
-  level_not_starts_with: String
-  level_ends_with: String
-  level_not_ends_with: String
-  category: String
-  category_not: String
-  category_in: [String!]
-  category_not_in: [String!]
-  category_lt: String
-  category_lte: String
-  category_gt: String
-  category_gte: String
-  category_contains: String
-  category_not_contains: String
-  category_starts_with: String
-  category_not_starts_with: String
-  category_ends_with: String
-  category_not_ends_with: String
-  kind: String
-  kind_not: String
-  kind_in: [String!]
-  kind_not_in: [String!]
-  kind_lt: String
-  kind_lte: String
-  kind_gt: String
-  kind_gte: String
-  kind_contains: String
-  kind_not_contains: String
-  kind_starts_with: String
-  kind_not_starts_with: String
-  kind_ends_with: String
-  kind_not_ends_with: String
-  group: String
-  group_not: String
-  group_in: [String!]
-  group_not_in: [String!]
-  group_lt: String
-  group_lte: String
-  group_gt: String
-  group_gte: String
-  group_contains: String
-  group_not_contains: String
-  group_starts_with: String
-  group_not_starts_with: String
-  group_ends_with: String
-  group_not_ends_with: String
-  description: String
-  description_not: String
-  description_in: [String!]
-  description_not_in: [String!]
-  description_lt: String
-  description_lte: String
-  description_gt: String
-  description_gte: String
-  description_contains: String
-  description_not_contains: String
-  description_starts_with: String
-  description_not_starts_with: String
-  description_ends_with: String
-  description_not_ends_with: String
-  version: String
-  version_not: String
-  version_in: [String!]
-  version_not_in: [String!]
-  version_lt: String
-  version_lte: String
-  version_gt: String
-  version_gte: String
-  version_contains: String
-  version_not_contains: String
-  version_starts_with: String
-  version_not_starts_with: String
-  version_ends_with: String
-  version_not_ends_with: String
-  path: String
-  path_not: String
-  path_in: [String!]
-  path_not_in: [String!]
-  path_lt: String
-  path_lte: String
-  path_gt: String
-  path_gte: String
-  path_contains: String
-  path_not_contains: String
-  path_starts_with: String
-  path_not_starts_with: String
-  path_ends_with: String
-  path_not_ends_with: String
-  hits: Int
-  hits_not: Int
-  hits_in: [Int!]
-  hits_not_in: [Int!]
-  hits_lt: Int
-  hits_lte: Int
-  hits_gt: Int
-  hits_gte: Int
-  testHits: Int
-  testHits_not: Int
-  testHits_in: [Int!]
-  testHits_not_in: [Int!]
-  testHits_lt: Int
-  testHits_lte: Int
-  testHits_gt: Int
-  testHits_gte: Int
-  conformanceHits: Int
-  conformanceHits_not: Int
-  conformanceHits_in: [Int!]
-  conformanceHits_not_in: [Int!]
-  conformanceHits_lt: Int
-  conformanceHits_lte: Int
-  conformanceHits_gt: Int
-  conformanceHits_gte: Int
-  isDeprecated: Boolean
-  isDeprecated_not: Boolean
-  AND: [EndpointWhereInput!]
-  OR: [EndpointWhereInput!]
-  NOT: [EndpointWhereInput!]
-}
-
-input EndpointWhereUniqueInput {
-  id: ID
-}
-
 type Event {
   id: ID!
   createdAt: DateTime!
+  apiVersion: String
   kind: String
   level: String!
   auditID: ID
@@ -1052,6 +53,7 @@ type EventConnection {
 
 input EventCreateInput {
   id: ID
+  apiVersion: String
   kind: String
   level: String!
   auditID: ID
@@ -1089,6 +91,7 @@ input EventCreatesourceIPsInput {
 
 input EventCreateWithoutRequestObjectInput {
   id: ID
+  apiVersion: String
   kind: String
   level: String!
   auditID: ID
@@ -1106,6 +109,7 @@ input EventCreateWithoutRequestObjectInput {
 
 input EventCreateWithoutResponseStatusInput {
   id: ID
+  apiVersion: String
   kind: String
   level: String!
   auditID: ID
@@ -1123,6 +127,7 @@ input EventCreateWithoutResponseStatusInput {
 
 input EventCreateWithoutUserInput {
   id: ID
+  apiVersion: String
   kind: String
   level: String!
   auditID: ID
@@ -1148,6 +153,8 @@ enum EventOrderByInput {
   id_DESC
   createdAt_ASC
   createdAt_DESC
+  apiVersion_ASC
+  apiVersion_DESC
   kind_ASC
   kind_DESC
   level_ASC
@@ -1173,6 +180,7 @@ enum EventOrderByInput {
 type EventPreviousValues {
   id: ID!
   createdAt: DateTime!
+  apiVersion: String
   kind: String
   level: String!
   auditID: ID
@@ -1205,6 +213,7 @@ input EventSubscriptionWhereInput {
 }
 
 input EventUpdateInput {
+  apiVersion: String
   kind: String
   level: String
   auditID: ID
@@ -1222,6 +231,7 @@ input EventUpdateInput {
 }
 
 input EventUpdateManyMutationInput {
+  apiVersion: String
   kind: String
   level: String
   auditID: ID
@@ -1261,6 +271,7 @@ input EventUpdatesourceIPsInput {
 }
 
 input EventUpdateWithoutRequestObjectDataInput {
+  apiVersion: String
   kind: String
   level: String
   auditID: ID
@@ -1277,6 +288,7 @@ input EventUpdateWithoutRequestObjectDataInput {
 }
 
 input EventUpdateWithoutResponseStatusDataInput {
+  apiVersion: String
   kind: String
   level: String
   auditID: ID
@@ -1293,6 +305,7 @@ input EventUpdateWithoutResponseStatusDataInput {
 }
 
 input EventUpdateWithoutUserDataInput {
+  apiVersion: String
   kind: String
   level: String
   auditID: ID
@@ -1346,6 +359,20 @@ input EventWhereInput {
   createdAt_lte: DateTime
   createdAt_gt: DateTime
   createdAt_gte: DateTime
+  apiVersion: String
+  apiVersion_not: String
+  apiVersion_in: [String!]
+  apiVersion_not_in: [String!]
+  apiVersion_lt: String
+  apiVersion_lte: String
+  apiVersion_gt: String
+  apiVersion_gte: String
+  apiVersion_contains: String
+  apiVersion_not_contains: String
+  apiVersion_starts_with: String
+  apiVersion_not_starts_with: String
+  apiVersion_ends_with: String
+  apiVersion_not_ends_with: String
   kind: String
   kind_not: String
   kind_in: [String!]
@@ -1490,18 +517,6 @@ scalar Json
 scalar Long
 
 type Mutation {
-  createAuditLog(data: AuditLogCreateInput!): AuditLog!
-  updateAuditLog(data: AuditLogUpdateInput!, where: AuditLogWhereUniqueInput!): AuditLog
-  updateManyAuditLogs(data: AuditLogUpdateManyMutationInput!, where: AuditLogWhereInput): BatchPayload!
-  upsertAuditLog(where: AuditLogWhereUniqueInput!, create: AuditLogCreateInput!, update: AuditLogUpdateInput!): AuditLog!
-  deleteAuditLog(where: AuditLogWhereUniqueInput!): AuditLog
-  deleteManyAuditLogs(where: AuditLogWhereInput): BatchPayload!
-  createEndpoint(data: EndpointCreateInput!): Endpoint!
-  updateEndpoint(data: EndpointUpdateInput!, where: EndpointWhereUniqueInput!): Endpoint
-  updateManyEndpoints(data: EndpointUpdateManyMutationInput!, where: EndpointWhereInput): BatchPayload!
-  upsertEndpoint(where: EndpointWhereUniqueInput!, create: EndpointCreateInput!, update: EndpointUpdateInput!): Endpoint!
-  deleteEndpoint(where: EndpointWhereUniqueInput!): Endpoint
-  deleteManyEndpoints(where: EndpointWhereInput): BatchPayload!
   createEvent(data: EventCreateInput!): Event!
   updateEvent(data: EventUpdateInput!, where: EventWhereUniqueInput!): Event
   updateManyEvents(data: EventUpdateManyMutationInput!, where: EventWhereInput): BatchPayload!
@@ -1520,11 +535,6 @@ type Mutation {
   upsertResponseStatus(where: ResponseStatusWhereUniqueInput!, create: ResponseStatusCreateInput!, update: ResponseStatusUpdateInput!): ResponseStatus!
   deleteResponseStatus(where: ResponseStatusWhereUniqueInput!): ResponseStatus
   deleteManyResponseStatuses(where: ResponseStatusWhereInput): BatchPayload!
-  createTest(data: TestCreateInput!): Test!
-  updateTest(data: TestUpdateInput!, where: TestWhereUniqueInput!): Test
-  upsertTest(where: TestWhereUniqueInput!, create: TestCreateInput!, update: TestUpdateInput!): Test!
-  deleteTest(where: TestWhereUniqueInput!): Test
-  deleteManyTests(where: TestWhereInput): BatchPayload!
   createUserInfo(data: UserInfoCreateInput!): UserInfo!
   updateUserInfo(data: UserInfoUpdateInput!, where: UserInfoWhereUniqueInput!): UserInfo
   updateManyUserInfoes(data: UserInfoUpdateManyMutationInput!, where: UserInfoWhereInput): BatchPayload!
@@ -1854,12 +864,6 @@ type PageInfo {
 }
 
 type Query {
-  auditLog(where: AuditLogWhereUniqueInput!): AuditLog
-  auditLogs(where: AuditLogWhereInput, orderBy: AuditLogOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [AuditLog]!
-  auditLogsConnection(where: AuditLogWhereInput, orderBy: AuditLogOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): AuditLogConnection!
-  endpoint(where: EndpointWhereUniqueInput!): Endpoint
-  endpoints(where: EndpointWhereInput, orderBy: EndpointOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [Endpoint]!
-  endpointsConnection(where: EndpointWhereInput, orderBy: EndpointOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): EndpointConnection!
   event(where: EventWhereUniqueInput!): Event
   events(where: EventWhereInput, orderBy: EventOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [Event]!
   eventsConnection(where: EventWhereInput, orderBy: EventOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): EventConnection!
@@ -1869,9 +873,6 @@ type Query {
   responseStatus(where: ResponseStatusWhereUniqueInput!): ResponseStatus
   responseStatuses(where: ResponseStatusWhereInput, orderBy: ResponseStatusOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [ResponseStatus]!
   responseStatusesConnection(where: ResponseStatusWhereInput, orderBy: ResponseStatusOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): ResponseStatusConnection!
-  test(where: TestWhereUniqueInput!): Test
-  tests(where: TestWhereInput, orderBy: TestOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [Test]!
-  testsConnection(where: TestWhereInput, orderBy: TestOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): TestConnection!
   userInfo(where: UserInfoWhereUniqueInput!): UserInfo
   userInfoes(where: UserInfoWhereInput, orderBy: UserInfoOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [UserInfo]!
   userInfoesConnection(where: UserInfoWhereInput, orderBy: UserInfoOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): UserInfoConnection!
@@ -2069,108 +1070,10 @@ input ResponseStatusWhereUniqueInput {
 }
 
 type Subscription {
-  auditLog(where: AuditLogSubscriptionWhereInput): AuditLogSubscriptionPayload
-  endpoint(where: EndpointSubscriptionWhereInput): EndpointSubscriptionPayload
   event(where: EventSubscriptionWhereInput): EventSubscriptionPayload
   objectReference(where: ObjectReferenceSubscriptionWhereInput): ObjectReferenceSubscriptionPayload
   responseStatus(where: ResponseStatusSubscriptionWhereInput): ResponseStatusSubscriptionPayload
-  test(where: TestSubscriptionWhereInput): TestSubscriptionPayload
   userInfo(where: UserInfoSubscriptionWhereInput): UserInfoSubscriptionPayload
-}
-
-type Test {
-  id: ID!
-  createdAt: DateTime!
-  auditLog: AuditLog!
-  endpoints(where: EndpointWhereInput, orderBy: EndpointOrderByInput, skip: Int, after: String, before: String, first: Int, last: Int): [Endpoint!]
-}
-
-type TestConnection {
-  pageInfo: PageInfo!
-  edges: [TestEdge]!
-  aggregate: AggregateTest!
-}
-
-input TestCreateInput {
-  id: ID
-  auditLog: AuditLogCreateOneInput!
-  endpoints: EndpointCreateManyInput
-}
-
-type TestEdge {
-  node: Test!
-  cursor: String!
-}
-
-enum TestOrderByInput {
-  id_ASC
-  id_DESC
-  createdAt_ASC
-  createdAt_DESC
-}
-
-type TestPreviousValues {
-  id: ID!
-  createdAt: DateTime!
-}
-
-type TestSubscriptionPayload {
-  mutation: MutationType!
-  node: Test
-  updatedFields: [String!]
-  previousValues: TestPreviousValues
-}
-
-input TestSubscriptionWhereInput {
-  mutation_in: [MutationType!]
-  updatedFields_contains: String
-  updatedFields_contains_every: [String!]
-  updatedFields_contains_some: [String!]
-  node: TestWhereInput
-  AND: [TestSubscriptionWhereInput!]
-  OR: [TestSubscriptionWhereInput!]
-  NOT: [TestSubscriptionWhereInput!]
-}
-
-input TestUpdateInput {
-  auditLog: AuditLogUpdateOneRequiredInput
-  endpoints: EndpointUpdateManyInput
-}
-
-input TestWhereInput {
-  id: ID
-  id_not: ID
-  id_in: [ID!]
-  id_not_in: [ID!]
-  id_lt: ID
-  id_lte: ID
-  id_gt: ID
-  id_gte: ID
-  id_contains: ID
-  id_not_contains: ID
-  id_starts_with: ID
-  id_not_starts_with: ID
-  id_ends_with: ID
-  id_not_ends_with: ID
-  createdAt: DateTime
-  createdAt_not: DateTime
-  createdAt_in: [DateTime!]
-  createdAt_not_in: [DateTime!]
-  createdAt_lt: DateTime
-  createdAt_lte: DateTime
-  createdAt_gt: DateTime
-  createdAt_gte: DateTime
-  auditLog: AuditLogWhereInput
-  endpoints_every: EndpointWhereInput
-  endpoints_some: EndpointWhereInput
-  endpoints_none: EndpointWhereInput
-  AND: [TestWhereInput!]
-  OR: [TestWhereInput!]
-  NOT: [TestWhereInput!]
-}
-
-input TestWhereUniqueInput {
-  id: ID
 }
 
 type UserInfo {

@@ -5,15 +5,7 @@ var typeDefs = require("./prisma-schema").typeDefs;
 
 var models = [
   {
-    name: "AuditLog",
-    embedded: false
-  },
-  {
-    name: "Endpoint",
-    embedded: false
-  },
-  {
-    name: "Test",
+    name: "Event",
     embedded: false
   },
   {
@@ -26,10 +18,6 @@ var models = [
   },
   {
     name: "ObjectReference",
-    embedded: false
-  },
-  {
-    name: "Event",
     embedded: false
   }
 ];

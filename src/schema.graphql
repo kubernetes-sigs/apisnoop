@@ -1,87 +1,35 @@
 type Query {
-  info: String!
-  auditLogs: [AuditLog!]!
-  tests: [Test!]!
-  endpoints(operationID: String): [Endpoint!]!
+  info: String
 }
 
 type Mutation {
-  createAuditLog(
-    job: String!
-    bucket: String!
-    version: String!
-    jobVersion: String!
-    masterOsImage: String!
-    infraCommit: String!
-    nodeOsImage: String!
-    pod: String!
-    passed: Boolean!
-    result: String!
-    timestamp: Int!
-  ): AuditLog!
-  createEndpoint(
-    auditLogID: String!
-    operationID: String!
-    level: String!
-    category: String!
+  createEvent(
     kind: String
-    group: String
-    description: String
-    version: String
-    path: String
-    hits: Int!
-    testHits: Int!
-    conformanceHits: Int!
-    isDeprecated: Boolean!
-  ): Endpoint!
-  createTest(
-    auditLogID: String!
-    name: String!
-    endpoints: [String!]!
-  ): Test!
-}
-
-type AuditLog {
-  id: ID!
-  job: String!
-  bucket: String!
-  version: String!
-  jobVersion: String!
-  masterOsImage: String!
-  infraCommit: String!
-  nodeOsImage: String!
-  pod: String!
-  passed: Boolean!
-  result: String!
-  timestamp: Int!
-  endpoints: [Endpoint!]!
-}
-
-type Endpoint {
-  id: ID!
-  auditLog: AuditLog!
-  operationID: String!
-  level: String!
-  category: String!
-  kind: String
-  group: String
-  description: String
-  version: String
-  path: String
-  hits: Int!
-  testHits: Int!
-  conformanceHits: Int!
-  isDeprecated: Boolean!
-}
-
-type Test {
-  id: ID!
-  auditLog: AuditLog!
-  name: String!
-  endpoints: [Endpoint!]!
+    level: String!
+    stage: String!
+    requestURI: String!
+    verb: String!
+    user: UserInfoInput!
+    annotations: Json
+    apiVersion: String
+    auditID: String
+    objectRef: ObjectReferenceInput
+    requestReceivedTimestamp: String
+    responseStatus: ResponseStatusInput
+    sourceIPs: [String!]
+    stageTimestamp: String
+    userAgent: String
+  ): Event!
 }
 
 type ResponseStatus {
+  metadata: Json
+  status: String
+  reason: String
+  code: Int
+}
+
+input ResponseStatusInput {
   metadata: Json
   status: String
   reason: String
@@ -94,25 +42,37 @@ type UserInfo {
   groups: [String!]!
 }
 
+input UserInfoInput {
+  username: String!
+  "example groups: system:nodes, system:authenticated"
+  groups: [String!]!
+}
+
 "ObjectReference contains enough information to let you inspect or modify the referred object."
 type ObjectReference{
   resource: String
-  namespace: String
-  name: String
-  uid: ID
-  "APIGroup is the name of the API group that contains the referred object."
-  "The empty string represents the core API group."
-  "+optional"
+  " The empty string represents the core API group."
   apiGroup: String
   "APIVersion is the version of the API group that contains the referred object."
-  "+optional"
   apiVersion: String
   resourceVersion: String
   subresource: String
 }
 
+input ObjectReferenceInput{
+  resource: String
+  " The empty string represents the core API group."
+  apiGroup: String
+  "APIVersion is the version of the API group that contains the referred object."
+  apiVersion: String
+  resourceVersion: String
+  subresource: String
+}
+
+
 "Event captures all the information that can be included in an API audit log."
 type Event {
+  id: ID!
   kind: String
   "Auditlevel at which event was generated"
   level: String!
@@ -122,48 +82,26 @@ type Event {
   stage: String!
   "RequestURI is the request URI as sent by the client to a server."
   requestURI: String!
-  "Verb is the kubernetes verb associated with the request."
-  "For non-resource requests, this is the lower-cased HTTP method."
+  "Verb is the kubernetes verb associated with the request. For non-resource requests, this is the lower-cased HTTP method."
   verb: String!
   "Authenticated user information."
   user: UserInfo!
-  "Impersonated user information."
-  "+optional"
-  impersonatedUser: UserInfo
   "Source IPs, from where the request originated and intermediate proxies."
-  "+optional"
   sourceIPs: [String!]
-  "UserAgent records the user agent string reported by the client."
-  "Note that the UserAgent is provided by the client, and must not be trusted."
-  "+optional"
-  userAgent: String 
-  "Object reference this request is targeted at."
-  "Does not apply for List-type requests, or non-resource requests."
-  "+optional"
+  "UserAgent records the user agent string reported by the client. Note that the UserAgent is provided by the client, and must not be trusted."
+  userAgent: String
+  "Object reference this request is targeted at. Does not apply for List-type requests, or non-resource requests."
   objectRef: ObjectReference
-  "The response status, populated even when the ResponseObject is not a Status type."
-  "For successful responses, this will only include the Code and StatusSuccess."
-  "For non-status type error responses, this will be auto-populated with the error Message."
-  "+optional"
+  "The response status, populated even when the ResponseObject is not a Status type. For successful responses, this will only include the Code and StatusSuccess. For non-status type error responses, this will be auto-populated with the error Message."
   responseStatus: ResponseStatus
-  "API object from the request, in JSON format. The RequestObject is recorded as-is in the request"
-  "(possibly re-encoded as JSON), prior to version conversion, defaulting, admission or"
-  "merging. It is an external versioned object type, and may not be a valid object on its own."
-  "Omitted for non-resource requests.  Only logged at Request Level and higher."
-  "+optional"
+  "API object from the request, in JSON format. The RequestObject is recorded as-is in the request (possibly re-encoded as JSON), prior to version conversion, defaulting, admission or merging. It is an external versioned object type, and may not be a valid object on its own. Omitted for non-resource requests.  Only logged at Request Level and higher."
   requestObject: ObjectReference
   "Time the request reached the apiserver."
-  "+optional"
   requestReceivedTimestamp: String
   "Time the request reached current audit stage."
-  "+optional"
   stageTimestamp: String
-  "Annotations is an unstructured key value map stored with an audit event that may be set by"
-  "plugins invoked in the request serving chain, including authentication, authorization and"
-  "admission plugins. Note that these annotations are for the audit event, and do not correspond"
-  "to the metadata.annotations of the submitted object. Keys should uniquely identify the informing"
-  "component to avoid name collisions (e.g. podsecuritypolicy.admission.k8s.io/policy). Values"
-  "should be short. Annotations are included in the Metadata level."
-  "+optional"
+  "Annotations is an unstructured key value map stored with an audit event that may be set by plugins invoked in the request serving chain, including authentication, authorization and admission plugins. Note that these annotations are for the audit event, and do not correspond to the metadata.annotations of the submitted object. Keys should uniquely identify the informing component to avoid name collisions (e.g. podsecuritypolicy.admission.k8s.io/policy). Values should be short. Annotations are included in the Metadata level."
   annotations: Json
 }
+
+scalar Json
