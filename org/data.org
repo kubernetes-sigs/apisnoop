@@ -34,65 +34,242 @@ select 'drop table if exists "' || tablename || '" cascade;' from pg_tables;
 : NOTICE:  drop cascades to constraint audit_events_job_log_id_fkey on table audit_events
 
 * Audit Events
-** table
+** columns
+*** auditID
+#+NAME: auditID
+#+BEGIN_SRC sql-mode
+    "auditID" uuid,
+#+END_SRC
+
+This is a UUID!
+**** Examples
+#+BEGIN_SRC json
+  auditID: "c0793350-e7fe-42ce-93e6-8436a0eb3b39",
+#+END_SRC
+**** 285593 times each one occurs once
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '2 "' | wc -l
+#+END_SRC
+**** 8141 times a single uuid shows up twice
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '1 "' | wc -l
+#+END_SRC
+**** When a UUID shows up twice, the only diff is stage and stageTimestamp
+#+BEGIN_SRC shell
+ cat kube-apiserver-audit.log | jq -c '. | select( .auditID | contains("ffe9adb2-6917-49ed-b823-72c4fe4355e0"))' | jq 
+#+END_SRC
+
+  "stage": "ResponseStarted => ResponseComplete"
+  "stageTimestamp": "2019-06-17T05:19:17.898138Z",
+
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '1 "' | wc -l
+#+END_SRC
+
+*** level
+#+NAME: level
+#+BEGIN_SRC sql-mode
+  level text NOT NULL,
+#+END_SRC
+
+level: "Request", "Metadata", "RequestResponse"
+
+I'm not sure here, but I feel like we should only be looking at RequestResponse... not all three.
+Huh, that was wrong.. the counts differ wildly:
+
+**** 171724 Requests
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq -c '. | select( .level | contains("Request"))' | jq -r .auditID | sort | uniq | wc -l
+#+END_SRC
+**** 122010 Metadata
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq -c '. | select( .level | contains("RequestResponse"))' | jq -r .auditID | sort | uniq | wc -l
+#+END_SRC
+
+**** 26016 RequestResponse
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq -c '. | select( .level | contains("RequestResponse"))' | jq -r .auditID | sort | uniq | wc -l
+#+END_SRC
+
+*** verb
+#+NAME: verb
+#+BEGIN_SRC sql-mode
+  verb text NOT NULL,
+#+END_SRC
+An http verb != endpoint verb:
+stage has quite a few values
+- create
+- delete
+- deletecollection,
+- get
+- list
+- patch
+- update
+- watch
+*** requestURI
+#+NAME: requestURI
+#+BEGIN_SRC sql-mode
+  "requestURI" text NOT NULL,
+#+END_SRC
+
+We'll need to use this to match against the OpenAPISpec to find the endpoint.
+
+requestURI: "/api/v1/namespaces/kube-system/pods/etcd-empty-dir-cleanup-bootstrap-e2e-master",
+*** userAgent
+#+NAME: userAgent
+#+BEGIN_SRC sql-mode
+  "userAgent" text,
+#+END_SRC
+For e2e.test we added support to append -- and the test name at that point it time:
+
+userAgent: "kubelet/v1.16.0 (linux/amd64) kubernetes/0e499be",
+
+It may make sense to split on '--' an store what follows as the testName.
+*** testName
+#+NAME: testName
+#+BEGIN_SRC sql-mode
+  "testName" text
+#+END_SRC
+
+This isn't a direct mapping, we create it if the userAgent contains '--' followed by the test name.
+For now we only see this with e2e.test.
+*** requestRecievedTimestamp
+#+NAME: requestRecievedTimestamp
+#+BEGIN_SRC sql-mode
+  "requestReceivedTimestamp" timestamp with time zone,
+#+END_SRC
+*** stage / stageTimestamp                                           :unused:
+
+Noting that when we have a responseComplete, it's always paid with a responseStarted.
+The UUID and everything else is the same, other than the timestamp.
+I suspect this is only generated for requests that take a while.
+
+stage: "ResponseComplete", "ResponseStarted"
+#+NAME: stage
+#+BEGIN_SRC sql-mode
+  stage text NOT NULL,
+  "stageTimestamp" timestamp with time zone,
+#+END_SRC
+*** Kind / apiVersion                                                :unused:
+
+For every singe one the values are the same:
+kind: "Event"
+apiVersion: "audit.k8s.io/v1"
+
+#+NAME: kind
+#+BEGIN_SRC sql-mode
+  kind text,
+  "apiVersion" text,
+#+END_SRC
+*** annotations                                                      :unused:
+
+This is a json blog... not sure how to handle yet
+https://blog.hasura.io/postgres-json-and-jsonb-type-support-on-graphql-41f586e47536/
+
+Unsure we need annotations for now as they may be good for understanding a
+specific test, the data doesn't aggregate well.
+
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq -r .annotations | sort | uniq
+#+END_SRC
+
+A good number of them seem to be allow or deny + reason:
+
+#+BEGIN_SRC json
+  "annotations": {
+    "authorization.k8s.io/decision": "allow",
+    "authorization.k8s.io/reason": ""
+  }
+#+END_SRC
 
 #+BEGIN_SRC sql-mode
-CREATE TABLE public.audit_events (
-    -- kind: "Event", -- for every single one
-    -- kind text,
-    -- Which version is it?
-    -- apiVersion: "audit.k8s.io/v1", -- for every single one
-    -- "apiVersion" text,
-    -- level: "Request", "Metadata", "RequestResponse"
-    level text NOT NULL,
-    -- This is a UUID!
-    -- auditID: "c0793350-e7fe-42ce-93e6-8436a0eb3b39",
-    "auditID" uuid,
-    -- Stage as in X
-    -- stage: "ResponseComplete", "ResponseStarted"
-    stage text NOT NULL,
-    -- http verb != endpoint verb
-    -- stage: create, delete, deletecollection,
-    --         get, list, patch, update, watch
-    verb text NOT NULL,
-    -- requestURI: "/api/v1/namespaces/kube-system/pods/etcd-empty-dir-cleanup-bootstrap-e2e-master",
-    -- The URL itself!
-    "requestURI" text NOT NULL,
-    -- Where did this come from?
-    -- How could it come from multiple IPs? (there is only one)
-    -- Could likely identify pods in this way
-    -- not useful at this time
-    -- sourceIPs: ["1.1.1.1"], -- maybe ip address type?
-    -- "sourceIP" text,
-    -- What is the raw userAgenty?
-    -- For e2e.test this likley also has the test name
-    -- userAgent: "kubelet/v1.16.0 (linux/amd64) kubernetes/0e499be",
-    -- maybe we should split into test at load time?
-    "userAgent" text,
-    -- testName.... can be null / nil
-    "testName" text,
-    -- When was this request staged?
-    -- stageTimestamp: "2019-06-18T16:24:23.099005Z",
-    -- I don't think we need both timestamps at this time
-    -- "stageTimestamp" timestamp with time zone,
-    -- When was this request received?
-    "requestReceivedTimestamp" timestamp with time zone,
-    -- This is a json blog... not sure how to handle yet
-    -- https://blog.hasura.io/postgres-json-and-jsonb-type-support-on-graphql-41f586e47536/
-    -- unsure we need annotations for now:
-    -- cat kube-apiserver-audit.log | jq -r .annotations | sort | uniq
-    -- annotations jsonb,
-    -- I'm unsure what this is
-    -- This is to point back to the job that created these logs
-    -- job_log_id integer NOT NULL
-    -- should it be an iteger?
-    -- maybe get rid of it completely?
-    -- id integer NOT NULL,
-);
+  annotations jsonb,
+#+END_SRC
+*** sourceIPs                                                        :unused:
+#+BEGIN_SRC sql-mode
+  "sourceIP" text,
+#+END_SRC
+
+Could likely identify pods in this way, but not useful at this time.
+sourceIPs: ["1.1.1.1"],
+*** Unused Fields                                                    :unused:
+The id could probably be dropped in favor of UUID, if we only capture ResponseStarted.
+#+BEGIN_SRC sql-mode
+  -- I'm unsure what this is
+  -- This is to point back to the job that created these logs
+  job_log_id integer NOT NULL
+  -- should it be an iteger?
+  -- maybe get rid of it completely?
+  id integer NOT NULL,
+#+END_SRC
+
+** table
+
+#+NAME: CREATE TABLE audit_events
+#+BEGIN_SRC sql-mode :noweb yes :tangle ../hasura/migrations/10_table_audit_events.up.sql
+  CREATE TABLE public.audit_events (
+    <<auditID>>
+    <<level>>
+    <<verb>>
+    <<requestURI>>
+    <<userAgent>>
+    <<testName>>
+  );
+#+END_SRC
+
+#+NAME: DROP TABLE audit_events
+#+BEGIN_SRC sql-mode :noweb yes :tangle ../hasura/migrations/10_table_audit_events.down.sql
+  DROP TABLE public.audit_events
+#+END_SRC
+
+#+NAME: track_table audit_events
+#+BEGIN_SRC sql-mode :noweb yes :tangle ../hasura/migrations/20_track_audit_events.up.yaml
+- type: track_table
+  args:
+    schema: public
+    name: audit_events
+#+END_SRC
+
+#+NAME: untrack_table audit_events
+#+BEGIN_SRC sql-mode :noweb yes :tangle ../hasura/migrations/20_track_audit_events.down.yaml
+- type: untrack_table
+  args:
+    schema: public
+    name: audit_events
+#+END_SRC
+
+After creating the table, we have to go to the console:
+http://localhost:8080/console/data/schema/public
+And click on [Track All] or [Track] for the table.
+
+I also tracked the following in network traffic, but have yet to execute them
+via a directy grahpql query.
+
+#+BEGIN_SRC shell :directory ~/apisnoop_v3
+hasura init --endpoint http://localhost:8080/v1/graphql
+export HASURA_GRAPHQL_ADMIN_SECRET=X
+# --admin-secret "X"
 #+END_SRC
 
 #+RESULTS:
-: CREATE TABLE
+#+begin_EXAMPLE
+#+end_EXAMPLE
+
+#+NAME: add_existing_table_or_view
+#+BEGIN_SRC graphql :tangle add_audit_events_to_hasura.graphql
+{"type": "bulk",
+ "args":[
+   {"type":"add_existing_table_or_view",
+    "args":{"name":"audit_events","schema":"public"}}]}
+#+END_SRC
+
+#+NAME: untrack_table
+#+BEGIN_SRC graphql
+{"type":"bulk",
+ "args":[
+   {"type":"untrack_table",
+    "args":{"table":{"name":"audit_events","schema":"public"}}}]}
+#+END_SRC
 
 ** sequence
 
@@ -123,7 +300,7 @@ ALTER TABLE ONLY public.audit_events
 : ALTER TABLE
 : ALTER TABLE
 
-* Audit Jobs
+* Prow Job Artifacts
 
 #+BEGIN_SRC python
   prow_something="prow.k8s.io"
