@@ -1,0 +1,668 @@
+#+TITLE: APISnoop v3 Database
+
+* Ensure connectivity to right database
+
+#+NAME: Start Postgresql Connection
+#+BEGIN_SRC emacs-lisp :results silent
+(sql-connect connection (concat "*SQL: postgres:data*"))
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+  \conninfo
+#+END_SRC
+
+#+RESULTS:
+: You are connected to database "apisnoop_hh" as user "postgres" on host "192.168.1.17" at port "5434".
+: SSL connection (protocol: TLSv1.2, cipher: ECDHE-RSA-AES256-GCM-SHA384, bits: 256, compression: off)
+
+#+BEGIN_SRC sql-mode
+select 'drop table if exists "' || tablename || '" cascade;' from pg_tables;
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+ drop table if exists "event_log" cascade;
+ drop table if exists "job_logs" cascade;
+ drop table if exists "audit_events" cascade;
+ drop table if exists "object_refs" cascade;
+ drop table if exists "response_statuses" cascade;
+ drop table if exists "users_info" cascade;
+#+END_SRC
+
+#+RESULTS:
+: NOTICE:  table "event_log" does not exist, skipping
+: DROP TABLE
+: NOTICE:  drop cascades to constraint audit_events_job_log_id_fkey on table audit_events
+
+* Audit Events
+** table
+
+#+BEGIN_SRC sql-mode
+CREATE TABLE public.audit_events (
+    -- kind: "Event", -- for every single one
+    -- kind text,
+    -- Which version is it?
+    -- apiVersion: "audit.k8s.io/v1", -- for every single one
+    -- "apiVersion" text,
+    -- level: "Request", "Metadata", "RequestResponse"
+    level text NOT NULL,
+    -- This is a UUID!
+    -- auditID: "c0793350-e7fe-42ce-93e6-8436a0eb3b39",
+    "auditID" uuid,
+    -- Stage as in X
+    -- stage: "ResponseComplete", "ResponseStarted"
+    stage text NOT NULL,
+    -- http verb != endpoint verb
+    -- stage: create, delete, deletecollection,
+    --         get, list, patch, update, watch
+    verb text NOT NULL,
+    -- requestURI: "/api/v1/namespaces/kube-system/pods/etcd-empty-dir-cleanup-bootstrap-e2e-master",
+    -- The URL itself!
+    "requestURI" text NOT NULL,
+    -- Where did this come from?
+    -- How could it come from multiple IPs? (there is only one)
+    -- Could likely identify pods in this way
+    -- not useful at this time
+    -- sourceIPs: ["1.1.1.1"], -- maybe ip address type?
+    -- "sourceIP" text,
+    -- What is the raw userAgenty?
+    -- For e2e.test this likley also has the test name
+    -- userAgent: "kubelet/v1.16.0 (linux/amd64) kubernetes/0e499be",
+    -- maybe we should split into test at load time?
+    "userAgent" text,
+    -- testName.... can be null / nil
+    "testName" text,
+    -- When was this request staged?
+    -- stageTimestamp: "2019-06-18T16:24:23.099005Z",
+    -- I don't think we need both timestamps at this time
+    -- "stageTimestamp" timestamp with time zone,
+    -- When was this request received?
+    "requestReceivedTimestamp" timestamp with time zone,
+    -- This is a json blog... not sure how to handle yet
+    -- https://blog.hasura.io/postgres-json-and-jsonb-type-support-on-graphql-41f586e47536/
+    -- unsure we need annotations for now:
+    -- cat kube-apiserver-audit.log | jq -r .annotations | sort | uniq
+    -- annotations jsonb,
+    -- I'm unsure what this is
+    -- This is to point back to the job that created these logs
+    -- job_log_id integer NOT NULL
+    -- should it be an iteger?
+    -- maybe get rid of it completely?
+    -- id integer NOT NULL,
+);
+#+END_SRC
+
+#+RESULTS:
+: CREATE TABLE
+
+** sequence
+
+#+BEGIN_SRC sql-mode
+CREATE SEQUENCE public.audit_events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.audit_events_id_seq OWNED BY public.audit_events.id;
+#+END_SRC
+
+#+RESULTS:
+: CREATE SEQUENCE
+: ALTER SEQUENCE
+** constraints
+
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT "audit_events_auditID_key" UNIQUE ("auditID");
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
+#+END_SRC
+
+#+RESULTS:
+: ALTER TABLE
+: ALTER TABLE
+
+* Audit Jobs
+
+#+BEGIN_SRC python
+  prow_something="prow.k8s.io"
+  gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
+  buckets = [
+      "ci-kubernetes-e2e-gce-cos-k8sbeta-default",
+      "ci-kubernetes-e2e-gce-cos-k8sstable1-default",
+      "ci-kubernetes-e2e-gce-cos-k8sstable2-default",
+      "ci-kubernetes-e2e-gce-cos-k8sstable3-default",
+      "ci-kubernetes-e2e-gci-gce"
+  ]
+  bucket="ci-kubernetes-e2e-gci-gce"
+  testgrid_history_url = gcs_logs + bucket + "/jobResultsCache.json"
+  # look for latest_success
+#+END_SRC
+
+** table
+#+BEGIN_SRC sql-mode
+CREATE TABLE public.audit_session (
+    version text NOT NULL,
+    passed text NOT NULL,
+    result text NOT NULL,
+    infra_commit text NOT NULL,
+    id integer NOT NULL,
+    "timestamp" integer NOT NULL
+);
+#+END_SRC
+
+#+RESULTS:
+: CREATE TABLE
+
+** sequence
+#+BEGIN_SRC sql-mode
+CREATE SEQUENCE public.job_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER TABLE ONLY public.job_logs
+    ALTER COLUMN id SET DEFAULT nextval('public.job_log_id_seq'::regclass);
+#+END_SRC
+
+#+RESULTS:
+
+** primary key
+
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.job_logs
+    ADD CONSTRAINT job_log_pkey PRIMARY KEY (id);
+#+END_SRC
+
+#+RESULTS:
+: ALTER TABLE
+
+** force each audit_event to point reference a job_log
+#+NAME: audit_events => job_logs
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT audit_events_job_log_id_fkey
+    FOREIGN KEY (job_log_id)
+    REFERENCES public.job_logs(id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT;
+#+END_SRC
+
+#+RESULTS: audit_events => job_logs
+: ALTER TABLE
+
+* Audit Session
+** table
+#+BEGIN_SRC sql-mode
+CREATE TABLE public.audit_session (
+    version text NOT NULL,
+    passed text NOT NULL,
+    result text NOT NULL,
+    infra_commit text NOT NULL,
+    id integer NOT NULL,
+    "timestamp" integer NOT NULL
+);
+#+END_SRC
+
+#+RESULTS:
+: CREATE TABLE
+
+** sequence
+#+BEGIN_SRC sql-mode
+CREATE SEQUENCE public.job_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER TABLE ONLY public.job_logs
+    ALTER COLUMN id SET DEFAULT nextval('public.job_log_id_seq'::regclass);
+#+END_SRC
+
+#+RESULTS:
+
+** primary key
+
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.job_logs
+    ADD CONSTRAINT job_log_pkey PRIMARY KEY (id);
+#+END_SRC
+
+#+RESULTS:
+: ALTER TABLE
+
+** force each audit_event to point reference a job_log
+#+NAME: audit_events => job_logs
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT audit_events_job_log_id_fkey
+    FOREIGN KEY (job_log_id)
+    REFERENCES public.job_logs(id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT;
+#+END_SRC
+
+#+RESULTS: audit_events => job_logs
+: ALTER TABLE
+
+* Job Logs
+** table
+#+BEGIN_SRC sql-mode
+CREATE TABLE public.job_logs (
+    version text NOT NULL,
+    id integer NOT NULL,
+    result text NOT NULL,
+    passed text NOT NULL,
+    job_version text NOT NULL,
+    node_os_image text NOT NULL,
+    infra_commit text NOT NULL,
+    master_os_image text NOT NULL,
+    pod text NOT NULL,
+    revision text NOT NULL,
+    "timestamp" integer NOT NULL
+);
+#+END_SRC
+
+#+RESULTS:
+: CREATE TABLE
+
+** sequence
+#+BEGIN_SRC sql-mode
+CREATE SEQUENCE public.job_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER TABLE ONLY public.job_logs
+    ALTER COLUMN id SET DEFAULT nextval('public.job_log_id_seq'::regclass);
+#+END_SRC
+
+#+RESULTS:
+
+** primary key
+
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.job_logs
+    ADD CONSTRAINT job_log_pkey PRIMARY KEY (id);
+#+END_SRC
+
+#+RESULTS:
+: ALTER TABLE
+
+** force each audit_event to point reference a job_log
+#+NAME: audit_events => job_logs
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT audit_events_job_log_id_fkey
+    FOREIGN KEY (job_log_id)
+    REFERENCES public.job_logs(id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT;
+#+END_SRC
+
+#+RESULTS: audit_events => job_logs
+: ALTER TABLE
+
+* Object References
+After looking at what is actually in the object references, I'm not sure it's
+worth loading at this time.
+
+** Data Set Inspection
+*** apiGroup
+ #+BEGIN_EXAMPLE
+ admissionregistration.k8s.io
+ apiextensions.k8s.io
+ apiregistration.k8s.io
+ apps
+ authentication.k8s.io
+ authorization.k8s.io
+ autoscaling
+ batch
+ certificates.k8s.io
+ coordination.k8s.io
+ crd-publish-openapi-test-common-group.k8s.io
+ crd-publish-openapi-test-empty.k8s.io
+ crd-publish-openapi-test-foo.k8s.io
+ crd-publish-openapi-test-multi-to-single-ver.k8s.io
+ crd-publish-openapi-test-multi-ver.k8s.io
+ crd-publish-openapi-test-waldo.k8s.io
+ discovery-crd-test.k8s.io
+ events.k8s.io
+ extensions
+ kubectl-crd-test.k8s.io
+ metrics.k8s.io
+ mygroup.example.com
+ networking.k8s.io
+ node.k8s.io
+ null
+ policy
+ rbac.authorization.k8s.io
+ resourcequota-crd-test.k8s.io
+ scalingpolicy.kope.io
+ scheduling.k8s.io
+ settings.k8s.io
+ snapshot.storage.k8s.io
+ stable.example.com
+ storage.k8s.io
+ wardle.k8s.io
+ webhook-crd-test.k8s.io
+ webhook-multiversion-crd-test.k8s.io
+ #+END_EXAMPLE
+
+*** apiVersion
+ #+BEGIN_EXAMPLE
+ null
+ v1
+ v1alpha1
+ v1beta1
+ v2
+ v2alpha1
+ v3
+ v4
+ v5
+ v6
+ #+END_EXAMPLE
+
+*** resource
+ #+BEGIN_EXAMPLE
+ apiservices
+ certificatesigningrequests
+ clusterrolebindings
+ clusterroles
+ componentstatuses
+ configmaps
+ controllerrevisions
+ cronjobs
+ csidrivers
+ csinodes
+ customresourcedefinitions
+ daemonsets
+ deployments
+ e2e-test-crd-publish-openapi-1705-crds
+ e2e-test-crd-publish-openapi-2576-crds
+ e2e-test-crd-publish-openapi-3791-crds
+ e2e-test-crd-publish-openapi-3893-crds
+ e2e-test-crd-publish-openapi-4783-crds
+ e2e-test-crd-publish-openapi-5430-crds
+ e2e-test-crd-publish-openapi-9211-crds
+ e2e-test-crd-publish-openapi-9322-crds
+ e2e-test-crd-publish-openapi-9371-crds
+ e2e-test-crd-publish-openapi-9757-crds
+ e2e-test-crd-publish-openapi-9845-crds
+ e2e-test-crd-webhook-1243-crds
+ e2e-test-crd-webhook-4913-crds
+ e2e-test-discovery-422-crds
+ e2e-test-kubectl-2997-crds
+ e2e-test-kubectl-6759-crds
+ e2e-test-kubectl-8022-crds
+ e2e-test-resourcequota-7776-crds
+ e2e-test-webhook-5821-crds
+ e2e-test-webhook-5890-crds
+ e2e-test-webhook-7340-crds
+ e2e-test-webhook-9447-crds
+ endpoints
+ events
+ flunders
+ foo9n5qhas
+ fookfwthas
+ foox9nb8as
+ horizontalpodautoscalers
+ ingresses
+ jobs
+ leases
+ limitranges
+ mutatingwebhookconfigurations
+ namespaces
+ networkpolicies
+ nodes
+ noxus
+ null
+ persistentvolumeclaims
+ persistentvolumes
+ poddisruptionbudgets
+ podpresets
+ pods
+ podsecuritypolicies
+ podtemplates
+ priorityclasses
+ replicasets
+ replicationcontrollers
+ resourcequotas
+ rolebindings
+ roles
+ runtimeclasses
+ scalingpolicies
+ secrets
+ selfsubjectaccessreviews
+ serviceaccounts
+ services
+ statefulsets
+ storageclasses
+ subjectaccessreviews
+ tokenreviews
+ validatingwebhookconfigurations
+ volumeattachments
+ volumesnapshotclasses
+ volumesnapshotcontents
+ volumesnapshots
+ #+END_EXAMPLE
+
+*** subresource
+ #+BEGIN_EXAMPLE
+ approval
+ attach
+ binding
+ eviction
+ exec
+ finalize
+ log
+ null
+ portforward
+ proxy
+ rollback
+ scale
+ status
+ token
+ #+END_EXAMPLE
+
+** table
+#+BEGIN_SRC sql-mode
+CREATE TABLE public.object_refs (
+    id integer NOT NULL,
+    audit_event_id integer NOT NULL,
+    resource text,
+    namespace text,
+    name text,
+    "apiVersion" text,
+    "apiGroup" text
+);
+#+END_SRC
+
+#+RESULTS:
+: CREATE TABLE
+
+** sequence
+#+BEGIN_SRC sql-mode
+CREATE SEQUENCE public.object_refs_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.object_refs_id_seq
+    OWNED BY public.object_refs.id;
+ALTER TABLE ONLY public.object_refs
+    ALTER COLUMN id SET DEFAULT nextval('public.object_refs_id_seq'::regclass);
+#+END_SRC
+
+#+RESULTS:
+: CREATE SEQUENCE
+: ALTER SEQUENCE
+: ALTER TABLE
+
+** keys
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.object_refs
+    ADD CONSTRAINT object_refs_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.object_refs
+    ADD CONSTRAINT object_refs_audit_event_id_fkey
+    FOREIGN KEY (audit_event_id)
+    REFERENCES public.audit_events(id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT;
+#+END_SRC
+
+#+RESULTS:
+: ALTER TABLE
+
+* Response Statuses
+Not useful for analytics
+** Data Set Inspection
+#+BEGIN_SRC json
+{
+  "metadata": {},
+  "status": "Failure",
+  "reason": "Forbidden",
+  "code": 403
+}
+{
+  "metadata": {},
+  "code": 200
+}
+{
+  "metadata": {},
+  "code": 201
+}
+{
+  "metadata": {},
+  "status": "Failure",
+  "reason": "NotFound",
+  "code": 404
+}
+#+END_SRC
+
+** table
+#+BEGIN_SRC sql-mode
+CREATE TABLE public.response_statuses (
+    metadata json NOT NULL,
+    status text,
+    reason text,
+    id integer NOT NULL,
+    audit_event_id integer NOT NULL,
+    code integer
+);
+#+END_SRC
+
+#+RESULTS:
+: CREATE TABLE
+
+** sequences
+
+#+BEGIN_SRC sql-mode
+CREATE SEQUENCE public.response_statuses_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.response_statuses_id_seq
+    OWNED BY public.response_statuses.id;
+ALTER TABLE ONLY public.response_statuses
+    ALTER COLUMN id SET DEFAULT nextval('public.response_statuses_id_seq'::regclass);
+#+END_SRC
+
+#+RESULTS:
+: CREATE SEQUENCE
+: ALTER SEQUENCE
+
+** keys
+
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.response_statuses
+    ADD CONSTRAINT response_statuses_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.response_statuses
+    ADD CONSTRAINT response_statuses_audit_event_id_fkey
+    FOREIGN KEY (audit_event_id)
+    REFERENCES public.audit_events(id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT;
+#+END_SRC
+
+#+RESULTS:
+: ALTER TABLE
+
+* Users
+
+Not sure we need this at this time:
+
+#+BEGIN_SRC shell :eval never
+cat kube-apiserver-audit.log | jq -r .user | sort | uniq
+#+END_SRC
+
+
+** table
+#+BEGIN_SRC sql-mode
+CREATE TABLE public.users_info (
+    id integer NOT NULL,
+    username text NOT NULL,
+    groups json NOT NULL,
+    audit_event_id integer NOT NULL
+);
+#+END_SRC
+
+#+RESULTS:
+: CREATE TABLE
+
+** sequence
+
+#+BEGIN_SRC sql-mode
+CREATE SEQUENCE public.user_info_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.user_info_id_seq OWNED BY public.users_info.id;
+ALTER TABLE ONLY public.users_info
+    ALTER COLUMN id SET DEFAULT nextval('public.user_info_id_seq'::regclass);
+#+END_SRC
+
+#+RESULTS:
+: CREATE SEQUENCE
+: ALTER SEQUENCE
+: ALTER TABLE
+
+** keys
+
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.users_info ADD
+    CONSTRAINT user_info_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.users_info ADD
+    CONSTRAINT user_info_audit_event_id_fkey
+    FOREIGN KEY (audit_event_id)
+    REFERENCES public.audit_events(id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT;
+#+END_SRC
+
+#+RESULTS:
+: ALTER TABLE
+
+* Footnotes
+
+# eval: (sql-connect connection (concat "*SQL: postgres:" connection "*"))
+# sql-connection-alist: ((hasura (sql-product 'postgres) (sql-user "ygrrlqaucoxunc") (sql-database "d5a2ppmichmu74") (sql-port 5432) (sql-server "ec2-174-129-227-205.compute-1.amazonaws.com")))
+
+# Local Variables:
+# eval: (require 'ob-sql-mode)
+# org-babel-load-languages: ((sql-mode . t)(sql . t)(tmate . t))
+# org-babel-default-header-args:sql-mode: ((:product . "postgres")(:session . "data"))
+# sql-postgres-options: ("-P" "pager=off" "--no-password")
+# sql-connection-alist: ((hasura (sql-product 'postgres) (sql-user "postgres") (sql-database "apisnoop_hh") (sql-port 5434) (sql-server "192.168.1.17")))
+# connection: "hasura"
+# End:
+
