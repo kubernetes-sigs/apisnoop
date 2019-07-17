@@ -128,15 +128,16 @@ It may make sense to split on '--' an store what follows as the testName.
 *** testName
 #+NAME: testName
 #+BEGIN_SRC sql-mode
-  "testName" text
+  "testName" text,
 #+END_SRC
 
 This isn't a direct mapping, we create it if the userAgent contains '--' followed by the test name.
 For now we only see this with e2e.test.
-*** requestRecievedTimestamp
-#+NAME: requestRecievedTimestamp
+*** timeStamp
+    "requestReceivedTimestamp"
+#+NAME: timeStamp
 #+BEGIN_SRC sql-mode
-  "requestReceivedTimestamp" timestamp with time zone,
+  "timeStamp" timestamp with time zone
 #+END_SRC
 *** stage / stageTimestamp                                           :unused:
 
@@ -204,6 +205,24 @@ The id could probably be dropped in favor of UUID, if we only capture ResponseSt
 #+END_SRC
 
 ** table
+#+BEGIN_SRC sql-mode
+CREATE OR REPLACE VIEW "public"."events" AS 
+ SELECT (audit_events.event -> 'auditID'::text) AS uuid,
+    (audit_events.event -> 'level'::text) AS level,
+    (audit_events.event -> 'verb'::text) AS verb,
+    (audit_events.event -> 'requestURI'::text) AS uri,
+    (audit_events.event -> 'userAgent'::text) AS useragent,
+    ((audit_events.event -> 'requestObject'::text) ->> 'apiVersion'::text) AS apiversion,
+    ((audit_events.event -> 'requestObject'::text) ->> 'kind'::text) AS kind,
+    ((audit_events.event -> 'requestObject'::text) ->> 'metadata'::text) AS metadata,
+    ((audit_events.event -> 'requestObject'::text) ->> 'spec'::text) AS spec,
+    ((audit_events.event -> 'requestObject'::text) ->> 'status'::text) AS requeststatus,
+    ((audit_events.event -> 'responseObject'::text) ->> 'status'::text) AS status,
+    ((audit_events.event -> 'responseObject'::text) ->> 'kind'::text) AS responsekind,
+    ((audit_events.event -> 'responseObject'::text) ->> 'metadata'::text) AS responsemetadata,
+    ((audit_events.event -> 'responseObject'::text) ->> 'spec'::text) AS responsespec
+   FROM audit_events;
+#+END_SRC
 
 #+NAME: CREATE TABLE audit_events
 #+BEGIN_SRC sql-mode :noweb yes :tangle ../hasura/migrations/10_table_audit_events.up.sql
@@ -214,12 +233,23 @@ The id could probably be dropped in favor of UUID, if we only capture ResponseSt
     <<requestURI>>
     <<userAgent>>
     <<testName>>
+    <<requestObject.kind>>
+    <<requestObject.apiVersion>>
+    <<requestObject.metadata>>
+    <<requestObject.spec>>
+    <<requestObject.status>>
+    <<responseObject.kind>>
+    <<responseObject.apiVersion>>
+    <<responseObject.metadata>>
+    <<responseObject.spec>>
+    <<responseObject.status>>
+    <<timeStamp>>
   );
 #+END_SRC
 
 #+NAME: DROP TABLE audit_events
 #+BEGIN_SRC sql-mode :noweb yes :tangle ../hasura/migrations/10_table_audit_events.down.sql
-  DROP TABLE public.audit_events
+  DROP TABLE IF EXISTS audit_events
 #+END_SRC
 
 #+NAME: track_table audit_events
@@ -486,6 +516,19 @@ ALTER TABLE ONLY public.audit_events
 * Object References
 After looking at what is actually in the object references, I'm not sure it's
 worth loading at this time.
+** Example
+
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq -c '. | select( .auditID | contains("65700178-2fb7-4ed9-a589-fd78ea9db2ae"))' | jq .
+#+END_SRC
+
+#+BEGIN_SRC json
+  "objectRef": {
+    "resource": "subjectaccessreviews",
+    "apiGroup": "authorization.k8s.io",
+    "apiVersion": "v1"
+  },
+#+END_SRC
 
 ** Data Set Inspection
 *** apiGroup
@@ -694,6 +737,263 @@ ALTER TABLE ONLY public.object_refs
 
 #+RESULTS:
 : ALTER TABLE
+
+* requestObjects
+** columns
+*** requestKind
+#+NAME: requestObject.kind
+#+BEGIN_SRC sql-mode
+    requestKind text NOT NULL,
+#+END_SRC
+
+**** Examples
+#+BEGIN_SRC json
+"requestObject": {
+    "kind": "SubjectAccessReview",
+#+END_SRC
+
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq  -r .requestObject.kind | sort | uniq > kinds.txt
+cat kube-apiserver-audit.log | jq  -r .responseObject.kind | sort | uniq > rkinds.txt
+diff kinds.txt rkinds.txt
+#+END_SRC
+
+Only requestObjects include Binding, DeleteOptions, and DeploymentRollback
+Only responsesObjects include Status and TokenRequest
+
+#+BEGIN_SRC diff
+2d1
+< Binding
+12d10
+< DeleteOptions
+14d11
+< DeploymentRollback
+39a37
+> Status
+41a40
+> TokenRequest
+#+END_SRC
+
+*** requestApiVersion
+#+NAME: requestObject.apiVersion
+#+BEGIN_SRC sql-mode
+  requestApiVersion text NOT NULL,
+#+END_SRC
+Might be tied to level = request, response etc
+**** examples
+#+BEGIN_SRC json
+"requestObject": {
+    "apiVersion": "authorization.k8s.io/v1",
+#+END_SRC
+
+I'm not sure here, but I feel like we should only be looking at RequestResponse... not all three.
+Huh, that was wrong.. the counts differ wildly:
+
+*** requestMeta
+#+NAME: requestObject.metadata
+#+BEGIN_SRC sql-mode
+  requestMeta jsonb NOT NULL,
+#+END_SRC
+**** examples
+#+BEGIN_SRC json
+"requestObject": {
+    "metadata": {
+      "creationTimestamp": null
+    },
+#+END_SRC
+*** requestSpec
+#+NAME: requestObject.spec
+#+BEGIN_SRC sql-mode
+  requestSpec jsonb NOT NULL,
+#+END_SRC
+**** examples
+#+BEGIN_SRC json
+"requestObject": {
+    "spec": {
+      "resourceAttributes": {
+        "namespace": "kubernetes-dashboard-6069",
+        "verb": "use",
+        "group": "extensions",
+        "resource": "podsecuritypolicies",
+        "name": "e2e-test-privileged-psp"
+      },
+      "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
+    },
+#+END_SRC
+*** requestStatus
+#+NAME: requestObject.status
+#+BEGIN_SRC sql-mode
+  requestStatus jsonb NOT NULL,
+#+END_SRC
+**** examples
+#+BEGIN_SRC json
+  "responseObject": {
+    "status": {
+      "allowed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubernetes-dashboard-6069--e2e-test-privileged-psp/kubernetes-dashboard-6069\" of ClusterRole \"e2e-test-privileged-psp\" to ServiceAccount \"default/kubernetes-dashboard-6069\""
+    }
+#+END_SRC
+
+** table
+
+From https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.15/
+
+#+BEGIN_EXAMPLE
+Resource objects typically have 3 components:
+
+Resource ObjectMeta: This is metadata about the resource, such as its name, type, api version, annotations, and labels. This contains fields that maybe updated both by the end user and the system (e.g. annotations).
+
+ResourceSpec: This is defined by the user and describes the desired state of system. Fill this in when creating or updating an object.
+
+ResourceStatus: This is filled in by the server and reports the current state of the system. In most cases, users don't need to change this.
+#+END_EXAMPLE
+
+
+
+These have more information
+#+BEGIN_SRC json
+"requestObject": {
+    "kind": "SubjectAccessReview",
+    "apiVersion": "authorization.k8s.io/v1",
+    "metadata": {
+      "creationTimestamp": null
+    },
+    "spec": {
+      "resourceAttributes": {
+        "namespace": "kubernetes-dashboard-6069",
+        "verb": "use",
+        "group": "extensions",
+        "resource": "podsecuritypolicies",
+        "name": "e2e-test-privileged-psp"
+      },
+      "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
+    },
+    "status": {
+      "allowed": false
+    }
+  },
+#+END_SRC
+
+* responseObjects
+** columns
+*** responseKind
+#+NAME: responseObject.kind
+#+BEGIN_SRC sql-mode
+    responseKind text NOT NULL,
+#+END_SRC
+
+**** Examples
+#+BEGIN_SRC json
+"responseObject": {
+    "kind": "SubjectAccessReview",
+#+END_SRC
+
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq  -r .responseObject.kind | sort | uniq > kinds.txt
+cat kube-apiserver-audit.log | jq  -r .responseObject.kind | sort | uniq > rkinds.txt
+diff kinds.txt rkinds.txt
+#+END_SRC
+
+Only responseObjects include Binding, DeleteOptions, and DeploymentRollback
+Only responsesObjects include Status and TokenResponse
+
+#+BEGIN_SRC diff
+2d1
+< Binding
+12d10
+< DeleteOptions
+14d11
+< DeploymentRollback
+39a37
+> Status
+41a40
+> TokenResponse
+#+END_SRC
+
+*** responseApiVersion
+#+NAME: responseObject.apiVersion
+#+BEGIN_SRC sql-mode
+  responseApiVersion text NOT NULL,
+#+END_SRC
+Might be tied to level = response, response etc
+**** examples
+#+BEGIN_SRC json
+"responseObject": {
+    "apiVersion": "authorization.k8s.io/v1",
+#+END_SRC
+
+I'm not sure here, but I feel like we should only be looking at ResponseResponse... not all three.
+Huh, that was wrong.. the counts differ wildly:
+
+*** responseMeta
+#+NAME: responseObject.metadata
+#+BEGIN_SRC sql-mode
+  responseMeta jsonb NOT NULL,
+#+END_SRC
+**** examples
+#+BEGIN_SRC json
+"responseObject": {
+    "metadata": {
+      "creationTimestamp": null
+    },
+#+END_SRC
+*** responseSpec
+#+NAME: responseObject.spec
+#+BEGIN_SRC sql-mode
+  responseSpec jsonb NOT NULL,
+#+END_SRC
+**** examples
+#+BEGIN_SRC json
+"responseObject": {
+    "spec": {
+      "resourceAttributes": {
+        "namespace": "kubernetes-dashboard-6069",
+        "verb": "use",
+        "group": "extensions",
+        "resource": "podsecuritypolicies",
+        "name": "e2e-test-privileged-psp"
+      },
+      "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
+    },
+#+END_SRC
+*** responseStatus
+#+NAME: responseObject.status
+#+BEGIN_SRC sql-mode
+  responseStatus jsonb NOT NULL,
+#+END_SRC
+**** examples
+#+BEGIN_SRC json
+  "responseObject": {
+    "status": {
+      "allowed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubernetes-dashboard-6069--e2e-test-privileged-psp/kubernetes-dashboard-6069\" of ClusterRole \"e2e-test-privileged-psp\" to ServiceAccount \"default/kubernetes-dashboard-6069\""
+    }
+#+END_SRC
+
+** Notes
+#+BEGIN_SRC json
+  "responseObject": {
+    "kind": "SubjectAccessReview",
+    "apiVersion": "authorization.k8s.io/v1",
+    "metadata": {
+      "creationTimestamp": null
+    },
+    "spec": {
+      "resourceAttributes": {
+        "namespace": "kubernetes-dashboard-6069",
+        "verb": "use",
+        "group": "extensions",
+        "resource": "podsecuritypolicies",
+        "name": "e2e-test-privileged-psp"
+      },
+      "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
+    },
+    "status": {
+      "allowed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubernetes-dashboard-6069--e2e-test-privileged-psp/kubernetes-dashboard-6069\" of ClusterRole \"e2e-test-privileged-psp\" to ServiceAccount \"default/kubernetes-dashboard-6069\""
+    }
+  },
+#+END_SRC
 
 * Response Statuses
 Not useful for analytics
