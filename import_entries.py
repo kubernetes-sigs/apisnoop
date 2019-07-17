@@ -147,6 +147,15 @@ def jsonb_from_entry(entry, obj, key):
     if obj in entry:
         if key in entry[obj]:
             # import ipdb ; ipdb.set_trace(context=10)
+            if '\\' in value:
+                # value contains json with escaped json as value
+                for annotation, note in entry[obj][key].items():
+                    if '"' in note:
+                        # we have a note!. for now relpace " => '
+                        # value[annotation]=note.replace('"',"'")
+                        # or just delete it for now
+                        del entry[obj][key][annotation]
+                # import ipdb ; ipdb.set_trace(context=10)
             value =  json.dumps(entry[obj][key])
             print(value)
             return value
