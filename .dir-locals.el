@@ -76,7 +76,7 @@
                   " :comments org"
                   " :eval no-export"
                   " :results silent "
-                  ;; " :session (concat user-login-name \":\" " "main" ")"
+                  " :session (concat user-login-name \":main\" )"
                   ;; " :session (concat user-login-name \":\" " item-str ")"
                   " :socket " socket
                   " :window " user-login-name
