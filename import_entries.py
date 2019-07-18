@@ -137,8 +137,8 @@ def timestamp_from_entry(entry):
 
 def text_from_entry(entry, obj, key):
     if obj in entry:
-        if key in obj:
-            return obj[key]
+        if key in entry[obj]:
+            return entry[obj][key]
     return ""
 
 import json
@@ -146,18 +146,30 @@ import json
 def jsonb_from_entry(entry, obj, key):
     if obj in entry:
         if key in entry[obj]:
-            # import ipdb ; ipdb.set_trace(context=10)
-            if '\\' in value:
+            data=entry[obj][key]
+            text_data = json.dumps(data)
+            if '\\' in text_data:
                 # value contains json with escaped json as value
-                for annotation, note in entry[obj][key].items():
-                    if '"' in note:
-                        # we have a note!. for now relpace " => '
+                for subkey, subvalue in data.items():
+                    # if not subkey in [
+                    #     'name',
+                    # ]:
+                    text_subvalue = json.dumps(subvalue)
+                    # if "holderIdentity" in text_subvalue:
+                    if '"' in text_subvalue:
+                    # if subkey in ['annotations' ] and '"' in text_subvalue:
+                        # we have an annotation!.
+                        # and it has json for a value 8(
+                        # for now relpace " => '
                         # value[annotation]=note.replace('"',"'")
-                        # or just delete it for now
-                        del entry[obj][key][annotation]
-                # import ipdb ; ipdb.set_trace(context=10)
-            value =  json.dumps(entry[obj][key])
-            print(value)
+                        # or just delete it:
+                        # import ipdb ; ipdb.set_trace(context=10)
+                        # del data[subkey]
+                        data[subkey]=""
+                        # del entry[obj][key][subkey]
+            # value =  json.dumps(entry[obj][key])
+            value =  json.dumps(data).replace('|','X')
+            # print(value)
             return value
     return "{}"
 # @profile
@@ -237,9 +249,10 @@ def pg_load(conn, table_name, file_path):
 # import psycopg2
 
 connection = psycopg2.connect(
-    host='192.168.1.17',
-    database='apisnoop_hh',
-    port=5434,
+    host="172.17.0.1",
+    # host='192.168.1.17',
+    database='hh',
+    port=5432,
     user='hh',
     password=None,
 )
@@ -247,7 +260,7 @@ connection.set_session(autocommit=True)
 
 table_name = 'audit_events'
 file_path = '/tmp/restaurants_json.csv'
-audit_logfile="/zfs/home/hh/apisnoop/data-gen/cache/ci-kubernetes-e2e-gci-gce/1140482435658551297/kube-apiserver-audit.log"
+audit_logfile="/zfs/home/hh/ii/apisnoop_v3/kube-apiserver-audit.log"
 
 # event_lines = list(iter_lines_from_file(
 #     audit_logfile

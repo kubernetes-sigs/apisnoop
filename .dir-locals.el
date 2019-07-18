@@ -7,6 +7,10 @@
   (org-confirm-babel-evaluate . nil)
   (org-use-property-inheritance . t)
   (org-file-dir . (file-name-directory buffer-file-name))
+  ;; (sql-postgres-options . (list "-P pager=off --no-password"))
+  ;; (sql-postgres-options . (list "-P" "pager=off" "--no-password"))
+  ;; (sql-postgres-options . "-P pager=off --no-password")
+  ;;'("-P" "pager=off" "--no-password"))
   (eval
    .
    (progn
@@ -14,11 +18,11 @@
      ;; (set (make-local-variable 'tmpdir)
      ;;      (make-temp-file (concat "/dev/shm/" user-buffer "-") t))
      (set (make-local-variable 'ssh-user)
-          "pair")
-          ;; user-login-name)
+          ;; "pair")
+          user-login-name)
      ;; might be nice to set this as a global property in the org file
      (set (make-local-variable 'ssh-host)
-          "ii.cncf.ci")
+          "sharing.io")
      (set (make-local-variable 'ssh-user-host)
           (concat ssh-user "@" ssh-host))
      (set (make-local-variable 'time-stamp-zone)
@@ -28,6 +32,8 @@
           "10/#+UPDATED: needs time-local formatted regexp")
      (set (make-local-variable 'user-buffer)
           (concat user-login-name "." (file-name-base load-file-name)))
+     (set (make-local-variable 'tmate-sh)
+          (concat "/tmp/" user-buffer ".target.sh"))
      (set (make-local-variable 'socket)
           (concat "/tmp/" user-buffer ".target.iisocket"))
      (set (make-local-variable 'socket-param)
@@ -35,17 +41,41 @@
      (set (make-local-variable 'item-str)
           "(nth 4 (org-heading-components))")
      (set (make-local-variable 'togetherly-port)
-           (+ (random 60000) 1024))
+          (+ (random 60000) 1024))
+
+     (set (make-local-variable 'sql-connection-alist)
+          (list
+           (list 'hasura
+            (list 'sql-product '(quote postgres))
+            (list 'sql-user user-login-name)
+            (list 'sql-database "data")
+            (list 'sql-port 5432)
+            (list 'sql-server "172.17.0.1")
+            ;; (list 'sql-server "172.17.0.1")
+            )))
      (set (make-local-variable 'org-file-properties)
           (list
-           (cons 'header-args:tmate
+           (cons 'header-args:sql-mode
+                 (concat
+                  ":noweb yes"
+                  " :noweb-ref " item-str
+                  " :comments org"
+                  " :eval no-export"
+                  " :results code"
+                  " :session data"
+                  ;; " :session (symbol-value user-login-name)"
+                  ;; " :session (concat user-login-name \":\" " "main" ")"
+                  ;; " :session (concat user-login-name \":\" " item-str ")"
+                  " :product postgres"
+                  " :exports both"
+                  ))
+         (cons 'header-args:tmate
                  (concat
                   ":noweb yes"
                   " :noweb-ref " item-str
                   " :comments org"
                   " :eval no-export"
                   " :results silent "
-                  " :session (concat user-login-name \":main\" )"
                   ;; " :session (concat user-login-name \":\" " "main" ")"
                   ;; " :session (concat user-login-name \":\" " item-str ")"
                   " :socket " socket
@@ -284,33 +314,77 @@
              ;; )
          )
        )
-     (defun populate-x-clipboard ()
-       "Populate the X clipboard with the start-tmate-command"
-       (message "Setting X Clipboard to contain the start-tmate command")
-       (xclip-mode 1)
-       (gui-select-text start-tmate-command)
-       (xclip-mode 0)
-       (with-current-buffer (get-buffer-create "start-tmate-command")
-         (insert-for-yank "The following has been populated to your local X clipboard:\n")
+     (defun create-target-script (filename command)
+       "Create a temporary script to create/connect to target tmate window"
+       (message "Creating a script file in tmp")
+       (with-current-buffer (find-file-noselect filename)
+         (erase-buffer)
+         (insert-for-yank
+          (concat "\n#!/bin/sh\n\n" command))
+         (save-buffer)
+         (set-file-modes filename #o755)
          )
        )
+     (defun populate-terminal-clipboard ()
+       "Populate the osc52 clipboard via terminal with the start-tmate-sh"
+       ;; TODO
+       (message "Unable to set X Clipboard to contain the start-tmate-sh")
+       (create-target-script tmate-sh start-tmate-command)
+       ;; (gui-select-text tmate-sh)
+       (setq current-tmate-sh tmate-sh) ;; since tmate-sh is buffer-local..
+       (setq current-tmate-ssh (concat "export IISOCK=" socket " ; rm -f $IISOCK ; ssh -tAX " ssh-user-host " -L $IISOCK:$IISOCK " tmate-sh))
+
+       (with-current-buffer (get-buffer-create "start-tmate-sh" )
+         (insert-for-yank "You will need to copy this manually:\n\n" )
+         (insert-for-yank
+          (concat "\nTo open on another host, forward your iisocket by pasting:\n\n" current-tmate-ssh
+                  "\n\nOR open another terminal on the same host and paste:\n\n" current-tmate-sh)
+          ))
+       )
+     (defun populate-x-clipboard ()
+       "Populate the X clipboard with the start-tmate-sh"
+       (message "Setting X Clipboard to contain the start-tmate-sh")
+       (xclip-mode 1)
+       ;; (gui-select-text (concat "rm -fi " socket "; ssh -tAX " ssh-user "@" ssh-host " -L " socket ":" socket " " start-tmate-over-ssh-command))
+       (create-target-script tmate-sh start-tmate-command)
+       ;; (gui-select-text tmate-sh)
+       (setq current-tmate-sh tmate-sh) ;; since tmate-sh is buffer-local..
+       (setq current-tmate-ssh (concat "export II=" socket " ; rm -f $II ; ssh -tAX " ssh-user-host " -L $II:$II " tmate-sh))
+       (gui-select-text current-tmate-ssh)
+       ; (gui-select-text start-tmate-command)
+       (xclip-mode 0)
+       (with-current-buffer (get-buffer-create "start-tmate-sh")
+         (insert-for-yank "The following has been populated to your local X clipboard:\n")
+         (insert-for-yank
+          ;; we can use the global current-tmate-sh
+          (concat "\nTo open on another host, forward your iisocket by pasting:\n\n" current-tmate-ssh
+                  "\n\nOR open another terminal on the same host and paste:\n\n" current-tmate-sh)
+          ))
+       ;; and unset it when done
+       (setq current-tmate-ssh nil)
+       (setq current-tmate-sh nil)
+       )
+     ;; (message tmate-sh-sh)
      ;; For testing / setting DISPLAY to something else
      ;; (getenv "DISPLAY")
      ;; (setenv "DISPLAY" ":0")
      ;; As we start on other OSes, we'll need to copy this differently
      (if (xclip-working)
          (populate-x-clipboard)
-       (with-current-buffer (get-buffer-create "start-tmate-command" )
-         (insert-for-yank "You will need to copy this manually:\n\n" )
-         )
+         (populate-terminal-clipboard)
        )
      ;; needs to be global, so it's availabel to the other buffer
-     (setq tmate-command start-tmate-command)
-     (with-current-buffer (get-buffer-create "start-tmate-command")
-       (insert-for-yank
-        (concat "\nOpen another terminal on the same host and paste:\n\n" tmate-command)
-        ))
-     (switch-to-buffer "start-tmate-command")
+     ;; (setq tmate-command start-tmate-command)
+     ;; (setq tmate-command start-tmate-over-ssh-command)
+
+     ;; (setq tmate-command start-tmate-sh-over-ssh-command)
+     ;; (setq tmate-command tmate-sh)
+     ;; (setq tmate-command tmate-sh)
+     ;; (with-current-buffer (get-buffer-create "start-tmate-sh")
+     ;;   (insert-for-yank
+     ;;    (concat "\nOpen another terminal on the same host and paste:\n\n" tmate-sh)
+     ;;    ))
+     (switch-to-buffer "start-tmate-sh")
      (y-or-n-p "Have you Pasted?")
      ;; https://www.wisdomandwonder.com/article/10630/how-fast-can-you-tangle-in-org-mode
      (setq help/default-gc-cons-threshold gc-cons-threshold)
@@ -335,7 +409,6 @@
      (setq yas/trigger-key [tab])
      (add-to-list 'org-tab-first-hook 'yas/org-very-safe-expand)
      (define-key yas/keymap [tab] 'yas/next-field)
-     ;; (gui-select-text (concat "rm -fi " socket "; ssh -tAX " ssh-user "@" ssh-host " -L " socket ":" socket " " start-tmate-over-ssh-command))
      ;; (edebug-trace "TRACING socket:%S" socket)
      ;; (edebug-trace "TRACING org-babel-header-args:tmate %S" org-babel-header-args:emacs-lisp)
      ;; we could try and create a buffer / clear it on the fly
