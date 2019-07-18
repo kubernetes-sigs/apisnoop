@@ -1,4 +1,5 @@
 #+TITLE: Creating a schema for the OpenAPI Spec
+#+PROPERTY: header-args:python :tangle yes
 
 * What do we have at a high level
 
@@ -58,6 +59,10 @@ file /usr/local/bin/gron
 #+end_EXAMPLE
 
 * Paths
+:PROPERTIES:
+:header-args:python+: :tangle yes
+:END:
+ 
 ** keys
 
 #+BEGIN_SRC shell :dir ~/go/src/k8s.io/kubernetes/api/openapi-spec :wrap "SRC json"
@@ -90,32 +95,150 @@ file /usr/local/bin/gron
 /apis/apps/v1/namespaces/{namespace}/controllerrevisions/{name}
 #+end_SRC
 
+
+** what we currently use
+*** path_regex
+
+#+NAME: compile_path_regex
+#+BEGIN_SRC python :eval never
+import re
+import json
+
+# k8s appears to allow/expect a trailing {path} variable to capture everything
+# remaining in the path, including '/' characters, which doesn't appear to be
+# allowed according to the openapi 2.0 or 3.0 specs
+# (ref: https://github.com/OAI/OpenAPI-Specification/issues/892)
+K8S_PATH_VARIABLE_PATTERN = re.compile("{(path)}$")
+VARIABLE_PATTERN = re.compile("{([^}]+)}")
+def regex_from_path(path):
+    # first replace the special trailing {path} wildcard with a named regex
+    path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(?P<\\1>.+)", path).rstrip('/')
+    # replace wildcards in {varname} format to a named regex
+    path_regex = VARIABLE_PATTERN.sub("(?P<\\1>[^/]+)", path_regex).rstrip('/')
+    # TODO(spiffxp): unsure if trailing / _should_ be counted toward /proxy
+    if path_regex.endswith("proxy"): # allow proxy to catch a trailing /
+        path_regex += "/?$"
+    else:
+        path_regex += "$"
+    # print('Converted path: %s into path_regex: %s' % (path, path_regex))
+    return path_regex
+#+END_SRC
+
+*** paths
+
+*** level
+
+#+NAME: parse_level_from_path
+#+BEGIN_SRC python :eval nevel
+LEVEL_PATTERN = re.compile("/v(?P<api_version>[0-9]+)(?:(?P<api_level>alpha|beta)(?P<api_level_version>[0-9]+))?")
+def level_from_path(path):
+    # get the level (alpha/beta/stable) and the version from the path
+    level = None
+    match = LEVEL_PATTERN.search(path)
+    if match:
+        level = match.groupdict().get("api_level")
+    if level is None:
+        level = "stable"
+    return level
+#+END_SRC
+
+*** aciton / methods
+Under each path, each key is the method / action.
+** load_openapi_spec
+
+#+BEGIN_SRC python :eval never
+  try:
+      from urllib.parse import urlparse
+  except Exception as e:
+      from urlparse import urlparse
+
+  def load_openapi_spec(url):
+      if urlparse(url).scheme in ['http', 'https']:
+          swagger = requests.get(url).json()
+      else: # treat as file on disk
+          with open(url, "rb") as f:
+              swagger = json.load(f)
+
+      openapi_spec = {}
+      openapi_spec['paths'] = {}
+
+      for path in swagger['paths']:
+          path_regex = regex_from_path(path)
+
+          path_data = {}
+          path_data['path'] = path
+          path_data['level'] = level_from_path(path)
+          # methods
+          path_data['methods'] = {}
+          for method, swagger_method in swagger['paths'][path].items():
+              # import ipdb; ipdb.set_trace(context=15)
+              if method == "parameters":
+                  continue
+              if 'deprecated' in swagger_method.get('description', '').lower():
+                  # print('Skipping deprecated endpoint %s %s' % (method, path))
+                  continue
+              produces = swagger_method.get('produces', [])
+              can_watch = ('application/json;stream=watch' in produces or
+                           'application/vnd.kubernetes.protobuf;stream=watch' in produces)
+              must_watch = swagger_method.get('x-kubernetes-action') == 'watch'
+              # if must_watch:
+              #     print("must watch " + path)
+              method_data = {}
+              tags = sorted(swagger['paths'][path][method].get('tags', list()))
+              if len(tags) > 0:
+                  method_data['tags'] = tags
+                  tag = tags[0]
+                  # just use one tag for category
+                  category = tag.split("_")[0]
+                  method_data['category'] = category
+              else:
+                  method_data['category'] = ''
+              method_data['description'] = swagger_method.get('description', '')
+              method_data['operationId'] = swagger_method.get('operationId', '')
+              group_version_kind = swagger_method.get('x-kubernetes-group-version-kind', {})
+              method_data['group'] = group_version_kind.get('group', '')
+              method_data['version'] = group_version_kind.get('version', '')
+              method_data['kind'] = group_version_kind.get('kind', '')
+              # todo - request + response
+              if not must_watch:
+                  path_data['methods'][method] = method_data
+              if can_watch:
+                  path_data['methods']['watch'] = method_data
+          # use the path regex as the key so that we search for a match easily
+          openapi_spec['paths'][path_regex] = path_data
+
+          # print path, path_regex, re.match(path_regex, path.rstrip('/')) is not None
+      return openapi_spec
+#+END_SRC
+** load specific file
+#+BEGIN_SRC python :eval never
+# load_openapi_spec("~/go/src/k8s.io/kubernetes/api/openapi-spec/swagger.json")
+#+END_SRC
 ** actions
 
-#+BEGIN_SRC python
-  # map http verb to kubernetes action
-  # TODO: request that audit logging record http verb?
-  verb_tt = {
-      'get': ['get', 'list', 'proxy'],
-      'patch': ['patch'],
-      'put': ['update'],
-      'post': ['create'],
-      'delete': ['delete', 'deletecollection'],
-      'watch': ['watch', 'watchlist'],
-  }
+#+BEGIN_SRC python :tangle no
+  for entry in logfile:
+          raw_event = json.loads(entry)
+          # map http verb to kubernetes action
+          # TODO: request that audit logging record http verb?
+          verb_tt = {
+                  'get': ['get', 'list', 'proxy'],
+                  'patch': ['patch'],
+                  'put': ['update'],
+                  'post': ['create'],
+                  'delete': ['delete', 'deletecollection'],
+                  'watch': ['watch', 'watchlist'],
+          }
+          for method, verbs in verb_tt.items():
+                  if raw_event['verb'] in verbs:
+                          raw_event['method'] = method
+                          break
+          if "method" not in raw_event:
+                  print("Error parsing event - HTTP method map not defined at \"%s\" for verb \"%s\"" % (raw_event['requestURI'], raw_event['verb']))
 #+END_SRC
 
-#+NAME: list of required parameters
-#+begin_src shell :dir ~/go/src/k8s.io/kubernetes/api/openapi-spec :wrap "SRC json"
-  cat ./api/openapi-spec/swagger.json \
-      | jq .paths | jq  
-      | gron | grep required | gron --ungron \
-      | head -100
-      #| jq '.[].get.description' -r \
-      #| sort -r | uniq | cat
-#+END_SRC
+# json["/api/v1/componentstatuses/{name}"].parameters[0].required = true;
 
-#
 #+NAME: list of required
 #+begin_src shell :dir ~/go/src/k8s.io/kubernetes/api/openapi-spec :wrap "SRC json"
   cat ./api/openapi-spec/swagger.json \
@@ -133,96 +256,21 @@ file /usr/local/bin/gron
 #+NAME: list of kubernetes actions
 #+begin_src shell :dir ~/go/src/k8s.io/kubernetes/api/openapi-spec :wrap "SRC json"
   cat swagger.json \
-  | jq '.paths["/apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/rolebindings/{name}"] | keys'
+  | jq '.paths["/apis/apps/v1/"]'
+  # | jq '.paths["/apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/rolebindings/{name}"] | keys'
 #+END_SRC
 
 #+RESULTS: list of kubernetes actions
 #+begin_SRC json
 {
-  "delete": {
-    "consumes": [
-      "*/*"
-    ],
-    "description": "delete a RoleBinding",
-    "operationId": "deleteRbacAuthorizationV1NamespacedRoleBinding",
-    "parameters": [
-      {
-        "in": "body",
-        "name": "body",
-        "schema": {
-          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.DeleteOptions"
-        }
-      },
-      {
-        "description": "When present, indicates that modifications should not be persisted. An invalid or unrecognized dryRun directive will result in an error response and no further processing of the request. Valid values are: - All: all dry run stages will be processed",
-        "in": "query",
-        "name": "dryRun",
-        "type": "string",
-        "uniqueItems": true
-      },
-      {
-        "description": "The duration in seconds before the object should be deleted. Value must be non-negative integer. The value zero indicates delete immediately. If this value is nil, the default grace period for the specified type will be used. Defaults to a per object value if not specified. zero means delete immediately.",
-        "in": "query",
-        "name": "gracePeriodSeconds",
-        "type": "integer",
-        "uniqueItems": true
-      },
-      {
-        "description": "Deprecated: please use the PropagationPolicy, this field will be deprecated in 1.7. Should the dependent objects be orphaned. If true/false, the \"orphan\" finalizer will be added to/removed from the object's finalizers list. Either this field or PropagationPolicy may be set, but not both.",
-        "in": "query",
-        "name": "orphanDependents",
-        "type": "boolean",
-        "uniqueItems": true
-      },
-      {
-        "description": "Whether and how garbage collection will be performed. Either this field or OrphanDependents may be set, but not both. The default policy is decided by the existing finalizer set in the metadata.finalizers and the resource-specific default policy. Acceptable values are: 'Orphan' - orphan the dependents; 'Background' - allow the garbage collector to delete the dependents in the background; 'Foreground' - a cascading policy that deletes all dependents in the foreground.",
-        "in": "query",
-        "name": "propagationPolicy",
-        "type": "string",
-        "uniqueItems": true
-      }
-    ],
-    "produces": [
-      "application/json",
-      "application/yaml",
-      "application/vnd.kubernetes.protobuf"
-    ],
-    "responses": {
-      "200": {
-        "description": "OK",
-        "schema": {
-          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Status"
-        }
-      },
-      "202": {
-        "description": "Accepted",
-        "schema": {
-          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Status"
-        }
-      },
-      "401": {
-        "description": "Unauthorized"
-      }
-    },
-    "schemes": [
-      "https"
-    ],
-    "tags": [
-      "rbacAuthorization_v1"
-    ],
-    "x-kubernetes-action": "delete",
-    "x-kubernetes-group-version-kind": {
-      "group": "rbac.authorization.k8s.io",
-      "kind": "RoleBinding",
-      "version": "v1"
-    }
-  },
   "get": {
     "consumes": [
-      "*/*"
+      "application/json",
+      "application/yaml",
+      "application/vnd.kubernetes.protobuf"
     ],
-    "description": "read the specified RoleBinding",
-    "operationId": "readRbacAuthorizationV1NamespacedRoleBinding",
+    "description": "get available resources",
+    "operationId": "getAppsV1APIResources",
     "produces": [
       "application/json",
       "application/yaml",
@@ -232,7 +280,7 @@ file /usr/local/bin/gron
       "200": {
         "description": "OK",
         "schema": {
-          "$ref": "#/definitions/io.k8s.api.rbac.v1.RoleBinding"
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.APIResourceList"
         }
       },
       "401": {
@@ -243,175 +291,59 @@ file /usr/local/bin/gron
       "https"
     ],
     "tags": [
-      "rbacAuthorization_v1"
-    ],
-    "x-kubernetes-action": "get",
-    "x-kubernetes-group-version-kind": {
-      "group": "rbac.authorization.k8s.io",
-      "kind": "RoleBinding",
-      "version": "v1"
-    }
-  },
-  "parameters": [
-    {
-      "description": "name of the RoleBinding",
-      "in": "path",
-      "name": "name",
-      "required": true,
-      "type": "string",
-      "uniqueItems": true
-    },
-    {
-      "description": "object name and auth scope, such as for teams and projects",
-      "in": "path",
-      "name": "namespace",
-      "required": true,
-      "type": "string",
-      "uniqueItems": true
-    },
-    {
-      "description": "If 'true', then the output is pretty printed.",
-      "in": "query",
-      "name": "pretty",
-      "type": "string",
-      "uniqueItems": true
-    }
-  ],
-  "patch": {
-    "consumes": [
-      "application/json-patch+json",
-      "application/merge-patch+json",
-      "application/strategic-merge-patch+json"
-    ],
-    "description": "partially update the specified RoleBinding",
-    "operationId": "patchRbacAuthorizationV1NamespacedRoleBinding",
-    "parameters": [
-      {
-        "in": "body",
-        "name": "body",
-        "required": true,
-        "schema": {
-          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Patch"
-        }
-      },
-      {
-        "description": "When present, indicates that modifications should not be persisted. An invalid or unrecognized dryRun directive will result in an error response and no further processing of the request. Valid values are: - All: all dry run stages will be processed",
-        "in": "query",
-        "name": "dryRun",
-        "type": "string",
-        "uniqueItems": true
-      },
-      {
-        "description": "fieldManager is a name associated with the actor or entity that is making these changes. The value must be less than or 128 characters long, and only contain printable characters, as defined by https://golang.org/pkg/unicode/#IsPrint. This field is required for apply requests (application/apply-patch) but optional for non-apply patch types (JsonPatch, MergePatch, StrategicMergePatch).",
-        "in": "query",
-        "name": "fieldManager",
-        "type": "string",
-        "uniqueItems": true
-      },
-      {
-        "description": "Force is going to \"force\" Apply requests. It means user will re-acquire conflicting fields owned by other people. Force flag must be unset for non-apply patch requests.",
-        "in": "query",
-        "name": "force",
-        "type": "boolean",
-        "uniqueItems": true
-      }
-    ],
-    "produces": [
-      "application/json",
-      "application/yaml",
-      "application/vnd.kubernetes.protobuf"
-    ],
-    "responses": {
-      "200": {
-        "description": "OK",
-        "schema": {
-          "$ref": "#/definitions/io.k8s.api.rbac.v1.RoleBinding"
-        }
-      },
-      "401": {
-        "description": "Unauthorized"
-      }
-    },
-    "schemes": [
-      "https"
-    ],
-    "tags": [
-      "rbacAuthorization_v1"
-    ],
-    "x-kubernetes-action": "patch",
-    "x-kubernetes-group-version-kind": {
-      "group": "rbac.authorization.k8s.io",
-      "kind": "RoleBinding",
-      "version": "v1"
-    }
-  },
-  "put": {
-    "consumes": [
-      "*/*"
-    ],
-    "description": "replace the specified RoleBinding",
-    "operationId": "replaceRbacAuthorizationV1NamespacedRoleBinding",
-    "parameters": [
-      {
-        "in": "body",
-        "name": "body",
-        "required": true,
-        "schema": {
-          "$ref": "#/definitions/io.k8s.api.rbac.v1.RoleBinding"
-        }
-      },
-      {
-        "description": "When present, indicates that modifications should not be persisted. An invalid or unrecognized dryRun directive will result in an error response and no further processing of the request. Valid values are: - All: all dry run stages will be processed",
-        "in": "query",
-        "name": "dryRun",
-        "type": "string",
-        "uniqueItems": true
-      },
-      {
-        "description": "fieldManager is a name associated with the actor or entity that is making these changes. The value must be less than or 128 characters long, and only contain printable characters, as defined by https://golang.org/pkg/unicode/#IsPrint.",
-        "in": "query",
-        "name": "fieldManager",
-        "type": "string",
-        "uniqueItems": true
-      }
-    ],
-    "produces": [
-      "application/json",
-      "application/yaml",
-      "application/vnd.kubernetes.protobuf"
-    ],
-    "responses": {
-      "200": {
-        "description": "OK",
-        "schema": {
-          "$ref": "#/definitions/io.k8s.api.rbac.v1.RoleBinding"
-        }
-      },
-      "201": {
-        "description": "Created",
-        "schema": {
-          "$ref": "#/definitions/io.k8s.api.rbac.v1.RoleBinding"
-        }
-      },
-      "401": {
-        "description": "Unauthorized"
-      }
-    },
-    "schemes": [
-      "https"
-    ],
-    "tags": [
-      "rbacAuthorization_v1"
-    ],
-    "x-kubernetes-action": "put",
-    "x-kubernetes-group-version-kind": {
-      "group": "rbac.authorization.k8s.io",
-      "kind": "RoleBinding",
-      "version": "v1"
-    }
+      "apps_v1"
+    ]
   }
 }
 #+end_SRC
+
+#+NAME: getAppsV1APIResources
+#+begin_src shell :dir ~/go/src/k8s.io/kubernetes/api/openapi-spec :wrap "SRC json"
+  cat swagger.json \
+  | jq '.paths["/apis/apps/v1/"]'
+  # | jq '.paths["/apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/rolebindings/{name}"] | keys'
+#+END_SRC
+
+Note that we could use any $ref to see what the response is... ie
+When we want to test APIResourceList... here is one that returns it.
+
+#+RESULTS: getAppsV1APIResources
+#+begin_SRC json
+{
+  "get": {
+    "consumes": [
+      "application/json",
+      "application/yaml",
+      "application/vnd.kubernetes.protobuf"
+    ],
+    "description": "get available resources",
+    "operationId": "getAppsV1APIResources",
+    "produces": [
+      "application/json",
+      "application/yaml",
+      "application/vnd.kubernetes.protobuf"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK",
+        "schema": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.APIResourceList"
+        }
+      },
+      "401": {
+        "description": "Unauthorized"
+      }
+    },
+    "schemes": [
+      "https"
+    ],
+    "tags": [
+      "apps_v1"
+    ]
+  }
+}
+#+end_SRC
+
 
 These map to kubernetes actions, which are NOT one to one with http verbs.
 Our audit logs contain the http verbs, we'll need to map them.
