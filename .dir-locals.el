@@ -62,11 +62,11 @@
                   " :comments org"
                   " :eval no-export"
                   " :results code"
+                  " :product postgres"
                   " :session data"
                   ;; " :session (symbol-value user-login-name)"
                   ;; " :session (concat user-login-name \":\" " "main" ")"
                   ;; " :session (concat user-login-name \":\" " item-str ")"
-                  " :product postgres"
                   " :exports both"
                   ))
          (cons 'header-args:tmate
