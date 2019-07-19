@@ -11,7 +11,11 @@ def regex_from_path(path):
     # first replace the special trailing {path} wildcard with a named regex
     path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(?P<\\1>.+)", path).rstrip('/')
     # replace wildcards in {varname} format to a named regex
-    path_regex = VARIABLE_PATTERN.sub("(?P<\\1>[^/]+)", path_regex).rstrip('/')
+    # path_regex = VARIABLE_PATTERN.sub("(?P<\\1>[^/]+)", path_regex).rstrip('/')
+
+    # now that we are using POSIX, we can't do {varname}
+    path_regex = VARIABLE_PATTERN.sub("([^/]+)", path_regex).rstrip('/')
+
     # TODO(spiffxp): unsure if trailing / _should_ be counted toward /proxy
     if path_regex.endswith("proxy"): # allow proxy to catch a trailing /
         path_regex += "/?$"
