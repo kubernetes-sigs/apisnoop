@@ -48,7 +48,7 @@
            (list 'hasura
             (list 'sql-product '(quote postgres))
             (list 'sql-user user-login-name)
-            (list 'sql-database "data")
+            (list 'sql-database user-login-name)
             (list 'sql-port 5432)
             (list 'sql-server "172.17.0.1")
             ;; (list 'sql-server "172.17.0.1")
