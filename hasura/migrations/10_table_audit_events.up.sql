@@ -1,3 +1,7 @@
+
+
+-- #+NAME: CREATE TABLE audit_events
+
 CREATE TABLE public.audit_events (
   "auditID" uuid,
   level text NOT NULL,

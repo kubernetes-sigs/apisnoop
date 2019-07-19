@@ -58,6 +58,63 @@ file /usr/local/bin/gron
 /usr/local/bin/gron: cannot open `/usr/local/bin/gron' (No such file or directory)
 #+end_EXAMPLE
 
+
+
+* SQL
+** columns
+*** id
+#+NAME: id
+#+BEGIN_SRC sql-mode
+  id text NOT NULL,
+#+END_SRC
+*** method
+#+NAME: method
+#+BEGIN_SRC sql-mode
+  method text NOT NULL,
+#+END_SRC
+*** path
+#+NAME: path
+#+BEGIN_SRC sql-mode
+  path text NOT NULL,
+#+END_SRC
+*** regexp
+#+NAME: path
+#+BEGIN_SRC sql-mode
+  regexp text NOT NULL,
+#+END_SRC
+*** group
+#+NAME: group
+#+BEGIN_SRC sql-mode
+  group text NOT NULL,
+#+END_SRC
+*** version
+#+NAME: version
+#+BEGIN_SRC sql-mode
+  version text NOT NULL,
+#+END_SRC
+*** kind
+#+NAME: kind
+#+BEGIN_SRC sql-mode
+  kind text NOT NULL,
+#+END_SRC
+*** category
+#+NAME: category
+#+BEGIN_SRC sql-mode
+  category text NOT NULL,
+#+END_SRC
+*** description
+#+NAME: description
+#+BEGIN_SRC sql-mode
+  description text NOT NULL,
+#+END_SRC
+*** tags
+I don't think we use tags yet, and it's a list.
+Leaving for now.
+#+NAME: tags
+#+BEGIN_SRC sql-mode
+  tags text NOT NULL,
+#+END_SRC
+
 * Paths
 :PROPERTIES:
 :header-args:python+: :tangle yes
@@ -161,11 +218,17 @@ Under each path, each key is the method / action.
       openapi_spec = {}
       openapi_spec['operations'] = {}
       openapi_spec['parameters'] = {}
+      openapi_spec['operation_list'] = []
+      openapi_spec['parameter_list'] = []
 
       for path in swagger['paths']:
           path_regex = regex_from_path(path)
           for method, swagger_method in swagger['paths'][path].items():
               if method == "parameters":
+                  # List seems beter than dict since we are exporting to SQL
+                  for param in swagger_method:
+                      param["path"]=path
+                      openapi_spec['parameter_list'].append(param)
                   params={}
                   for param in swagger_method:
                       param_name = param['name']
@@ -173,14 +236,23 @@ Under each path, each key is the method / action.
                       params[param_name] = param
                   openapi_spec['parameters'][path]=params
                   continue
-              # if 'deprecated' in swagger_method.get('description', '').lower():
-              #     # print('Skipping deprecated endpoint %s %s' % (method, path))
-              #     continue
+              if 'deprecated' in swagger_method.get('description', '').lower():
+                  # print('Skipping deprecated endpoint %s %s' % (method, path))
+                  continue
+              if 'consumes' in swagger_method:
+                  # usually : ['application/json', 'application/yaml', 'application/vnd.kubernetes.protobuf']
+                  # or : ['*/*']
+                  # sometimes: ['application/json-patch+json', 'application/merge-patch+json',
+                  # 'application/strategic-merge-patch+json']
+                  pass
+              if 'produces' in swagger_method:
+                  # usually : ['application/json', 'application/yaml', 'application/vnd.kubernetes.protobuf']
+                  # can additonally include:
+                  #   'application/json;stream=watch', 'application/vnd.kubernetes.protobuf;stream=watch']
+                  # is seldom: '*/*'
+                  # ['text/plain', 
+                  pass
               produces = swagger_method.get('produces', [])
-              can_watch = ('application/json;stream=watch' in produces or
-                           'application/vnd.kubernetes.protobuf;stream=watch' in produces)
-              must_watch = swagger_method.get('x-kubernetes-action') == 'watch'
-              # rather than organize by path, we are using operation.. op_data, op_id
               op_data = {}
               tags = sorted(swagger['paths'][path][method].get('tags', list()))
               if len(tags) > 0:
@@ -191,6 +263,7 @@ Under each path, each key is the method / action.
                   op_data['category'] = category
               else:
                   op_data['category'] = ''
+              op_id = swagger_method.get('operationId', '')
               op_data['description'] = swagger_method.get('description', '')
               group_version_kind = swagger_method.get('x-kubernetes-group-version-kind', {})
               op_data['group'] = group_version_kind.get('group', '')
@@ -199,29 +272,11 @@ Under each path, each key is the method / action.
               op_data['path'] = path
               op_data['path_regex'] = path_regex
               op_data['level'] = level_from_path(path)
-              # todo - request + response
-
-              op_id = swagger_method.get('operationId', '')
-              if op_id in openapi_spec['operations'].keys():
-                  print("WE HAVE DUPS KEYS")
-                  import ipdb; ipdb.set_trace(context=15)
-              if not must_watch:
-                  op_data['method'] = method
-                  openapi_spec['operations'][op_id] = op_data
-              elif can_watch:
-                  # import ipdb; ipdb.set_trace(context=15)
-                  print("Upgrading %s to watch", op_data['method'])
-                  op_data['method'] = 'watch'
-                  openapi_spec['operations'][op_id] = op_data
-              else:
-                  print("NOMATCH")
-                  import ipdb; ipdb.set_trace(context=15)
-
-                  # use the path regex as the key so that we search for a match easily
-          # openapi_spec['operations'][op_data[ ;;]] = path_data
-                  # openapi_spec['parameters']['path'] = {}
-
-          # print path, path_regex, re.match(path_regex, path.rstrip('/')) is not None
+              op_data['method'] = method
+              openapi_spec['operations'][op_id]=op_data
+              op_data['id'] = op_id
+              openapi_spec['operation_list'].append(op_data)
+              # openapi_spec['operations'][op_id] = op_data
       return openapi_spec
 #+END_SRC
 ** load specific file
