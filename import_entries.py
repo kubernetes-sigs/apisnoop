@@ -174,6 +174,7 @@ def jsonb_from_entry(entry, obj, key):
     return "{}"
 # @profile
 def audit_event_iterator(connection,
+                         testrunID,
                          audit_events: Iterator[Dict[str, Any]],
                          size: int = 8192) -> None:
     with connection.cursor() as cursor:
@@ -182,6 +183,8 @@ def audit_event_iterator(connection,
         audit_events_string_iterator = StringIteratorIO((
             '|'.join(map(clean_csv_value, (
                 entry['auditID'],
+                testrunID, #testrunID
+                None, #opID will need to be populated later
                 entry['level'],
                 entry['verb'],
                 entry['requestURI'],
@@ -260,7 +263,6 @@ connection.set_session(autocommit=True)
 
 table_name = 'audit_events'
 file_path = '/tmp/restaurants_json.csv'
-audit_logfile="/zfs/home/hh/ii/apisnoop_v3/kube-apiserver-audit.log"
 
 # event_lines = list(iter_lines_from_file(
 #     audit_logfile
@@ -270,9 +272,21 @@ audit_logfile="/zfs/home/hh/ii/apisnoop_v3/kube-apiserver-audit.log"
 # pg_load(connection, table_name, audit_logfile)
 
 # from psycopg2.extras import NamedTupleCursor
+logs = {
+    # https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1134962072287711234
+    # June 2nd
+    "1134962072287711234": "/zfs/home/hh/ii/apisnoop/data-gen/cache/ci-kubernetes-e2e-gci-gce/1134962072287711234/kube-apiserver-audit.log",
+    # https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1141017488889221121
+    # June 19th
+    "recent": "/zfs/home/hh/ii/apisnoop/data-gen/cache/ci-kubernetes-e2e-gci-gce/1141017488889221121/kube-apiserver-audit.log",
+    # https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1145963446211186694
+    # July 2nd
+    "recent": "/zfs/home/hh/ii/apisnoop/data-gen/cache/ci-kubernetes-e2e-gci-gce/1145963446211186694/kube-apiserver-audit.log",
+    # https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1152045379034812417
+    # July 19th
+    "1152045379034812417": "/zfs/home/hh/ii/apisnoop/data-gen/cache/ci-kubernetes-e2e-gci-gce/1152045379034812417/kube-apiserver-audit.log",
+}
 
-events = list(iter_audit_events_from_logfile(
-    audit_logfile
-))
-
-audit_event_iterator(connection, events)
+for testrun, logfile in logs.items():
+    events = list(iter_audit_events_from_logfile(logfile))
+    audit_event_iterator(connection, testrun, events)
