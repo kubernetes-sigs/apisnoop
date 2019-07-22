@@ -9,19 +9,32 @@ K8S_PATH_VARIABLE_PATTERN = re.compile("{(path)}$")
 VARIABLE_PATTERN = re.compile("{([^}]+)}")
 def regex_from_path(path):
     # first replace the special trailing {path} wildcard with a named regex
-    path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(?P<\\1>.+)", path).rstrip('/')
+
+    # path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(?P<\\1>.+)", path).rstrip('/')
+    # PosgresQL doesn't like named vars
+    path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
+    # For SQL like, we just use %
+    # path_regex = K8S_PATH_VARIABLE_PATTERN.sub("%", path).rstrip('/')
     # replace wildcards in {varname} format to a named regex
     # path_regex = VARIABLE_PATTERN.sub("(?P<\\1>[^/]+)", path_regex).rstrip('/')
+    # if path != path_regex:
+    #if '{' not in path:
+    #  ipdb.set_trace(context=10)
 
     # now that we are using POSIX, we can't do {varname}
-    path_regex = VARIABLE_PATTERN.sub("([^/]+)", path_regex).rstrip('/')
+    path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
+    # now that we are using LIKE, we just need %
+    # path_regex = VARIABLE_PATTERN.sub("%", path_regex).rstrip('/')
+    # ensure that everything ends looking for everything but '/'
+    if not path_regex.endswith(")") and not path_regex.endswith("?"): # allow proxy to catch a trailing /
+        path_regex += "([^/]*)"
 
-    # TODO(spiffxp): unsure if trailing / _should_ be counted toward /proxy
+    # # TODO(spiffxp): unsure if trailing / _should_ be counted toward /proxy
     if path_regex.endswith("proxy"): # allow proxy to catch a trailing /
         path_regex += "/?$"
     else:
         path_regex += "$"
-    # print('Converted path: %s into path_regex: %s' % (path, path_regex))
+    print('Converted path: %s into path_regex: %s' % (path, path_regex))
     return path_regex
 
 LEVEL_PATTERN = re.compile("/v(?P<api_version>[0-9]+)(?:(?P<api_level>alpha|beta)(?P<api_level_version>[0-9]+))?")
