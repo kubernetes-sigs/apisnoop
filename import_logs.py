@@ -1,42 +1,20 @@
-# Largely from https://hakibenita.com/fast-load-data-python-postgresql
+#! /usr/bin/env python3
+
+import json
+# try:
+from urllib.request import urlopen, urlretrieve
+# except Exception as e:
+#     from urllib import urlopen, urlretrieve
+import os
+from shutil import copyfile
+import click
+import glob
+import subprocess
+from datetime import datetime
 
 from typing import Iterator, Dict, Any, Optional
 from urllib.parse import urlencode
 import psycopg2.extras
-# import datetime
-
-
-#------------------------ Profile
-
-# import time
-# from functools import wraps
-# from memory_profiler import memory_usage
-
-
-# def profile(fn):
-#     @wraps(fn)
-#     def inner(*args, **kwargs):
-#         fn_kwargs_str = ', '.join('{k}={v}' for k, v in kwargs.items())
-#         print('\n{fn.__name__}({fn_kwargs_str})')
-
-#         # Measure time
-#         t = time.perf_counter()
-#         retval = fn(*args, **kwargs)
-#         elapsed = time.perf_counter() - t
-#         print('Time   {elapsed:0.4}')
-
-#         # Measure memory
-#         mem, retval = memory_usage((fn, args, kwargs), retval=True, timeout=200, interval=1e-7)
-
-#         print('Memory {max(mem) - min(mem)}')
-#         return retval
-
-#     return inner
-
-
-#------------------------ Data
-
-# import requests
 
 def iter_audit_events_from_logfile(path: str) -> Iterator[Dict[str, Any]]:
     import json
@@ -147,7 +125,6 @@ def text_from_entry(entry, obj, key):
             return entry[obj][key]
     return ""
 
-import json
 
 def jsonb_from_entry(entry, obj, key):
     if obj in entry:
@@ -218,83 +195,53 @@ def audit_event_iterator(connection,
                          'audit_events',
                          sep='|', size=size)
 
-# from bson.json_util import dumps
+def file_to_json(filename):
+    content = open(filename).read()
+    data = content.encode('ascii')
+    return json.loads(data)
 
-def write_json(uri, file_path):
-    mongo_uri = uri
-    client = MongoClient(mongo_uri)
-    db = client.test
-    restaurants = db.restaurants
-    print('Total Record for the collection: ' + str(restaurants.count()))
-    f = open(file_path, 'w')
+import os
+import openapi
+@click.command()
+@click.argument('artifacts',default='artifacts')
+# @click.argument('dbname')
+def main(artifacts):#,dbname):
+    # for now let's import the master openapi spec manually
+    connection = psycopg2.connect(
+        host="172.17.0.1",
+        # host='192.168.1.17',
+        database=os.environ['USER'],
+        port=5432,
+        user=os.environ['USER'],
+        password=None,
+    )
+    connection.set_session(autocommit=True)
+    swagger = openapi.load_openapi_spec(os.environ['HOME']+"/go/src/k8s.io/kubernetes/api/openapi-spec/swagger.json")
+    openapi.openapi_operation_iterator(connection,swagger['operations'])
 
-    for record in restaurants.find():
-        record = dumps(record)
-        f.write(record + '\n')
-    f.close()
+    for auditfile in glob.glob(artifacts + '/*/*/combined-audit.log'):
+        auditpath = os.path.dirname(auditfile)
+        metadata = file_to_json(auditpath + '/artifacts/metadata.json')
+        finished = file_to_json(auditpath + '/finished.json')
+        semver = finished['version'].split('v')[1].split('-')[0]
+        major = semver.split('.')[0]
+        minor = semver.split('.')[1]
+        if minor != '16':
+            branch = "release-"+major+'.'+minor
+        else:
+            commit = metadata['revision'].split('+')[-1]
+            # branch = 'master'
+            branch = commit
+        ts = datetime.fromtimestamp(finished['timestamp'])
+        if 'conformance' in auditfile:
+            type = 'conformance'
+        else:
+            type = 'sig-release'
+        audit_folder = auditpath.split('/')[-2]
+        audit_job = auditpath.split('/')[-1]
+        audit_name = type + '_' + semver + '_' + str(ts.date())
+        events = list(iter_audit_events_from_logfile(auditfile))
+        audit_event_iterator(connection, audit_job, events)
 
-def pg_load(conn, table_name, file_path):
-    try:
-        # conn = psycopg2.connect(connection_string)
-        # print("Connecting to Database")
-        cur = conn.cursor()
-        json_per_line = open(file_path, "r")
-        print("LOADING")
-        with connection.cursor() as cursor:
-            recreate_audit_events_table(cursor)
-            cursor.copy_expert(
-                "copy {} FROM STDIN WITH CSV quote e'\x01' delimiter e'\x02'".format(table_name),
-                json_per_line)
-        cursor.execute("commit;")
-        print("Loaded data into {}".format(table_name))
-        # conn.close()
-        print("DB connection closed.")
-    except Exception as e:
-        print('Error {}'.format(str(e)))
-
-# write_json(mongo_uri, file_path)
-# mongo_uri = 'mongodb://<user>:<pw>@<uri>:27017/test'
-# connection_string = "dbname='<dbname>' user='<user>' host='<uri>' password='<pw>'"
-# import pymongo
-# from pymongo import MongoClient
-# import psycopg2
-
-connection = psycopg2.connect(
-    host="172.17.0.1",
-    # host='192.168.1.17',
-    database='hh',
-    port=5432,
-    user='hh',
-    password=None,
-)
-connection.set_session(autocommit=True)
-
-table_name = 'audit_events'
-file_path = '/tmp/restaurants_json.csv'
-
-# event_lines = list(iter_lines_from_file(
-#     audit_logfile
-# ))
-
-# pg_load(connection, table_name, event_lines)
-# pg_load(connection, table_name, audit_logfile)
-
-# from psycopg2.extras import NamedTupleCursor
-logs = {
-    # https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1134962072287711234
-    # June 2nd
-    "1134962072287711234": "/zfs/home/hh/ii/apisnoop/data-gen/cache/ci-kubernetes-e2e-gci-gce/1134962072287711234/kube-apiserver-audit.log",
-    # https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1141017488889221121
-    # June 19th
-    "recent": "/zfs/home/hh/ii/apisnoop/data-gen/cache/ci-kubernetes-e2e-gci-gce/1141017488889221121/kube-apiserver-audit.log",
-    # https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1145963446211186694
-    # July 2nd
-    "recent": "/zfs/home/hh/ii/apisnoop/data-gen/cache/ci-kubernetes-e2e-gci-gce/1145963446211186694/kube-apiserver-audit.log",
-    # https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1152045379034812417
-    # July 19th
-    "1152045379034812417": "/zfs/home/hh/ii/apisnoop/data-gen/cache/ci-kubernetes-e2e-gci-gce/1152045379034812417/kube-apiserver-audit.log",
-}
-
-for testrun, logfile in logs.items():
-    events = list(iter_audit_events_from_logfile(logfile))
-    audit_event_iterator(connection, testrun, events)
+if __name__ == "__main__":
+    main()
