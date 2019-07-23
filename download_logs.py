@@ -20,19 +20,6 @@ gcsweb = "https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/"
 storage = "https://storage.googleapis.com/kubernetes-jenkins/logs/"
 
 
-# def print_urls(top, sublevel, bucket, job):
-#     print(gubernator + bucket + '/' + str(job))
-#     print(gcsweb + bucket + '/' + str(job))
-#     print(storage + bucket + '/' + str(job))
-
-
-# def url_to_json(url):
-#     with urlopen(url) as response:
-#         resp = response.read()
-#         data = resp.encode('ascii')
-#         return json.loads(data)
-
-
 def get_html(url):
     html = urlopen(url).read()
     soup = BeautifulSoup(html, 'html.parser')

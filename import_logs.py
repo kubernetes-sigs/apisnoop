@@ -1,5 +1,5 @@
 #! /usr/bin/env python3
-
+import re
 import json
 # try:
 from urllib.request import urlopen, urlretrieve
@@ -127,9 +127,9 @@ def text_from_entry(entry, obj, key):
     return ""
 
 def swagger_op_from_entry(entry, swagger):
+    # import ipdb ; ipdb.set_trace(context=10)
     endpoint=find_openapi_entry(swagger, entry)
-    import ipdb ; ipdb.set_trace(context=10)
-    return ""
+    return endpoint
 
 
 def jsonb_from_entry(entry, obj, key):
@@ -173,7 +173,8 @@ def audit_event_iterator(connection,
             '|'.join(map(clean_csv_value, (
                 entry['auditID'],
                 testrunID, #testrunID
-                None, #swagger_op_from_entry(entry, swagger),
+                swagger_op_from_entry(entry, swagger),
+                #None, #swagger_op_from_entry(entry, swagger),
                 entry['stage'],
                 entry['level'],
                 entry['verb'],
@@ -209,28 +210,50 @@ def file_to_json(filename):
 def find_openapi_entry(openapi_spec, event):
   url = urlparse(event['requestURI'])
   hit_cache = openapi_spec['hit_cache']
-  prefix_cache = openapi_spec['prefix_cache']
+  regexp_prefix = openapi_spec['regex_prefix']
   # 1) Cached seen before results
   if url.path in hit_cache:
+    # print(url.path, " =CACHED=> ", hit_cache[url.path])
     return hit_cache[url.path]
   # 2) Indexed by prefix patterns to cut down search time
-  for prefix in prefix_cache:
+  for prefix in regexp_prefix:
     if prefix is not None and url.path.startswith(prefix):
       # print prefix, url.path
-      paths = prefix_cache[prefix]
+      paths = regexp_prefix[prefix]
       break
   else:
-    paths = prefix_cache[None]
+    paths = regexp_prefix[None]
+  verb_to_action_map = {
+      # 'get': ['get', 'list', 'proxy'],
+      'get': ['get', 'list', 'proxy', 'watch'],
+      'patch': ['patch'],
+      'put': ['update'],
+      'post': ['create'],
+      'delete': ['delete', 'deletecollection'],
+      # 'watch': ['watch', 'watchlist'],
+  }
+
+  for verb, actions in verb_to_action_map.items():
+      if event['verb'] in actions:
+          # import ipdb; ipdb.set_trace(context=60)
+          op_action = verb
+          break
+      if "verb" not in event:
+          import ipdb; ipdb.set_trace(context=60)
+          print("Error parsing event - HTTP method map not defined at \"%s\" for verb \"%s\"" % (raw_event['requestURI'], raw_event['verb']))
 
   for regex in paths:
     if re.match(regex, url.path):
-      hit_cache[url.path] = openapi_spec['paths'][regex]
-      return openapi_spec['paths'][regex]
+      # if event['verb'] == 'watch':
+      #   import ipdb; ipdb.set_trace(context=60)
+      hit_cache[url.path] = paths[regex][op_action]
+      # print(url.path, " ==> ", hit_cache[url.path])
+      return hit_cache[url.path]
     elif re.search(regex, event['requestURI']):
+      import ipdb; ipdb.set_trace(context=60)
       print("Incomplete match", regex, event['requestURI'])
-  # import ipdb; ipdb.set_trace(context=60)
-  # cache failures too
-  hit_cache[url.path] = None
+      # cache failures too
+      hit_cache[url.path] = None
   return None
 
 import os

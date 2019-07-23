@@ -14,15 +14,17 @@
 
 #+RESULTS:
 #+begin_src sql-mode
-You are connected to database "data" as user "hh" on host "172.17.0.1" at port "5432".
+You are connected to database "hh" as user "hh" on host "172.17.0.1" at port "5432".
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
 #+end_src
 
-#+BEGIN_SRC sql-mode
+#+NAME: do not run
+#+BEGIN_SRC sql-mode :eval never
 select 'drop table if exists "' || tablename || '" cascade;' from pg_tables;
 #+END_SRC
 
-#+BEGIN_SRC sql-mode
+#+NAME: do not run me either
+#+BEGIN_SRC sql-mode :eval never
   drop table if exists "event_log" cascade;
   drop table if exists "job_logs" cascade;
   drop table if exists "audit_events" cascade;
@@ -31,21 +33,6 @@ select 'drop table if exists "' || tablename || '" cascade;' from pg_tables;
   drop table if exists "users_info" cascade;
 #+END_SRC
 
-#+RESULTS:
-#+begin_example
-NOTICE:  table "event_log" does not exist, skipping
-DROP TABLE
-NOTICE:  table "job_logs" does not exist, skipping
-DROP TABLE
-NOTICE:  table "audit_events" does not exist, skipping
-DROP TABLE
-NOTICE:  table "object_refs" does not exist, skipping
-DROP TABLE
-NOTICE:  table "response_statuses" does not exist, skipping
-DROP TABLE
-NOTICE:  table "users_info" does not exist, skipping
-DROP TABLE
-#+end_example
 * Exploring our first dataset
 
 #+BEGIN_SRC sql-mode
@@ -54,9 +41,9 @@ select count(*) from audit_events;
 
 #+RESULTS:
 #+begin_src sql-mode
- count  
---------
- 313431
+  count  
+---------
+ 1192838
 (1 row)
 
 #+end_src
@@ -67,27 +54,57 @@ select count(*) from audit_events;
 
 #+RESULTS:
 #+begin_src sql-mode
-Did not find any relations.
+            List of relations
+ Schema |      Name      | Type  | Owner 
+--------+----------------+-------+-------
+ public | api_operations | table | hh
+ public | audit_events   | table | hh
+(2 rows)
+
 #+end_src
 
 #+BEGIN_SRC sql-mode
-\dt audit_events
-
+\d+ audit_events
 #+END_SRC
 
 #+RESULTS:
 #+begin_src sql-mode
-           List of relations
- Schema |     Name     | Type  | Owner 
---------+--------------+-------+-------
- public | audit_events | table | hh
-(1 row)
+                                              Table "public.audit_events"
+       Column       |           Type           | Collation | Nullable | Default | Storage  | Stats target | Description 
+--------------------+--------------------------+-----------+----------+---------+----------+--------------+-------------
+ audit_id           | uuid                     |           | not null |         | plain    |              | 
+ testrun_id         | text                     |           |          |         | extended |              | 
+ op_id              | text                     |           |          |         | extended |              | 
+ stage              | text                     |           | not null |         | extended |              | 
+ level              | text                     |           | not null |         | extended |              | 
+ verb               | text                     |           | not null |         | extended |              | 
+ request_uri        | text                     |           | not null |         | extended |              | 
+ user_agent         | text                     |           |          |         | extended |              | 
+ test_name          | text                     |           |          |         | extended |              | 
+ requestkind        | text                     |           | not null |         | extended |              | 
+ requestapiversion  | text                     |           | not null |         | extended |              | 
+ requestmeta        | jsonb                    |           | not null |         | extended |              | 
+ requestspec        | jsonb                    |           | not null |         | extended |              | 
+ requeststatus      | jsonb                    |           | not null |         | extended |              | 
+ responsekind       | text                     |           | not null |         | extended |              | 
+ responseapiversion | text                     |           | not null |         | extended |              | 
+ responsemeta       | jsonb                    |           | not null |         | extended |              | 
+ responsespec       | jsonb                    |           | not null |         | extended |              | 
+ responsestatus     | jsonb                    |           | not null |         | extended |              | 
+ request_ts         | timestamp with time zone |           |          |         | plain    |              | 
+ stage_ts           | timestamp with time zone |           |          |         | plain    |              | 
+Indexes:
+    "audit_id_stage" PRIMARY KEY, btree (audit_id, stage)
+    "audit_events_op_id" btree (op_id)
+    "audit_events_request_uri" btree (request_uri)
+    "audit_events_verb" btree (verb)
 
 #+end_src
 
 * Audit Events
 ** columns
 *** audit_id
+
 #+NAME: audit_id
 #+BEGIN_SRC sql-mode
     audit_id uuid NOT NULL,
@@ -276,7 +293,6 @@ The id could probably be dropped in favor of UUID, if we only capture ResponseSt
 
 ** table
 
-
 #+BEGIN_SRC tmate
   cd ~/ii/apisnoop_v3
   python3 import_entries.py
@@ -316,9 +332,10 @@ The id could probably be dropped in favor of UUID, if we only capture ResponseSt
 
 #+RESULTS: CREATE TABLE audit_events
 #+begin_src sql-mode
-ERROR:  syntax error at or near "with"
-LINE 22:   stage_ts with time zone,
-                    ^
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
 #+end_src
 
 #+NAME: DROP TABLE audit_events
@@ -328,7 +345,6 @@ LINE 22:   stage_ts with time zone,
 
 #+RESULTS: DROP TABLE audit_events
 #+begin_src sql-mode
-NOTICE:  table "audit_events" does not exist, skipping
 DROP TABLE
 #+end_src
 
@@ -349,6 +365,7 @@ DROP TABLE
 #+END_SRC
 
 After creating the table, we have to go to the console:
+hasura.$USER.sharing.io
 http://localhost:8080/console/data/schema/public
 And click on [Track All] or [Track] for the table.
 
@@ -365,23 +382,23 @@ export HASURA_GRAPHQL_ADMIN_SECRET=X
 This has one column... event which is a jsonb.
 
 #+BEGIN_SRC sql-mode
-CREATE OR REPLACE VIEW "public"."events" AS 
- SELECT audit_events.auditID AS uuid,
-    audit_events.level AS level,
-    audit_events.verb AS verb,
-    audit_events.requestURI AS uri,
-    audit_events.userAgent AS useragent,
-    audit_events.testName AS testName,
-    -- ((audit_events.event -> 'requestObject'::text) ->> 'apiVersion'::text) AS apiversion,
-    ((audit_events.event -> 'requestObject'::text) ->> 'kind'::text) AS kind,
-    ((audit_events.event -> 'requestObject'::text) ->> 'metadata'::text) AS metadata,
-    ((audit_events.event -> 'requestObject'::text) ->> 'spec'::text) AS spec,
-    ((audit_events.event -> 'requestObject'::text) ->> 'status'::text) AS requeststatus,
-    ((audit_events.event -> 'responseObject'::text) ->> 'status'::text) AS status,
-    ((audit_events.event -> 'responseObject'::text) ->> 'kind'::text) AS responsekind,
-    ((audit_events.event -> 'responseObject'::text) ->> 'metadata'::text) AS responsemetadata,
-    ((audit_events.event -> 'responseObject'::text) ->> 'spec'::text) AS responsespec
-   FROM audit_events;
+  CREATE OR REPLACE VIEW "public"."events" AS 
+   SELECT audit_events.auditID AS uuid,
+      audit_events.level AS level,
+      audit_events.verb AS verb,
+      audit_events.requestURI AS uri,
+      audit_events.userAgent AS useragent,
+      audit_events.testName AS testName,
+      -- ((audit_events.event -> 'requestObject'::text) ->> 'apiVersion'::text) AS apiversion,
+      ((audit_events.event -> 'requestObject'::text) ->> 'kind'::text) AS kind,
+      ((audit_events.event -> 'requestObject'::text) ->> 'metadata'::text) AS metadata,
+      ((audit_events.event -> 'requestObject'::text) ->> 'spec'::text) AS spec,
+      ((audit_events.event -> 'requestObject'::text) ->> 'status'::text) AS requeststatus,
+      ((audit_events.event -> 'responseObject'::text) ->> 'status'::text) AS status,
+      ((audit_events.event -> 'responseObject'::text) ->> 'kind'::text) AS responsekind,
+      ((audit_events.event -> 'responseObject'::text) ->> 'metadata'::text) AS responsemetadata,
+      ((audit_events.event -> 'responseObject'::text) ->> 'spec'::text) AS responsespec
+     FROM audit_events;
 #+END_SRC
 
 #+RESULTS:
@@ -1232,16 +1249,16 @@ select audit_id, count(*) as cnt from audit_events group by audit_id order by cn
 #+begin_src sql-mode
                audit_id               | cnt 
 --------------------------------------+-----
- 246a72a6-def7-4551-b030-e41ffc99333f |   2
- 2b7758ec-1edf-416f-ac51-54a087c34ab3 |   2
- ed15f32e-b38b-4653-a217-c31eed174275 |   2
- a932ab52-2d13-4657-b935-a377bc814f61 |   2
- ed1bedef-b5a7-43ed-b43f-cf75c85dfcb4 |   2
- 348e6f6a-dd41-4fe9-8592-242a48fbeacc |   2
- b810fd25-3ea1-4ad9-bff7-cddc672e1784 |   2
- f61771d1-5c0f-49fe-bc31-824342673701 |   2
- 90854efc-c99c-48ec-8b75-87bb86ea7e0c |   2
- 4c32505e-6e82-46c3-8c20-1487091bccee |   2
+ 000feea0-f123-40de-ab0f-38ac4f9595c3 |   2
+ 00149b83-9ab4-42b2-bf2b-a51948de0d2a |   2
+ 000b4c06-001b-45d2-98d5-6002095b1277 |   2
+ 000dab12-eeb2-4d3a-96f3-7b9e31c0a067 |   2
+ 001022f4-0739-48e0-ac52-5d7d955ce07f |   2
+ 0011009f-31f8-4fb0-8689-c1ee4b1d2676 |   2
+ 00018313-2189-4164-b508-f7f252889e74 |   2
+ 0004e8b8-a12c-464a-a899-3e04ba6f9050 |   2
+ 000d6e59-654f-419f-9dbd-382926868a99 |   2
+ 001832a6-1d0e-4abb-9ef4-35e617a023ec |   2
 (10 rows)
 
 #+end_src

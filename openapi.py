@@ -75,9 +75,9 @@ def load_openapi_spec(url):
         # crazy caching using prefixes
         bits = path.strip("/").split("/", 2)
         if bits[0] in ["apis", "api"] and len(bits) > 1:
-            openapi_spec['regex_prefix']["/" + "/".join(bits[0:2])][path_regex] = path
+            openapi_spec['regex_prefix']["/" + "/".join(bits[0:2])][path_regex] = {}
         else:
-            openapi_spec['regex_prefix'][None][path_regex] = path
+            openapi_spec['regex_prefix'][None][path_regex] = {}
         # print path, path_regex, re.match(path_regex, path.rstrip('/')) is not None
         for method, swagger_method in swagger['paths'][path].items():
             if method == "parameters":
@@ -94,7 +94,8 @@ def load_openapi_spec(url):
                 continue
             if 'deprecated' in swagger_method.get('description', '').lower():
                 # print('Skipping deprecated endpoint %s %s' % (method, path))
-                continue
+                # continue
+                pass
             if 'consumes' in swagger_method:
                 # usually : ['application/json', 'application/yaml', 'application/vnd.kubernetes.protobuf']
                 # or : ['*/*']
@@ -131,6 +132,10 @@ def load_openapi_spec(url):
             op_data['method'] = method
             openapi_spec['operations'][op_id]=op_data
             op_data['id'] = op_id
+            if bits[0] in ["apis", "api"] and len(bits) > 1:
+                openapi_spec['regex_prefix']["/" + "/".join(bits[0:2])][path_regex][method]=op_id
+            else:
+                openapi_spec['regex_prefix'][None][path_regex][method] = op_id
             openapi_spec['operation_list'].append(op_data)
             # openapi_spec['operations'][op_id] = op_data
     return openapi_spec
