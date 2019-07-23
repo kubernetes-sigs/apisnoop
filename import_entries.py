@@ -129,9 +129,15 @@ def test_from_entry(entry):
     # If we didn't match, either way return ""
     return ""
 
-def timestamp_from_entry(entry):
+def request_ts_from_entry(entry):
     if 'requestReceivedTimestamp' in entry:
         return entry['requestReceivedTimestamp']
+    else:
+        return None
+
+def stage_ts_from_entry(entry):
+    if 'stageTimestamp' in entry:
+        return entry['stageTimestamp']
     else:
         return None
 
@@ -185,6 +191,7 @@ def audit_event_iterator(connection,
                 entry['auditID'],
                 testrunID, #testrunID
                 None, #opID will need to be populated later
+                entry['stage'],
                 entry['level'],
                 entry['verb'],
                 entry['requestURI'],
@@ -200,7 +207,8 @@ def audit_event_iterator(connection,
                 jsonb_from_entry(entry, 'responseObject', 'metadata'),
                 jsonb_from_entry(entry, 'responseObject', 'spec'),
                 jsonb_from_entry(entry, 'responseObject', 'status'),
-                timestamp_from_entry(entry)
+                request_ts_from_entry(entry),
+                stage_ts_from_entry(entry)
                 # parse_first_brewed(entry['first_brewed']).isoformat(),
             ))) + '\n'
             for entry in audit_events

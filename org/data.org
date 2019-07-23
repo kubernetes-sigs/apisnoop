@@ -87,13 +87,15 @@ Did not find any relations.
 
 * Audit Events
 ** columns
-*** auditID
-#+NAME: auditID
+*** audit_id
+#+NAME: audit_id
 #+BEGIN_SRC sql-mode
-    "auditID" uuid,
+    audit_id uuid NOT NULL,
 #+END_SRC
 
 This is a UUID!
+But there are multiple occurences in a single log file.
+
 **** Examples
 #+BEGIN_SRC json
   auditID: "c0793350-e7fe-42ce-93e6-8436a0eb3b39",
@@ -118,16 +120,22 @@ cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '1 "' | wc
 cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '1 "' | wc -l
 #+END_SRC
 
-*** testrunID
+*** testrun_id
 We need something to differentiate test run
-#+NAME: testrunID
+#+NAME: testrun_id
 #+BEGIN_SRC sql-mode
-    "testrunID" text,
+    testrun_id text,
 #+END_SRC
-*** opID
-#+NAME: opID
+*** op_id
+#+NAME: op_id
 #+BEGIN_SRC sql-mode
-    "opID" text,
+    op_id text,
+#+END_SRC
+*** stage
+    "stage"
+#+NAME: stage
+#+BEGIN_SRC sql-mode
+  stage text NOT NULL,
 #+END_SRC
 *** level
 #+NAME: level
@@ -169,50 +177,49 @@ stage has quite a few values
 - patch
 - update
 - watch
-*** requestURI
-#+NAME: requestURI
+*** request_uri
+#+NAME: request_uri
 #+BEGIN_SRC sql-mode
-  "requestURI" text NOT NULL,
+  request_uri text NOT NULL,
 #+END_SRC
 
 We'll need to use this to match against the OpenAPISpec to find the endpoint.
 
-requestURI: "/api/v1/namespaces/kube-system/pods/etcd-empty-dir-cleanup-bootstrap-e2e-master",
-*** userAgent
-#+NAME: userAgent
+request_uri: "/api/v1/namespaces/kube-system/pods/etcd-empty-dir-cleanup-bootstrap-e2e-master",
+*** user_agent
+#+NAME: user_agent
 #+BEGIN_SRC sql-mode
-  "userAgent" text,
+  user_agent text,
 #+END_SRC
 For e2e.test we added support to append -- and the test name at that point it time:
 
 userAgent: "kubelet/v1.16.0 (linux/amd64) kubernetes/0e499be",
 
 It may make sense to split on '--' an store what follows as the testName.
-*** testName
-#+NAME: testName
+*** test_name
+#+NAME: test_name
 #+BEGIN_SRC sql-mode
-  "testName" text,
+  test_name text,
 #+END_SRC
 
 This isn't a direct mapping, we create it if the userAgent contains '--' followed by the test name.
 For now we only see this with e2e.test.
-*** timeStamp
+*** request_ts
     "requestReceivedTimestamp"
-#+NAME: timeStamp
+#+NAME: request_ts
 #+BEGIN_SRC sql-mode
-  "timeStamp" timestamp with time zone
+  request_ts timestamp with time zone,
 #+END_SRC
-*** stage / stageTimestamp                                           :unused:
+*** stage_ts
 
 Noting that when we have a responseComplete, it's always paid with a responseStarted.
 The UUID and everything else is the same, other than the timestamp.
 I suspect this is only generated for requests that take a while.
 
 stage: "ResponseComplete", "ResponseStarted"
-#+NAME: stage
+#+NAME: stage_ts
 #+BEGIN_SRC sql-mode
-  stage text NOT NULL,
-  "stageTimestamp" timestamp with time zone,
+  stage_ts timestamp with time zone
 #+END_SRC
 *** Kind / apiVersion                                                :unused:
 
@@ -278,14 +285,15 @@ The id could probably be dropped in favor of UUID, if we only capture ResponseSt
 #+NAME: CREATE TABLE audit_events
 #+BEGIN_SRC sql-mode :noweb yes :tangle ../hasura/migrations/10_table_audit_events.up.sql
   CREATE TABLE public.audit_events (
-    <<auditID>>
-    <<testrunID>>
-    <<opID>>
+    <<audit_id>>
+    <<testrun_id>>
+    <<op_id>>
+    <<stage>>
     <<level>>
     <<verb>>
-    <<requestURI>>
-    <<userAgent>>
-    <<testName>>
+    <<request_uri>>
+    <<user_agent>>
+    <<test_name>>
     <<requestObject.kind>>
     <<requestObject.apiVersion>>
     <<requestObject.metadata>>
@@ -296,19 +304,32 @@ The id could probably be dropped in favor of UUID, if we only capture ResponseSt
     <<responseObject.metadata>>
     <<responseObject.spec>>
     <<responseObject.status>>
-    <<timeStamp>>
+    <<request_ts>>
+    <<stage_ts>>
   );
+-- Indexes
+create index audit_events_op_id on audit_events(op_id);
+create index audit_events_verb on audit_events(verb);
+create index audit_events_request_uri on audit_events(request_uri);
 #+END_SRC
 
 #+RESULTS: CREATE TABLE audit_events
 #+begin_src sql-mode
-CREATE TABLE
+ERROR:  syntax error at or near "with"
+LINE 22:   stage_ts with time zone,
+                    ^
 #+end_src
 
 #+NAME: DROP TABLE audit_events
 #+BEGIN_SRC sql-mode :noweb yes :tangle ../hasura/migrations/10_table_audit_events.down.sql
-  DROP TABLE IF EXISTS audit_events
+  DROP TABLE IF EXISTS audit_events;
 #+END_SRC
+
+#+RESULTS: DROP TABLE audit_events
+#+begin_src sql-mode
+NOTICE:  table "audit_events" does not exist, skipping
+DROP TABLE
+#+end_src
 
 #+NAME: track_table audit_events
 #+BEGIN_SRC sql-mode :noweb yes :tangle ../hasura/migrations/20_track_audit_events.up.yaml
@@ -808,10 +829,10 @@ ALTER TABLE ONLY public.object_refs
 
 * requestObjects
 ** columns
-*** requestKind
+*** requestkind
 #+NAME: requestObject.kind
 #+BEGIN_SRC sql-mode
-    requestKind text NOT NULL,
+    requestkind text NOT NULL,
 #+END_SRC
 
 **** Examples
@@ -842,10 +863,10 @@ Only responsesObjects include Status and TokenRequest
 > TokenRequest
 #+END_SRC
 
-*** requestApiVersion
+*** requestapiversion
 #+NAME: requestObject.apiVersion
 #+BEGIN_SRC sql-mode
-  requestApiVersion text NOT NULL,
+  requestapiversion text NOT NULL,
 #+END_SRC
 Might be tied to level = request, response etc
 **** examples
@@ -857,10 +878,10 @@ Might be tied to level = request, response etc
 I'm not sure here, but I feel like we should only be looking at RequestResponse... not all three.
 Huh, that was wrong.. the counts differ wildly:
 
-*** requestMeta
+*** requestmeta
 #+NAME: requestObject.metadata
 #+BEGIN_SRC sql-mode
-  requestMeta jsonb NOT NULL,
+  requestmeta jsonb NOT NULL,
 #+END_SRC
 **** examples
 #+BEGIN_SRC json
@@ -869,10 +890,10 @@ Huh, that was wrong.. the counts differ wildly:
       "creationTimestamp": null
     },
 #+END_SRC
-*** requestSpec
+*** requestspec
 #+NAME: requestObject.spec
 #+BEGIN_SRC sql-mode
-  requestSpec jsonb NOT NULL,
+  requestspec jsonb NOT NULL,
 #+END_SRC
 **** examples
 #+BEGIN_SRC json
@@ -888,10 +909,10 @@ Huh, that was wrong.. the counts differ wildly:
       "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
     },
 #+END_SRC
-*** requestStatus
+*** requeststatus
 #+NAME: requestObject.status
 #+BEGIN_SRC sql-mode
-  requestStatus jsonb NOT NULL,
+  requeststatus jsonb NOT NULL,
 #+END_SRC
 **** examples
 #+BEGIN_SRC json
@@ -946,10 +967,10 @@ These have more information
 
 * responseObjects
 ** columns
-*** responseKind
+*** responsekind
 #+NAME: responseObject.kind
 #+BEGIN_SRC sql-mode
-    responseKind text NOT NULL,
+    responsekind text NOT NULL,
 #+END_SRC
 
 **** Examples
@@ -980,10 +1001,10 @@ Only responsesObjects include Status and TokenResponse
 > TokenResponse
 #+END_SRC
 
-*** responseApiVersion
+*** responseapiversion
 #+NAME: responseObject.apiVersion
 #+BEGIN_SRC sql-mode
-  responseApiVersion text NOT NULL,
+  responseapiversion text NOT NULL,
 #+END_SRC
 Might be tied to level = response, response etc
 **** examples
@@ -995,10 +1016,10 @@ Might be tied to level = response, response etc
 I'm not sure here, but I feel like we should only be looking at ResponseResponse... not all three.
 Huh, that was wrong.. the counts differ wildly:
 
-*** responseMeta
+*** responsemeta
 #+NAME: responseObject.metadata
 #+BEGIN_SRC sql-mode
-  responseMeta jsonb NOT NULL,
+  responsemeta jsonb NOT NULL,
 #+END_SRC
 **** examples
 #+BEGIN_SRC json
@@ -1007,10 +1028,10 @@ Huh, that was wrong.. the counts differ wildly:
       "creationTimestamp": null
     },
 #+END_SRC
-*** responseSpec
+*** responsespec
 #+NAME: responseObject.spec
 #+BEGIN_SRC sql-mode
-  responseSpec jsonb NOT NULL,
+  responsespec jsonb NOT NULL,
 #+END_SRC
 **** examples
 #+BEGIN_SRC json
@@ -1026,10 +1047,10 @@ Huh, that was wrong.. the counts differ wildly:
       "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
     },
 #+END_SRC
-*** responseStatus
+*** responsestatus
 #+NAME: responseObject.status
 #+BEGIN_SRC sql-mode
-  responseStatus jsonb NOT NULL,
+  responsestatus jsonb NOT NULL,
 #+END_SRC
 **** examples
 #+BEGIN_SRC json
@@ -1198,6 +1219,136 @@ ALTER TABLE ONLY public.users_info ADD
 
 #+RESULTS:
 : ALTER TABLE
+
+* Irregularities
+** Why do we have 4 of these often enough?
+#+BEGIN_SRC sql-mode
+select * from audit_events limit 10;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+               auditid                |      testrunid      | opid |  level   | verb |                                          requesturi                                          |                             useragent                             | testname | requestkind | requestapiversion | requestmeta | requestspec | requeststatus | responsekind | responseapiversion | responsemeta | responsespec | responsestatus |           timestamp           
+--------------------------------------+---------------------+------+----------+------+----------------------------------------------------------------------------------------------+-------------------------------------------------------------------+----------+-------------+-------------------+-------------+-------------+---------------+--------------+--------------------+--------------+--------------+----------------+-------------------------------
+ d9161215-16e2-43c7-bbc0-c4268c4675e2 | 1152045379034812417 |      | Metadata | get  | /api?timeout=32s                                                                             | kubectl/v1.13.3 (linux/amd64) kubernetes/721bfa7                  |          |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 02:44:36.233208+00
+ f9330a20-7766-431d-a220-27954e84fc04 | 1152045379034812417 |      | Request  | get  | /api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master             | kubelet/v1.16.0 (linux/amd64) kubernetes/3f1cb97                  |          |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 02:44:36.2487+00
+ 120f5c89-fc0c-4ee9-9f4b-fd5af265972c | 1152045379034812417 |      | Request  | list | /api/v1/pods?fieldSelector=spec.nodeName%3Dbootstrap-e2e-master&limit=500&resourceVersion=0  | kubelet/v1.16.0 (linux/amd64) kubernetes/3f1cb97                  |          |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 02:44:36.249833+00
+ ca072dd4-90ab-4a43-b906-1d1ed74e2ffd | 1152045379034812417 |      | Request  | list | /apis/storage.k8s.io/v1beta1/csidrivers?limit=500&resourceVersion=0                          | kubelet/v1.16.0 (linux/amd64) kubernetes/3f1cb97                  |          |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 02:44:36.250418+00
+ c871cf81-c4da-4e2d-957c-d3ced63fdcf0 | 1152045379034812417 |      | Request  | list | /api/v1/services?limit=500&resourceVersion=0                                                 | kubelet/v1.16.0 (linux/amd64) kubernetes/3f1cb97                  |          |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 02:44:36.250946+00
+ 7a377b5b-2c77-413f-a61b-487be52ef7c4 | 1152045379034812417 |      | Request  | list | /api/v1/nodes?fieldSelector=metadata.name%3Dbootstrap-e2e-master&limit=500&resourceVersion=0 | kubelet/v1.16.0 (linux/amd64) kubernetes/3f1cb97                  |          |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 02:44:36.251537+00
+ fe6a7cbd-41fc-4d86-86dd-f18ef4ab335a | 1152045379034812417 |      | Request  | list | /api/v1/nodes?fieldSelector=metadata.name%3Dbootstrap-e2e-master&limit=500&resourceVersion=0 | kubelet/v1.16.0 (linux/amd64) kubernetes/3f1cb97                  |          |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 02:44:36.252048+00
+ 76ca9efe-3e75-4e7f-bf84-51ec47568548 | 1152045379034812417 |      | Request  | list | /apis/node.k8s.io/v1beta1/runtimeclasses?limit=500&resourceVersion=0                         | kubelet/v1.16.0 (linux/amd64) kubernetes/3f1cb97                  |          |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 02:44:36.252599+00
+ 1eb78b18-e6da-42a1-a5e1-00ddc90dd004 | 1152045379034812417 |      | Request  | list | /apis/apps/v1/replicasets?limit=500&resourceVersion=0                                        | kube-scheduler/v1.16.0 (linux/amd64) kubernetes/3f1cb97/scheduler |          |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 02:44:36.25311+00
+ fb42ed99-622c-404f-9763-2a01bb1667ca | 1152045379034812417 |      | Request  | list | /api/v1/replicationcontrollers?limit=500&resourceVersion=0                                   | kube-scheduler/v1.16.0 (linux/amd64) kubernetes/3f1cb97/scheduler |          |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 02:44:36.253425+00
+(10 rows)
+
+#+end_src
+
+#+BEGIN_SRC sql-mode
+select   count(*),
+         audit_id, verb, stage, "level", request_uri
+as cnt from audit_events
+group by audit_id, verb, stage, "level", request_uri order by cnt desc limit 40;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+ count |               audit_id               | verb |      stage       |  level   |           cnt           
+-------+--------------------------------------+------+------------------+----------+-------------------------
+     2 | 0368a354-5488-4900-bd43-a6571ba4934b | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 03c9e933-bfe2-4b5e-bf18-33fc80e8b05b | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 053b658f-d034-468f-87c3-64d2645a8d09 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 085077b4-f6c3-42ec-b8f0-6a29eb974742 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 0aadbcf5-e715-403f-aed1-c3ef698948d2 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 0b8207f3-d850-44f6-905f-a62748f6f7f0 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 10272d27-c0b8-4757-834e-4d5feaf8f848 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 12273b8d-3e4a-4738-a3f7-e3eaf74029fb | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 130322be-9c3d-41d9-be9a-0d0f5928002b | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 14ba9733-5043-4915-bfe6-2881bcf62283 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 170729be-3c9c-4efd-be73-9c13f88de2fe | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 17da4908-336f-408f-96a6-c95712930489 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 18346557-f3ab-40fd-a159-5f2bec1614f0 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 19d289a9-0e16-4fb5-b1e8-b82d824c720f | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 1f90cbe1-0bc3-495d-bdf5-6dc38f3855eb | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 20d23a42-22b4-4680-b6b5-5c3ed05c2593 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 2304a707-91f6-4b6f-bd7d-0bee8f876ec0 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 247bc7c4-b28d-48f2-993b-edf847d66090 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 285bcf60-9ba9-4d5c-b71f-5b56e2045d26 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 2f2fd172-86e8-478e-ac13-82147c6a7bab | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 36e7d788-5b0b-4355-8eb2-b3ce09d3db13 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 3953e055-95bc-4fdc-8767-3c48b1b6e0d3 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 3b826379-ca9d-45c5-8099-458f456a30dc | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 3bc95382-e7bf-4c67-8259-be91626cd35c | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 3ddf5621-9488-4e0d-bf42-e91abbed1055 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 404cc4ac-cae9-4604-9e15-c9c8a84c5488 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 42bbfe52-3f64-4d70-b435-5acb1c1b529a | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 48e9ea91-838e-43f1-b972-448a9d7ca024 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 4a0762fb-8aee-4b15-9d19-f768651a125f | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 4aaf42c3-612a-409e-bd46-0496c81d87d5 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 4b167ca3-2b71-42c1-87c4-2a50bdc1c2c1 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 4b7abfe7-b105-4020-8f44-803d170ee8bc | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 4b95e12a-dc40-4e5e-8183-e986221feb09 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 4d18f7e3-855b-4a96-ab95-95942260df76 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 4e26452c-2bf2-47a4-aef8-8d917db5fb54 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 504fad8e-a6cf-4b15-882e-889083c90a12 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 5248a862-d405-4233-9a40-23eb831495c6 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 52cd3bdb-01a5-4b41-9b71-2bbf0a2cceff | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 56381444-7424-48b3-bfa2-186809072f4a | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+     2 | 5744fe1f-57a6-44e1-87ac-e026d5b82085 | get  | ResponseComplete | Metadata | /openapi/v2?timeout=32s
+(40 rows)
+
+#+end_src
+
+
+#+BEGIN_SRC shell
+cat ~/ii/apisnoop/data-gen/cache/ci-kubernetes-e2e-gci-gce/1152045379034812417/kube-apiserver-audit.log \
+  | jq -c '. | select( .auditID | contains("003bd7aa-0e61-46a3-9920-fef0abd2f08e"))' \
+  | jq .stage 
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+"ResponseStarted"
+"ResponseComplete"
+"ResponseStarted"
+"ResponseComplete"
+#+end_EXAMPLE
+
+
+In particular where every row is the same:
+
+#+NAME: four of the same 
+#+BEGIN_SRC  sql-mode
+   select *
+  --  select audit_id, stage 
+     from audit_events
+    where audit_id = '003bd7aa-0e61-46a3-9920-fef0abd2f08e'
+    order by stage;
+#+END_SRC
+
+#+RESULTS: four of the same
+#+begin_src sql-mode
+               audit_id               |     testrun_id      | op_id |      stage       |  level  | verb  |                                             request_uri                                             |                     user_agent                     |                                                             test_name                                                              | requestkind | requestapiversion | requestmeta | requestspec | requeststatus | responsekind | responseapiversion | responsemeta | responsespec | responsestatus |          request_ts           |           stage_ts            
+--------------------------------------+---------------------+-------+------------------+---------+-------+-----------------------------------------------------------------------------------------------------+----------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------+-------------+-------------------+-------------+-------------+---------------+--------------+--------------------+--------------+--------------+----------------+-------------------------------+-------------------------------
+ 003bd7aa-0e61-46a3-9920-fef0abd2f08e | 1152045379034812417 |       | ResponseComplete | Request | watch | /api/v1/namespaces/provisioning-97/serviceaccounts?fieldSelector=metadata.name%3Ddefault&watch=true | e2e.test/v1.16.0 (linux/amd64) kubernetes/3f1cb97  |  [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (default fs)] subPath should support existing directory |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 03:03:04.788019+00 | 2019-07-19 03:03:04.827182+00
+ 003bd7aa-0e61-46a3-9920-fef0abd2f08e | 1152045379034812417 |       | ResponseComplete | Request | watch | /api/v1/namespaces/provisioning-97/serviceaccounts?fieldSelector=metadata.name%3Ddefault&watch=true | e2e.test/v1.16.0 (linux/amd64) kubernetes/3f1cb97  |  [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (default fs)] subPath should support existing directory |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 03:03:04.788019+00 | 2019-07-19 03:03:04.827182+00
+ 003bd7aa-0e61-46a3-9920-fef0abd2f08e | 1152045379034812417 |       | ResponseStarted  | Request | watch | /api/v1/namespaces/provisioning-97/serviceaccounts?fieldSelector=metadata.name%3Ddefault&watch=true | e2e.test/v1.16.0 (linux/amd64) kubernetes/3f1cb97  |  [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (default fs)] subPath should support existing directory |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 03:03:04.788019+00 | 2019-07-19 03:03:04.827128+00
+ 003bd7aa-0e61-46a3-9920-fef0abd2f08e | 1152045379034812417 |       | ResponseStarted  | Request | watch | /api/v1/namespaces/provisioning-97/serviceaccounts?fieldSelector=metadata.name%3Ddefault&watch=true | e2e.test/v1.16.0 (linux/amd64) kubernetes/3f1cb97  |  [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (default fs)] subPath should support existing directory |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 03:03:04.788019+00 | 2019-07-19 03:03:04.827128+00
+(4 rows)
+
+#+end_src
+
+#+RESULTS:
+#+begin_src sql-mode
+               auditid                |      testrunid      | opid |  level  | verb  |                                             requesturi                                              |                     useragent                      |                                                              testname                                                              | requestkind | requestapiversion | requestmeta | requestspec | requeststatus | responsekind | responseapiversion | responsemeta | responsespec | responsestatus |           timestamp           
+--------------------------------------+---------------------+------+---------+-------+-----------------------------------------------------------------------------------------------------+----------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------+-------------+-------------------+-------------+-------------+---------------+--------------+--------------------+--------------+--------------+----------------+-------------------------------
+ 003bd7aa-0e61-46a3-9920-fef0abd2f08e | 1152045379034812417 |      | Request | watch | /api/v1/namespaces/provisioning-97/serviceaccounts?fieldSelector=metadata.name%3Ddefault&watch=true | e2e.test/v1.16.0 (linux/amd64) kubernetes/3f1cb97  |  [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (default fs)] subPath should support existing directory |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 03:03:04.788019+00
+ 003bd7aa-0e61-46a3-9920-fef0abd2f08e | 1152045379034812417 |      | Request | watch | /api/v1/namespaces/provisioning-97/serviceaccounts?fieldSelector=metadata.name%3Ddefault&watch=true | e2e.test/v1.16.0 (linux/amd64) kubernetes/3f1cb97  |  [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (default fs)] subPath should support existing directory |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 03:03:04.788019+00
+ 003bd7aa-0e61-46a3-9920-fef0abd2f08e | 1152045379034812417 |      | Request | watch | /api/v1/namespaces/provisioning-97/serviceaccounts?fieldSelector=metadata.name%3Ddefault&watch=true | e2e.test/v1.16.0 (linux/amd64) kubernetes/3f1cb97  |  [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (default fs)] subPath should support existing directory |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 03:03:04.788019+00
+ 003bd7aa-0e61-46a3-9920-fef0abd2f08e | 1152045379034812417 |      | Request | watch | /api/v1/namespaces/provisioning-97/serviceaccounts?fieldSelector=metadata.name%3Ddefault&watch=true | e2e.test/v1.16.0 (linux/amd64) kubernetes/3f1cb97  |  [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (default fs)] subPath should support existing directory |             |                   | {}          | {}          | {}            |              |                    | {}           | {}           | {}             | 2019-07-19 03:03:04.788019+00
+(4 rows)
+
+#+end_src
 
 * Footnotes
 
