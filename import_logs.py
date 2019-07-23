@@ -161,7 +161,6 @@ def audit_event_iterator(connection,
                          audit_events: Iterator[Dict[str, Any]],
                          size: int = 8192) -> None:
     with connection.cursor() as cursor:
-        recreate_audit_events_table(cursor)
 
         audit_events_string_iterator = StringIteratorIO((
             '|'.join(map(clean_csv_value, (
@@ -216,6 +215,10 @@ def main(artifacts):#,dbname):
         password=None,
     )
     connection.set_session(autocommit=True)
+    cursor=connection.cursor()
+    print("Recreating Tables and Indexes")
+    recreate_audit_events_table(cursor)
+    openapi.recreate_api_operations_table(cursor)
     swagger = openapi.load_openapi_spec(os.environ['HOME']+"/go/src/k8s.io/kubernetes/api/openapi-spec/swagger.json")
     openapi.openapi_operation_iterator(connection,swagger['operations'])
 
@@ -241,6 +244,7 @@ def main(artifacts):#,dbname):
         audit_job = auditpath.split('/')[-1]
         audit_name = type + '_' + semver + '_' + str(ts.date())
         events = list(iter_audit_events_from_logfile(auditfile))
+        print("Loading %s", ts)
         audit_event_iterator(connection, audit_job, events)
 
 if __name__ == "__main__":

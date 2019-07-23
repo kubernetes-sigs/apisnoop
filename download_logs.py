@@ -117,7 +117,7 @@ def main(sources_yaml,dest):
         if logfile == combined_log_file:
             # print("Skipping: " + logfile)
             continue
-        log = open(combined_log_file, 'wb')
+        log = open(combined_log_file, 'ab')
         print("Processing: " + logfile)
         if logfile.endswith('z'):
             subprocess.call(['zcat', logfile], stdout=log)
