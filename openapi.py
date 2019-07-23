@@ -35,7 +35,7 @@ def regex_from_path(path):
     else:
         path_regex += "$"
     # print('Converted path: %s into path_regex: %s' % (path, path_regex))
-    return path_regex
+    return "^" + path_regex
 
 LEVEL_PATTERN = re.compile("/v(?P<api_version>[0-9]+)(?:(?P<api_level>alpha|beta)(?P<api_level_version>[0-9]+))?")
 def level_from_path(path):
@@ -48,26 +48,37 @@ def level_from_path(path):
         level = "stable"
     return level
 
+import ipdb
+from collections import defaultdict
 try:
-    from urllib.parse import urlparse
+     from urllib.parse import urlparse
 except Exception as e:
-    from urlparse import urlparse
+     from urlparse import urlparse
 
 def load_openapi_spec(url):
     if urlparse(url).scheme in ['http', 'https']:
-        swagger = requests.get(url).json()
+         swagger = requests.get(url).json()
     else: # treat as file on disk
-        with open(url, "rb") as f:
-            swagger = json.load(f)
+         with open(url, "rb") as f:
+              swagger = json.load(f)
 
     openapi_spec = {}
     openapi_spec['operations'] = {}
     openapi_spec['parameters'] = {}
     openapi_spec['operation_list'] = []
     openapi_spec['parameter_list'] = []
+    openapi_spec['regex_prefix'] = defaultdict(dict)
+    openapi_spec['hit_cache'] = {}
 
     for path in swagger['paths']:
         path_regex = regex_from_path(path)
+        # crazy caching using prefixes
+        bits = path.strip("/").split("/", 2)
+        if bits[0] in ["apis", "api"] and len(bits) > 1:
+            openapi_spec['regex_prefix']["/" + "/".join(bits[0:2])][path_regex] = path
+        else:
+            openapi_spec['regex_prefix'][None][path_regex] = path
+        # print path, path_regex, re.match(path_regex, path.rstrip('/')) is not None
         for method, swagger_method in swagger['paths'][path].items():
             if method == "parameters":
                 # List seems beter than dict since we are exporting to SQL
@@ -172,12 +183,11 @@ def recreate_api_operations_table(cursor):
     cursor.execute(open('./hasura/migrations/20_table_api_operations.down.sql').read())
     # cursor.execute("CREATE TABLE public.audit_events (event jsonb);")
     cursor.execute(open('./hasura/migrations/20_table_api_operations.up.sql').read())
-import ipdb
 def openapi_operation_iterator(connection,
-                         api_operations: Iterator[Dict[str, Any]],
+                         swagger: Iterator[Dict[str, Any]],
+                         #api_operations: Iterator[Dict[str, Any]],
                          size: int = 8192) -> None:
     with connection.cursor() as cursor:
-        recreate_api_operations_table(cursor)
 
         audit_events_string_iterator = StringIteratorIO((
             '|'.join(map(clean_csv_value, (
@@ -193,7 +203,7 @@ def openapi_operation_iterator(connection,
                 op["category"],
                 op["description"],
             ))) + '\n'
-            for op_id,op in api_operations.items()
+            for op_id,op in swagger['operations'].items()
         ))
 
         cursor.copy_from(audit_events_string_iterator,

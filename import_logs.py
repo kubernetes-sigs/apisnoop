@@ -3,6 +3,7 @@
 import json
 # try:
 from urllib.request import urlopen, urlretrieve
+from urllib.parse import urlparse
 # except Exception as e:
 #     from urllib import urlopen, urlretrieve
 import os
@@ -125,6 +126,11 @@ def text_from_entry(entry, obj, key):
             return entry[obj][key]
     return ""
 
+def swagger_op_from_entry(entry, swagger):
+    endpoint=find_openapi_entry(swagger, entry)
+    import ipdb ; ipdb.set_trace(context=10)
+    return ""
+
 
 def jsonb_from_entry(entry, obj, key):
     if obj in entry:
@@ -158,6 +164,7 @@ def jsonb_from_entry(entry, obj, key):
 # @profile
 def audit_event_iterator(connection,
                          testrunID,
+                         swagger: Iterator[Dict[str, Any]],
                          audit_events: Iterator[Dict[str, Any]],
                          size: int = 8192) -> None:
     with connection.cursor() as cursor:
@@ -166,7 +173,7 @@ def audit_event_iterator(connection,
             '|'.join(map(clean_csv_value, (
                 entry['auditID'],
                 testrunID, #testrunID
-                None, #opID will need to be populated later
+                None, #swagger_op_from_entry(entry, swagger),
                 entry['stage'],
                 entry['level'],
                 entry['verb'],
@@ -199,6 +206,33 @@ def file_to_json(filename):
     data = content.encode('ascii')
     return json.loads(data)
 
+def find_openapi_entry(openapi_spec, event):
+  url = urlparse(event['requestURI'])
+  hit_cache = openapi_spec['hit_cache']
+  prefix_cache = openapi_spec['prefix_cache']
+  # 1) Cached seen before results
+  if url.path in hit_cache:
+    return hit_cache[url.path]
+  # 2) Indexed by prefix patterns to cut down search time
+  for prefix in prefix_cache:
+    if prefix is not None and url.path.startswith(prefix):
+      # print prefix, url.path
+      paths = prefix_cache[prefix]
+      break
+  else:
+    paths = prefix_cache[None]
+
+  for regex in paths:
+    if re.match(regex, url.path):
+      hit_cache[url.path] = openapi_spec['paths'][regex]
+      return openapi_spec['paths'][regex]
+    elif re.search(regex, event['requestURI']):
+      print("Incomplete match", regex, event['requestURI'])
+  # import ipdb; ipdb.set_trace(context=60)
+  # cache failures too
+  hit_cache[url.path] = None
+  return None
+
 import os
 import openapi
 @click.command()
@@ -219,8 +253,9 @@ def main(artifacts):#,dbname):
     print("Recreating Tables and Indexes")
     recreate_audit_events_table(cursor)
     openapi.recreate_api_operations_table(cursor)
-    swagger = openapi.load_openapi_spec(os.environ['HOME']+"/go/src/k8s.io/kubernetes/api/openapi-spec/swagger.json")
-    openapi.openapi_operation_iterator(connection,swagger['operations'])
+    swagger_file = os.environ['HOME']+"/go/src/k8s.io/kubernetes/api/openapi-spec/swagger.json"
+    swagger = openapi.load_openapi_spec(swagger_file)
+    openapi.openapi_operation_iterator(connection,swagger)
 
     for auditfile in glob.glob(artifacts + '/*/*/combined-audit.log'):
         auditpath = os.path.dirname(auditfile)
@@ -245,7 +280,7 @@ def main(artifacts):#,dbname):
         audit_name = type + '_' + semver + '_' + str(ts.date())
         events = list(iter_audit_events_from_logfile(auditfile))
         print("Loading %s", ts)
-        audit_event_iterator(connection, audit_job, events)
+        audit_event_iterator(connection, audit_job, swagger, events)
 
 if __name__ == "__main__":
     main()
