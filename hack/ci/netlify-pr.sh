@@ -18,8 +18,8 @@ PRODUCTION_BUCKET="gs-bucket: apisnoop/logs/apisnoop-postprocess-audits/$PRODUCT
 PR_JOB_ID=$(
   gsutil ls \
          "gs://apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/*/artifacts/*/*/endpoints.json" \
-    | sort -n | tail -1 | awk -F/ '{print $6}')
-PR_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$JOB_ID/artifacts/"
+    | sort -n | tail -1 | awk -F/ '{print $8}')
+PR_BUCKET="gs-bucket: apisnoop/pr-logs/pull/$REVIEW_ID/apisnoop-process-audits/$PR_JOB_ID/artifacts/"
 
 # TMATE_TMPDIR=$(mktemp -d /tmp/tmate-ci-XXX)
 # # install tmate
