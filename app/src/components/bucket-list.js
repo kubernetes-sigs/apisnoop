@@ -5,6 +5,7 @@ import { map } from 'lodash'
 function BucketList (props) {
 
   const { doUpdateQuery,
+          doMarkFinishedResourceAsOutdated,
           doMarkEndpointsResourceAsOutdated,
           doMarkMetadataResourceAsOutdated,
           doMarkTestsResourceAsOutdated,
@@ -16,8 +17,10 @@ function BucketList (props) {
           activeBucketJob,
           queryObject
         } = props
+
   if (config == null) return null
   let defaultBucket = bucketJobPaths[activeBucketJob]
+
   return (
       <div id='bucket-list' className='mb3 pa1'>
       <h2 className='mb0 f5'>Select a Bucket</h2>
@@ -30,7 +33,8 @@ function BucketList (props) {
               {bucket}
             </option>
           )
-      })}
+        }
+      )}
     </select>
       </div>
   )
@@ -38,6 +42,7 @@ function BucketList (props) {
   function handleClick (path) {
     let bucket = path;
     doMarkEndpointsResourceAsOutdated()
+    doMarkFinishedResourceAsOutdated()
     doMarkTestsResourceAsOutdated()
     doMarkTestSequencesResourceAsOutdated()
     doMarkTestTagsResourceAsOutdated()
@@ -49,6 +54,7 @@ function BucketList (props) {
 
 export default connect(
   'doUpdateQuery',
+  'doMarkFinishedResourceAsOutdated',
   'doMarkEndpointsResourceAsOutdated',
   'doMarkTestsResourceAsOutdated',
   'doMarkMetadataResourceAsOutdated',
