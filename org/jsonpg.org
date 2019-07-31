@@ -32,7 +32,8 @@ Which will be the 'jsonb' type for the data column when we import.
 #+END_SRC
 
 * api operations + parameters = responses
-** TODO operations view from swagger.json table
+** TADA operations view from swagger.json table
+   CLOSED: [2019-07-31 Wed 00:54]
 - [ ] model it after existing api_operations table
 - [ ] ensure additional loading of parameters
 - [ ] ensure additional loading of responses
@@ -111,7 +112,44 @@ Now we can make a new uuid as id with =uuid_generate_v1()=.  This'll let us easi
     These are two columns I couldn't get directlyf rom the swagger.json, and am unsure how they were gathered.  The closest thing to the category was certain tags within the tag column, but not sure if that's correct.
 
 ** TODO parameters view
-** TODO responses view
+   We can make this in the same way as all our other jsonb_each views.  So we'll derive from the api_operations, iterating over its parameters jsonb.
+** TADA responses view
+   CLOSED: [2019-07-31 Wed 00:54]
+   Our table should be:
+   responseId, response Number, description, schemaRef, schemaType
+   it would be something like
+   
+   
+  | id             | api_operations_id | response | descrption   | schema                    |
+  |----------------+-------------------+----------+--------------+---------------------------|
+  | 23j301j3-3j3j3 | fj3jdjaj2-3j2j3   |      200 | OK           | string                    |
+  | 30392-32j23j3  | fjkdjsjdskj-2jdjd |      401 | Unauthorized | NULL                      |
+  | 3030-3392039   | fjkjsjdjfj-2jfjdj |      200 | ok           | "#/definitions/something" |
+
+
+   We can make this with the following sql statement:
+
+   #+NAME: Responses View
+   #+BEGIN_SRC sql-mode :eval never
+     CREATE OR REPLACE VIEW "public"."responses" AS 
+       SELECT uuid_generate_v1() AS id,
+              api_operations.id AS api_operations_id,
+              d.key AS response,
+              (d.value ->> 'description'::text) AS description,
+              CASE
+              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> 'type'::text) IS NOT NULL))
+                THEN ((d.value -> 'schema'::text) ->> 'type'::text)
+              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
+               THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
+              ELSE NULL::text
+             END AS schema
+         FROM (api_operations
+               JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
+        ORDER BY (uuid_generate_v1());
+   #+END_SRC
+   
+   This is live on hasura.sharing.io as the =responses= view.
+   
 ** TODO materialized views
 ** TODO optimization indexes on materialized views
 ** raw operation json
