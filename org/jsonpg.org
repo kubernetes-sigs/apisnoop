@@ -32,7 +32,8 @@ Which will be the 'jsonb' type for the data column when we import.
 #+END_SRC
 
 * api operations + parameters = responses
-** TODO operations view from swagger.json table
+** TADA operations view from swagger.json table
+   CLOSED: [2019-07-31 Wed 00:54]
 - [ ] model it after existing api_operations table
 - [ ] ensure additional loading of parameters
 - [ ] ensure additional loading of responses
@@ -54,8 +55,154 @@ create index api_operations_method on api_operations(method);
 create index api_operations_regexp on api_operations(regexp);
 #+END_SRC
 
+In the swagger.json, we have a =paths= key, with subkeys like =/api= and =/api/v1/=.  Each of these are also objects, containing keys based on the operation method.
+
+And so we would want to create records for each path, and then records for each method within the path.
+
+The way I did this was to first create a view called raw_paths, which just contains the swagger it came from and the entirety of its jsonb.
+We can then use that to generate our api_operations
+
+#+NAME: raw_paths view
+#+BEGIN_SRC sql-mode :eval never
+  CREATE OR REPLACE VIEW "public"."raw_paths" AS 
+    SELECT raw_swaggers.id AS raw_swagger_id,
+           d.key AS path,
+           d.value
+      FROM (raw_swaggers
+            JOIN LATERAL jsonb_each((raw_swaggers.data -> 'paths'::text)) d(key, value) ON (true))
+     ORDER BY d.key;
+#+END_SRC
+
+We then use raw_paths in this new api_operations view.  
+I assign a UUID for each record entry, so we can create parameters and responses views that link back to the right operation record.
+
+To be able to assign a UUID we need to extend our db to have a uuid generator.  We can do this in hasura, by just throwing in raw sql.
+
+#+NAME: extend db for uuid generation
+#+BEGIN_SRC sql-mode :eval never
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+#+END_SRC
+
+Now we can make a new uuid as id with =uuid_generate_v1()=.  This'll let us easily link our params and responses view to the right operation record.
+
+#+NAME: New api_operations view
+#+BEGIN_SRC sql-mode :eval never
+  CREATE OR REPLACE VIEW "public"."zapi_operations" AS 
+    SELECT (d.value ->> 'operationId'::text) AS operationId,
+           uuid_generate_v1() as id,
+           raw_paths.raw_swagger_id as raw_swagger_id,
+           d.key AS method,
+           raw_paths.path as path,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS "group",
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS version,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS kind,
+           (d.value ->> 'description'::text) AS description,
+           (d.value ->> 'x-kubernetes-action'::text) AS x_kubernetes_action,
+           (d.value -> 'tags'::text) AS tags,
+           (d.value -> 'schemes'::text) AS schemes,
+           (d.value -> 'consumes'::text) AS consumes,
+           (d.value -> 'responses'::text) AS responses
+           (d.value -> 'parameters') AS parameters
+      FROM (raw_paths
+            JOIN LATERAL jsonb_each(raw_paths.value) d(key, value) ON (true))
+     ORDER BY (d.value ->> 'operationId'::text);
+#+END_SRC
+
+*** TODO figure out category and regex columns
+    These are two columns I couldn't get directlyf rom the swagger.json, and am unsure how they were gathered.  The closest thing to the category was certain tags within the tag column, but not sure if that's correct.
+
 ** TODO parameters view
-** TODO responses view
+   
+   for any given api_operation, its parameters will be an array of objects, with each object having a =name= and =in= field.  
+   If the parameter is /in/ the /body/, then it will also have a schema.$ref that gives a link to its definition.
+   Otherwise, it will have a type and description.
+
+   Because of this, we can create a parameters view with
+
+  | api_operations_id     | name | in | type                                     | description                    | unique_items |
+  |-----------------------+------+----+------------------------------------------+--------------------------------+--------------|
+  | link to its operation | name | in | either its given type or 'schema object' | its description or schema.$ref | null or true |
+   
+  I could not figure out how to get this straight from the raw_swaggers, since not all api_operations have parameters.
+  
+  Instead, I created a view of only the operations with parameters...
+
+  #+NAME: api_operations_with_parameters
+  #+BEGIN_SRC sql-mode :eval never
+    CREATE OR REPLACE VIEW "public"."operations_with_parameters" AS 
+      SELECT uuid_generate_v1() AS id,
+             api_operations.id AS api_operations_id,
+             api_operations.parameters
+        FROM api_operations
+       WHERE (api_operations.parameters IS NOT NULL)
+       ORDER BY (uuid_generate_v1());
+  #+END_SRC
+
+then based our parameters view from it:
+
+#+NAME: api_operations_parameters view
+#+BEGIN_SRC sql-mode :eval never
+  CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
+    SELECT operations_with_parameters.api_operations_id,
+           (param.entry ->> 'name'::text) AS name,
+           (param.entry ->> 'in'::text) AS "in",
+           CASE
+           WHEN ((param.entry ->> 'in'::text) = 'body'::text) THEN 'schema object'::text
+           ELSE (param.entry ->> 'type'::text)
+          END AS type,
+           CASE
+           WHEN ((param.entry ->> 'in'::text) = 'body'::text) THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+           ELSE (param.entry ->> 'description'::text)
+          END AS description,
+           CASE
+           WHEN ((param.entry ->> 'required'::text) IS NULL) THEN 'false'::text
+           ELSE (param.entry ->> 'required'::text)
+          END AS required,
+           (param.entry ->> 'uniqueItems'::text) AS unique_items,
+           param.entry AS full_entry
+      FROM operations_with_parameters,
+           LATERAL jsonb_array_elements(operations_with_parameters.parameters) WITH ORDINALITY param(entry, index);
+#+END_SRC
+
+this is now live at =hasura.sharing.io=
+
+** TADA responses view
+   CLOSED: [2019-07-31 Wed 00:54]
+   Our table should be:
+   responseId, response Number, description, schemaRef, schemaType
+   it would be something like
+   
+   
+  | id             | api_operations_id | response | descrption   | schema                    |
+  |----------------+-------------------+----------+--------------+---------------------------|
+  | 23j301j3-3j3j3 | fj3jdjaj2-3j2j3   |      200 | OK           | string                    |
+  | 30392-32j23j3  | fjkdjsjdskj-2jdjd |      401 | Unauthorized | NULL                      |
+  | 3030-3392039   | fjkjsjdjfj-2jfjdj |      200 | ok           | "#/definitions/something" |
+
+
+   We can make this with the following sql statement:
+
+   #+NAME: Responses View
+   #+BEGIN_SRC sql-mode :eval never
+     CREATE OR REPLACE VIEW "public"."responses" AS 
+       SELECT uuid_generate_v1() AS id,
+              api_operations.id AS api_operations_id,
+              d.key AS response,
+              (d.value ->> 'description'::text) AS description,
+              CASE
+              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> 'type'::text) IS NOT NULL))
+                THEN ((d.value -> 'schema'::text) ->> 'type'::text)
+              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
+               THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
+              ELSE NULL::text
+             END AS schema
+         FROM (api_operations
+               JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
+        ORDER BY (uuid_generate_v1());
+   #+END_SRC
+   
+   This is live on hasura.sharing.io as the =responses= view.
+   
 ** TODO materialized views
 ** TODO optimization indexes on materialized views
 ** raw operation json
