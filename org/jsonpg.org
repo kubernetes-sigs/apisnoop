@@ -111,7 +111,7 @@ Now we can make a new uuid as id with =uuid_generate_v1()=.  This'll let us easi
 *** TODO figure out category and regex columns
     These are two columns I couldn't get directlyf rom the swagger.json, and am unsure how they were gathered.  The closest thing to the category was certain tags within the tag column, but not sure if that's correct.
 
-** TODO parameters view
+** TODO [#B] parameters view
    
    for any given api_operation, its parameters will be an array of objects, with each object having a =name= and =in= field.  
    If the parameter is /in/ the /body/, then it will also have a schema.$ref that gives a link to its definition.
@@ -202,6 +202,32 @@ this is now live at =hasura.sharing.io=
    #+END_SRC
    
    This is live on hasura.sharing.io as the =responses= view.
+   
+** TODO Update Types View to be on swagger.json
+
+   We did two updates, big one changing the name from types to resources.  these objects are v. vague and overlap with others with similar names.  In essence, they are called definitions in the swagger.json, but refer to group/version/kinds and each have their own type within.  A name needs to be decided for this that doesn't clash, and resource seems to work.
+   
+   The query is straightforward, building from the ones above, with an additional new thing of converting their required jsonb array into a string array (since this is similar to other tickets we'll need to do).  I got how to do this from [[https://www.dbrnd.com/2016/08/postgresql-9-4-how-to-convert-json-array-elements-into-string-array-jsonb_array_elements-string_agg/][this website]]
+
+#+NAME: api_resources view
+#+BEGIN_SRC sql-mode :eval never
+CREATE OR REPLACE VIEW "public"."api_resources" AS 
+ SELECT d.key AS name,
+    uuid_generate_v1() AS id,
+    raw_swaggers.id AS raw_swagger_id,
+    d.value,
+    (d.value ->> 'type'::text) AS resource_type,
+    (d.value -> 'properties'::text) AS properties,
+    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
+    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
+    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
+    ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
+           FROM jsonb_array_elements((d.value -> 'required'::text)) jsonstring(value)) AS required
+   FROM (raw_swaggers
+     JOIN LATERAL jsonb_each((raw_swaggers.data -> 'definitions'::text)) d(key, value) ON (true))
+  ORDER BY id;
+#+END_SRC
+
    
 ** TODO materialized views
 ** TODO optimization indexes on materialized views
