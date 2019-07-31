@@ -112,7 +112,60 @@ Now we can make a new uuid as id with =uuid_generate_v1()=.  This'll let us easi
     These are two columns I couldn't get directlyf rom the swagger.json, and am unsure how they were gathered.  The closest thing to the category was certain tags within the tag column, but not sure if that's correct.
 
 ** TODO parameters view
-   We can make this in the same way as all our other jsonb_each views.  So we'll derive from the api_operations, iterating over its parameters jsonb.
+   
+   for any given api_operation, its parameters will be an array of objects, with each object having a =name= and =in= field.  
+   If the parameter is /in/ the /body/, then it will also have a schema.$ref that gives a link to its definition.
+   Otherwise, it will have a type and description.
+
+   Because of this, we can create a parameters view with
+
+  | api_operations_id     | name | in | type                                     | description                    | unique_items |
+  |-----------------------+------+----+------------------------------------------+--------------------------------+--------------|
+  | link to its operation | name | in | either its given type or 'schema object' | its description or schema.$ref | null or true |
+   
+  I could not figure out how to get this straight from the raw_swaggers, since not all api_operations have parameters.
+  
+  Instead, I created a view of only the operations with parameters...
+
+  #+NAME: api_operations_with_parameters
+  #+BEGIN_SRC sql-mode :eval never
+    CREATE OR REPLACE VIEW "public"."operations_with_parameters" AS 
+      SELECT uuid_generate_v1() AS id,
+             api_operations.id AS api_operations_id,
+             api_operations.parameters
+        FROM api_operations
+       WHERE (api_operations.parameters IS NOT NULL)
+       ORDER BY (uuid_generate_v1());
+  #+END_SRC
+
+then based our parameters view from it:
+
+#+NAME: api_operations_parameters view
+#+BEGIN_SRC sql-mode :eval never
+  CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
+    SELECT operations_with_parameters.api_operations_id,
+           (param.entry ->> 'name'::text) AS name,
+           (param.entry ->> 'in'::text) AS "in",
+           CASE
+           WHEN ((param.entry ->> 'in'::text) = 'body'::text) THEN 'schema object'::text
+           ELSE (param.entry ->> 'type'::text)
+          END AS type,
+           CASE
+           WHEN ((param.entry ->> 'in'::text) = 'body'::text) THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+           ELSE (param.entry ->> 'description'::text)
+          END AS description,
+           CASE
+           WHEN ((param.entry ->> 'required'::text) IS NULL) THEN 'false'::text
+           ELSE (param.entry ->> 'required'::text)
+          END AS required,
+           (param.entry ->> 'uniqueItems'::text) AS unique_items,
+           param.entry AS full_entry
+      FROM operations_with_parameters,
+           LATERAL jsonb_array_elements(operations_with_parameters.parameters) WITH ORDINALITY param(entry, index);
+#+END_SRC
+
+this is now live at =hasura.sharing.io=
+
 ** TADA responses view
    CLOSED: [2019-07-31 Wed 00:54]
    Our table should be:
