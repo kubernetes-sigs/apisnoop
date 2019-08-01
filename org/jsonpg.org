@@ -31,13 +31,14 @@ Which will be the 'jsonb' type for the data column when we import.
   | psql -c "COPY raw_swaggers (data) FROM STDIN (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');"
 #+END_SRC
 
-* api operations + parameters = responses
-** TADA operations view from swagger.json table
+* api operations + parameters => responses
+** TADA API operations view from swagger.json table
    CLOSED: [2019-07-31 Wed 00:54]
+*** views
 - [X] model it after existing api_operations table
 - [ ] ensure additional loading of parameters
 - [ ] ensure additional loading of responses
-
+*** api_operations view
 #+NAME: existing api_operations table
 #+BEGIN_SRC sql-mode :eval never
 CREATE TABLE public.api_operations (
@@ -64,7 +65,7 @@ The way I did this was to first create a view called raw_paths, which just conta
 We can then use that to generate our api_operations
 
 #+NAME: raw_paths view
-#+BEGIN_SRC sql-mode :eval never
+#+BEGIN_SRC sql-mode :eval never-export
   CREATE OR REPLACE VIEW "public"."raw_paths" AS 
     SELECT raw_swaggers.id AS raw_swagger_id,
            d.key AS path,
@@ -73,6 +74,11 @@ We can then use that to generate our api_operations
             JOIN LATERAL jsonb_each((raw_swaggers.data -> 'paths'::text)) d(key, value) ON (true))
      ORDER BY d.key;
 #+END_SRC
+
+#+RESULTS: raw_paths view
+#+begin_src sql-mode
+CREATE VIEW
+#+end_src
 
 We then use raw_paths in this new api_operations view.  
 I assign a UUID for each record entry, so we can create parameters and responses views that link back to the right operation record.
@@ -90,21 +96,27 @@ Now we can make a new uuid as id with =uuid_generate_v1()=.  This'll let us easi
 #+BEGIN_SRC sql-mode
   DROP VIEW api_operations CASCADE;
   CREATE OR REPLACE VIEW "public"."api_operations" AS 
-    SELECT (d.value ->> 'operationId'::text) AS op_id,
+    SELECT (d.value ->> 'operationId'::text) AS operation_id,
            uuid_generate_v1() as id,
            raw_paths.raw_swagger_id as raw_swagger_id,
            d.key AS method,
            raw_paths.path as path,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS "group",
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS version,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS kind,
+           regex_from_path(raw_paths.path) as regex,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+           ( SELECT split_part((cat_tag.value ->> 0), '_'::text, 1) AS split_part
+               FROM jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)) AS category,
            (d.value ->> 'description'::text) AS description,
            (d.value ->> 'x-kubernetes-action'::text) AS x_kubernetes_action,
-           (d.value -> 'tags'::text) AS tags,
-           (d.value -> 'schemes'::text) AS schemes,
+           ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
+                FROM jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)) AS tags,
+           ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
+                FROM jsonb_array_elements((d.value -> 'schemes'::text)) jsonstring(value)) AS schemes,
            (d.value -> 'consumes'::text) AS consumes,
            (d.value -> 'responses'::text) AS responses,
-           (d.value -> 'parameters'::text) AS parameters
+           (d.value -> 'parameters'::text) AS parameters,
+           (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated
       FROM (raw_paths
             JOIN LATERAL jsonb_each(raw_paths.value) d(key, value) ON (true))
      ORDER BY (d.value ->> 'operationId'::text);
@@ -112,16 +124,923 @@ Now we can make a new uuid as id with =uuid_generate_v1()=.  This'll let us easi
 
 #+RESULTS: New api_operations view
 #+begin_src sql-mode
-NOTICE:  drop cascades to 4 other objects
-DETAIL:  drop cascades to view operations_with_parameters
-drop cascades to view api_operations_parameters
-drop cascades to view api_operations_responses
-drop cascades to view responses
-DROP VIEW
-CREATE VIEW
+ERROR:  view "api_operations" does not exist
+#+end_src
+*** regex_from_path PL/Python
+    These are two columns I couldn't get directlyf rom the swagger.json, and am unsure how they were gathered.  The closest thing to the category was certain tags within the tag column, but not sure if that's correct.
+
+#+BEGIN_SRC shell :eval never
+  apt-get install -y postgresql-plpython3-11
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+  CREATE EXTENSION plpython3u;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+CREATE EXTENSION
 #+end_src
 
-*** 887/1101 operations are not deprecated
+
+This is a pretty good read and might be quite useful for refactoring:
+- https://www.postgresql.org/docs/11/plpython.html
+- https://www.postgresql.org/docs/11/plpython-data.html
+- https://www.postgresql.org/docs/11/plpython-sharing.html SD and GD shared dictionaries
+- https://www.postgresql.org/docs/11/plpython-trigger.html TD dictionary
+
+#+NAME: regex_from_path.py
+#+BEGIN_SRC python :eval never
+  # path is set to text or null/None
+  import re
+  if path is None:
+    return None
+  # k8s appears to allow/expect a trailing {path} variable to capture everything
+  # remaining in the path, including '/' characters, which doesn't appear to be
+  # allowed according to the openapi 2.0 or 3.0 specs
+  # (ref: https://github.com/OAI/OpenAPI-Specification/issues/892)
+  K8S_PATH_VARIABLE_PATTERN = re.compile("{(path)}$")
+  VARIABLE_PATTERN = re.compile("{([^}]+)}")
+  # first replace the special trailing {path} wildcard with a named regex
+
+  # path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(?P<\\1>.+)", path).rstrip('/')
+  # PosgresQL doesn't like named vars
+  path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
+  # For SQL like, we just use %
+  # path_regex = K8S_PATH_VARIABLE_PATTERN.sub("%", path).rstrip('/')
+  # replace wildcards in {varname} format to a named regex
+  # path_regex = VARIABLE_PATTERN.sub("(?P<\\1>[^/]+)", path_regex).rstrip('/')
+  # if path != path_regex:
+  #if '{' not in path:
+  #  ipdb.set_trace(context=10)
+
+  # now that we are using POSIX, we can't do {varname}
+  path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
+  # now that we are using LIKE, we just need %
+  # path_regex = VARIABLE_PATTERN.sub("%", path_regex).rstrip('/')
+  # ensure that everything ends looking for everything but '/'
+  if not path_regex.endswith(")") and not path_regex.endswith("?"): # allow proxy to catch a trailing /
+      path_regex += "([^/]*)"
+  # # TODO(spiffxp): unsure if trailing / _should_ be counted toward /proxy
+  if path_regex.endswith("proxy"): # allow proxy to catch a trailing /
+      path_regex += "/?$"
+  else:
+      path_regex += "$"
+  #    print('Converted path: %s into path_regex: %s' % (path, path_regex))
+  return path_regex
+#+END_SRC
+
+#+NAME: regex_from_path.sql
+#+BEGIN_SRC sql-mode :noweb yes
+  CREATE OR REPLACE FUNCTION regex_from_path(path text)
+  RETURNS text AS $$
+  <<regex_from_path.py>>
+  $$ LANGUAGE plpython3u ;
+#+END_SRC
+
+#+RESULTS: regex_from_path.sql
+#+begin_src sql-mode
+hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# CREATE FUNCTION
+#+end_src
+
+#+BEGIN_SRC sql-mode
+  select * from regex_from_path('/api/v1/namespaces/{namespace}/pods/{name}/proxy');
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                    regex_from_path                    
+-------------------------------------------------------
+ /api/v1/namespaces/([^/]*)/pods/([^/]*)/proxy([^/]*)$
+(1 row)
+
+#+end_src
+
+
+#+BEGIN_SRC sql-mode
+  select * from api_operations limit 5;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                 operation_id                  |                  id                  | raw_swagger_id | method |                          path                           | k8s_group | k8s_version |      k8s_kind       | category |                 description                 | x_kubernetes_action |  tags   | schemes | consumes |                                              responses                                               | parameters | deprecated 
+-----------------------------------------------+--------------------------------------+----------------+--------+---------------------------------------------------------+-----------+-------------+---------------------+----------+---------------------------------------------+---------------------+---------+---------+----------+------------------------------------------------------------------------------------------------------+------------+------------
+ connectCoreV1DeleteNamespacedPodProxy         | 32edcc2e-b3ff-11e9-9248-506b4b430a28 |              3 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy        |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
+ connectCoreV1DeleteNamespacedPodProxy         | 32edcc2f-b3ff-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy        |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
+ connectCoreV1DeleteNamespacedPodProxyWithPath | 32edcc30-b3ff-11e9-9248-506b4b430a28 |              3 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path} |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
+ connectCoreV1DeleteNamespacedPodProxyWithPath | 32edcc31-b3ff-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path} |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
+ connectCoreV1DeleteNamespacedServiceProxy     | 32edcc32-b3ff-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/services/{name}/proxy    |           | v1          | ServiceProxyOptions | core     | connect DELETE requests to proxy of Service | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
+(5 rows)
+
+#+end_src
+
+
+** TADA API operation parameters view
+   
+   for any given api_operation, its parameters will be an array of objects, with each object having a =name= and =in= field.  
+   If the parameter is /in/ the /body/, then it will also have a schema.$ref that gives a link to its definition.
+   Otherwise, it will have a type and description.
+
+   Because of this, we can create a parameters view with
+
+  | api_operations_id     | name | in | type                                     | description                    | unique_items |
+  |-----------------------+------+----+------------------------------------------+--------------------------------+--------------|
+  | link to its operation | name | in | either its given type or 'schema object' | its description or schema.$ref | null or true |
+   
+  I could not figure out how to get this straight from the raw_swaggers, since not all api_operations have parameters.
+  
+  Instead, I created a view of only the operations with parameters...
+
+  #+NAME: api_operations_with_parameters
+  #+BEGIN_SRC sql-mode :eval never-export
+    CREATE OR REPLACE VIEW "public"."operations_with_parameters" AS 
+      SELECT uuid_generate_v1() AS id,
+             api_operations.id AS api_operations_id,
+             api_operations.parameters
+        FROM api_operations
+       WHERE (api_operations.parameters IS NOT NULL)
+       ORDER BY (uuid_generate_v1());
+  #+END_SRC
+
+  #+RESULTS: api_operations_with_parameters
+  #+begin_src sql-mode
+  CREATE VIEW
+  #+end_src
+
+then based our parameters view from it:
+
+#+NAME: api_operations_parameters view
+#+BEGIN_SRC sql-mode :eval no-export
+  -- DROP VIEW api_operations_parameters;
+  CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
+    SELECT operations_with_parameters.api_operations_id,
+           (param.entry ->> 'name'::text) AS name,
+           (param.entry ->> 'in'::text) AS "in",
+         replace(
+           CASE
+           WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
+             AND ((param.entry -> 'schema'::text) is not null)
+               THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+           ELSE (param.entry ->> 'type'::text)
+          END, '#/definitions/','') AS resource,
+          -- CASE
+          -- WHEN ((param.entry ->> 'in'::text) = 'body'::text) THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+          -- ELSE (param.entry ->> 'description'::text)
+          -- END AS description,
+          (param.entry ->> 'description'::text) AS description,
+           CASE
+           WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
+           ELSE false
+          END AS required,
+          CASE
+           WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
+           ELSE false
+          END AS unique_items
+          -- param.entry AS full_entry
+      FROM operations_with_parameters,
+           LATERAL jsonb_array_elements(operations_with_parameters.parameters) WITH ORDINALITY param(entry, index);
+#+END_SRC
+
+#+RESULTS: api_operations_parameters view
+#+begin_src sql-mode
+#+end_src
+   This is live on hasura.sharing.io as the =responses= view.
+** TADA API operation responses view
+   CLOSED: [2019-07-31 Wed 00:54]
+   Our table should be:
+   responseId, response Number, description, schemaRef, schemaType
+   it would be something like
+   
+   
+  | id             | api_operations_id | response | descrption   | schema                    |
+  |----------------+-------------------+----------+--------------+---------------------------|
+  | 23j301j3-3j3j3 | fj3jdjaj2-3j2j3   |      200 | OK           | string                    |
+  | 30392-32j23j3  | fjkdjsjdskj-2jdjd |      401 | Unauthorized | NULL                      |
+  | 3030-3392039   | fjkjsjdjfj-2jfjdj |      200 | ok           | "#/definitions/something" |
+
+
+   We can make this with the following sql statement:
+
+   #+NAME: Responses View
+   #+BEGIN_SRC sql-mode :eval no-export
+     CREATE OR REPLACE VIEW "public"."api_operations_responses" AS 
+       SELECT uuid_generate_v1() AS id,
+              api_operations.id AS api_operations_id,
+              d.key AS code,
+              (d.value ->> 'description'::text) AS description,
+              replace(
+              CASE
+              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> 'type'::text) IS NOT NULL))
+                THEN ((d.value -> 'schema'::text) ->> 'type'::text)
+              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
+               THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
+              ELSE NULL::text
+             END, '#/definitions/','') AS resource
+         FROM (api_operations
+               JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
+        ORDER BY (uuid_generate_v1());
+   #+END_SRC
+
+   #+RESULTS: Responses View
+   #+begin_src sql-mode
+   CREATE VIEW
+   #+end_src
+   
+** TODO materialized views
+** TODO optimization indexes on materialized views
+** raw operation json
+#+BEGIN_SRC  shell
+cat ../swagger.json \
+  | jq -c '.paths | to_entries | .[].value | to_entries | .[].value | {operationId: .operationId, parameters: .parameters, responses: .responses}'\
+  | jq .
+ # | head -10 | tail -1
+#| {operationId:.operationId}' \
+# .[].value | to_entries[][]' \
+#  | head -200 | tail -1 | jq .
+# | {operationId: .operationId}' \
+# {"operationId": value.operationId, "parameter": value.parameters, "responses": value.responses}' #| head -200 | tail -1 | jq .
+# |.[].value | to_entries[] | {"operationId": .operationId, "parameter": .parameters, "responses": .responses}'  | head -200 | tail -1 | jq .
+
+
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+{
+  "operationId": "getCoreAPIVersions",
+  "parameters": null,
+  "responses": {
+    "200": {
+      "description": "OK",
+      "schema": {
+        "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.APIVersions"
+      }
+    },
+    "401": {
+      "description": "Unauthorized"
+    }
+  }
+}
+{
+  "operationId": "getCoreV1APIResources",
+  "parameters": null,
+  "responses": {
+    "200": {
+      "description": "OK",
+      "schema": {
+        "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.APIResourceList"
+      }
+    },
+    "401": {
+      "description": "Unauthorized"
+    }
+  }
+}
+{
+  "operationId": "listCoreV1ComponentStatus",
+  "parameters": null,
+  "responses": {
+    "200": {
+      "description": "OK",
+      "schema": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.ComponentStatusList"
+      }
+    },
+    "401": {
+      "description": "Unauthorized"
+    }
+  }
+}
+#+end_EXAMPLE
+
+#+BEGIN_SRC shell
+  cat swagger.json | jq '.definitions' | 
+  | sort -R | grep -vi alpha\\\|beta | grep core | head -40 
+cat data.json | psql -h localhost -p 5432 feeds -c \
+  "COPY raw_api_definitions (definition_id,data) FROM STDIN with delimite;"
+#  "COPY raw_api_definitions (data) FROM STDIN WITH version='master-123';"
+#+END_SRC
+
+* api resources (née Types/Kinds/Objects) + properties
+** TADA API Resources View
+   CLOSED: [2019-08-01 Thu 00:10]
+
+   We did two updates, big one changing the name from types to resources.  these objects are v. vague and overlap with others with similar names.  In essence, they are called definitions in the swagger.json, but refer to group/version/kinds and each have their own type within.  A name needs to be decided for this that doesn't clash, and resource seems to work.
+   
+   The query is straightforward, building from the ones above, with an additional new thing of converting their required jsonb array into a string array (since this is similar to other tickets we'll need to do).  I got how to do this from [[https://www.dbrnd.com/2016/08/postgresql-9-4-how-to-convert-json-array-elements-into-string-array-jsonb_array_elements-string_agg/][this website]]
+
+#+NAME: api_resources view
+#+BEGIN_SRC sql-mode :eval never-export
+-- drop materialized view api_resources CASCADE;
+-- CREATE MATERIALIZED VIEW "public"."api_resources" AS 
+CREATE VIEW "public"."api_resources" AS 
+ SELECT 
+    uuid_generate_v1() AS id,
+    raw_swaggers.id AS raw_swagger_id,
+    d.key AS name,
+    (d.value ->> 'type'::text) AS resource_type,
+    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
+    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
+    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
+    ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
+          FROM jsonb_array_elements((d.value -> 'required'::text)) jsonstring(value)) AS required_params,
+    (d.value ->> 'required'::text) as required_params_text,
+    (d.value -> 'properties'::text) AS properties,
+    -- (raw_api_definitions.data ->> 'version'::text) AS source
+    d.value
+   FROM (raw_swaggers
+     JOIN LATERAL jsonb_each((raw_swaggers.data -> 'definitions'::text)) d(key, value) ON (true))
+  ORDER BY id;
+#+END_SRC
+
+#+RESULTS: api_resources view
+#+begin_src sql-mode
+DROP MATERIALIZED VIEW
+#+end_src
+
+#+BEGIN_SRC sql-mode
+refresh materialized view api_resources;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+REFRESH MATERIALIZED VIEW
+#+end_src
+
+
+#+RESULTS: api_resources_properties view
+#+begin_src sql-mode
+#+end_src
+** API Resource properties view
+   We wanted our properties view to have a param_kind field, whose value was dynamic based on the properties' type.
+   We can do this with a CASE statement, where the value changes based on some boolean expressions
+#+NAME: Properties View
+#+BEGIN_SRC sql-mode
+  -- DROP VIEW api_resources_properties;
+  DROP MATERIALIZED VIEW api_resources_properties;
+  CREATE MATERIALIZED VIEW "public"."api_resources_properties" AS 
+    SELECT api_resources.id AS type_id,
+           d.key AS property,
+           CASE
+           WHEN ((d.value ->> 'type'::text) IS NULL) THEN 'subtype'::text
+           ELSE (d.value ->> 'type'::text)
+             END AS param_type,
+           replace(
+             CASE
+             WHEN ((d.value ->> 'type'::text) = 'string'::text) THEN 'string'::text
+             WHEN ((d.value ->> 'type'::text) IS NULL) THEN (d.value ->> '$ref'::text)
+             WHEN ((d.value ->> 'type'::text) = 'array'::text)
+              AND ((d.value -> 'items'::text) ->> 'type'::text) IS NULL
+               THEN ((d.value -> 'items'::text) ->> '$ref'::text)
+             WHEN ((d.value ->> 'type'::text) = 'array'::text)
+              AND ((d.value -> 'items'::text) ->> '$ref'::text) IS NULL
+               THEN ((d.value -> 'items'::text) ->> 'type'::text)
+             ELSE 'integer'::text
+             END, '#/definitions/','') AS param_kind,
+           (d.value ->> 'description'::text) AS description,
+           (d.value ->> 'format'::text) AS format,
+           (d.value ->> 'x-kubernetes-patch-merge-key'::text) AS merge_key,
+           (d.value ->> 'x-kubernetes-patch-strategy'::text) AS patch_strategy,
+           -- CASE
+           --   WHEN d.key is null THEN false
+           --   WHEN (api_resources.required_params ? d.key) THEN true
+           --   ELSE false
+           --     END
+           --   AS required,
+           -- with param type also containing array, we don't need array as a boolean
+           -- CASE
+           -- WHEN ((d.value ->> 'type'::text) = 'array'::text) THEN true
+           -- ELSE false
+           --  END AS "array"
+           d.value
+      FROM (api_resources
+            JOIN LATERAL jsonb_each(api_resources.properties) d(key, value) ON (true))
+     ORDER BY api_resources.id;
+#+END_SRC
+
+#+RESULTS: Properties View
+#+begin_src sql-mode
+#+end_src
+
+** TODO types view from swagger.json table
+** TODO properties view from swagger.json table (likely not much to change)
+** TODO materialized views
+** TODO optimization indexes on materialized views
+** raw definition json
+
+#+NAME: number of definitions
+#+BEGIN_SRC  shell
+  cat ../swagger.json | jq -c '.definitions | to_entries | map(.value.definition = .key) | map(.value.version="local") | .[].value'  | wc -l
+#+END_SRC
+
+#+RESULTS: number of definitions
+#+begin_EXAMPLE
+630
+#+end_EXAMPLE
+
+** load raw json into table
+
+#+BEGIN_SRC tmate
+  cat ../swagger.json \
+  | jq -c '.definitions | to_entries | map(.value.definition = .key) | map(.value.version="local") | .[].value' \
+  | psql -c "COPY raw_api_definitions (data) FROM STDIN (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');"
+#+END_SRC
+
+** recursive property queries
+
+#+BEGIN_SRC sql-mode
+WITH RECURSIVE podspec_properties(resource, property, subresource) AS (
+    SELECT 
+  (
+    (
+      SELECT id, mongo_id, name, (mongo_id) AS path FROM categories
+      WHERE categories.mongo_id = ANY($1)
+    )
+  )
+  UNION
+  (
+      SELECT e.id, e.mongo_id, e.name, fle.path
+      FROM (
+        SELECT id, mongo_id, name, mongo_parent_id FROM categories)
+      e, first_level_elements fle
+      WHERE e.mongo_parent_id = fle.mongo_id
+  )
+)
+SELECT * from first_level_elements
+#+END_SRC
+
+** TODO Materialized views
+
+Version 9.3 also introduced materialized views.
+
+When you mark a view as materialized, it will requery the data only when you
+issue the REFRESH command.
+
+The upside is that you’re not wasting resources running complex queries
+repeatedly; the downside is that you might not have the most up-to-date data
+when you use the view.
+
+The most convincing cases for using materialized views are when the underlying
+query takes a long time and when having timely data is not critical.
+
+You often encounter these scenarios when building online analytical processing
+(OLAP) applications. Unlike nonmaterialized views, you can add indexes to
+materialized views to speed up the read.
+
+* TODO Creating index on Regular Expressions
+
+You can find a wonderful example of GIN in Waiting for Faster LIKE/ILIKE.
+As of version 9.3, you can index regular expressions that leverage the GIN-based pg_trgm extension.
+
+https://www.postgresql.org/docs/current/pgtrgm.html
+
+#+BEGIN_EXAMPLE
+Beginning in PostgreSQL 9.3, these index types also support
+index searches for regular-expression matches (~ and ~* operators),
+for example
+
+SELECT * FROM test_trgm WHERE t ~ '(foo|bar)';
+
+The index search works by extracting trigrams from the regular expression and
+then looking these up in the index.
+
+The more trigrams that can be extracted from the regular expression, the more
+effective the index search is.
+
+Unlike B-tree based searches, the search string need not be left-anchored.
+#+END_EXAMPLE
+
+** Need to create a view
+
+that includes ev.op_id with join on ev.verb ~ op.method and ev.request_uri ~ op.regex
+
+#+BEGIN_SRC sql-mode
+select ev.verb, op.method, op.path, ev.request_uri 
+from api_operations op, audit_events ev
+where ev.request_uri='/api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0'
+and ev.request_uri ~ op.regexp;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+  verb  | method |                    path                    |                            request_uri                            
+--------+--------+--------------------------------------------+-------------------------------------------------------------------
+ get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ delete | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ delete | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ delete | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ delete | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ delete | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ delete | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ delete | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+ delete | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
+(40 rows)
+
+#+end_src
+
+
+** pg_tgrm index creation
+
+#+BEGIN_SRC sql-mode
+CREATE EXTENSION pg_trgm;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+CREATE EXTENSION
+#+end_src
+
+#+BEGIN_SRC sql-mode
+create index api_operation_regex ON api_operations USING GIST (regexp gist_trgm_ops);
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+create index api_operation_regex_gin ON api_operations USING GIN (regexp gin_trgm_ops);
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+CREATE INDEX
+#+end_src
+
+#+BEGIN_SRC sql-mode
+reindex table api_operations;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+REINDEX
+#+end_src
+
+* Queries on views
+
+** 43 GA resource required for api_operation_parameters
+
+#+BEGIN_SRC sql-mode
+  select distinct resource
+  from api_operations_parameters
+  where required
+  and resource not like '%alpha%'
+  and resource not like '%beta%'
+  order by resource;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                              resource                              
+--------------------------------------------------------------------
+ io.k8s.api.admissionregistration.v1.MutatingWebhookConfiguration
+ io.k8s.api.admissionregistration.v1.ValidatingWebhookConfiguration
+ io.k8s.api.apps.v1.ControllerRevision
+ io.k8s.api.apps.v1.DaemonSet
+ io.k8s.api.apps.v1.Deployment
+ io.k8s.api.apps.v1.ReplicaSet
+ io.k8s.api.apps.v1.StatefulSet
+ io.k8s.api.authentication.v1.TokenRequest
+ io.k8s.api.authentication.v1.TokenReview
+ io.k8s.api.authorization.v1.LocalSubjectAccessReview
+ io.k8s.api.authorization.v1.SelfSubjectAccessReview
+ io.k8s.api.authorization.v1.SelfSubjectRulesReview
+ io.k8s.api.authorization.v1.SubjectAccessReview
+ io.k8s.api.autoscaling.v1.HorizontalPodAutoscaler
+ io.k8s.api.autoscaling.v1.Scale
+ io.k8s.api.batch.v1.Job
+ io.k8s.api.coordination.v1.Lease
+ io.k8s.api.core.v1.Binding
+ io.k8s.api.core.v1.ConfigMap
+ io.k8s.api.core.v1.Endpoints
+ io.k8s.api.core.v1.Event
+ io.k8s.api.core.v1.LimitRange
+ io.k8s.api.core.v1.Namespace
+ io.k8s.api.core.v1.Node
+ io.k8s.api.core.v1.PersistentVolume
+ io.k8s.api.core.v1.PersistentVolumeClaim
+ io.k8s.api.core.v1.Pod
+ io.k8s.api.core.v1.PodTemplate
+ io.k8s.api.core.v1.ReplicationController
+ io.k8s.api.core.v1.ResourceQuota
+ io.k8s.api.core.v1.Secret
+ io.k8s.api.core.v1.Service
+ io.k8s.api.core.v1.ServiceAccount
+ io.k8s.apimachinery.pkg.apis.meta.v1.Patch
+ io.k8s.api.networking.v1.NetworkPolicy
+ io.k8s.api.rbac.v1.ClusterRole
+ io.k8s.api.rbac.v1.ClusterRoleBinding
+ io.k8s.api.rbac.v1.Role
+ io.k8s.api.rbac.v1.RoleBinding
+ io.k8s.api.scheduling.v1.PriorityClass
+ io.k8s.api.storage.v1.StorageClass
+ io.k8s.api.storage.v1.VolumeAttachment
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIService
+(43 rows)
+
+#+end_src
+
+
+this is now live at =hasura.sharing.io=
+
+** 86 GA resource responses
+#+BEGIN_SRC sql-mode
+select distinct resource
+from api_responses
+where resource is not null
+and resource not like '%alpha%'
+and resource not like '%beta%'
+order by resource
+;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                                resource                                
+------------------------------------------------------------------------
+ io.k8s.api.admissionregistration.v1.MutatingWebhookConfiguration
+ io.k8s.api.admissionregistration.v1.MutatingWebhookConfigurationList
+ io.k8s.api.admissionregistration.v1.ValidatingWebhookConfiguration
+ io.k8s.api.admissionregistration.v1.ValidatingWebhookConfigurationList
+ io.k8s.api.apps.v1.ControllerRevision
+ io.k8s.api.apps.v1.ControllerRevisionList
+ io.k8s.api.apps.v1.DaemonSet
+ io.k8s.api.apps.v1.DaemonSetList
+ io.k8s.api.apps.v1.Deployment
+ io.k8s.api.apps.v1.DeploymentList
+ io.k8s.api.apps.v1.ReplicaSet
+ io.k8s.api.apps.v1.ReplicaSetList
+ io.k8s.api.apps.v1.StatefulSet
+ io.k8s.api.apps.v1.StatefulSetList
+ io.k8s.api.authentication.v1.TokenRequest
+ io.k8s.api.authentication.v1.TokenReview
+ io.k8s.api.authorization.v1.LocalSubjectAccessReview
+ io.k8s.api.authorization.v1.SelfSubjectAccessReview
+ io.k8s.api.authorization.v1.SelfSubjectRulesReview
+ io.k8s.api.authorization.v1.SubjectAccessReview
+ io.k8s.api.autoscaling.v1.HorizontalPodAutoscaler
+ io.k8s.api.autoscaling.v1.HorizontalPodAutoscalerList
+ io.k8s.api.autoscaling.v1.Scale
+ io.k8s.api.batch.v1.Job
+ io.k8s.api.batch.v1.JobList
+ io.k8s.api.coordination.v1.Lease
+ io.k8s.api.coordination.v1.LeaseList
+ io.k8s.api.core.v1.Binding
+ io.k8s.api.core.v1.ComponentStatus
+ io.k8s.api.core.v1.ComponentStatusList
+ io.k8s.api.core.v1.ConfigMap
+ io.k8s.api.core.v1.ConfigMapList
+ io.k8s.api.core.v1.Endpoints
+ io.k8s.api.core.v1.EndpointsList
+ io.k8s.api.core.v1.Event
+ io.k8s.api.core.v1.EventList
+ io.k8s.api.core.v1.LimitRange
+ io.k8s.api.core.v1.LimitRangeList
+ io.k8s.api.core.v1.Namespace
+ io.k8s.api.core.v1.NamespaceList
+ io.k8s.api.core.v1.Node
+ io.k8s.api.core.v1.NodeList
+ io.k8s.api.core.v1.PersistentVolume
+ io.k8s.api.core.v1.PersistentVolumeClaim
+ io.k8s.api.core.v1.PersistentVolumeClaimList
+ io.k8s.api.core.v1.PersistentVolumeList
+ io.k8s.api.core.v1.Pod
+ io.k8s.api.core.v1.PodList
+ io.k8s.api.core.v1.PodTemplate
+ io.k8s.api.core.v1.PodTemplateList
+ io.k8s.api.core.v1.ReplicationController
+ io.k8s.api.core.v1.ReplicationControllerList
+ io.k8s.api.core.v1.ResourceQuota
+ io.k8s.api.core.v1.ResourceQuotaList
+ io.k8s.api.core.v1.Secret
+ io.k8s.api.core.v1.SecretList
+ io.k8s.api.core.v1.Service
+ io.k8s.api.core.v1.ServiceAccount
+ io.k8s.api.core.v1.ServiceAccountList
+ io.k8s.api.core.v1.ServiceList
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIGroup
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIGroupList
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIResourceList
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIVersions
+ io.k8s.apimachinery.pkg.apis.meta.v1.Status
+ io.k8s.apimachinery.pkg.apis.meta.v1.WatchEvent
+ io.k8s.apimachinery.pkg.version.Info
+ io.k8s.api.networking.v1.NetworkPolicy
+ io.k8s.api.networking.v1.NetworkPolicyList
+ io.k8s.api.rbac.v1.ClusterRole
+ io.k8s.api.rbac.v1.ClusterRoleBinding
+ io.k8s.api.rbac.v1.ClusterRoleBindingList
+ io.k8s.api.rbac.v1.ClusterRoleList
+ io.k8s.api.rbac.v1.Role
+ io.k8s.api.rbac.v1.RoleBinding
+ io.k8s.api.rbac.v1.RoleBindingList
+ io.k8s.api.rbac.v1.RoleList
+ io.k8s.api.scheduling.v1.PriorityClass
+ io.k8s.api.scheduling.v1.PriorityClassList
+ io.k8s.api.storage.v1.StorageClass
+ io.k8s.api.storage.v1.StorageClassList
+ io.k8s.api.storage.v1.VolumeAttachment
+ io.k8s.api.storage.v1.VolumeAttachmentList
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIService
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceList
+ string
+(86 rows)
+
+#+end_src
+
+** GA resource parameters
+#+BEGIN_SRC sql-mode
+  select distinct resource
+  from api_responses
+  where resource is not null
+  and resource not like '%alpha%'
+  and resource not like '%beta%'
+  order by resource
+  ;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                                resource                                
+------------------------------------------------------------------------
+ io.k8s.api.admissionregistration.v1.MutatingWebhookConfiguration
+ io.k8s.api.admissionregistration.v1.MutatingWebhookConfigurationList
+ io.k8s.api.admissionregistration.v1.ValidatingWebhookConfiguration
+ io.k8s.api.admissionregistration.v1.ValidatingWebhookConfigurationList
+ io.k8s.api.apps.v1.ControllerRevision
+ io.k8s.api.apps.v1.ControllerRevisionList
+ io.k8s.api.apps.v1.DaemonSet
+ io.k8s.api.apps.v1.DaemonSetList
+ io.k8s.api.apps.v1.Deployment
+ io.k8s.api.apps.v1.DeploymentList
+ io.k8s.api.apps.v1.ReplicaSet
+ io.k8s.api.apps.v1.ReplicaSetList
+ io.k8s.api.apps.v1.StatefulSet
+ io.k8s.api.apps.v1.StatefulSetList
+ io.k8s.api.authentication.v1.TokenRequest
+ io.k8s.api.authentication.v1.TokenReview
+ io.k8s.api.authorization.v1.LocalSubjectAccessReview
+ io.k8s.api.authorization.v1.SelfSubjectAccessReview
+ io.k8s.api.authorization.v1.SelfSubjectRulesReview
+ io.k8s.api.authorization.v1.SubjectAccessReview
+ io.k8s.api.autoscaling.v1.HorizontalPodAutoscaler
+ io.k8s.api.autoscaling.v1.HorizontalPodAutoscalerList
+ io.k8s.api.autoscaling.v1.Scale
+ io.k8s.api.batch.v1.Job
+ io.k8s.api.batch.v1.JobList
+ io.k8s.api.coordination.v1.Lease
+ io.k8s.api.coordination.v1.LeaseList
+ io.k8s.api.core.v1.Binding
+ io.k8s.api.core.v1.ComponentStatus
+ io.k8s.api.core.v1.ComponentStatusList
+ io.k8s.api.core.v1.ConfigMap
+ io.k8s.api.core.v1.ConfigMapList
+ io.k8s.api.core.v1.Endpoints
+ io.k8s.api.core.v1.EndpointsList
+ io.k8s.api.core.v1.Event
+ io.k8s.api.core.v1.EventList
+ io.k8s.api.core.v1.LimitRange
+ io.k8s.api.core.v1.LimitRangeList
+ io.k8s.api.core.v1.Namespace
+ io.k8s.api.core.v1.NamespaceList
+ io.k8s.api.core.v1.Node
+ io.k8s.api.core.v1.NodeList
+ io.k8s.api.core.v1.PersistentVolume
+ io.k8s.api.core.v1.PersistentVolumeClaim
+ io.k8s.api.core.v1.PersistentVolumeClaimList
+ io.k8s.api.core.v1.PersistentVolumeList
+ io.k8s.api.core.v1.Pod
+ io.k8s.api.core.v1.PodList
+ io.k8s.api.core.v1.PodTemplate
+ io.k8s.api.core.v1.PodTemplateList
+ io.k8s.api.core.v1.ReplicationController
+ io.k8s.api.core.v1.ReplicationControllerList
+ io.k8s.api.core.v1.ResourceQuota
+ io.k8s.api.core.v1.ResourceQuotaList
+ io.k8s.api.core.v1.Secret
+ io.k8s.api.core.v1.SecretList
+ io.k8s.api.core.v1.Service
+ io.k8s.api.core.v1.ServiceAccount
+ io.k8s.api.core.v1.ServiceAccountList
+ io.k8s.api.core.v1.ServiceList
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIGroup
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIGroupList
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIResourceList
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIVersions
+ io.k8s.apimachinery.pkg.apis.meta.v1.Status
+ io.k8s.apimachinery.pkg.apis.meta.v1.WatchEvent
+ io.k8s.apimachinery.pkg.version.Info
+ io.k8s.api.networking.v1.NetworkPolicy
+ io.k8s.api.networking.v1.NetworkPolicyList
+ io.k8s.api.rbac.v1.ClusterRole
+ io.k8s.api.rbac.v1.ClusterRoleBinding
+ io.k8s.api.rbac.v1.ClusterRoleBindingList
+ io.k8s.api.rbac.v1.ClusterRoleList
+ io.k8s.api.rbac.v1.Role
+ io.k8s.api.rbac.v1.RoleBinding
+ io.k8s.api.rbac.v1.RoleBindingList
+ io.k8s.api.rbac.v1.RoleList
+ io.k8s.api.scheduling.v1.PriorityClass
+ io.k8s.api.scheduling.v1.PriorityClassList
+ io.k8s.api.storage.v1.StorageClass
+ io.k8s.api.storage.v1.StorageClassList
+ io.k8s.api.storage.v1.VolumeAttachment
+ io.k8s.api.storage.v1.VolumeAttachmentList
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIService
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceList
+ string
+(86 rows)
+
+#+end_src
+
+** aoeuaoeu
+
+#+BEGIN_SRC sql-mode
+select distinct r.name as resource, p.property as prop, p.param_kind as kind
+from
+   api_resource_properties p
+INNER JOIN api_resources r ON p.type_id = r.id
+
+#+END_SRC
+
+** pod spec related kinds
+#+BEGIN_SRC sql-mode
+explain select distinct r.name, -- p.required ,
+property , param_kind
+-- , param_type
+from api_resources_properties p , api_resources r
+where 
+-- (r.name like '%PodSpec' or p.param_kind like '%PodSpec')
+p.param_kind like 'io%'
+-- and p.param_kind like 'io%'
+-- and p.required
+and p.type_id = r.id
+-- and p.param_kind = r.name
+-- and param_kind not like '%alpha%'
+-- and param_kind not like '%beta%'
+-- and p.param_type != 'array'
+-- and r.name not like '%alpha%'
+-- and r.name not like '%beta%'
+order by -- param_type,
+  r.name,
+--  param_type,
+  param_kind;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                                                                                                                                                                                                                                                                                             QUERY PLAN                                                                                                                                                                                                                                                                                              
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Unique  (cost=19742971.49..20381421.49 rows=2260000 width=96)
+   ->  Sort  (cost=19742971.49..19902583.99 rows=63845000 width=96)
+         Sort Key: d_2.key, (replace(CASE WHEN ((d.value ->> 'type'::text) = 'string'::text) THEN 'string'::text WHEN ((d.value ->> 'type'::text) IS NULL) THEN (d.value ->> '$ref'::text) WHEN (((d.value ->> 'type'::text) = 'array'::text) AND (((d.value -> 'items'::text) ->> 'type'::text) IS NULL)) THEN ((d.value -> 'items'::text) ->> '$ref'::text) WHEN (((d.value ->> 'type'::text) = 'array'::text) AND (((d.value -> 'items'::text) ->> '$ref'::text) IS NULL)) THEN ((d.value -> 'items'::text) ->> 'type'::text) ELSE 'integer'::text END, '#/definitions/'::text, ''::text)), d.key
+         ->  Merge Join  (cost=56823.25..1646168.25 rows=63845000 width=96)
+               Merge Cond: ((uuid_generate_v1()) = (uuid_generate_v1()))
+               ->  Nested Loop  (cost=28552.88..657397.88 rows=113000 width=272)
+                     ->  Sort  (cost=28552.87..28835.37 rows=113000 width=308)
+                           Sort Key: (uuid_generate_v1())
+                           ->  Nested Loop  (cost=0.01..2846.30 rows=113000 width=308)
+                                 ->  Seq Scan on raw_swaggers  (cost=0.00..21.30 rows=1130 width=32)
+                                 ->  Function Scan on jsonb_each d_1  (cost=0.01..1.00 rows=100 width=32)
+                     ->  Function Scan on jsonb_each d  (cost=0.00..5.50 rows=1 width=64)
+                           Filter: (replace(CASE WHEN ((value ->> 'type'::text) = 'string'::text) THEN 'string'::text WHEN ((value ->> 'type'::text) IS NULL) THEN (value ->> '$ref'::text) WHEN (((value ->> 'type'::text) = 'array'::text) AND (((value -> 'items'::text) ->> 'type'::text) IS NULL)) THEN ((value -> 'items'::text) ->> '$ref'::text) WHEN (((value ->> 'type'::text) = 'array'::text) AND (((value -> 'items'::text) ->> '$ref'::text) IS NULL)) THEN ((value -> 'items'::text) ->> 'type'::text) ELSE 'integer'::text END, '#/definitions/'::text, ''::text) ~~ 'io%'::text)
+               ->  Materialize  (cost=28270.37..29965.37 rows=113000 width=48)
+                     ->  Sort  (cost=28270.37..28552.87 rows=113000 width=308)
+                           Sort Key: (uuid_generate_v1())
+                           ->  Nested Loop  (cost=0.01..2563.80 rows=113000 width=308)
+                                 ->  Seq Scan on raw_swaggers raw_swaggers_1  (cost=0.00..21.30 rows=1130 width=32)
+                                 ->  Function Scan on jsonb_each d_2  (cost=0.01..1.00 rows=100 width=32)
+(19 rows)
+
+#+end_src
+** 887/1101 operations are not deprecated
 
 **** 887 Operations that are not deployments
 
@@ -1046,722 +1965,6 @@ CREATE VIEW
 
 #+end_src
 
-
-
-*** TODO regex_from_path PL/Python
-    These are two columns I couldn't get directlyf rom the swagger.json, and am unsure how they were gathered.  The closest thing to the category was certain tags within the tag column, but not sure if that's correct.
-
-#+BEGIN_SRC shell :eval never
-  apt-get install -y postgresql-plpython3-11
-#+END_SRC
-
-#+BEGIN_SRC sql-mode
-  CREATE EXTENSION plpython3u;
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-CREATE EXTENSION
-#+end_src
-
-
-This is a pretty good read and might be quite useful for refactoring:
-- https://www.postgresql.org/docs/11/plpython.html
-- https://www.postgresql.org/docs/11/plpython-data.html
-- https://www.postgresql.org/docs/11/plpython-sharing.html SD and GD shared dictionaries
-- https://www.postgresql.org/docs/11/plpython-trigger.html TD dictionary
-
-#+NAME: regex_from_path.py
-#+BEGIN_SRC python :eval never
-  # path is set to text or null/None
-  import re
-  if path is None:
-    return None
-  # k8s appears to allow/expect a trailing {path} variable to capture everything
-  # remaining in the path, including '/' characters, which doesn't appear to be
-  # allowed according to the openapi 2.0 or 3.0 specs
-  # (ref: https://github.com/OAI/OpenAPI-Specification/issues/892)
-  K8S_PATH_VARIABLE_PATTERN = re.compile("{(path)}$")
-  VARIABLE_PATTERN = re.compile("{([^}]+)}")
-  # first replace the special trailing {path} wildcard with a named regex
-
-  # path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(?P<\\1>.+)", path).rstrip('/')
-  # PosgresQL doesn't like named vars
-  path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
-  # For SQL like, we just use %
-  # path_regex = K8S_PATH_VARIABLE_PATTERN.sub("%", path).rstrip('/')
-  # replace wildcards in {varname} format to a named regex
-  # path_regex = VARIABLE_PATTERN.sub("(?P<\\1>[^/]+)", path_regex).rstrip('/')
-  # if path != path_regex:
-  #if '{' not in path:
-  #  ipdb.set_trace(context=10)
-
-  # now that we are using POSIX, we can't do {varname}
-  path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
-  # now that we are using LIKE, we just need %
-  # path_regex = VARIABLE_PATTERN.sub("%", path_regex).rstrip('/')
-  # ensure that everything ends looking for everything but '/'
-  if not path_regex.endswith(")") and not path_regex.endswith("?"): # allow proxy to catch a trailing /
-      path_regex += "([^/]*)"
-  # # TODO(spiffxp): unsure if trailing / _should_ be counted toward /proxy
-  if path_regex.endswith("proxy"): # allow proxy to catch a trailing /
-      path_regex += "/?$"
-  else:
-      path_regex += "$"
-  #    print('Converted path: %s into path_regex: %s' % (path, path_regex))
-  return path_regex
-#+END_SRC
-
-#+NAME: regex_from_path.sql
-#+BEGIN_SRC sql-mode :noweb yes
-  CREATE OR REPLACE FUNCTION regex_from_path(path text)
-  RETURNS text AS $$
-  <<regex_from_path.py>>
-  $$ LANGUAGE plpython3u ;
-#+END_SRC
-
-#+RESULTS: regex_from_path.sql
-#+begin_src sql-mode
-hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# CREATE FUNCTION
-#+end_src
-
-#+BEGIN_SRC sql-mode
-  select * from regex_from_path('/api/v1/namespaces/{namespace}/pods/{name}/proxy');
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-                    regex_from_path                    
--------------------------------------------------------
- /api/v1/namespaces/([^/]*)/pods/([^/]*)/proxy([^/]*)$
-(1 row)
-
-#+end_src
-
-
-#+BEGIN_SRC sql-mode
-  select * from api_operations limit 5;
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-                 operation_id                  |                  id                  | raw_swagger_id | method |                          path                           | k8s_group | k8s_version |      k8s_kind       | category |                 description                 | x_kubernetes_action |  tags   | schemes | consumes |                                              responses                                               | parameters | deprecated 
------------------------------------------------+--------------------------------------+----------------+--------+---------------------------------------------------------+-----------+-------------+---------------------+----------+---------------------------------------------+---------------------+---------+---------+----------+------------------------------------------------------------------------------------------------------+------------+------------
- connectCoreV1DeleteNamespacedPodProxy         | 32edcc2e-b3ff-11e9-9248-506b4b430a28 |              3 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy        |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
- connectCoreV1DeleteNamespacedPodProxy         | 32edcc2f-b3ff-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy        |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
- connectCoreV1DeleteNamespacedPodProxyWithPath | 32edcc30-b3ff-11e9-9248-506b4b430a28 |              3 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path} |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
- connectCoreV1DeleteNamespacedPodProxyWithPath | 32edcc31-b3ff-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path} |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
- connectCoreV1DeleteNamespacedServiceProxy     | 32edcc32-b3ff-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/services/{name}/proxy    |           | v1          | ServiceProxyOptions | core     | connect DELETE requests to proxy of Service | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
-(5 rows)
-
-#+end_src
-
-
-** TODO [#B] parameters view
-   
-   for any given api_operation, its parameters will be an array of objects, with each object having a =name= and =in= field.  
-   If the parameter is /in/ the /body/, then it will also have a schema.$ref that gives a link to its definition.
-   Otherwise, it will have a type and description.
-
-   Because of this, we can create a parameters view with
-
-  | api_operations_id     | name | in | type                                     | description                    | unique_items |
-  |-----------------------+------+----+------------------------------------------+--------------------------------+--------------|
-  | link to its operation | name | in | either its given type or 'schema object' | its description or schema.$ref | null or true |
-   
-  I could not figure out how to get this straight from the raw_swaggers, since not all api_operations have parameters.
-  
-  Instead, I created a view of only the operations with parameters...
-
-  #+NAME: api_operations_with_parameters
-  #+BEGIN_SRC sql-mode :eval never-export
-    CREATE OR REPLACE VIEW "public"."operations_with_parameters" AS 
-      SELECT uuid_generate_v1() AS id,
-             api_operations.id AS api_operations_id,
-             api_operations.parameters
-        FROM api_operations
-       WHERE (api_operations.parameters IS NOT NULL)
-       ORDER BY (uuid_generate_v1());
-  #+END_SRC
-
-  #+RESULTS: api_operations_with_parameters
-  #+begin_src sql-mode
-  CREATE VIEW
-  #+end_src
-
-then based our parameters view from it:
-
-#+NAME: api_operations_parameters view
-#+BEGIN_SRC sql-mode :eval no-export
-  CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
-    SELECT operations_with_parameters.api_operations_id,
-           (param.entry ->> 'name'::text) AS name,
-           (param.entry ->> 'in'::text) AS "in",
-           CASE
-           WHEN ((param.entry ->> 'in'::text) = 'body'::text) THEN 'schema object'::text
-           ELSE (param.entry ->> 'type'::text)
-          END AS type,
-           CASE
-           WHEN ((param.entry ->> 'in'::text) = 'body'::text) THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
-           ELSE (param.entry ->> 'description'::text)
-          END AS description,
-           CASE
-           WHEN ((param.entry ->> 'required'::text) IS NULL) THEN 'false'::text
-           ELSE (param.entry ->> 'required'::text)
-          END AS required,
-           (param.entry ->> 'uniqueItems'::text) AS unique_items,
-           param.entry AS full_entry
-      FROM operations_with_parameters,
-           LATERAL jsonb_array_elements(operations_with_parameters.parameters) WITH ORDINALITY param(entry, index);
-#+END_SRC
-
-#+RESULTS: api_operations_parameters view
-#+begin_src sql-mode
-CREATE VIEW
-#+end_src
-
-this is now live at =hasura.sharing.io=
-
-** TADA responses view
-   CLOSED: [2019-07-31 Wed 00:54]
-   Our table should be:
-   responseId, response Number, description, schemaRef, schemaType
-   it would be something like
-   
-   
-  | id             | api_operations_id | response | descrption   | schema                    |
-  |----------------+-------------------+----------+--------------+---------------------------|
-  | 23j301j3-3j3j3 | fj3jdjaj2-3j2j3   |      200 | OK           | string                    |
-  | 30392-32j23j3  | fjkdjsjdskj-2jdjd |      401 | Unauthorized | NULL                      |
-  | 3030-3392039   | fjkjsjdjfj-2jfjdj |      200 | ok           | "#/definitions/something" |
-
-
-   We can make this with the following sql statement:
-
-   #+NAME: Responses View
-   #+BEGIN_SRC sql-mode :eval no-export
-     CREATE OR REPLACE VIEW "public"."responses" AS 
-       SELECT uuid_generate_v1() AS id,
-              api_operations.id AS api_operations_id,
-              d.key AS response,
-              (d.value ->> 'description'::text) AS description,
-              CASE
-              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> 'type'::text) IS NOT NULL))
-                THEN ((d.value -> 'schema'::text) ->> 'type'::text)
-              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
-               THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
-              ELSE NULL::text
-             END AS schema
-         FROM (api_operations
-               JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
-        ORDER BY (uuid_generate_v1());
-   #+END_SRC
-
-   #+RESULTS: Responses View
-   #+begin_src sql-mode
-   CREATE VIEW
-   #+end_src
-   
-   This is live on hasura.sharing.io as the =responses= view.
-   
-** TADA Update Types View to be on swagger.json
-   CLOSED: [2019-08-01 Thu 00:10]
-
-   We did two updates, big one changing the name from types to resources.  these objects are v. vague and overlap with others with similar names.  In essence, they are called definitions in the swagger.json, but refer to group/version/kinds and each have their own type within.  A name needs to be decided for this that doesn't clash, and resource seems to work.
-   
-   The query is straightforward, building from the ones above, with an additional new thing of converting their required jsonb array into a string array (since this is similar to other tickets we'll need to do).  I got how to do this from [[https://www.dbrnd.com/2016/08/postgresql-9-4-how-to-convert-json-array-elements-into-string-array-jsonb_array_elements-string_agg/][this website]]
-
-#+NAME: api_resources view
-#+BEGIN_SRC sql-mode :eval never
-CREATE OR REPLACE VIEW "public"."api_resources" AS 
- SELECT d.key AS name,
-    uuid_generate_v1() AS id,
-    raw_swaggers.id AS raw_swagger_id,
-    d.value,
-    (d.value ->> 'type'::text) AS resource_type,
-    (d.value -> 'properties'::text) AS properties,
-    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
-    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
-    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
-    ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
-           FROM jsonb_array_elements((d.value -> 'required'::text)) jsonstring(value)) AS required
-   FROM (raw_swaggers
-     JOIN LATERAL jsonb_each((raw_swaggers.data -> 'definitions'::text)) d(key, value) ON (true))
-  ORDER BY id;
-#+END_SRC
-
-   
-** TADA Update api_operations view: category
-   CLOSED: [2019-08-01 Thu 00:39]
-   We want the first part of the first tag in the operations tags array to be the category.
-   A tag will be something like 'core_v1' and we just want core.
-  So we can do a sub-select query that grabs the first element from the tag array, then do a split_part on '_' for this element.
-  
-  #+NAME: api_operations with category
-  #+BEGIN_SRC sql-mode :eval never
-    CREATE OR REPLACE VIEW "public"."api_operations" AS 
-     SELECT (d.value ->> 'operationId'::text) AS operation_id,
-        uuid_generate_v1() AS id,
-        raw_paths.raw_swagger_id,
-        d.key AS method,
-        raw_paths.path,
-        ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-        ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-        ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-        ( SELECT split_part((cat_tag.value ->> 0), '_'::text, 1) AS split_part
-               FROM jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)) AS category,
-        (d.value ->> 'description'::text) AS description,
-        (d.value ->> 'x-kubernetes-action'::text) AS x_kubernetes_action,
-        (d.value -> 'tags'::text) AS tags,
-        (d.value -> 'schemes'::text) AS schemes,
-        (d.value -> 'consumes'::text) AS consumes,
-        (d.value -> 'responses'::text) AS responses,
-        (d.value -> 'parameters'::text) AS parameters
-       FROM (raw_paths
-         JOIN LATERAL jsonb_each(raw_paths.value) d(key, value) ON (true))
-      ORDER BY (d.value ->> 'operationId'::text);
-  #+END_SRC
-
-
-** TADA update api_operations view: scheme and tags are text, not array
-   CLOSED: [2019-08-01 Thu 00:40]
-
-   follow the same flow as when we added a category.  wonderful string_agging!
-   
-   #+NAME: update api_operations with tags, schema strings
-   #+BEGIN_SRC sql-mode :eval never
-     CREATE OR REPLACE VIEW "public"."api_operations" AS 
-      SELECT (d.value ->> 'operationId'::text) AS operation_id,
-         uuid_generate_v1() AS id,
-         raw_paths.raw_swagger_id,
-         d.key AS method,
-         raw_paths.path,
-         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-         ( SELECT split_part((cat_tag.value ->> 0), '_'::text, 1) AS split_part
-                FROM jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)) AS category,
-         (d.value ->> 'description'::text) AS description,
-         (d.value ->> 'x-kubernetes-action'::text) AS x_kubernetes_action,
-         ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
-                FROM jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)) AS tags,
-         ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
-                FROM jsonb_array_elements((d.value -> 'schemes'::text)) jsonstring(value)) AS schemes,
-         (d.value -> 'consumes'::text) AS consumes,
-         (d.value -> 'responses'::text) AS responses,
-         (d.value -> 'parameters'::text) AS parameters
-        FROM (raw_paths
-          JOIN LATERAL jsonb_each(raw_paths.value) d(key, value) ON (true))
-       ORDER BY (d.value ->> 'operationId'::text);
-   #+END_SRC
-
-** TODO api_operations: add boolean for depcrecated
-   
-   We want a deprecated column which shows true if the word deprecated shows up in the description.
-   We do this using a boolean expression that's essentially =lower(description) like '%deprecated%'=  We are doing lower because it's shown to be faster to lowercase the whole string and use a simple LIKE, than to use the postgres specific ILIKE.
-
-   The new api_operations view:
-
-#+NAME: api_operations with depcrecated
-#+BEGIN_SRC sql-mode :eval never
-CREATE OR REPLACE VIEW "public"."api_operations" AS 
- SELECT (d.value ->> 'operationId'::text) AS operation_id,
-    uuid_generate_v1() AS id,
-    raw_paths.raw_swagger_id,
-    d.key AS method,
-    raw_paths.path,
-    ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-    ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-    ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-    ( SELECT split_part((cat_tag.value ->> 0), '_'::text, 1) AS split_part
-           FROM jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)) AS category,
-    (d.value ->> 'description'::text) AS description,
-    (d.value ->> 'x-kubernetes-action'::text) AS x_kubernetes_action,
-    ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
-           FROM jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)) AS tags,
-    ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
-           FROM jsonb_array_elements((d.value -> 'schemes'::text)) jsonstring(value)) AS schemes,
-    (d.value -> 'consumes'::text) AS consumes,
-    (d.value -> 'responses'::text) AS responses,
-    (d.value -> 'parameters'::text) AS parameters,
-    (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated
-   FROM (raw_paths
-     JOIN LATERAL jsonb_each(raw_paths.value) d(key, value) ON (true))
-  ORDER BY (d.value ->> 'operationId'::text);
-#+END_SRC
-
-
-** TODO materialized views
-** TODO optimization indexes on materialized views
-** raw operation json
-#+BEGIN_SRC  shell
-cat ../swagger.json \
-  | jq -c '.paths | to_entries | .[].value | to_entries | .[].value | {operationId: .operationId, parameters: .parameters, responses: .responses}'\
-  | jq .
- # | head -10 | tail -1
-#| {operationId:.operationId}' \
-# .[].value | to_entries[][]' \
-#  | head -200 | tail -1 | jq .
-# | {operationId: .operationId}' \
-# {"operationId": value.operationId, "parameter": value.parameters, "responses": value.responses}' #| head -200 | tail -1 | jq .
-# |.[].value | to_entries[] | {"operationId": .operationId, "parameter": .parameters, "responses": .responses}'  | head -200 | tail -1 | jq .
-
-
-#+END_SRC
-
-#+RESULTS:
-#+begin_EXAMPLE
-{
-  "operationId": "getCoreAPIVersions",
-  "parameters": null,
-  "responses": {
-    "200": {
-      "description": "OK",
-      "schema": {
-        "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.APIVersions"
-      }
-    },
-    "401": {
-      "description": "Unauthorized"
-    }
-  }
-}
-{
-  "operationId": "getCoreV1APIResources",
-  "parameters": null,
-  "responses": {
-    "200": {
-      "description": "OK",
-      "schema": {
-        "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.APIResourceList"
-      }
-    },
-    "401": {
-      "description": "Unauthorized"
-    }
-  }
-}
-{
-  "operationId": "listCoreV1ComponentStatus",
-  "parameters": null,
-  "responses": {
-    "200": {
-      "description": "OK",
-      "schema": {
-        "$ref": "#/definitions/io.k8s.api.core.v1.ComponentStatusList"
-      }
-    },
-    "401": {
-      "description": "Unauthorized"
-    }
-  }
-}
-#+end_EXAMPLE
-
-#+BEGIN_SRC shell
-  cat swagger.json | jq '.definitions' | 
-  | sort -R | grep -vi alpha\\\|beta | grep core | head -40 
-cat data.json | psql -h localhost -p 5432 feeds -c \
-  "COPY raw_api_definitions (definition_id,data) FROM STDIN with delimite;"
-#  "COPY raw_api_definitions (data) FROM STDIN WITH version='master-123';"
-#+END_SRC
-
-* api objects + properties
-** TODO types view from swagger.json table
-** TODO properties view from swagger.json table (likely not much to change)
-** TODO materialized views
-** TODO optimization indexes on materialized views
-** raw definition json
-
-#+NAME: number of definitions
-#+BEGIN_SRC  shell
-  cat ../swagger.json | jq -c '.definitions | to_entries | map(.value.definition = .key) | map(.value.version="local") | .[].value'  | wc -l
-#+END_SRC
-
-#+RESULTS: number of definitions
-#+begin_EXAMPLE
-630
-#+end_EXAMPLE
-
-** raw api definition table
-
-#+NAME: raw_api_definitions
-#+BEGIN_SRC sql-mode 
-CREATE TABLE raw_api_definitions (
-    id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
-    -- version text NOT NULL,
-    -- definition_id text NOT NULL,
-    data jsonb NOT NULL
-);
-#+END_SRC
-
-** load raw json into table
-
-#+BEGIN_SRC tmate
-  cat ../swagger.json \
-  | jq -c '.definitions | to_entries | map(.value.definition = .key) | map(.value.version="local") | .[].value' \
-  | psql -c "COPY raw_api_definitions (data) FROM STDIN (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');"
-#+END_SRC
-
-** types view
-#+NAME: Types View
-#+BEGIN_SRC sql-mode
--- DROP VIEW public.types;
-CREATE OR REPLACE VIEW "public"."types" AS 
- SELECT raw_api_definitions.id,
-    (raw_api_definitions.data ->> 'definition'::text) AS name,
-    (raw_api_definitions.data ->> 'description'::text) AS description,
-    (((raw_api_definitions.data -> 'x-kubernetes-group-version-kind'::text) ->0) ->> 'group'::text) AS group,
-    (((raw_api_definitions.data -> 'x-kubernetes-group-version-kind'::text) ->0) ->> 'version'::text) AS version,
-    (((raw_api_definitions.data -> 'x-kubernetes-group-version-kind'::text) ->0) ->> 'kind'::text) AS kind,
-    to_jsonb((raw_api_definitions.data -> 'properties')) AS properties,
-    (raw_api_definitions.data ->> 'type'::text) AS type,
-    (raw_api_definitions.data ->> 'required'::text) AS required,
-    (raw_api_definitions.data ->> 'version'::text) AS source
-   FROM raw_api_definitions;
-#+END_SRC
-
-** properties view
-   We wanted our properties view to have a param_kind field, whose value was dynamic based on the properties' type.
-   We can do this with a CASE statement, where the value changes based on some boolean expressions
-#+NAME: Properties View
-#+BEGIN_SRC sql-mode
-  CREATE OR REPLACE VIEW "public"."properties" AS 
-    SELECT types.id AS type_id,
-           d.key AS property,
-           d.value,
-           (d.value ->> 'description'::text) AS description,
-           (d.value ->> 'format'::text) AS format,
-           (d.value ->> 'x-kubernetes-patch-merge-key'::text) AS merge_key,
-           (d.value ->> 'x-kubernetes-patch-strategy'::text) AS patch_strategy,
-           CASE
-             WHEN d.key is null THEN false
-             WHEN (types.required ? d.key) THEN true
-             ELSE false
-               END
-             AS required,
-           replace(
-             CASE
-             WHEN ((d.value ->> 'type'::text) = 'string'::text) THEN 'string'::text
-             WHEN ((d.value ->> 'type'::text) IS NULL) THEN (d.value ->> '$ref'::text)
-             WHEN ((d.value ->> 'type'::text) = 'array'::text)
-              AND ((d.value -> 'items'::text) ->> 'type'::text) IS NULL
-               THEN ((d.value -> 'items'::text) ->> '$ref'::text)
-             WHEN ((d.value ->> 'type'::text) = 'array'::text)
-              AND ((d.value -> 'items'::text) ->> '$ref'::text) IS NULL
-               THEN ((d.value -> 'items'::text) ->> 'type'::text)
-             ELSE 'integer'::text
-             END, '#/definitions/','') AS param_kind,
-           CASE
-           WHEN ((d.value ->> 'type'::text) IS NULL) THEN 'subtype'::text
-           ELSE (d.value ->> 'type'::text)
-             END AS param_type
-           -- with param type also containing array, we don't need array as a boolean
-           -- CASE
-           -- WHEN ((d.value ->> 'type'::text) = 'array'::text) THEN true
-           -- ELSE false
-           --  END AS "array"
-      FROM (types
-            JOIN LATERAL jsonb_each(types.properties) d(key, value) ON (true))
-     ORDER BY types.id;
-#+END_SRC
-
-* TODO Materialized views
-
-Version 9.3 also introduced materialized views.
-
-When you mark a view as materialized, it will requery the data only when you
-issue the REFRESH command.
-
-The upside is that you’re not wasting resources running complex queries
-repeatedly; the downside is that you might not have the most up-to-date data
-when you use the view.
-
-The most convincing cases for using materialized views are when the underlying
-query takes a long time and when having timely data is not critical.
-
-You often encounter these scenarios when building online analytical processing
-(OLAP) applications. Unlike nonmaterialized views, you can add indexes to
-materialized views to speed up the read.
-
-* TODO Creating index on Regular Expressions
-
-You can find a wonderful example of GIN in Waiting for Faster LIKE/ILIKE.
-As of version 9.3, you can index regular expressions that leverage the GIN-based pg_trgm extension.
-
-https://www.postgresql.org/docs/current/pgtrgm.html
-
-#+BEGIN_EXAMPLE
-Beginning in PostgreSQL 9.3, these index types also support
-index searches for regular-expression matches (~ and ~* operators),
-for example
-
-SELECT * FROM test_trgm WHERE t ~ '(foo|bar)';
-
-The index search works by extracting trigrams from the regular expression and
-then looking these up in the index.
-
-The more trigrams that can be extracted from the regular expression, the more
-effective the index search is.
-
-Unlike B-tree based searches, the search string need not be left-anchored.
-#+END_EXAMPLE
-
-** Need to create a view
-
-that includes ev.op_id with join on ev.verb ~ op.method and ev.request_uri ~ op.regex
-
-#+BEGIN_SRC sql-mode
-select ev.verb, op.method, op.path, ev.request_uri 
-from api_operations op, audit_events ev
-where ev.request_uri='/api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0'
-and ev.request_uri ~ op.regexp;
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-  verb  | method |                    path                    |                            request_uri                            
---------+--------+--------------------------------------------+-------------------------------------------------------------------
- get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- delete | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- delete | get    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- delete | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- delete | put    | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- delete | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- delete | delete | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- get    | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- delete | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
- delete | patch  | /api/v1/namespaces/{namespace}/pods/{name} | /api/v1/namespaces/provisioning-4337/pods/csi-hostpath-attacher-0
-(40 rows)
-
-#+end_src
-
-
-** pg_tgrm index creation
-
-#+BEGIN_SRC sql-mode
-CREATE EXTENSION pg_trgm;
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-CREATE EXTENSION
-#+end_src
-
-#+BEGIN_SRC sql-mode
-create index api_operation_regex ON api_operations USING GIST (regexp gist_trgm_ops);
-#+END_SRC
-
-#+BEGIN_SRC sql-mode
-create index api_operation_regex_gin ON api_operations USING GIN (regexp gin_trgm_ops);
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-CREATE INDEX
-#+end_src
-
-#+BEGIN_SRC sql-mode
-reindex table api_operations;
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-REINDEX
-#+end_src
-
-* Queries on views
-** pod spec related kinds
-#+BEGIN_SRC sql-mode
-select distinct t.name , p.required , property , param_kind, param_type
-from properties p , types t
-where (t.name like '%PodSpec' or p.param_kind like '%PodSpec')
--- and p.param_kind like 'io%'
--- and p.required
-and p.type_id = t.id
-and param_kind not like '%alpha%'
-and param_kind not like '%beta%'
--- and p.param_type != 'array'
-and t.name not like '%alpha%'
-and t.name not like '%beta%'
-order by -- param_type,
-  t.name,
-  param_type,
-  param_kind;
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-                name                | required |           property            |               param_kind                | param_type 
-------------------------------------+----------+-------------------------------+-----------------------------------------+------------
- io.k8s.api.core.v1.Pod             | f        | spec                          | io.k8s.api.core.v1.PodSpec              | subtype
- io.k8s.api.core.v1.PodSpec         | f        | initContainers                | io.k8s.api.core.v1.Container            | array
- io.k8s.api.core.v1.PodSpec         | t        | containers                    | io.k8s.api.core.v1.Container            | array
- io.k8s.api.core.v1.PodSpec         | f        | hostAliases                   | io.k8s.api.core.v1.HostAlias            | array
- io.k8s.api.core.v1.PodSpec         | f        | imagePullSecrets              | io.k8s.api.core.v1.LocalObjectReference | array
- io.k8s.api.core.v1.PodSpec         | f        | readinessGates                | io.k8s.api.core.v1.PodReadinessGate     | array
- io.k8s.api.core.v1.PodSpec         | f        | tolerations                   | io.k8s.api.core.v1.Toleration           | array
- io.k8s.api.core.v1.PodSpec         | f        | volumes                       | io.k8s.api.core.v1.Volume               | array
- io.k8s.api.core.v1.PodSpec         | f        | automountServiceAccountToken  | integer                                 | boolean
- io.k8s.api.core.v1.PodSpec         | f        | enableServiceLinks            | integer                                 | boolean
- io.k8s.api.core.v1.PodSpec         | f        | hostIPC                       | integer                                 | boolean
- io.k8s.api.core.v1.PodSpec         | f        | hostNetwork                   | integer                                 | boolean
- io.k8s.api.core.v1.PodSpec         | f        | hostPID                       | integer                                 | boolean
- io.k8s.api.core.v1.PodSpec         | f        | shareProcessNamespace         | integer                                 | boolean
- io.k8s.api.core.v1.PodSpec         | f        | activeDeadlineSeconds         | integer                                 | integer
- io.k8s.api.core.v1.PodSpec         | f        | priority                      | integer                                 | integer
- io.k8s.api.core.v1.PodSpec         | f        | terminationGracePeriodSeconds | integer                                 | integer
- io.k8s.api.core.v1.PodSpec         | f        | nodeSelector                  | integer                                 | object
- io.k8s.api.core.v1.PodSpec         | f        | overhead                      | integer                                 | object
- io.k8s.api.core.v1.PodSpec         | f        | dnsPolicy                     | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | hostname                      | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | nodeName                      | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | preemptionPolicy              | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | priorityClassName             | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | restartPolicy                 | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | runtimeClassName              | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | schedulerName                 | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | serviceAccount                | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | serviceAccountName            | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | subdomain                     | string                                  | string
- io.k8s.api.core.v1.PodSpec         | f        | affinity                      | io.k8s.api.core.v1.Affinity             | subtype
- io.k8s.api.core.v1.PodSpec         | f        | dnsConfig                     | io.k8s.api.core.v1.PodDNSConfig         | subtype
- io.k8s.api.core.v1.PodSpec         | f        | securityContext               | io.k8s.api.core.v1.PodSecurityContext   | subtype
- io.k8s.api.core.v1.PodTemplateSpec | f        | spec                          | io.k8s.api.core.v1.PodSpec              | subtype
-(34 rows)
-
-#+end_src
 ** others
 #+BEGIN_SRC sql-mode
 select * from properties where merge_key is not null order by required DESC limit 100	;
