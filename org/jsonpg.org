@@ -34,7 +34,7 @@ Which will be the 'jsonb' type for the data column when we import.
 * api operations + parameters = responses
 ** TADA operations view from swagger.json table
    CLOSED: [2019-07-31 Wed 00:54]
-- [ ] model it after existing api_operations table
+- [X] model it after existing api_operations table
 - [ ] ensure additional loading of parameters
 - [ ] ensure additional loading of responses
 
@@ -120,1226 +120,84 @@ drop cascades to view responses
 DROP VIEW
 CREATE VIEW
 #+end_src
-*** regex_from_path PL/Python
 
-#+BEGIN_SRC shell :eval never
-  apt-get install -y postgresql-plpython3-11
-#+END_SRC
+*** 887/1101 operations are not deprecated
 
+**** 887 Operations that are not deployments
+
+#+NAME: active operations
 #+BEGIN_SRC sql-mode
-  CREATE EXTENSION plpython3u;
+  select count(distinct operation_id)
+  from api_operations
+  where not deprecated;
+  -- order by operation_id;
 #+END_SRC
 
-#+RESULTS:
+#+RESULTS: active operations
 #+begin_src sql-mode
-CREATE EXTENSION
-#+end_src
-
-
-This is a pretty good read and might be quite useful for refactoring:
-- https://www.postgresql.org/docs/11/plpython.html
-- https://www.postgresql.org/docs/11/plpython-data.html
-- https://www.postgresql.org/docs/11/plpython-sharing.html SD and GD shared dictionaries
-- https://www.postgresql.org/docs/11/plpython-trigger.html TD dictionary
-
-#+NAME: regex_from_path.py
-#+BEGIN_SRC python :eval never
-  # path is set to text or null/None
-  import re
-  if path is None:
-    return None
-  # k8s appears to allow/expect a trailing {path} variable to capture everything
-  # remaining in the path, including '/' characters, which doesn't appear to be
-  # allowed according to the openapi 2.0 or 3.0 specs
-  # (ref: https://github.com/OAI/OpenAPI-Specification/issues/892)
-  K8S_PATH_VARIABLE_PATTERN = re.compile("{(path)}$")
-  VARIABLE_PATTERN = re.compile("{([^}]+)}")
-  # first replace the special trailing {path} wildcard with a named regex
-
-  # path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(?P<\\1>.+)", path).rstrip('/')
-  # PosgresQL doesn't like named vars
-  path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
-  # For SQL like, we just use %
-  # path_regex = K8S_PATH_VARIABLE_PATTERN.sub("%", path).rstrip('/')
-  # replace wildcards in {varname} format to a named regex
-  # path_regex = VARIABLE_PATTERN.sub("(?P<\\1>[^/]+)", path_regex).rstrip('/')
-  # if path != path_regex:
-  #if '{' not in path:
-  #  ipdb.set_trace(context=10)
-
-  # now that we are using POSIX, we can't do {varname}
-  path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
-  # now that we are using LIKE, we just need %
-  # path_regex = VARIABLE_PATTERN.sub("%", path_regex).rstrip('/')
-  # ensure that everything ends looking for everything but '/'
-  if not path_regex.endswith(")") and not path_regex.endswith("?"): # allow proxy to catch a trailing /
-      path_regex += "([^/]*)"
-  # # TODO(spiffxp): unsure if trailing / _should_ be counted toward /proxy
-  if path_regex.endswith("proxy"): # allow proxy to catch a trailing /
-      path_regex += "/?$"
-  else:
-      path_regex += "$"
-  #    print('Converted path: %s into path_regex: %s' % (path, path_regex))
-  return path_regex
-#+END_SRC
-
-#+NAME: regex_from_path.sql
-#+BEGIN_SRC sql-mode :noweb yes
-  CREATE OR REPLACE FUNCTION regex_from_path(path text)
-  RETURNS text AS $$
-  <<regex_from_path.py>>
-  $$ LANGUAGE plpython3u ;
-#+END_SRC
-
-#+RESULTS: regex_from_path.sql
-#+begin_src sql-mode
-hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# CREATE FUNCTION
-#+end_src
-
-#+BEGIN_SRC sql-mode
-  select * from regex_from_path('/api/v1/namespaces/{namespace}/pods/{name}/proxy');
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-                    regex_from_path                    
--------------------------------------------------------
- /api/v1/namespaces/([^/]*)/pods/([^/]*)/proxy([^/]*)$
+ count 
+-------
+   887
 (1 row)
 
 #+end_src
 
+**** 1100 total operations
 
+#+NAME: total operations
 #+BEGIN_SRC sql-mode
-  select * from api_operations limit 5;
+  select count(distinct operation_id)
+  from api_operations;
+  -- where not deprecated;
+  -- order by operation_id;
 #+END_SRC
 
-#+RESULTS:
+#+RESULTS: total operations
 #+begin_src sql-mode
-                     op_id                     |                  id                  | raw_swagger_id | method |                          path                           | group | version |        kind         |                 description                 | x_kubernetes_action |    tags     |  schemes  | consumes |                                              responses                                               | parameters 
------------------------------------------------+--------------------------------------+----------------+--------+---------------------------------------------------------+-------+---------+---------------------+---------------------------------------------+---------------------+-------------+-----------+----------+------------------------------------------------------------------------------------------------------+------------
- connectCoreV1DeleteNamespacedPodProxy         | b4b4ee68-b3b4-11e9-9248-506b4b430a28 |              3 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy        |       | v1      | PodProxyOptions     | connect DELETE requests to proxy of Pod     | connect             | ["core_v1"] | ["https"] | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} | 
- connectCoreV1DeleteNamespacedPodProxy         | b4b4ee69-b3b4-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy        |       | v1      | PodProxyOptions     | connect DELETE requests to proxy of Pod     | connect             | ["core_v1"] | ["https"] | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} | 
- connectCoreV1DeleteNamespacedPodProxyWithPath | b4b4ee6a-b3b4-11e9-9248-506b4b430a28 |              3 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path} |       | v1      | PodProxyOptions     | connect DELETE requests to proxy of Pod     | connect             | ["core_v1"] | ["https"] | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} | 
- connectCoreV1DeleteNamespacedPodProxyWithPath | b4b4ee6b-b3b4-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path} |       | v1      | PodProxyOptions     | connect DELETE requests to proxy of Pod     | connect             | ["core_v1"] | ["https"] | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} | 
- connectCoreV1DeleteNamespacedServiceProxy     | b4b4ee6c-b3b4-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/services/{name}/proxy    |       | v1      | ServiceProxyOptions | connect DELETE requests to proxy of Service | connect             | ["core_v1"] | ["https"] | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} | 
-(5 rows)
+ count 
+-------
+  1100
+(1 row)
 
- #+end_src
+#+end_src
 
-
-*** 1101 operations
-#+NAME: op_id
+**** 225 unmatched method + paths
+#+NAME: unmatech method + path count
 #+BEGIN_SRC sql-mode
-  select distinct op_id from api_operations order by op_id;
+  select count(distinct (method, path ))
+  from api_operations
+  where operation_id is null
+  and path not like '%alpha%'
+  and path not like '%beta%';
+  -- order by path;
 #+END_SRC
 
-#+RESULTS: op_id
+#+RESULTS: unmatech method + path count
 #+begin_src sql-mode
-                                   op_id                                    
-----------------------------------------------------------------------------
- connectCoreV1DeleteNamespacedPodProxy
- connectCoreV1DeleteNamespacedPodProxyWithPath
- connectCoreV1DeleteNamespacedServiceProxy
- connectCoreV1DeleteNamespacedServiceProxyWithPath
- connectCoreV1DeleteNodeProxy
- connectCoreV1DeleteNodeProxyWithPath
- connectCoreV1GetNamespacedPodAttach
- connectCoreV1GetNamespacedPodExec
- connectCoreV1GetNamespacedPodPortforward
- connectCoreV1GetNamespacedPodProxy
- connectCoreV1GetNamespacedPodProxyWithPath
- connectCoreV1GetNamespacedServiceProxy
- connectCoreV1GetNamespacedServiceProxyWithPath
- connectCoreV1GetNodeProxy
- connectCoreV1GetNodeProxyWithPath
- connectCoreV1HeadNamespacedPodProxy
- connectCoreV1HeadNamespacedPodProxyWithPath
- connectCoreV1HeadNamespacedServiceProxy
- connectCoreV1HeadNamespacedServiceProxyWithPath
- connectCoreV1HeadNodeProxy
- connectCoreV1HeadNodeProxyWithPath
- connectCoreV1OptionsNamespacedPodProxy
- connectCoreV1OptionsNamespacedPodProxyWithPath
- connectCoreV1OptionsNamespacedServiceProxy
- connectCoreV1OptionsNamespacedServiceProxyWithPath
- connectCoreV1OptionsNodeProxy
- connectCoreV1OptionsNodeProxyWithPath
- connectCoreV1PatchNamespacedPodProxy
- connectCoreV1PatchNamespacedPodProxyWithPath
- connectCoreV1PatchNamespacedServiceProxy
- connectCoreV1PatchNamespacedServiceProxyWithPath
- connectCoreV1PatchNodeProxy
- connectCoreV1PatchNodeProxyWithPath
- connectCoreV1PostNamespacedPodAttach
- connectCoreV1PostNamespacedPodExec
- connectCoreV1PostNamespacedPodPortforward
- connectCoreV1PostNamespacedPodProxy
- connectCoreV1PostNamespacedPodProxyWithPath
- connectCoreV1PostNamespacedServiceProxy
- connectCoreV1PostNamespacedServiceProxyWithPath
- connectCoreV1PostNodeProxy
- connectCoreV1PostNodeProxyWithPath
- connectCoreV1PutNamespacedPodProxy
- connectCoreV1PutNamespacedPodProxyWithPath
- connectCoreV1PutNamespacedServiceProxy
- connectCoreV1PutNamespacedServiceProxyWithPath
- connectCoreV1PutNodeProxy
- connectCoreV1PutNodeProxyWithPath
- createAdmissionregistrationV1beta1MutatingWebhookConfiguration
- createAdmissionregistrationV1beta1ValidatingWebhookConfiguration
- createAdmissionregistrationV1MutatingWebhookConfiguration
- createAdmissionregistrationV1ValidatingWebhookConfiguration
- createApiextensionsV1beta1CustomResourceDefinition
- createApiregistrationV1APIService
- createApiregistrationV1beta1APIService
- createAppsV1beta1NamespacedControllerRevision
- createAppsV1beta1NamespacedDeployment
- createAppsV1beta1NamespacedDeploymentRollback
- createAppsV1beta1NamespacedStatefulSet
- createAppsV1beta2NamespacedControllerRevision
- createAppsV1beta2NamespacedDaemonSet
- createAppsV1beta2NamespacedDeployment
- createAppsV1beta2NamespacedReplicaSet
- createAppsV1beta2NamespacedStatefulSet
- createAppsV1NamespacedControllerRevision
- createAppsV1NamespacedDaemonSet
- createAppsV1NamespacedDeployment
- createAppsV1NamespacedReplicaSet
- createAppsV1NamespacedStatefulSet
- createAuditregistrationV1alpha1AuditSink
- createAuthenticationV1beta1TokenReview
- createAuthenticationV1TokenReview
- createAuthorizationV1beta1NamespacedLocalSubjectAccessReview
- createAuthorizationV1beta1SelfSubjectAccessReview
- createAuthorizationV1beta1SelfSubjectRulesReview
- createAuthorizationV1beta1SubjectAccessReview
- createAuthorizationV1NamespacedLocalSubjectAccessReview
- createAuthorizationV1SelfSubjectAccessReview
- createAuthorizationV1SelfSubjectRulesReview
- createAuthorizationV1SubjectAccessReview
- createAutoscalingV1NamespacedHorizontalPodAutoscaler
- createAutoscalingV2beta1NamespacedHorizontalPodAutoscaler
- createAutoscalingV2beta2NamespacedHorizontalPodAutoscaler
- createBatchV1beta1NamespacedCronJob
- createBatchV1NamespacedJob
- createBatchV2alpha1NamespacedCronJob
- createCertificatesV1beta1CertificateSigningRequest
- createCoordinationV1beta1NamespacedLease
- createCoordinationV1NamespacedLease
- createCoreV1Namespace
- createCoreV1NamespacedBinding
- createCoreV1NamespacedConfigMap
- createCoreV1NamespacedEndpoints
- createCoreV1NamespacedEvent
- createCoreV1NamespacedLimitRange
- createCoreV1NamespacedPersistentVolumeClaim
- createCoreV1NamespacedPod
- createCoreV1NamespacedPodBinding
- createCoreV1NamespacedPodEviction
- createCoreV1NamespacedPodTemplate
- createCoreV1NamespacedReplicationController
- createCoreV1NamespacedResourceQuota
- createCoreV1NamespacedSecret
- createCoreV1NamespacedService
- createCoreV1NamespacedServiceAccount
- createCoreV1NamespacedServiceAccountToken
- createCoreV1Node
- createCoreV1PersistentVolume
- createEventsV1beta1NamespacedEvent
- createExtensionsV1beta1NamespacedDaemonSet
- createExtensionsV1beta1NamespacedDeployment
- createExtensionsV1beta1NamespacedDeploymentRollback
- createExtensionsV1beta1NamespacedIngress
- createExtensionsV1beta1NamespacedNetworkPolicy
- createExtensionsV1beta1NamespacedReplicaSet
- createExtensionsV1beta1PodSecurityPolicy
- createNetworkingV1beta1NamespacedIngress
- createNetworkingV1NamespacedNetworkPolicy
- createNodeV1alpha1RuntimeClass
- createNodeV1beta1RuntimeClass
- createPolicyV1beta1NamespacedPodDisruptionBudget
- createPolicyV1beta1PodSecurityPolicy
- createRbacAuthorizationV1alpha1ClusterRole
- createRbacAuthorizationV1alpha1ClusterRoleBinding
- createRbacAuthorizationV1alpha1NamespacedRole
- createRbacAuthorizationV1alpha1NamespacedRoleBinding
- createRbacAuthorizationV1beta1ClusterRole
- createRbacAuthorizationV1beta1ClusterRoleBinding
- createRbacAuthorizationV1beta1NamespacedRole
- createRbacAuthorizationV1beta1NamespacedRoleBinding
- createRbacAuthorizationV1ClusterRole
- createRbacAuthorizationV1ClusterRoleBinding
- createRbacAuthorizationV1NamespacedRole
- createRbacAuthorizationV1NamespacedRoleBinding
- createSchedulingV1alpha1PriorityClass
- createSchedulingV1beta1PriorityClass
- createSchedulingV1PriorityClass
- createSettingsV1alpha1NamespacedPodPreset
- createStorageV1alpha1VolumeAttachment
- createStorageV1beta1CSIDriver
- createStorageV1beta1CSINode
- createStorageV1beta1StorageClass
- createStorageV1beta1VolumeAttachment
- createStorageV1StorageClass
- createStorageV1VolumeAttachment
- deleteAdmissionregistrationV1beta1CollectionMutatingWebhookConfiguration
- deleteAdmissionregistrationV1beta1CollectionValidatingWebhookConfiguration
- deleteAdmissionregistrationV1beta1MutatingWebhookConfiguration
- deleteAdmissionregistrationV1beta1ValidatingWebhookConfiguration
- deleteAdmissionregistrationV1CollectionMutatingWebhookConfiguration
- deleteAdmissionregistrationV1CollectionValidatingWebhookConfiguration
- deleteAdmissionregistrationV1MutatingWebhookConfiguration
- deleteAdmissionregistrationV1ValidatingWebhookConfiguration
- deleteApiextensionsV1beta1CollectionCustomResourceDefinition
- deleteApiextensionsV1beta1CustomResourceDefinition
- deleteApiregistrationV1APIService
- deleteApiregistrationV1beta1APIService
- deleteApiregistrationV1beta1CollectionAPIService
- deleteApiregistrationV1CollectionAPIService
- deleteAppsV1beta1CollectionNamespacedControllerRevision
- deleteAppsV1beta1CollectionNamespacedDeployment
- deleteAppsV1beta1CollectionNamespacedStatefulSet
- deleteAppsV1beta1NamespacedControllerRevision
- deleteAppsV1beta1NamespacedDeployment
- deleteAppsV1beta1NamespacedStatefulSet
- deleteAppsV1beta2CollectionNamespacedControllerRevision
- deleteAppsV1beta2CollectionNamespacedDaemonSet
- deleteAppsV1beta2CollectionNamespacedDeployment
- deleteAppsV1beta2CollectionNamespacedReplicaSet
- deleteAppsV1beta2CollectionNamespacedStatefulSet
- deleteAppsV1beta2NamespacedControllerRevision
- deleteAppsV1beta2NamespacedDaemonSet
- deleteAppsV1beta2NamespacedDeployment
- deleteAppsV1beta2NamespacedReplicaSet
- deleteAppsV1beta2NamespacedStatefulSet
- deleteAppsV1CollectionNamespacedControllerRevision
- deleteAppsV1CollectionNamespacedDaemonSet
- deleteAppsV1CollectionNamespacedDeployment
- deleteAppsV1CollectionNamespacedReplicaSet
- deleteAppsV1CollectionNamespacedStatefulSet
- deleteAppsV1NamespacedControllerRevision
- deleteAppsV1NamespacedDaemonSet
- deleteAppsV1NamespacedDeployment
- deleteAppsV1NamespacedReplicaSet
- deleteAppsV1NamespacedStatefulSet
- deleteAuditregistrationV1alpha1AuditSink
- deleteAuditregistrationV1alpha1CollectionAuditSink
- deleteAutoscalingV1CollectionNamespacedHorizontalPodAutoscaler
- deleteAutoscalingV1NamespacedHorizontalPodAutoscaler
- deleteAutoscalingV2beta1CollectionNamespacedHorizontalPodAutoscaler
- deleteAutoscalingV2beta1NamespacedHorizontalPodAutoscaler
- deleteAutoscalingV2beta2CollectionNamespacedHorizontalPodAutoscaler
- deleteAutoscalingV2beta2NamespacedHorizontalPodAutoscaler
- deleteBatchV1beta1CollectionNamespacedCronJob
- deleteBatchV1beta1NamespacedCronJob
- deleteBatchV1CollectionNamespacedJob
- deleteBatchV1NamespacedJob
- deleteBatchV2alpha1CollectionNamespacedCronJob
- deleteBatchV2alpha1NamespacedCronJob
- deleteCertificatesV1beta1CertificateSigningRequest
- deleteCertificatesV1beta1CollectionCertificateSigningRequest
- deleteCoordinationV1beta1CollectionNamespacedLease
- deleteCoordinationV1beta1NamespacedLease
- deleteCoordinationV1CollectionNamespacedLease
- deleteCoordinationV1NamespacedLease
- deleteCoreV1CollectionNamespacedConfigMap
- deleteCoreV1CollectionNamespacedEndpoints
- deleteCoreV1CollectionNamespacedEvent
- deleteCoreV1CollectionNamespacedLimitRange
- deleteCoreV1CollectionNamespacedPersistentVolumeClaim
- deleteCoreV1CollectionNamespacedPod
- deleteCoreV1CollectionNamespacedPodTemplate
- deleteCoreV1CollectionNamespacedReplicationController
- deleteCoreV1CollectionNamespacedResourceQuota
- deleteCoreV1CollectionNamespacedSecret
- deleteCoreV1CollectionNamespacedServiceAccount
- deleteCoreV1CollectionNode
- deleteCoreV1CollectionPersistentVolume
- deleteCoreV1Namespace
- deleteCoreV1NamespacedConfigMap
- deleteCoreV1NamespacedEndpoints
- deleteCoreV1NamespacedEvent
- deleteCoreV1NamespacedLimitRange
- deleteCoreV1NamespacedPersistentVolumeClaim
- deleteCoreV1NamespacedPod
- deleteCoreV1NamespacedPodTemplate
- deleteCoreV1NamespacedReplicationController
- deleteCoreV1NamespacedResourceQuota
- deleteCoreV1NamespacedSecret
- deleteCoreV1NamespacedService
- deleteCoreV1NamespacedServiceAccount
- deleteCoreV1Node
- deleteCoreV1PersistentVolume
- deleteEventsV1beta1CollectionNamespacedEvent
- deleteEventsV1beta1NamespacedEvent
- deleteExtensionsV1beta1CollectionNamespacedDaemonSet
- deleteExtensionsV1beta1CollectionNamespacedDeployment
- deleteExtensionsV1beta1CollectionNamespacedIngress
- deleteExtensionsV1beta1CollectionNamespacedNetworkPolicy
- deleteExtensionsV1beta1CollectionNamespacedReplicaSet
- deleteExtensionsV1beta1CollectionPodSecurityPolicy
- deleteExtensionsV1beta1NamespacedDaemonSet
- deleteExtensionsV1beta1NamespacedDeployment
- deleteExtensionsV1beta1NamespacedIngress
- deleteExtensionsV1beta1NamespacedNetworkPolicy
- deleteExtensionsV1beta1NamespacedReplicaSet
- deleteExtensionsV1beta1PodSecurityPolicy
- deleteNetworkingV1beta1CollectionNamespacedIngress
- deleteNetworkingV1beta1NamespacedIngress
- deleteNetworkingV1CollectionNamespacedNetworkPolicy
- deleteNetworkingV1NamespacedNetworkPolicy
- deleteNodeV1alpha1CollectionRuntimeClass
- deleteNodeV1alpha1RuntimeClass
- deleteNodeV1beta1CollectionRuntimeClass
- deleteNodeV1beta1RuntimeClass
- deletePolicyV1beta1CollectionNamespacedPodDisruptionBudget
- deletePolicyV1beta1CollectionPodSecurityPolicy
- deletePolicyV1beta1NamespacedPodDisruptionBudget
- deletePolicyV1beta1PodSecurityPolicy
- deleteRbacAuthorizationV1alpha1ClusterRole
- deleteRbacAuthorizationV1alpha1ClusterRoleBinding
- deleteRbacAuthorizationV1alpha1CollectionClusterRole
- deleteRbacAuthorizationV1alpha1CollectionClusterRoleBinding
- deleteRbacAuthorizationV1alpha1CollectionNamespacedRole
- deleteRbacAuthorizationV1alpha1CollectionNamespacedRoleBinding
- deleteRbacAuthorizationV1alpha1NamespacedRole
- deleteRbacAuthorizationV1alpha1NamespacedRoleBinding
- deleteRbacAuthorizationV1beta1ClusterRole
- deleteRbacAuthorizationV1beta1ClusterRoleBinding
- deleteRbacAuthorizationV1beta1CollectionClusterRole
- deleteRbacAuthorizationV1beta1CollectionClusterRoleBinding
- deleteRbacAuthorizationV1beta1CollectionNamespacedRole
- deleteRbacAuthorizationV1beta1CollectionNamespacedRoleBinding
- deleteRbacAuthorizationV1beta1NamespacedRole
- deleteRbacAuthorizationV1beta1NamespacedRoleBinding
- deleteRbacAuthorizationV1ClusterRole
- deleteRbacAuthorizationV1ClusterRoleBinding
- deleteRbacAuthorizationV1CollectionClusterRole
- deleteRbacAuthorizationV1CollectionClusterRoleBinding
- deleteRbacAuthorizationV1CollectionNamespacedRole
- deleteRbacAuthorizationV1CollectionNamespacedRoleBinding
- deleteRbacAuthorizationV1NamespacedRole
- deleteRbacAuthorizationV1NamespacedRoleBinding
- deleteSchedulingV1alpha1CollectionPriorityClass
- deleteSchedulingV1alpha1PriorityClass
- deleteSchedulingV1beta1CollectionPriorityClass
- deleteSchedulingV1beta1PriorityClass
- deleteSchedulingV1CollectionPriorityClass
- deleteSchedulingV1PriorityClass
- deleteSettingsV1alpha1CollectionNamespacedPodPreset
- deleteSettingsV1alpha1NamespacedPodPreset
- deleteStorageV1alpha1CollectionVolumeAttachment
- deleteStorageV1alpha1VolumeAttachment
- deleteStorageV1beta1CollectionCSIDriver
- deleteStorageV1beta1CollectionCSINode
- deleteStorageV1beta1CollectionStorageClass
- deleteStorageV1beta1CollectionVolumeAttachment
- deleteStorageV1beta1CSIDriver
- deleteStorageV1beta1CSINode
- deleteStorageV1beta1StorageClass
- deleteStorageV1beta1VolumeAttachment
- deleteStorageV1CollectionStorageClass
- deleteStorageV1CollectionVolumeAttachment
- deleteStorageV1StorageClass
- deleteStorageV1VolumeAttachment
- getAdmissionregistrationAPIGroup
- getAdmissionregistrationV1APIResources
- getAdmissionregistrationV1beta1APIResources
- getApiextensionsAPIGroup
- getApiextensionsV1beta1APIResources
- getApiregistrationAPIGroup
- getApiregistrationV1APIResources
- getApiregistrationV1beta1APIResources
- getAPIVersions
- getAppsAPIGroup
- getAppsV1APIResources
- getAppsV1beta1APIResources
- getAppsV1beta2APIResources
- getAuditregistrationAPIGroup
- getAuditregistrationV1alpha1APIResources
- getAuthenticationAPIGroup
- getAuthenticationV1APIResources
- getAuthenticationV1beta1APIResources
- getAuthorizationAPIGroup
- getAuthorizationV1APIResources
- getAuthorizationV1beta1APIResources
- getAutoscalingAPIGroup
- getAutoscalingV1APIResources
- getAutoscalingV2beta1APIResources
- getAutoscalingV2beta2APIResources
- getBatchAPIGroup
- getBatchV1APIResources
- getBatchV1beta1APIResources
- getBatchV2alpha1APIResources
- getCertificatesAPIGroup
- getCertificatesV1beta1APIResources
- getCodeVersion
- getCoordinationAPIGroup
- getCoordinationV1APIResources
- getCoordinationV1beta1APIResources
- getCoreAPIVersions
- getCoreV1APIResources
- getEventsAPIGroup
- getEventsV1beta1APIResources
- getExtensionsAPIGroup
- getExtensionsV1beta1APIResources
- getNetworkingAPIGroup
- getNetworkingV1APIResources
- getNetworkingV1beta1APIResources
- getNodeAPIGroup
- getNodeV1alpha1APIResources
- getNodeV1beta1APIResources
- getPolicyAPIGroup
- getPolicyV1beta1APIResources
- getRbacAuthorizationAPIGroup
- getRbacAuthorizationV1alpha1APIResources
- getRbacAuthorizationV1APIResources
- getRbacAuthorizationV1beta1APIResources
- getSchedulingAPIGroup
- getSchedulingV1alpha1APIResources
- getSchedulingV1APIResources
- getSchedulingV1beta1APIResources
- getSettingsAPIGroup
- getSettingsV1alpha1APIResources
- getStorageAPIGroup
- getStorageV1alpha1APIResources
- getStorageV1APIResources
- getStorageV1beta1APIResources
- listAdmissionregistrationV1beta1MutatingWebhookConfiguration
- listAdmissionregistrationV1beta1ValidatingWebhookConfiguration
- listAdmissionregistrationV1MutatingWebhookConfiguration
- listAdmissionregistrationV1ValidatingWebhookConfiguration
- listApiextensionsV1beta1CustomResourceDefinition
- listApiregistrationV1APIService
- listApiregistrationV1beta1APIService
- listAppsV1beta1ControllerRevisionForAllNamespaces
- listAppsV1beta1DeploymentForAllNamespaces
- listAppsV1beta1NamespacedControllerRevision
- listAppsV1beta1NamespacedDeployment
- listAppsV1beta1NamespacedStatefulSet
- listAppsV1beta1StatefulSetForAllNamespaces
- listAppsV1beta2ControllerRevisionForAllNamespaces
- listAppsV1beta2DaemonSetForAllNamespaces
- listAppsV1beta2DeploymentForAllNamespaces
- listAppsV1beta2NamespacedControllerRevision
- listAppsV1beta2NamespacedDaemonSet
- listAppsV1beta2NamespacedDeployment
- listAppsV1beta2NamespacedReplicaSet
- listAppsV1beta2NamespacedStatefulSet
- listAppsV1beta2ReplicaSetForAllNamespaces
- listAppsV1beta2StatefulSetForAllNamespaces
- listAppsV1ControllerRevisionForAllNamespaces
- listAppsV1DaemonSetForAllNamespaces
- listAppsV1DeploymentForAllNamespaces
- listAppsV1NamespacedControllerRevision
- listAppsV1NamespacedDaemonSet
- listAppsV1NamespacedDeployment
- listAppsV1NamespacedReplicaSet
- listAppsV1NamespacedStatefulSet
- listAppsV1ReplicaSetForAllNamespaces
- listAppsV1StatefulSetForAllNamespaces
- listAuditregistrationV1alpha1AuditSink
- listAutoscalingV1HorizontalPodAutoscalerForAllNamespaces
- listAutoscalingV1NamespacedHorizontalPodAutoscaler
- listAutoscalingV2beta1HorizontalPodAutoscalerForAllNamespaces
- listAutoscalingV2beta1NamespacedHorizontalPodAutoscaler
- listAutoscalingV2beta2HorizontalPodAutoscalerForAllNamespaces
- listAutoscalingV2beta2NamespacedHorizontalPodAutoscaler
- listBatchV1beta1CronJobForAllNamespaces
- listBatchV1beta1NamespacedCronJob
- listBatchV1JobForAllNamespaces
- listBatchV1NamespacedJob
- listBatchV2alpha1CronJobForAllNamespaces
- listBatchV2alpha1NamespacedCronJob
- listCertificatesV1beta1CertificateSigningRequest
- listCoordinationV1beta1LeaseForAllNamespaces
- listCoordinationV1beta1NamespacedLease
- listCoordinationV1LeaseForAllNamespaces
- listCoordinationV1NamespacedLease
- listCoreV1ComponentStatus
- listCoreV1ConfigMapForAllNamespaces
- listCoreV1EndpointsForAllNamespaces
- listCoreV1EventForAllNamespaces
- listCoreV1LimitRangeForAllNamespaces
- listCoreV1Namespace
- listCoreV1NamespacedConfigMap
- listCoreV1NamespacedEndpoints
- listCoreV1NamespacedEvent
- listCoreV1NamespacedLimitRange
- listCoreV1NamespacedPersistentVolumeClaim
- listCoreV1NamespacedPod
- listCoreV1NamespacedPodTemplate
- listCoreV1NamespacedReplicationController
- listCoreV1NamespacedResourceQuota
- listCoreV1NamespacedSecret
- listCoreV1NamespacedService
- listCoreV1NamespacedServiceAccount
- listCoreV1Node
- listCoreV1PersistentVolume
- listCoreV1PersistentVolumeClaimForAllNamespaces
- listCoreV1PodForAllNamespaces
- listCoreV1PodTemplateForAllNamespaces
- listCoreV1ReplicationControllerForAllNamespaces
- listCoreV1ResourceQuotaForAllNamespaces
- listCoreV1SecretForAllNamespaces
- listCoreV1ServiceAccountForAllNamespaces
- listCoreV1ServiceForAllNamespaces
- listEventsV1beta1EventForAllNamespaces
- listEventsV1beta1NamespacedEvent
- listExtensionsV1beta1DaemonSetForAllNamespaces
- listExtensionsV1beta1DeploymentForAllNamespaces
- listExtensionsV1beta1IngressForAllNamespaces
- listExtensionsV1beta1NamespacedDaemonSet
- listExtensionsV1beta1NamespacedDeployment
- listExtensionsV1beta1NamespacedIngress
- listExtensionsV1beta1NamespacedNetworkPolicy
- listExtensionsV1beta1NamespacedReplicaSet
- listExtensionsV1beta1NetworkPolicyForAllNamespaces
- listExtensionsV1beta1PodSecurityPolicy
- listExtensionsV1beta1ReplicaSetForAllNamespaces
- listNetworkingV1beta1IngressForAllNamespaces
- listNetworkingV1beta1NamespacedIngress
- listNetworkingV1NamespacedNetworkPolicy
- listNetworkingV1NetworkPolicyForAllNamespaces
- listNodeV1alpha1RuntimeClass
- listNodeV1beta1RuntimeClass
- listPolicyV1beta1NamespacedPodDisruptionBudget
- listPolicyV1beta1PodDisruptionBudgetForAllNamespaces
- listPolicyV1beta1PodSecurityPolicy
- listRbacAuthorizationV1alpha1ClusterRole
- listRbacAuthorizationV1alpha1ClusterRoleBinding
- listRbacAuthorizationV1alpha1NamespacedRole
- listRbacAuthorizationV1alpha1NamespacedRoleBinding
- listRbacAuthorizationV1alpha1RoleBindingForAllNamespaces
- listRbacAuthorizationV1alpha1RoleForAllNamespaces
- listRbacAuthorizationV1beta1ClusterRole
- listRbacAuthorizationV1beta1ClusterRoleBinding
- listRbacAuthorizationV1beta1NamespacedRole
- listRbacAuthorizationV1beta1NamespacedRoleBinding
- listRbacAuthorizationV1beta1RoleBindingForAllNamespaces
- listRbacAuthorizationV1beta1RoleForAllNamespaces
- listRbacAuthorizationV1ClusterRole
- listRbacAuthorizationV1ClusterRoleBinding
- listRbacAuthorizationV1NamespacedRole
- listRbacAuthorizationV1NamespacedRoleBinding
- listRbacAuthorizationV1RoleBindingForAllNamespaces
- listRbacAuthorizationV1RoleForAllNamespaces
- listSchedulingV1alpha1PriorityClass
- listSchedulingV1beta1PriorityClass
- listSchedulingV1PriorityClass
- listSettingsV1alpha1NamespacedPodPreset
- listSettingsV1alpha1PodPresetForAllNamespaces
- listStorageV1alpha1VolumeAttachment
- listStorageV1beta1CSIDriver
- listStorageV1beta1CSINode
- listStorageV1beta1StorageClass
- listStorageV1beta1VolumeAttachment
- listStorageV1StorageClass
- listStorageV1VolumeAttachment
- logFileHandler
- logFileListHandler
- patchAdmissionregistrationV1beta1MutatingWebhookConfiguration
- patchAdmissionregistrationV1beta1ValidatingWebhookConfiguration
- patchAdmissionregistrationV1MutatingWebhookConfiguration
- patchAdmissionregistrationV1ValidatingWebhookConfiguration
- patchApiextensionsV1beta1CustomResourceDefinition
- patchApiextensionsV1beta1CustomResourceDefinitionStatus
- patchApiregistrationV1APIService
- patchApiregistrationV1APIServiceStatus
- patchApiregistrationV1beta1APIService
- patchApiregistrationV1beta1APIServiceStatus
- patchAppsV1beta1NamespacedControllerRevision
- patchAppsV1beta1NamespacedDeployment
- patchAppsV1beta1NamespacedDeploymentScale
- patchAppsV1beta1NamespacedDeploymentStatus
- patchAppsV1beta1NamespacedStatefulSet
- patchAppsV1beta1NamespacedStatefulSetScale
- patchAppsV1beta1NamespacedStatefulSetStatus
- patchAppsV1beta2NamespacedControllerRevision
- patchAppsV1beta2NamespacedDaemonSet
- patchAppsV1beta2NamespacedDaemonSetStatus
- patchAppsV1beta2NamespacedDeployment
- patchAppsV1beta2NamespacedDeploymentScale
- patchAppsV1beta2NamespacedDeploymentStatus
- patchAppsV1beta2NamespacedReplicaSet
- patchAppsV1beta2NamespacedReplicaSetScale
- patchAppsV1beta2NamespacedReplicaSetStatus
- patchAppsV1beta2NamespacedStatefulSet
- patchAppsV1beta2NamespacedStatefulSetScale
- patchAppsV1beta2NamespacedStatefulSetStatus
- patchAppsV1NamespacedControllerRevision
- patchAppsV1NamespacedDaemonSet
- patchAppsV1NamespacedDaemonSetStatus
- patchAppsV1NamespacedDeployment
- patchAppsV1NamespacedDeploymentScale
- patchAppsV1NamespacedDeploymentStatus
- patchAppsV1NamespacedReplicaSet
- patchAppsV1NamespacedReplicaSetScale
- patchAppsV1NamespacedReplicaSetStatus
- patchAppsV1NamespacedStatefulSet
- patchAppsV1NamespacedStatefulSetScale
- patchAppsV1NamespacedStatefulSetStatus
- patchAuditregistrationV1alpha1AuditSink
- patchAutoscalingV1NamespacedHorizontalPodAutoscaler
- patchAutoscalingV1NamespacedHorizontalPodAutoscalerStatus
- patchAutoscalingV2beta1NamespacedHorizontalPodAutoscaler
- patchAutoscalingV2beta1NamespacedHorizontalPodAutoscalerStatus
- patchAutoscalingV2beta2NamespacedHorizontalPodAutoscaler
- patchAutoscalingV2beta2NamespacedHorizontalPodAutoscalerStatus
- patchBatchV1beta1NamespacedCronJob
- patchBatchV1beta1NamespacedCronJobStatus
- patchBatchV1NamespacedJob
- patchBatchV1NamespacedJobStatus
- patchBatchV2alpha1NamespacedCronJob
- patchBatchV2alpha1NamespacedCronJobStatus
- patchCertificatesV1beta1CertificateSigningRequest
- patchCertificatesV1beta1CertificateSigningRequestStatus
- patchCoordinationV1beta1NamespacedLease
- patchCoordinationV1NamespacedLease
- patchCoreV1Namespace
- patchCoreV1NamespacedConfigMap
- patchCoreV1NamespacedEndpoints
- patchCoreV1NamespacedEvent
- patchCoreV1NamespacedLimitRange
- patchCoreV1NamespacedPersistentVolumeClaim
- patchCoreV1NamespacedPersistentVolumeClaimStatus
- patchCoreV1NamespacedPod
- patchCoreV1NamespacedPodStatus
- patchCoreV1NamespacedPodTemplate
- patchCoreV1NamespacedReplicationController
- patchCoreV1NamespacedReplicationControllerScale
- patchCoreV1NamespacedReplicationControllerStatus
- patchCoreV1NamespacedResourceQuota
- patchCoreV1NamespacedResourceQuotaStatus
- patchCoreV1NamespacedSecret
- patchCoreV1NamespacedService
- patchCoreV1NamespacedServiceAccount
- patchCoreV1NamespacedServiceStatus
- patchCoreV1NamespaceStatus
- patchCoreV1Node
- patchCoreV1NodeStatus
- patchCoreV1PersistentVolume
- patchCoreV1PersistentVolumeStatus
- patchEventsV1beta1NamespacedEvent
- patchExtensionsV1beta1NamespacedDaemonSet
- patchExtensionsV1beta1NamespacedDaemonSetStatus
- patchExtensionsV1beta1NamespacedDeployment
- patchExtensionsV1beta1NamespacedDeploymentScale
- patchExtensionsV1beta1NamespacedDeploymentStatus
- patchExtensionsV1beta1NamespacedIngress
- patchExtensionsV1beta1NamespacedIngressStatus
- patchExtensionsV1beta1NamespacedNetworkPolicy
- patchExtensionsV1beta1NamespacedReplicaSet
- patchExtensionsV1beta1NamespacedReplicaSetScale
- patchExtensionsV1beta1NamespacedReplicaSetStatus
- patchExtensionsV1beta1NamespacedReplicationControllerDummyScale
- patchExtensionsV1beta1PodSecurityPolicy
- patchNetworkingV1beta1NamespacedIngress
- patchNetworkingV1beta1NamespacedIngressStatus
- patchNetworkingV1NamespacedNetworkPolicy
- patchNodeV1alpha1RuntimeClass
- patchNodeV1beta1RuntimeClass
- patchPolicyV1beta1NamespacedPodDisruptionBudget
- patchPolicyV1beta1NamespacedPodDisruptionBudgetStatus
- patchPolicyV1beta1PodSecurityPolicy
- patchRbacAuthorizationV1alpha1ClusterRole
- patchRbacAuthorizationV1alpha1ClusterRoleBinding
- patchRbacAuthorizationV1alpha1NamespacedRole
- patchRbacAuthorizationV1alpha1NamespacedRoleBinding
- patchRbacAuthorizationV1beta1ClusterRole
- patchRbacAuthorizationV1beta1ClusterRoleBinding
- patchRbacAuthorizationV1beta1NamespacedRole
- patchRbacAuthorizationV1beta1NamespacedRoleBinding
- patchRbacAuthorizationV1ClusterRole
- patchRbacAuthorizationV1ClusterRoleBinding
- patchRbacAuthorizationV1NamespacedRole
- patchRbacAuthorizationV1NamespacedRoleBinding
- patchSchedulingV1alpha1PriorityClass
- patchSchedulingV1beta1PriorityClass
- patchSchedulingV1PriorityClass
- patchSettingsV1alpha1NamespacedPodPreset
- patchStorageV1alpha1VolumeAttachment
- patchStorageV1beta1CSIDriver
- patchStorageV1beta1CSINode
- patchStorageV1beta1StorageClass
- patchStorageV1beta1VolumeAttachment
- patchStorageV1StorageClass
- patchStorageV1VolumeAttachment
- patchStorageV1VolumeAttachmentStatus
- readAdmissionregistrationV1beta1MutatingWebhookConfiguration
- readAdmissionregistrationV1beta1ValidatingWebhookConfiguration
- readAdmissionregistrationV1MutatingWebhookConfiguration
- readAdmissionregistrationV1ValidatingWebhookConfiguration
- readApiextensionsV1beta1CustomResourceDefinition
- readApiextensionsV1beta1CustomResourceDefinitionStatus
- readApiregistrationV1APIService
- readApiregistrationV1APIServiceStatus
- readApiregistrationV1beta1APIService
- readApiregistrationV1beta1APIServiceStatus
- readAppsV1beta1NamespacedControllerRevision
- readAppsV1beta1NamespacedDeployment
- readAppsV1beta1NamespacedDeploymentScale
- readAppsV1beta1NamespacedDeploymentStatus
- readAppsV1beta1NamespacedStatefulSet
- readAppsV1beta1NamespacedStatefulSetScale
- readAppsV1beta1NamespacedStatefulSetStatus
- readAppsV1beta2NamespacedControllerRevision
- readAppsV1beta2NamespacedDaemonSet
- readAppsV1beta2NamespacedDaemonSetStatus
- readAppsV1beta2NamespacedDeployment
- readAppsV1beta2NamespacedDeploymentScale
- readAppsV1beta2NamespacedDeploymentStatus
- readAppsV1beta2NamespacedReplicaSet
- readAppsV1beta2NamespacedReplicaSetScale
- readAppsV1beta2NamespacedReplicaSetStatus
- readAppsV1beta2NamespacedStatefulSet
- readAppsV1beta2NamespacedStatefulSetScale
- readAppsV1beta2NamespacedStatefulSetStatus
- readAppsV1NamespacedControllerRevision
- readAppsV1NamespacedDaemonSet
- readAppsV1NamespacedDaemonSetStatus
- readAppsV1NamespacedDeployment
- readAppsV1NamespacedDeploymentScale
- readAppsV1NamespacedDeploymentStatus
- readAppsV1NamespacedReplicaSet
- readAppsV1NamespacedReplicaSetScale
- readAppsV1NamespacedReplicaSetStatus
- readAppsV1NamespacedStatefulSet
- readAppsV1NamespacedStatefulSetScale
- readAppsV1NamespacedStatefulSetStatus
- readAuditregistrationV1alpha1AuditSink
- readAutoscalingV1NamespacedHorizontalPodAutoscaler
- readAutoscalingV1NamespacedHorizontalPodAutoscalerStatus
- readAutoscalingV2beta1NamespacedHorizontalPodAutoscaler
- readAutoscalingV2beta1NamespacedHorizontalPodAutoscalerStatus
- readAutoscalingV2beta2NamespacedHorizontalPodAutoscaler
- readAutoscalingV2beta2NamespacedHorizontalPodAutoscalerStatus
- readBatchV1beta1NamespacedCronJob
- readBatchV1beta1NamespacedCronJobStatus
- readBatchV1NamespacedJob
- readBatchV1NamespacedJobStatus
- readBatchV2alpha1NamespacedCronJob
- readBatchV2alpha1NamespacedCronJobStatus
- readCertificatesV1beta1CertificateSigningRequest
- readCertificatesV1beta1CertificateSigningRequestStatus
- readCoordinationV1beta1NamespacedLease
- readCoordinationV1NamespacedLease
- readCoreV1ComponentStatus
- readCoreV1Namespace
- readCoreV1NamespacedConfigMap
- readCoreV1NamespacedEndpoints
- readCoreV1NamespacedEvent
- readCoreV1NamespacedLimitRange
- readCoreV1NamespacedPersistentVolumeClaim
- readCoreV1NamespacedPersistentVolumeClaimStatus
- readCoreV1NamespacedPod
- readCoreV1NamespacedPodLog
- readCoreV1NamespacedPodStatus
- readCoreV1NamespacedPodTemplate
- readCoreV1NamespacedReplicationController
- readCoreV1NamespacedReplicationControllerScale
- readCoreV1NamespacedReplicationControllerStatus
- readCoreV1NamespacedResourceQuota
- readCoreV1NamespacedResourceQuotaStatus
- readCoreV1NamespacedSecret
- readCoreV1NamespacedService
- readCoreV1NamespacedServiceAccount
- readCoreV1NamespacedServiceStatus
- readCoreV1NamespaceStatus
- readCoreV1Node
- readCoreV1NodeStatus
- readCoreV1PersistentVolume
- readCoreV1PersistentVolumeStatus
- readEventsV1beta1NamespacedEvent
- readExtensionsV1beta1NamespacedDaemonSet
- readExtensionsV1beta1NamespacedDaemonSetStatus
- readExtensionsV1beta1NamespacedDeployment
- readExtensionsV1beta1NamespacedDeploymentScale
- readExtensionsV1beta1NamespacedDeploymentStatus
- readExtensionsV1beta1NamespacedIngress
- readExtensionsV1beta1NamespacedIngressStatus
- readExtensionsV1beta1NamespacedNetworkPolicy
- readExtensionsV1beta1NamespacedReplicaSet
- readExtensionsV1beta1NamespacedReplicaSetScale
- readExtensionsV1beta1NamespacedReplicaSetStatus
- readExtensionsV1beta1NamespacedReplicationControllerDummyScale
- readExtensionsV1beta1PodSecurityPolicy
- readNetworkingV1beta1NamespacedIngress
- readNetworkingV1beta1NamespacedIngressStatus
- readNetworkingV1NamespacedNetworkPolicy
- readNodeV1alpha1RuntimeClass
- readNodeV1beta1RuntimeClass
- readPolicyV1beta1NamespacedPodDisruptionBudget
- readPolicyV1beta1NamespacedPodDisruptionBudgetStatus
- readPolicyV1beta1PodSecurityPolicy
- readRbacAuthorizationV1alpha1ClusterRole
- readRbacAuthorizationV1alpha1ClusterRoleBinding
- readRbacAuthorizationV1alpha1NamespacedRole
- readRbacAuthorizationV1alpha1NamespacedRoleBinding
- readRbacAuthorizationV1beta1ClusterRole
- readRbacAuthorizationV1beta1ClusterRoleBinding
- readRbacAuthorizationV1beta1NamespacedRole
- readRbacAuthorizationV1beta1NamespacedRoleBinding
- readRbacAuthorizationV1ClusterRole
- readRbacAuthorizationV1ClusterRoleBinding
- readRbacAuthorizationV1NamespacedRole
- readRbacAuthorizationV1NamespacedRoleBinding
- readSchedulingV1alpha1PriorityClass
- readSchedulingV1beta1PriorityClass
- readSchedulingV1PriorityClass
- readSettingsV1alpha1NamespacedPodPreset
- readStorageV1alpha1VolumeAttachment
- readStorageV1beta1CSIDriver
- readStorageV1beta1CSINode
- readStorageV1beta1StorageClass
- readStorageV1beta1VolumeAttachment
- readStorageV1StorageClass
- readStorageV1VolumeAttachment
- readStorageV1VolumeAttachmentStatus
- replaceAdmissionregistrationV1beta1MutatingWebhookConfiguration
- replaceAdmissionregistrationV1beta1ValidatingWebhookConfiguration
- replaceAdmissionregistrationV1MutatingWebhookConfiguration
- replaceAdmissionregistrationV1ValidatingWebhookConfiguration
- replaceApiextensionsV1beta1CustomResourceDefinition
- replaceApiextensionsV1beta1CustomResourceDefinitionStatus
- replaceApiregistrationV1APIService
- replaceApiregistrationV1APIServiceStatus
- replaceApiregistrationV1beta1APIService
- replaceApiregistrationV1beta1APIServiceStatus
- replaceAppsV1beta1NamespacedControllerRevision
- replaceAppsV1beta1NamespacedDeployment
- replaceAppsV1beta1NamespacedDeploymentScale
- replaceAppsV1beta1NamespacedDeploymentStatus
- replaceAppsV1beta1NamespacedStatefulSet
- replaceAppsV1beta1NamespacedStatefulSetScale
- replaceAppsV1beta1NamespacedStatefulSetStatus
- replaceAppsV1beta2NamespacedControllerRevision
- replaceAppsV1beta2NamespacedDaemonSet
- replaceAppsV1beta2NamespacedDaemonSetStatus
- replaceAppsV1beta2NamespacedDeployment
- replaceAppsV1beta2NamespacedDeploymentScale
- replaceAppsV1beta2NamespacedDeploymentStatus
- replaceAppsV1beta2NamespacedReplicaSet
- replaceAppsV1beta2NamespacedReplicaSetScale
- replaceAppsV1beta2NamespacedReplicaSetStatus
- replaceAppsV1beta2NamespacedStatefulSet
- replaceAppsV1beta2NamespacedStatefulSetScale
- replaceAppsV1beta2NamespacedStatefulSetStatus
- replaceAppsV1NamespacedControllerRevision
- replaceAppsV1NamespacedDaemonSet
- replaceAppsV1NamespacedDaemonSetStatus
- replaceAppsV1NamespacedDeployment
- replaceAppsV1NamespacedDeploymentScale
- replaceAppsV1NamespacedDeploymentStatus
- replaceAppsV1NamespacedReplicaSet
- replaceAppsV1NamespacedReplicaSetScale
- replaceAppsV1NamespacedReplicaSetStatus
- replaceAppsV1NamespacedStatefulSet
- replaceAppsV1NamespacedStatefulSetScale
- replaceAppsV1NamespacedStatefulSetStatus
- replaceAuditregistrationV1alpha1AuditSink
- replaceAutoscalingV1NamespacedHorizontalPodAutoscaler
- replaceAutoscalingV1NamespacedHorizontalPodAutoscalerStatus
- replaceAutoscalingV2beta1NamespacedHorizontalPodAutoscaler
- replaceAutoscalingV2beta1NamespacedHorizontalPodAutoscalerStatus
- replaceAutoscalingV2beta2NamespacedHorizontalPodAutoscaler
- replaceAutoscalingV2beta2NamespacedHorizontalPodAutoscalerStatus
- replaceBatchV1beta1NamespacedCronJob
- replaceBatchV1beta1NamespacedCronJobStatus
- replaceBatchV1NamespacedJob
- replaceBatchV1NamespacedJobStatus
- replaceBatchV2alpha1NamespacedCronJob
- replaceBatchV2alpha1NamespacedCronJobStatus
- replaceCertificatesV1beta1CertificateSigningRequest
- replaceCertificatesV1beta1CertificateSigningRequestApproval
- replaceCertificatesV1beta1CertificateSigningRequestStatus
- replaceCoordinationV1beta1NamespacedLease
- replaceCoordinationV1NamespacedLease
- replaceCoreV1Namespace
- replaceCoreV1NamespacedConfigMap
- replaceCoreV1NamespacedEndpoints
- replaceCoreV1NamespacedEvent
- replaceCoreV1NamespacedLimitRange
- replaceCoreV1NamespacedPersistentVolumeClaim
- replaceCoreV1NamespacedPersistentVolumeClaimStatus
- replaceCoreV1NamespacedPod
- replaceCoreV1NamespacedPodStatus
- replaceCoreV1NamespacedPodTemplate
- replaceCoreV1NamespacedReplicationController
- replaceCoreV1NamespacedReplicationControllerScale
- replaceCoreV1NamespacedReplicationControllerStatus
- replaceCoreV1NamespacedResourceQuota
- replaceCoreV1NamespacedResourceQuotaStatus
- replaceCoreV1NamespacedSecret
- replaceCoreV1NamespacedService
- replaceCoreV1NamespacedServiceAccount
- replaceCoreV1NamespacedServiceStatus
- replaceCoreV1NamespaceFinalize
- replaceCoreV1NamespaceStatus
- replaceCoreV1Node
- replaceCoreV1NodeStatus
- replaceCoreV1PersistentVolume
- replaceCoreV1PersistentVolumeStatus
- replaceEventsV1beta1NamespacedEvent
- replaceExtensionsV1beta1NamespacedDaemonSet
- replaceExtensionsV1beta1NamespacedDaemonSetStatus
- replaceExtensionsV1beta1NamespacedDeployment
- replaceExtensionsV1beta1NamespacedDeploymentScale
- replaceExtensionsV1beta1NamespacedDeploymentStatus
- replaceExtensionsV1beta1NamespacedIngress
- replaceExtensionsV1beta1NamespacedIngressStatus
- replaceExtensionsV1beta1NamespacedNetworkPolicy
- replaceExtensionsV1beta1NamespacedReplicaSet
- replaceExtensionsV1beta1NamespacedReplicaSetScale
- replaceExtensionsV1beta1NamespacedReplicaSetStatus
- replaceExtensionsV1beta1NamespacedReplicationControllerDummyScale
- replaceExtensionsV1beta1PodSecurityPolicy
- replaceNetworkingV1beta1NamespacedIngress
- replaceNetworkingV1beta1NamespacedIngressStatus
- replaceNetworkingV1NamespacedNetworkPolicy
- replaceNodeV1alpha1RuntimeClass
- replaceNodeV1beta1RuntimeClass
- replacePolicyV1beta1NamespacedPodDisruptionBudget
- replacePolicyV1beta1NamespacedPodDisruptionBudgetStatus
- replacePolicyV1beta1PodSecurityPolicy
- replaceRbacAuthorizationV1alpha1ClusterRole
- replaceRbacAuthorizationV1alpha1ClusterRoleBinding
- replaceRbacAuthorizationV1alpha1NamespacedRole
- replaceRbacAuthorizationV1alpha1NamespacedRoleBinding
- replaceRbacAuthorizationV1beta1ClusterRole
- replaceRbacAuthorizationV1beta1ClusterRoleBinding
- replaceRbacAuthorizationV1beta1NamespacedRole
- replaceRbacAuthorizationV1beta1NamespacedRoleBinding
- replaceRbacAuthorizationV1ClusterRole
- replaceRbacAuthorizationV1ClusterRoleBinding
- replaceRbacAuthorizationV1NamespacedRole
- replaceRbacAuthorizationV1NamespacedRoleBinding
- replaceSchedulingV1alpha1PriorityClass
- replaceSchedulingV1beta1PriorityClass
- replaceSchedulingV1PriorityClass
- replaceSettingsV1alpha1NamespacedPodPreset
- replaceStorageV1alpha1VolumeAttachment
- replaceStorageV1beta1CSIDriver
- replaceStorageV1beta1CSINode
- replaceStorageV1beta1StorageClass
- replaceStorageV1beta1VolumeAttachment
- replaceStorageV1StorageClass
- replaceStorageV1VolumeAttachment
- replaceStorageV1VolumeAttachmentStatus
- watchAdmissionregistrationV1beta1MutatingWebhookConfiguration
- watchAdmissionregistrationV1beta1MutatingWebhookConfigurationList
- watchAdmissionregistrationV1beta1ValidatingWebhookConfiguration
- watchAdmissionregistrationV1beta1ValidatingWebhookConfigurationList
- watchAdmissionregistrationV1MutatingWebhookConfiguration
- watchAdmissionregistrationV1MutatingWebhookConfigurationList
- watchAdmissionregistrationV1ValidatingWebhookConfiguration
- watchAdmissionregistrationV1ValidatingWebhookConfigurationList
- watchApiextensionsV1beta1CustomResourceDefinition
- watchApiextensionsV1beta1CustomResourceDefinitionList
- watchApiregistrationV1APIService
- watchApiregistrationV1APIServiceList
- watchApiregistrationV1beta1APIService
- watchApiregistrationV1beta1APIServiceList
- watchAppsV1beta1ControllerRevisionListForAllNamespaces
- watchAppsV1beta1DeploymentListForAllNamespaces
- watchAppsV1beta1NamespacedControllerRevision
- watchAppsV1beta1NamespacedControllerRevisionList
- watchAppsV1beta1NamespacedDeployment
- watchAppsV1beta1NamespacedDeploymentList
- watchAppsV1beta1NamespacedStatefulSet
- watchAppsV1beta1NamespacedStatefulSetList
- watchAppsV1beta1StatefulSetListForAllNamespaces
- watchAppsV1beta2ControllerRevisionListForAllNamespaces
- watchAppsV1beta2DaemonSetListForAllNamespaces
- watchAppsV1beta2DeploymentListForAllNamespaces
- watchAppsV1beta2NamespacedControllerRevision
- watchAppsV1beta2NamespacedControllerRevisionList
- watchAppsV1beta2NamespacedDaemonSet
- watchAppsV1beta2NamespacedDaemonSetList
- watchAppsV1beta2NamespacedDeployment
- watchAppsV1beta2NamespacedDeploymentList
- watchAppsV1beta2NamespacedReplicaSet
- watchAppsV1beta2NamespacedReplicaSetList
- watchAppsV1beta2NamespacedStatefulSet
- watchAppsV1beta2NamespacedStatefulSetList
- watchAppsV1beta2ReplicaSetListForAllNamespaces
- watchAppsV1beta2StatefulSetListForAllNamespaces
- watchAppsV1ControllerRevisionListForAllNamespaces
- watchAppsV1DaemonSetListForAllNamespaces
- watchAppsV1DeploymentListForAllNamespaces
- watchAppsV1NamespacedControllerRevision
- watchAppsV1NamespacedControllerRevisionList
- watchAppsV1NamespacedDaemonSet
- watchAppsV1NamespacedDaemonSetList
- watchAppsV1NamespacedDeployment
- watchAppsV1NamespacedDeploymentList
- watchAppsV1NamespacedReplicaSet
- watchAppsV1NamespacedReplicaSetList
- watchAppsV1NamespacedStatefulSet
- watchAppsV1NamespacedStatefulSetList
- watchAppsV1ReplicaSetListForAllNamespaces
- watchAppsV1StatefulSetListForAllNamespaces
- watchAuditregistrationV1alpha1AuditSink
- watchAuditregistrationV1alpha1AuditSinkList
- watchAutoscalingV1HorizontalPodAutoscalerListForAllNamespaces
- watchAutoscalingV1NamespacedHorizontalPodAutoscaler
- watchAutoscalingV1NamespacedHorizontalPodAutoscalerList
- watchAutoscalingV2beta1HorizontalPodAutoscalerListForAllNamespaces
- watchAutoscalingV2beta1NamespacedHorizontalPodAutoscaler
- watchAutoscalingV2beta1NamespacedHorizontalPodAutoscalerList
- watchAutoscalingV2beta2HorizontalPodAutoscalerListForAllNamespaces
- watchAutoscalingV2beta2NamespacedHorizontalPodAutoscaler
- watchAutoscalingV2beta2NamespacedHorizontalPodAutoscalerList
- watchBatchV1beta1CronJobListForAllNamespaces
- watchBatchV1beta1NamespacedCronJob
- watchBatchV1beta1NamespacedCronJobList
- watchBatchV1JobListForAllNamespaces
- watchBatchV1NamespacedJob
- watchBatchV1NamespacedJobList
- watchBatchV2alpha1CronJobListForAllNamespaces
- watchBatchV2alpha1NamespacedCronJob
- watchBatchV2alpha1NamespacedCronJobList
- watchCertificatesV1beta1CertificateSigningRequest
- watchCertificatesV1beta1CertificateSigningRequestList
- watchCoordinationV1beta1LeaseListForAllNamespaces
- watchCoordinationV1beta1NamespacedLease
- watchCoordinationV1beta1NamespacedLeaseList
- watchCoordinationV1LeaseListForAllNamespaces
- watchCoordinationV1NamespacedLease
- watchCoordinationV1NamespacedLeaseList
- watchCoreV1ConfigMapListForAllNamespaces
- watchCoreV1EndpointsListForAllNamespaces
- watchCoreV1EventListForAllNamespaces
- watchCoreV1LimitRangeListForAllNamespaces
- watchCoreV1Namespace
- watchCoreV1NamespacedConfigMap
- watchCoreV1NamespacedConfigMapList
- watchCoreV1NamespacedEndpoints
- watchCoreV1NamespacedEndpointsList
- watchCoreV1NamespacedEvent
- watchCoreV1NamespacedEventList
- watchCoreV1NamespacedLimitRange
- watchCoreV1NamespacedLimitRangeList
- watchCoreV1NamespacedPersistentVolumeClaim
- watchCoreV1NamespacedPersistentVolumeClaimList
- watchCoreV1NamespacedPod
- watchCoreV1NamespacedPodList
- watchCoreV1NamespacedPodTemplate
- watchCoreV1NamespacedPodTemplateList
- watchCoreV1NamespacedReplicationController
- watchCoreV1NamespacedReplicationControllerList
- watchCoreV1NamespacedResourceQuota
- watchCoreV1NamespacedResourceQuotaList
- watchCoreV1NamespacedSecret
- watchCoreV1NamespacedSecretList
- watchCoreV1NamespacedService
- watchCoreV1NamespacedServiceAccount
- watchCoreV1NamespacedServiceAccountList
- watchCoreV1NamespacedServiceList
- watchCoreV1NamespaceList
- watchCoreV1Node
- watchCoreV1NodeList
- watchCoreV1PersistentVolume
- watchCoreV1PersistentVolumeClaimListForAllNamespaces
- watchCoreV1PersistentVolumeList
- watchCoreV1PodListForAllNamespaces
- watchCoreV1PodTemplateListForAllNamespaces
- watchCoreV1ReplicationControllerListForAllNamespaces
- watchCoreV1ResourceQuotaListForAllNamespaces
- watchCoreV1SecretListForAllNamespaces
- watchCoreV1ServiceAccountListForAllNamespaces
- watchCoreV1ServiceListForAllNamespaces
- watchEventsV1beta1EventListForAllNamespaces
- watchEventsV1beta1NamespacedEvent
- watchEventsV1beta1NamespacedEventList
- watchExtensionsV1beta1DaemonSetListForAllNamespaces
- watchExtensionsV1beta1DeploymentListForAllNamespaces
- watchExtensionsV1beta1IngressListForAllNamespaces
- watchExtensionsV1beta1NamespacedDaemonSet
- watchExtensionsV1beta1NamespacedDaemonSetList
- watchExtensionsV1beta1NamespacedDeployment
- watchExtensionsV1beta1NamespacedDeploymentList
- watchExtensionsV1beta1NamespacedIngress
- watchExtensionsV1beta1NamespacedIngressList
- watchExtensionsV1beta1NamespacedNetworkPolicy
- watchExtensionsV1beta1NamespacedNetworkPolicyList
- watchExtensionsV1beta1NamespacedReplicaSet
- watchExtensionsV1beta1NamespacedReplicaSetList
- watchExtensionsV1beta1NetworkPolicyListForAllNamespaces
- watchExtensionsV1beta1PodSecurityPolicy
- watchExtensionsV1beta1PodSecurityPolicyList
- watchExtensionsV1beta1ReplicaSetListForAllNamespaces
- watchNetworkingV1beta1IngressListForAllNamespaces
- watchNetworkingV1beta1NamespacedIngress
- watchNetworkingV1beta1NamespacedIngressList
- watchNetworkingV1NamespacedNetworkPolicy
- watchNetworkingV1NamespacedNetworkPolicyList
- watchNetworkingV1NetworkPolicyListForAllNamespaces
- watchNodeV1alpha1RuntimeClass
- watchNodeV1alpha1RuntimeClassList
- watchNodeV1beta1RuntimeClass
- watchNodeV1beta1RuntimeClassList
- watchPolicyV1beta1NamespacedPodDisruptionBudget
- watchPolicyV1beta1NamespacedPodDisruptionBudgetList
- watchPolicyV1beta1PodDisruptionBudgetListForAllNamespaces
- watchPolicyV1beta1PodSecurityPolicy
- watchPolicyV1beta1PodSecurityPolicyList
- watchRbacAuthorizationV1alpha1ClusterRole
- watchRbacAuthorizationV1alpha1ClusterRoleBinding
- watchRbacAuthorizationV1alpha1ClusterRoleBindingList
- watchRbacAuthorizationV1alpha1ClusterRoleList
- watchRbacAuthorizationV1alpha1NamespacedRole
- watchRbacAuthorizationV1alpha1NamespacedRoleBinding
- watchRbacAuthorizationV1alpha1NamespacedRoleBindingList
- watchRbacAuthorizationV1alpha1NamespacedRoleList
- watchRbacAuthorizationV1alpha1RoleBindingListForAllNamespaces
- watchRbacAuthorizationV1alpha1RoleListForAllNamespaces
- watchRbacAuthorizationV1beta1ClusterRole
- watchRbacAuthorizationV1beta1ClusterRoleBinding
- watchRbacAuthorizationV1beta1ClusterRoleBindingList
- watchRbacAuthorizationV1beta1ClusterRoleList
- watchRbacAuthorizationV1beta1NamespacedRole
- watchRbacAuthorizationV1beta1NamespacedRoleBinding
- watchRbacAuthorizationV1beta1NamespacedRoleBindingList
- watchRbacAuthorizationV1beta1NamespacedRoleList
- watchRbacAuthorizationV1beta1RoleBindingListForAllNamespaces
- watchRbacAuthorizationV1beta1RoleListForAllNamespaces
- watchRbacAuthorizationV1ClusterRole
- watchRbacAuthorizationV1ClusterRoleBinding
- watchRbacAuthorizationV1ClusterRoleBindingList
- watchRbacAuthorizationV1ClusterRoleList
- watchRbacAuthorizationV1NamespacedRole
- watchRbacAuthorizationV1NamespacedRoleBinding
- watchRbacAuthorizationV1NamespacedRoleBindingList
- watchRbacAuthorizationV1NamespacedRoleList
- watchRbacAuthorizationV1RoleBindingListForAllNamespaces
- watchRbacAuthorizationV1RoleListForAllNamespaces
- watchSchedulingV1alpha1PriorityClass
- watchSchedulingV1alpha1PriorityClassList
- watchSchedulingV1beta1PriorityClass
- watchSchedulingV1beta1PriorityClassList
- watchSchedulingV1PriorityClass
- watchSchedulingV1PriorityClassList
- watchSettingsV1alpha1NamespacedPodPreset
- watchSettingsV1alpha1NamespacedPodPresetList
- watchSettingsV1alpha1PodPresetListForAllNamespaces
- watchStorageV1alpha1VolumeAttachment
- watchStorageV1alpha1VolumeAttachmentList
- watchStorageV1beta1CSIDriver
- watchStorageV1beta1CSIDriverList
- watchStorageV1beta1CSINode
- watchStorageV1beta1CSINodeList
- watchStorageV1beta1StorageClass
- watchStorageV1beta1StorageClassList
- watchStorageV1beta1VolumeAttachment
- watchStorageV1beta1VolumeAttachmentList
- watchStorageV1StorageClass
- watchStorageV1StorageClassList
- watchStorageV1VolumeAttachment
- watchStorageV1VolumeAttachmentList
- 
-(1101 rows)
+ count 
+-------
+   225
+(1 row)
+
+#+end_src
+**** parameters http method doesn't match anything operations
+
+#+NAME: the only unmatech method is parameters
+#+BEGIN_SRC sql-mode
+  select distinct method
+  from api_operations
+  where operation_id is null
+  and path not like '%alpha%'
+  and path not like '%beta%';
+  -- order by path;
+#+END_SRC
+
+#+RESULTS: unmatech method
+#+begin_src sql-mode
+   method   
+------------
+ parameters
+(1 row)
 
 #+end_src
 
@@ -2084,73 +942,73 @@ hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# 
 
 #+RESULTS: tags
 #+begin_src sql-mode
-               tags                
------------------------------------
+             tags              
+-------------------------------
  
- ["autoscaling"]
- ["storage_v1alpha1"]
- ["networking"]
- ["authentication_v1"]
- ["scheduling_v1alpha1"]
- ["autoscaling_v2beta2"]
- ["batch"]
- ["logs"]
- ["rbacAuthorization_v1alpha1"]
- ["auditregistration_v1alpha1"]
- ["authorization_v1beta1"]
- ["rbacAuthorization_v1"]
- ["extensions_v1beta1"]
- ["batch_v2alpha1"]
- ["admissionregistration_v1"]
- ["events_v1beta1"]
- ["scheduling_v1beta1"]
- ["apis"]
- ["rbacAuthorization"]
- ["settings"]
- ["batch_v1"]
- ["apps"]
- ["apiextensions"]
- ["admissionregistration"]
- ["networking_v1"]
- ["certificates"]
- ["policy"]
- ["core"]
- ["storage_v1beta1"]
- ["node"]
- ["certificates_v1beta1"]
- ["coordination_v1beta1"]
- ["version"]
- ["apps_v1"]
- ["node_v1beta1"]
- ["authentication_v1beta1"]
- ["settings_v1alpha1"]
- ["authorization"]
- ["batch_v1beta1"]
- ["scheduling"]
- ["authentication"]
- ["apps_v1beta1"]
- ["policy_v1beta1"]
- ["autoscaling_v2beta1"]
- ["apps_v1beta2"]
- ["extensions"]
- ["auditregistration"]
- ["coordination"]
- ["autoscaling_v1"]
- ["rbacAuthorization_v1beta1"]
- ["events"]
- ["coordination_v1"]
- ["admissionregistration_v1beta1"]
- ["storage"]
- ["authorization_v1"]
- ["node_v1alpha1"]
- ["apiextensions_v1beta1"]
- ["networking_v1beta1"]
- ["apiregistration_v1"]
- ["apiregistration"]
- ["apiregistration_v1beta1"]
- ["core_v1"]
- ["storage_v1"]
- ["scheduling_v1"]
+ certificates_v1beta1
+ certificates
+ core
+ apiregistration_v1beta1
+ policy
+ apps
+ extensions_v1beta1
+ batch_v2alpha1
+ admissionregistration
+ extensions
+ authentication_v1
+ storage_v1alpha1
+ events
+ apps_v1
+ batch_v1beta1
+ scheduling_v1
+ apis
+ apiregistration
+ storage
+ apps_v1beta2
+ apiextensions_v1beta1
+ node
+ rbacAuthorization_v1beta1
+ settings_v1alpha1
+ settings
+ rbacAuthorization
+ core_v1
+ policy_v1beta1
+ networking_v1
+ coordination_v1
+ authorization_v1beta1
+ auditregistration_v1alpha1
+ networking_v1beta1
+ node_v1beta1
+ autoscaling_v2beta2
+ authorization
+ authentication_v1beta1
+ admissionregistration_v1
+ scheduling_v1alpha1
+ rbacAuthorization_v1
+ version
+ storage_v1
+ apiregistration_v1
+ auditregistration
+ apps_v1beta1
+ scheduling_v1beta1
+ rbacAuthorization_v1alpha1
+ batch_v1
+ logs
+ networking
+ node_v1alpha1
+ autoscaling_v1
+ events_v1beta1
+ batch
+ admissionregistration_v1beta1
+ autoscaling
+ coordination_v1beta1
+ coordination
+ authentication
+ scheduling
+ autoscaling_v2beta1
+ storage_v1beta1
+ apiextensions
+ authorization_v1
 (65 rows)
 
 #+end_src
@@ -2190,8 +1048,114 @@ hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# 
 
 
 
-*** TODO figure out category and regex columns
+*** TODO regex_from_path PL/Python
     These are two columns I couldn't get directlyf rom the swagger.json, and am unsure how they were gathered.  The closest thing to the category was certain tags within the tag column, but not sure if that's correct.
+
+#+BEGIN_SRC shell :eval never
+  apt-get install -y postgresql-plpython3-11
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+  CREATE EXTENSION plpython3u;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+CREATE EXTENSION
+#+end_src
+
+
+This is a pretty good read and might be quite useful for refactoring:
+- https://www.postgresql.org/docs/11/plpython.html
+- https://www.postgresql.org/docs/11/plpython-data.html
+- https://www.postgresql.org/docs/11/plpython-sharing.html SD and GD shared dictionaries
+- https://www.postgresql.org/docs/11/plpython-trigger.html TD dictionary
+
+#+NAME: regex_from_path.py
+#+BEGIN_SRC python :eval never
+  # path is set to text or null/None
+  import re
+  if path is None:
+    return None
+  # k8s appears to allow/expect a trailing {path} variable to capture everything
+  # remaining in the path, including '/' characters, which doesn't appear to be
+  # allowed according to the openapi 2.0 or 3.0 specs
+  # (ref: https://github.com/OAI/OpenAPI-Specification/issues/892)
+  K8S_PATH_VARIABLE_PATTERN = re.compile("{(path)}$")
+  VARIABLE_PATTERN = re.compile("{([^}]+)}")
+  # first replace the special trailing {path} wildcard with a named regex
+
+  # path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(?P<\\1>.+)", path).rstrip('/')
+  # PosgresQL doesn't like named vars
+  path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
+  # For SQL like, we just use %
+  # path_regex = K8S_PATH_VARIABLE_PATTERN.sub("%", path).rstrip('/')
+  # replace wildcards in {varname} format to a named regex
+  # path_regex = VARIABLE_PATTERN.sub("(?P<\\1>[^/]+)", path_regex).rstrip('/')
+  # if path != path_regex:
+  #if '{' not in path:
+  #  ipdb.set_trace(context=10)
+
+  # now that we are using POSIX, we can't do {varname}
+  path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
+  # now that we are using LIKE, we just need %
+  # path_regex = VARIABLE_PATTERN.sub("%", path_regex).rstrip('/')
+  # ensure that everything ends looking for everything but '/'
+  if not path_regex.endswith(")") and not path_regex.endswith("?"): # allow proxy to catch a trailing /
+      path_regex += "([^/]*)"
+  # # TODO(spiffxp): unsure if trailing / _should_ be counted toward /proxy
+  if path_regex.endswith("proxy"): # allow proxy to catch a trailing /
+      path_regex += "/?$"
+  else:
+      path_regex += "$"
+  #    print('Converted path: %s into path_regex: %s' % (path, path_regex))
+  return path_regex
+#+END_SRC
+
+#+NAME: regex_from_path.sql
+#+BEGIN_SRC sql-mode :noweb yes
+  CREATE OR REPLACE FUNCTION regex_from_path(path text)
+  RETURNS text AS $$
+  <<regex_from_path.py>>
+  $$ LANGUAGE plpython3u ;
+#+END_SRC
+
+#+RESULTS: regex_from_path.sql
+#+begin_src sql-mode
+hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# CREATE FUNCTION
+#+end_src
+
+#+BEGIN_SRC sql-mode
+  select * from regex_from_path('/api/v1/namespaces/{namespace}/pods/{name}/proxy');
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                    regex_from_path                    
+-------------------------------------------------------
+ /api/v1/namespaces/([^/]*)/pods/([^/]*)/proxy([^/]*)$
+(1 row)
+
+#+end_src
+
+
+#+BEGIN_SRC sql-mode
+  select * from api_operations limit 5;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                 operation_id                  |                  id                  | raw_swagger_id | method |                          path                           | k8s_group | k8s_version |      k8s_kind       | category |                 description                 | x_kubernetes_action |  tags   | schemes | consumes |                                              responses                                               | parameters | deprecated 
+-----------------------------------------------+--------------------------------------+----------------+--------+---------------------------------------------------------+-----------+-------------+---------------------+----------+---------------------------------------------+---------------------+---------+---------+----------+------------------------------------------------------------------------------------------------------+------------+------------
+ connectCoreV1DeleteNamespacedPodProxy         | 32edcc2e-b3ff-11e9-9248-506b4b430a28 |              3 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy        |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
+ connectCoreV1DeleteNamespacedPodProxy         | 32edcc2f-b3ff-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy        |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
+ connectCoreV1DeleteNamespacedPodProxyWithPath | 32edcc30-b3ff-11e9-9248-506b4b430a28 |              3 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path} |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
+ connectCoreV1DeleteNamespacedPodProxyWithPath | 32edcc31-b3ff-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path} |           | v1          | PodProxyOptions     | core     | connect DELETE requests to proxy of Pod     | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
+ connectCoreV1DeleteNamespacedServiceProxy     | 32edcc32-b3ff-11e9-9248-506b4b430a28 |              2 | delete | /api/v1/namespaces/{namespace}/services/{name}/proxy    |           | v1          | ServiceProxyOptions | core     | connect DELETE requests to proxy of Service | connect             | core_v1 | https   | ["*/*"]  | {"200": {"schema": {"type": "string"}, "description": "OK"}, "401": {"description": "Unauthorized"}} |            | f
+(5 rows)
+
+#+end_src
+
 
 ** TODO [#B] parameters view
    
@@ -2210,7 +1174,7 @@ hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# 
   Instead, I created a view of only the operations with parameters...
 
   #+NAME: api_operations_with_parameters
-  #+BEGIN_SRC sql-mode :eval never
+  #+BEGIN_SRC sql-mode :eval never-export
     CREATE OR REPLACE VIEW "public"."operations_with_parameters" AS 
       SELECT uuid_generate_v1() AS id,
              api_operations.id AS api_operations_id,
@@ -2219,6 +1183,11 @@ hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# 
        WHERE (api_operations.parameters IS NOT NULL)
        ORDER BY (uuid_generate_v1());
   #+END_SRC
+
+  #+RESULTS: api_operations_with_parameters
+  #+begin_src sql-mode
+  CREATE VIEW
+  #+end_src
 
 then based our parameters view from it:
 
@@ -2245,6 +1214,11 @@ then based our parameters view from it:
       FROM operations_with_parameters,
            LATERAL jsonb_array_elements(operations_with_parameters.parameters) WITH ORDINALITY param(entry, index);
 #+END_SRC
+
+#+RESULTS: api_operations_parameters view
+#+begin_src sql-mode
+CREATE VIEW
+#+end_src
 
 this is now live at =hasura.sharing.io=
 
