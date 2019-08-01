@@ -2317,7 +2317,8 @@ CREATE OR REPLACE VIEW "public"."api_resources" AS
 #+END_SRC
 
    
-** TODO Update api_operations view: category
+** TADA Update api_operations view: category
+   CLOSED: [2019-08-01 Thu 00:39]
    We want the first part of the first tag in the operations tags array to be the category.
    A tag will be something like 'core_v1' and we just want core.
   So we can do a sub-select query that grabs the first element from the tag array, then do a split_part on '_' for this element.
@@ -2347,6 +2348,38 @@ CREATE OR REPLACE VIEW "public"."api_resources" AS
       ORDER BY (d.value ->> 'operationId'::text);
   #+END_SRC
 
+
+** TADA update api_operations view: scheme and tags are text, not array
+   CLOSED: [2019-08-01 Thu 00:40]
+
+   follow the same flow as when we added a category.  wonderful string_agging!
+   
+   #+NAME: update api_operations with tags, schema strings
+   #+BEGIN_SRC sql-mode :eval never
+     CREATE OR REPLACE VIEW "public"."api_operations" AS 
+      SELECT (d.value ->> 'operationId'::text) AS operation_id,
+         uuid_generate_v1() AS id,
+         raw_paths.raw_swagger_id,
+         d.key AS method,
+         raw_paths.path,
+         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+         ( SELECT split_part((cat_tag.value ->> 0), '_'::text, 1) AS split_part
+                FROM jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)) AS category,
+         (d.value ->> 'description'::text) AS description,
+         (d.value ->> 'x-kubernetes-action'::text) AS x_kubernetes_action,
+         ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
+                FROM jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)) AS tags,
+         ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
+                FROM jsonb_array_elements((d.value -> 'schemes'::text)) jsonstring(value)) AS schemes,
+         (d.value -> 'consumes'::text) AS consumes,
+         (d.value -> 'responses'::text) AS responses,
+         (d.value -> 'parameters'::text) AS parameters
+        FROM (raw_paths
+          JOIN LATERAL jsonb_each(raw_paths.value) d(key, value) ON (true))
+       ORDER BY (d.value ->> 'operationId'::text);
+   #+END_SRC
 
 ** TODO materialized views
 ** TODO optimization indexes on materialized views
