@@ -203,7 +203,8 @@ this is now live at =hasura.sharing.io=
    
    This is live on hasura.sharing.io as the =responses= view.
    
-** TODO Update Types View to be on swagger.json
+** TADA Update Types View to be on swagger.json
+   CLOSED: [2019-08-01 Thu 00:10]
 
    We did two updates, big one changing the name from types to resources.  these objects are v. vague and overlap with others with similar names.  In essence, they are called definitions in the swagger.json, but refer to group/version/kinds and each have their own type within.  A name needs to be decided for this that doesn't clash, and resource seems to work.
    
@@ -229,6 +230,37 @@ CREATE OR REPLACE VIEW "public"."api_resources" AS
 #+END_SRC
 
    
+** TODO Update api_operations view: category
+   We want the first part of the first tag in the operations tags array to be the category.
+   A tag will be something like 'core_v1' and we just want core.
+  So we can do a sub-select query that grabs the first element from the tag array, then do a split_part on '_' for this element.
+  
+  #+NAME: api_operations with category
+  #+BEGIN_SRC sql-mode :eval never
+    CREATE OR REPLACE VIEW "public"."api_operations" AS 
+     SELECT (d.value ->> 'operationId'::text) AS operation_id,
+        uuid_generate_v1() AS id,
+        raw_paths.raw_swagger_id,
+        d.key AS method,
+        raw_paths.path,
+        ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+        ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+        ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+        ( SELECT split_part((cat_tag.value ->> 0), '_'::text, 1) AS split_part
+               FROM jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)) AS category,
+        (d.value ->> 'description'::text) AS description,
+        (d.value ->> 'x-kubernetes-action'::text) AS x_kubernetes_action,
+        (d.value -> 'tags'::text) AS tags,
+        (d.value -> 'schemes'::text) AS schemes,
+        (d.value -> 'consumes'::text) AS consumes,
+        (d.value -> 'responses'::text) AS responses,
+        (d.value -> 'parameters'::text) AS parameters
+       FROM (raw_paths
+         JOIN LATERAL jsonb_each(raw_paths.value) d(key, value) ON (true))
+      ORDER BY (d.value ->> 'operationId'::text);
+  #+END_SRC
+
+
 ** TODO materialized views
 ** TODO optimization indexes on materialized views
 ** raw operation json
