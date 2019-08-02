@@ -1,0 +1,614 @@
+#+TITLE: discovery report
+
+* Explain why coverage went down
+** Drop by 7 tested endpoints
+** Drop by 7 conformance tested endpoints
+** Recent Endpoint Added w/o test
+
+[[https://apisnoop.cncf.io/?zoomed=category-stable-admissionregistration&bucket=apisnoop%252Flogs%252Fapisnoop-postprocess-audits%252F1154429316839247872%252Fartifacts%252Fci-kubernetes-e2e-gci-gce%252F1145963446211186694][stable/admissionregistration 1 untested endpoint]]
+#+BEGIN_SRC shell
+diff 1134962072287711234_swagger_ops.txt 1154232155547635716_swagger_ops.txt  | grep \> | \
+  sed 's:^> ::' | grep Admissionregistration | wc -l
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+15
+#+end_EXAMPLE
+
+#+BEGIN_SRC shell
+diff 1134962072287711234_swagger_ops.txt 1154232155547635716_swagger_ops.txt  | grep \> | \
+  sed 's:^> ::' | grep -v Admissionregistration
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+createCoreV1NamespacedServiceAccountToken
+#+end_EXAMPLE
+
+
+https://apisnoop.cncf.io/?zoomed=operationId-stable-admissionregistration-createAdmissionregistrationV1MutatingWebhookConfiguration
+https://apisnoop.cncf.io/?zoomed=operationId-stable-admissionregistration-createAdmissionregistrationV1MutatingWebhookConfiguration
+
+* SQL
+#+NAME: Start Postgresql Connection
+#+BEGIN_SRC emacs-lisp :results silent
+  ;; (sql-connect connection (concat "*SQL: postgres:data*"))
+  (sql-connect "hasura" (concat "*SQL: postgres:data*"))
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+  \conninfo
+  \d
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+You are connected to database "hh" as user "hh" on host "172.17.0.1" at port "5432".
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
+            List of relations
+ Schema |      Name       | Type  | Owner 
+--------+-----------------+-------+-------
+ public | api_operations  | table | hh
+ public | apisnoop_report | table | hh
+ public | audit_events    | table | hh
+(3 rows)
+
+#+end_src
+
+* table 
+
+#+BEGIN_SRC sql-mode :tangle ../hasura/migrations/30_table_apisnoop_report.up.sql
+CREATE TABLE public.apisnoop_report (
+  testrun_id text,
+  op_id text,
+  test_name text
+  tested boolean,
+  conformant boolean
+  -- CONSTRAINT apisnoop_testrun_id PRIMARY KEY (audit_id, stage)
+);
+-- Indexes
+create index apisnoop_report_testrun_id on apisnoop_report(testrun_id);
+create index apisnoop_report_op_id on apisnoop_report(op_id);
+create index apisnoop_report_test_name on apisnoop_report(test_name);
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+#+end_src
+
+* data sources
+# https://storage.googleapis.com/apisnoop/pr-logs/pull/265/apisnoop-process-audits/1154175142012653568/build-log.txt
+#+BEGIN_SRC shell
+PR=265
+APISNOOP_JOB=1154429316839247872
+PROW_JOBS="1134962072287711234 1141017488889221121 1145963446211186694 1154232155547635716"
+# GS_BASE=apisnoop/pr-logs/pull/${PR}/apisnoop-postprocess-audits/
+GS_BASE=apisnoop/pr-logs/pull/${PR}/apisnoop-process-audits/
+GS_BASE=apisnoop/logs/apisnoop-postprocess-audits/ 
+HTTP_BASE=https://storage.googleapis.com/${GS_BASE}
+JOB_URL=/artifacts/ci-kubernetes-e2e-gci-gce/
+#144013434006802432 
+HTTP_URL=${BASE_URL}${APISNOOP_JOB}${JOB_URL}
+GS_URL=${BASE_URL}${APISNOOP_JOB}${JOB_URL}
+for PROW_JOB in ${PROW_JOBS}; do
+# for PROW_JOB in 1134962072287711234 1141017488889221121 1145963446211186694 1149004346751455234 154144073620131840 ; do
+# for PROW_JOB in 1134962072287711234 1141017488889221121 1145963446211186694 1149004346751455234 154144073620131840 ; do
+# for PROW_JOB in 1134962072287711234 1141017488889221121 1145963446211186694 1149004346751455234 154144073620131840 ; do
+  gsutil cp gs://${GS_BASE}${APISNOOP_JOB}${JOB_URL}${PROW_JOB}/tests.json ${PROW_JOB}-tests.json
+  gsutil cp gs://${GS_BASE}${APISNOOP_JOB}${JOB_URL}${PROW_JOB}/endpoints.json ${PROW_JOB}-endpoints.json
+  # echo curl -L ${URL}${PROW_JOB}/tests.json #\
+ #> ${PROW_JOB}-test.json
+done
+ls -lah *-tests.json
+ls -lah *-endpoints.json
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+-rw-rw-r-- 1 hh hh 2.4M Jul 25 17:12 1134962072287711234-tests.json
+-rw-rw-r-- 1 hh hh 2.4M Jul 25 17:12 1141017488889221121-tests.json
+-rw-rw-r-- 1 hh hh 2.2M Jul 25 17:12 1145963446211186694-tests.json
+-rw-rw-r-- 1 hh hh 2.2M Jul 25 17:12 1154232155547635716-tests.json
+-rw-rw-r-- 1 hh hh 296K Jul 25 17:12 1134962072287711234-endpoints.json
+-rw-rw-r-- 1 hh hh 295K Jul 25 17:12 1141017488889221121-endpoints.json
+-rw-rw-r-- 1 hh hh 295K Jul 25 17:12 1145963446211186694-endpoints.json
+-rw-rw-r-- 1 hh hh 302K Jul 25 17:12 1154232155547635716-endpoints.json
+#+end_EXAMPLE
+
+* script
+# host='192.168.1.17',
+#+NAME: import
+#+BEGIN_SRC python :tangle foo.py
+  import psycopg2
+  import os
+  import glob
+  import json
+  import ipdb
+  connection = psycopg2.connect(
+      host="172.17.0.1",
+      database=os.environ['USER'],
+      port=5432,
+      user=os.environ['USER'],
+      password=None,
+  )
+  connection.set_session(autocommit=True)
+  cursor=connection.cursor()
+  cursor.execute("DELETE FROM apisnoop_report WHERE true;")
+
+  for filename in glob.glob('*-endpoints.json'):
+    testrun_id=filename.split('-')[0]
+    contents=open(filename)
+    jsoned_file=json.load(contents)
+    outtxt = open(testrun_id + '_swagger_ops.txt' ,'w')
+    for op_id in sorted(jsoned_file.keys()):
+        outtxt.write(op_id+'\n')
+    outtxt.close()
+  for filename in glob.glob('*-tests.json'):
+    operations = set()
+    testrun_id=filename.split('-')[0]
+    contents=open(filename)
+    jsoned_file=json.load(contents)
+    outyaml = open(testrun_id + '_test_ops.yaml','w')
+    if not os.path.exists(testrun_id):
+      os.makedirs(testrun_id)
+    #.read())
+    for test in sorted(jsoned_file.keys()):
+      outtxt = open(testrun_id +'/' + test.replace('/','\\') + '.txt' ,'w')
+      outyaml.write(test + ':\n')
+      for op_id in sorted(jsoned_file[test]):
+        cursor.execute(
+          """insert into apisnoop_report (testrun_id, test_name, op_id) values (%s, %s, %s);""",
+          (testrun_id, test, op_id))
+        outyaml.write("  - " + op_id+'\n')
+        outtxt.write(op_id+'\n')
+        operations.add(op_id)
+        print(testrun_id, test, op_id)
+      outtxt.close()
+    # ipdb.set_trace(context=10)
+    hits=len(operations)
+    op_summary = open(testrun_id + '_ops.txt','w')
+    test_summary = open(testrun_id + '_tests.txt','w')
+    # summary.write("Count: ", hits)
+    for op in sorted(operations):
+      op_summary.write(op + '\n')
+    for test in sorted(jsoned_file.keys()):
+      test_summary.write(test + '\n')
+    op_summary.close()
+    test_summary.close()
+    outyaml.close()
+#+END_SRC
+
+#+RESULTS:
+
+* Research
+** #1 => #2
+*** total endpoints
+#+BEGIN_SRC tmate
+ cd ~/ii/apisnoop_v3/org
+ cat 1134962072287711234-endpoints.json | jq keys | jq -r .[] | sort > 
+#+END_SRC
+
+*** ops added
+
+#+NAME: endpoints added in #2
+#+BEGIN_SRC shell
+diff 1134962072287711234_ops.txt  1141017488889221121_ops.txt | grep \>
+#+END_SRC
+
+#+RESULTS: endpoints added in #2
+#+begin_EXAMPLE
+> createAuthorizationV1SubjectAccessReview
+> createBatchV1beta1NamespacedCronJob
+> deleteBatchV1beta1NamespacedCronJob
+> readBatchV1beta1NamespacedCronJob
+#+end_EXAMPLE
+
+
+**** createAuthorizationV1SubjectAccessReview
+This started started being used by 92 tests.
+**** createBatchV1beta1NamespacedCronJob
+[sig-apps] CronJob should remove from active list jobs that have been deleted
+**** readBatchV1beta1NamespacedCronJob
+[sig-apps] CronJob should remove from active list jobs that have been deleted
+**** deleteBatchV1beta1NamespacedCronJob
+[sig-apps] CronJob should remove from active list jobs that have been deleted
+[sig-apps] CronJob should delete successful finished jobs with limit of one successful job
+
+*** ops removed
+
+#+NAME: removed in #2
+#+BEGIN_SRC shell
+diff 1134962072287711234.txt  1141017488889221121.txt | grep \<
+#+END_SRC
+
+#+RESULTS: removed in #2
+#+begin_EXAMPLE
+< connectCoreV1PostNamespacedServiceProxyWithPath
+< createAuthorizationV1beta1SubjectAccessReview
+< createAutoscalingV1NamespacedHorizontalPodAutoscaler
+< createCoreV1NamespacedEndpoints
+< createExtensionsV1beta1NamespacedDeploymentRollback
+< createNodeV1beta1RuntimeClass
+< createRbacAuthorizationV1beta1ClusterRoleBinding
+< createRbacAuthorizationV1beta1NamespacedRole
+< createRbacAuthorizationV1beta1NamespacedRoleBinding
+< createSchedulingV1PriorityClass
+< deleteAutoscalingV1NamespacedHorizontalPodAutoscaler
+< deleteCoreV1NamespacedEndpoints
+< deleteNodeV1beta1RuntimeClass
+< deleteRbacAuthorizationV1beta1ClusterRoleBinding
+< deleteRbacAuthorizationV1beta1NamespacedRoleBinding
+< deleteSchedulingV1PriorityClass
+< deleteStorageV1beta1CSIDriver
+< listCoreV1PodForAllNamespaces
+< readAppsV1NamespacedReplicaSet
+< readCertificatesV1beta1CertificateSigningRequest
+< readCoreV1NamespacedConfigMap
+< readCoreV1Node
+< readNodeV1beta1RuntimeClass
+< readStorageV1StorageClass
+< readStorageV1beta1CSIDriver
+< readStorageV1beta1VolumeAttachment
+< replaceAppsV1NamespacedReplicaSet
+< replaceCertificatesV1beta1CertificateSigningRequestApproval
+< replaceCoreV1NamespacedConfigMap
+< replaceCoreV1NamespacedPod
+< replaceCoreV1NodeStatus
+#+end_EXAMPLE
+*** tests added
+
+#+NAME: conformance tests added in #2
+#+BEGIN_SRC shell
+diff 1134962072287711234_tests.txt  1141017488889221121_tests.txt | grep \> | grep \\\[Conformance
+#+END_SRC
+
+#+RESULTS: conformance tests added in #2
+#+begin_EXAMPLE
+> [k8s.io] Kubelet when scheduling a busybox command that always fails in a pod should have an terminated reason [NodeConformance] [Conformance]
+> [k8s.io] Probing container should *not* be restarted with a exec "cat /tmp/health" liveness probe [NodeConformance] [Conformance]
+> [sig-api-machinery] Watchers should observe add, update, and delete watch notifications on configmaps [Conformance]
+> [sig-cli] Kubectl client [k8s.io] Kubectl cluster-info should check if Kubernetes master services is included in cluster-info  [Conformance]
+> [sig-cli] Kubectl client [k8s.io] Kubectl replace should update a single-container pod's image  [Conformance]
+> [sig-network] DNS should provide DNS for pods for Subdomain [Conformance]
+> [sig-network] Networking Granular Checks: Pods should function for intra-pod communication: http [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-network] Services should provide secure master service  [Conformance]
+> [sig-network] Services should serve a basic endpoint from pods  [Conformance]
+> [sig-node] Downward API should provide default limits.cpu/memory from node allocatable [NodeConformance] [Conformance]
+> [sig-storage] ConfigMap should be consumable from pods in volume with mappings and Item mode set [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-storage] ConfigMap should be consumable from pods in volume with mappings as non-root [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-storage] Downward API volume should provide node allocatable (cpu) as default cpu limit if the limit is not set [NodeConformance] [Conformance]
+> [sig-storage] EmptyDir volumes should support (root,0644,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-storage] EmptyDir volumes should support (root,0777,default) [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-storage] Projected configMap should be consumable from pods in volume [NodeConformance] [Conformance]
+> [sig-storage] Projected secret optional updates should be reflected in volume [NodeConformance] [Conformance]
+> [sig-storage] Secrets should be consumable from pods in volume with mappings and Item Mode set [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-storage] Subpath Atomic writer volumes should support subpaths with configmap pod with mountPath of existing file [LinuxOnly] [Conformance]
+#+end_EXAMPLE
+
+#+NAME: non-conformance tests added in #2
+#+BEGIN_SRC shell
+diff 1134962072287711234_tests.txt  1141017488889221121_tests.txt | grep \> | grep -v \\\[Conformance
+#+END_SRC
+
+#+RESULTS: non-conformance tests added in #2
+#+begin_EXAMPLE
+> [k8s.io] Container Runtime blackbox test when running a container with a new image should not be able to pull from private registry without secret [NodeConformance]
+> [k8s.io] Container Runtime blackbox test when running a container with a new image should not be able to pull non-existing image from gcr.io [NodeConformance]
+> [k8s.io] NodeLease when the NodeLease feature is enabled the kubelet should create and update a lease in the kube-node-lease namespace
+> [k8s.io] Probing container should be restarted with a docker exec liveness probe with timeout 
+> [k8s.io] Security Context When creating a pod with readOnlyRootFilesystem should run the container with readonly rootfs when readOnlyRootFilesystem=true [LinuxOnly] [NodeConformance]
+> [k8s.io] Variable Expansion should allow substituting values in a volume subpath [sig-storage][NodeFeature:VolumeSubpathEnvExpansion]
+> [k8s.io] [sig-node] Security Context should support pod.Spec.SecurityContext.RunAsUser And pod.Spec.SecurityContext.RunAsGroup [LinuxOnly]
+> [k8s.io] [sig-node] Security Context should support pod.Spec.SecurityContext.SupplementalGroups [LinuxOnly]
+> [sig-api-machinery] AdmissionWebhook Should mutate configmap
+> [sig-api-machinery] Discovery Custom resource should have storage version hash
+> [sig-api-machinery] Garbage collector should delete jobs and pods created by cronjob
+> [sig-api-machinery] Garbage collector should orphan pods created by rc if deleteOptions.OrphanDependents is nil
+> [sig-api-machinery] Garbage collector should support cascading deletion of custom resources
+> [sig-api-machinery] ResourceQuota should create a ResourceQuota and capture the life of a configMap.
+> [sig-api-machinery] ResourceQuota should create a ResourceQuota and capture the life of a secret.
+> [sig-api-machinery] Servers with support for Table transformation should return generic metadata details across all namespaces for nodes
+> [sig-apps] CronJob should delete successful finished jobs with limit of one successful job
+> [sig-apps] CronJob should remove from active list jobs that have been deleted
+> [sig-apps] CronJob should schedule multiple jobs concurrently
+< [sig-apps] DisruptionController evictions: enough pods, absolute => should allow an eviction
+> [sig-apps] Deployment iterative rollouts should eventually progress
+> [sig-apps] DisruptionController evictions: maxUnavailable deny evictions, integer => should not allow an eviction
+> [sig-apps] DisruptionController evictions: too few pods, absolute => should not allow an eviction
+> [sig-apps] Job should run a job to completion when tasks sometimes fail and are not locally restarted
+> [sig-auth] PodSecurityPolicy should enforce the restricted policy.PodSecurityPolicy
+> [sig-cli] Kubectl Port forwarding [k8s.io] With a server listening on 0.0.0.0 should support forwarding over websockets
+> [sig-cli] Kubectl Port forwarding [k8s.io] With a server listening on localhost should support forwarding over websockets
+> [sig-cli] Kubectl client [k8s.io] Kubectl client-side validation should create/apply a valid CR for CRD with validation schema
+> [sig-cli] Kubectl client [k8s.io] Simple pod should return command exit codes
+> [sig-cli] Kubectl client [k8s.io] Simple pod should support exec through an HTTP proxy
+> [sig-network] Firewall rule should have correct firewall rules for e2e cluster
+> [sig-network] Services should be able to switch session affinity for service with type clusterIP
+> [sig-network] Services should be able to update NodePorts with two same port numbers but different protocols
+> [sig-network] Services should be rejected when no endpoints exist
+> [sig-network] Services should have session affinity work for service with type clusterIP
+> [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: udp
+> [sig-scheduling] Multi-AZ Clusters should spread the pods of a replication controller across zones
+> [sig-scheduling] Multi-AZ Clusters should spread the pods of a service across zones
+> [sig-storage] CSI Volumes [Driver: csi-hostpath-v0] [Testpattern: Dynamic PV (default fs)] subPath should be able to unmount after the subpath directory is deleted
+> [sig-storage] CSI Volumes [Driver: csi-hostpath-v0] [Testpattern: Dynamic PV (default fs)] subPath should support existing directory
+> [sig-storage] CSI Volumes [Driver: csi-hostpath-v0] [Testpattern: Dynamic PV (default fs)] subPath should support existing single file [LinuxOnly]
+> [sig-storage] CSI Volumes [Driver: csi-hostpath-v0] [Testpattern: Dynamic PV (default fs)] subPath should support file as subpath [LinuxOnly]
+> [sig-storage] CSI Volumes [Driver: csi-hostpath-v0] [Testpattern: Dynamic PV (filesystem volmode)] volumeMode should create sc, pod, pv, and pvc, read/write to the pv, and delete all created resources
+> [sig-storage] CSI Volumes [Driver: csi-hostpath] [Testpattern: Dynamic PV (default fs)] provisioning should access volume from different nodes
+> [sig-storage] CSI Volumes [Driver: csi-hostpath] [Testpattern: Dynamic PV (default fs)] provisioning should provision storage with mount options
+> [sig-storage] GCP Volumes NFSv3 should be mountable for NFSv3
+> [sig-storage] In-tree Volumes [Driver: emptydir] [Testpattern: Inline-volume (default fs)] subPath should support file as subpath [LinuxOnly]
+> [sig-storage] In-tree Volumes [Driver: emptydir] [Testpattern: Inline-volume (default fs)] subPath should support non-existent path
+> [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Dynamic PV (filesystem volmode)] volumeMode should create sc, pod, pv, and pvc, read/write to the pv, and delete all created resources
+> [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (default fs)] subPath should support readOnly directory specified in the volumeMount
+> [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (ext3)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Pre-provisioned PV (ext3)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: gluster] [Testpattern: Inline-volume (default fs)] subPath should support non-existent path
+> [sig-storage] In-tree Volumes [Driver: hostPathSymlink] [Testpattern: Inline-volume (default fs)] subPath should support readOnly directory specified in the volumeMount
+> [sig-storage] In-tree Volumes [Driver: hostPathSymlink] [Testpattern: Inline-volume (default fs)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: hostPathSymlink] [Testpattern: Inline-volume (default fs)] volumes should be mountable
+> [sig-storage] In-tree Volumes [Driver: hostPath] [Testpattern: Inline-volume (default fs)] subPath should be able to unmount after the subpath directory is deleted
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: block] [Testpattern: Pre-provisioned PV (default fs)] subPath should support existing single file [LinuxOnly]
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: block] [Testpattern: Pre-provisioned PV (ext4)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: blockfs] [Testpattern: Pre-provisioned PV (default fs)] subPath should support readOnly file specified in the volumeMount [LinuxOnly]
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-bindmounted] [Testpattern: Pre-provisioned PV (default fs)] subPath should support existing directories when readOnly specified in the volumeSource
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-bindmounted] [Testpattern: Pre-provisioned PV (default fs)] subPath should support existing directory
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-bindmounted] [Testpattern: Pre-provisioned PV (default fs)] subPath should support readOnly file specified in the volumeMount [LinuxOnly]
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-link-bindmounted] [Testpattern: Pre-provisioned PV (default fs)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-link] [Testpattern: Pre-provisioned PV (default fs)] subPath should be able to unmount after the subpath directory is deleted
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir] [Testpattern: Pre-provisioned PV (default fs)] subPath should support existing directory
+> [sig-storage] In-tree Volumes [Driver: nfs] [Testpattern: Dynamic PV (default fs)] subPath should support non-existent path
+> [sig-storage] In-tree Volumes [Driver: nfs] [Testpattern: Dynamic PV (default fs)] subPath should support readOnly directory specified in the volumeMount
+> [sig-storage] In-tree Volumes [Driver: nfs] [Testpattern: Dynamic PV (default fs)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: nfs] [Testpattern: Pre-provisioned PV (default fs)] subPath should support file as subpath [LinuxOnly]
+> [sig-storage] PVC Protection Verify that PVC in active use by a pod is not removed immediately
+> [sig-storage] PersistentVolumes-local  [Volume type: block] Set fsGroup for local volume should set different fsGroup for second pod if first pod is deleted
+> [sig-storage] PersistentVolumes-local  [Volume type: blockfswithoutformat] Set fsGroup for local volume should set different fsGroup for second pod if first pod is deleted
+> [sig-storage] PersistentVolumes-local  [Volume type: dir-link-bindmounted] One pod requesting one prebound PVC should be able to mount volume and read from pod1
+> [sig-storage] Volume Placement should create and delete pod with multiple volumes from same datastore
+> [sig-storage] Volume Placement should create and delete pod with the same volume source attach/detach to different worker nodes
+> [sig-storage] Zone Support Verify PVC creation with invalid zone specified in storage class fails
+#+end_EXAMPLE
+
+#
+*** tests promoted to conformance => conformance.txt?
+
+#+NAME: conformance tests added in #2
+#+BEGIN_SRC shell
+diff 1134962072287711234_tests.txt  1141017488889221121_tests.txt | grep \> | grep \\\[Conformance
+#+END_SRC
+
+#+RESULTS: conformance tests added in #2
+#+begin_EXAMPLE
+> [k8s.io] Kubelet when scheduling a busybox command that always fails in a pod should have an terminated reason [NodeConformance] [Conformance]
+> [k8s.io] Probing container should *not* be restarted with a exec "cat /tmp/health" liveness probe [NodeConformance] [Conformance]
+> [sig-api-machinery] Watchers should observe add, update, and delete watch notifications on configmaps [Conformance]
+> [sig-cli] Kubectl client [k8s.io] Kubectl cluster-info should check if Kubernetes master services is included in cluster-info  [Conformance]
+> [sig-cli] Kubectl client [k8s.io] Kubectl replace should update a single-container pod's image  [Conformance]
+> [sig-network] DNS should provide DNS for pods for Subdomain [Conformance]
+> [sig-network] Networking Granular Checks: Pods should function for intra-pod communication: http [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-network] Services should provide secure master service  [Conformance]
+> [sig-network] Services should serve a basic endpoint from pods  [Conformance]
+> [sig-node] Downward API should provide default limits.cpu/memory from node allocatable [NodeConformance] [Conformance]
+> [sig-storage] ConfigMap should be consumable from pods in volume with mappings and Item mode set [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-storage] ConfigMap should be consumable from pods in volume with mappings as non-root [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-storage] Downward API volume should provide node allocatable (cpu) as default cpu limit if the limit is not set [NodeConformance] [Conformance]
+> [sig-storage] EmptyDir volumes should support (root,0644,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-storage] EmptyDir volumes should support (root,0777,default) [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-storage] Projected configMap should be consumable from pods in volume [NodeConformance] [Conformance]
+> [sig-storage] Projected secret optional updates should be reflected in volume [NodeConformance] [Conformance]
+> [sig-storage] Secrets should be consumable from pods in volume with mappings and Item Mode set [LinuxOnly] [NodeConformance] [Conformance]
+> [sig-storage] Subpath Atomic writer volumes should support subpaths with configmap pod with mountPath of existing file [LinuxOnly] [Conformance]
+#+end_EXAMPLE
+
+#+NAME: non-conformance tests added in #2
+#+BEGIN_SRC shell
+diff 1134962072287711234_tests.txt  1141017488889221121_tests.txt | grep \> | grep -v \\\[Conformance
+#+END_SRC
+
+#+RESULTS: non-conformance tests added in #2
+#+begin_EXAMPLE
+> [k8s.io] Container Runtime blackbox test when running a container with a new image should not be able to pull from private registry without secret [NodeConformance]
+> [k8s.io] Container Runtime blackbox test when running a container with a new image should not be able to pull non-existing image from gcr.io [NodeConformance]
+> [k8s.io] NodeLease when the NodeLease feature is enabled the kubelet should create and update a lease in the kube-node-lease namespace
+> [k8s.io] Probing container should be restarted with a docker exec liveness probe with timeout 
+> [k8s.io] Security Context When creating a pod with readOnlyRootFilesystem should run the container with readonly rootfs when readOnlyRootFilesystem=true [LinuxOnly] [NodeConformance]
+> [k8s.io] Variable Expansion should allow substituting values in a volume subpath [sig-storage][NodeFeature:VolumeSubpathEnvExpansion]
+> [k8s.io] [sig-node] Security Context should support pod.Spec.SecurityContext.RunAsUser And pod.Spec.SecurityContext.RunAsGroup [LinuxOnly]
+> [k8s.io] [sig-node] Security Context should support pod.Spec.SecurityContext.SupplementalGroups [LinuxOnly]
+> [sig-api-machinery] AdmissionWebhook Should mutate configmap
+> [sig-api-machinery] Discovery Custom resource should have storage version hash
+> [sig-api-machinery] Garbage collector should delete jobs and pods created by cronjob
+> [sig-api-machinery] Garbage collector should orphan pods created by rc if deleteOptions.OrphanDependents is nil
+> [sig-api-machinery] Garbage collector should support cascading deletion of custom resources
+> [sig-api-machinery] ResourceQuota should create a ResourceQuota and capture the life of a configMap.
+> [sig-api-machinery] ResourceQuota should create a ResourceQuota and capture the life of a secret.
+> [sig-api-machinery] Servers with support for Table transformation should return generic metadata details across all namespaces for nodes
+> [sig-apps] CronJob should delete successful finished jobs with limit of one successful job
+> [sig-apps] CronJob should remove from active list jobs that have been deleted
+> [sig-apps] CronJob should schedule multiple jobs concurrently
+< [sig-apps] DisruptionController evictions: enough pods, absolute => should allow an eviction
+> [sig-apps] Deployment iterative rollouts should eventually progress
+> [sig-apps] DisruptionController evictions: maxUnavailable deny evictions, integer => should not allow an eviction
+> [sig-apps] DisruptionController evictions: too few pods, absolute => should not allow an eviction
+> [sig-apps] Job should run a job to completion when tasks sometimes fail and are not locally restarted
+> [sig-auth] PodSecurityPolicy should enforce the restricted policy.PodSecurityPolicy
+> [sig-cli] Kubectl Port forwarding [k8s.io] With a server listening on 0.0.0.0 should support forwarding over websockets
+> [sig-cli] Kubectl Port forwarding [k8s.io] With a server listening on localhost should support forwarding over websockets
+> [sig-cli] Kubectl client [k8s.io] Kubectl client-side validation should create/apply a valid CR for CRD with validation schema
+> [sig-cli] Kubectl client [k8s.io] Simple pod should return command exit codes
+> [sig-cli] Kubectl client [k8s.io] Simple pod should support exec through an HTTP proxy
+> [sig-network] Firewall rule should have correct firewall rules for e2e cluster
+> [sig-network] Services should be able to switch session affinity for service with type clusterIP
+> [sig-network] Services should be able to update NodePorts with two same port numbers but different protocols
+> [sig-network] Services should be rejected when no endpoints exist
+> [sig-network] Services should have session affinity work for service with type clusterIP
+> [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: udp
+> [sig-scheduling] Multi-AZ Clusters should spread the pods of a replication controller across zones
+> [sig-scheduling] Multi-AZ Clusters should spread the pods of a service across zones
+> [sig-storage] CSI Volumes [Driver: csi-hostpath-v0] [Testpattern: Dynamic PV (default fs)] subPath should be able to unmount after the subpath directory is deleted
+> [sig-storage] CSI Volumes [Driver: csi-hostpath-v0] [Testpattern: Dynamic PV (default fs)] subPath should support existing directory
+> [sig-storage] CSI Volumes [Driver: csi-hostpath-v0] [Testpattern: Dynamic PV (default fs)] subPath should support existing single file [LinuxOnly]
+> [sig-storage] CSI Volumes [Driver: csi-hostpath-v0] [Testpattern: Dynamic PV (default fs)] subPath should support file as subpath [LinuxOnly]
+> [sig-storage] CSI Volumes [Driver: csi-hostpath-v0] [Testpattern: Dynamic PV (filesystem volmode)] volumeMode should create sc, pod, pv, and pvc, read/write to the pv, and delete all created resources
+> [sig-storage] CSI Volumes [Driver: csi-hostpath] [Testpattern: Dynamic PV (default fs)] provisioning should access volume from different nodes
+> [sig-storage] CSI Volumes [Driver: csi-hostpath] [Testpattern: Dynamic PV (default fs)] provisioning should provision storage with mount options
+> [sig-storage] GCP Volumes NFSv3 should be mountable for NFSv3
+> [sig-storage] In-tree Volumes [Driver: emptydir] [Testpattern: Inline-volume (default fs)] subPath should support file as subpath [LinuxOnly]
+> [sig-storage] In-tree Volumes [Driver: emptydir] [Testpattern: Inline-volume (default fs)] subPath should support non-existent path
+> [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Dynamic PV (filesystem volmode)] volumeMode should create sc, pod, pv, and pvc, read/write to the pv, and delete all created resources
+> [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (default fs)] subPath should support readOnly directory specified in the volumeMount
+> [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Inline-volume (ext3)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Pre-provisioned PV (ext3)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: gluster] [Testpattern: Inline-volume (default fs)] subPath should support non-existent path
+> [sig-storage] In-tree Volumes [Driver: hostPathSymlink] [Testpattern: Inline-volume (default fs)] subPath should support readOnly directory specified in the volumeMount
+> [sig-storage] In-tree Volumes [Driver: hostPathSymlink] [Testpattern: Inline-volume (default fs)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: hostPathSymlink] [Testpattern: Inline-volume (default fs)] volumes should be mountable
+> [sig-storage] In-tree Volumes [Driver: hostPath] [Testpattern: Inline-volume (default fs)] subPath should be able to unmount after the subpath directory is deleted
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: block] [Testpattern: Pre-provisioned PV (default fs)] subPath should support existing single file [LinuxOnly]
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: block] [Testpattern: Pre-provisioned PV (ext4)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: blockfs] [Testpattern: Pre-provisioned PV (default fs)] subPath should support readOnly file specified in the volumeMount [LinuxOnly]
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-bindmounted] [Testpattern: Pre-provisioned PV (default fs)] subPath should support existing directories when readOnly specified in the volumeSource
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-bindmounted] [Testpattern: Pre-provisioned PV (default fs)] subPath should support existing directory
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-bindmounted] [Testpattern: Pre-provisioned PV (default fs)] subPath should support readOnly file specified in the volumeMount [LinuxOnly]
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-link-bindmounted] [Testpattern: Pre-provisioned PV (default fs)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-link] [Testpattern: Pre-provisioned PV (default fs)] subPath should be able to unmount after the subpath directory is deleted
+> [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir] [Testpattern: Pre-provisioned PV (default fs)] subPath should support existing directory
+> [sig-storage] In-tree Volumes [Driver: nfs] [Testpattern: Dynamic PV (default fs)] subPath should support non-existent path
+> [sig-storage] In-tree Volumes [Driver: nfs] [Testpattern: Dynamic PV (default fs)] subPath should support readOnly directory specified in the volumeMount
+> [sig-storage] In-tree Volumes [Driver: nfs] [Testpattern: Dynamic PV (default fs)] volumes should allow exec of files on the volume
+> [sig-storage] In-tree Volumes [Driver: nfs] [Testpattern: Pre-provisioned PV (default fs)] subPath should support file as subpath [LinuxOnly]
+> [sig-storage] PVC Protection Verify that PVC in active use by a pod is not removed immediately
+> [sig-storage] PersistentVolumes-local  [Volume type: block] Set fsGroup for local volume should set different fsGroup for second pod if first pod is deleted
+> [sig-storage] PersistentVolumes-local  [Volume type: blockfswithoutformat] Set fsGroup for local volume should set different fsGroup for second pod if first pod is deleted
+> [sig-storage] PersistentVolumes-local  [Volume type: dir-link-bindmounted] One pod requesting one prebound PVC should be able to mount volume and read from pod1
+> [sig-storage] Volume Placement should create and delete pod with multiple volumes from same datastore
+> [sig-storage] Volume Placement should create and delete pod with the same volume source attach/detach to different worker nodes
+> [sig-storage] Zone Support Verify PVC creation with invalid zone specified in storage class fails
+#+end_EXAMPLE
+
+#
+** #2 => #3
+*** added
+#+NAME: added in #3
+#+BEGIN_SRC shell
+  diff 1141017488889221121.txt 1145963446211186694.txt | grep \>
+#+END_SRC
+
+#+RESULTS: added in #3
+#+begin_EXAMPLE
+> connectCoreV1PostNamespacedServiceProxyWithPath
+> createCoreV1NamespacedEndpoints
+> deleteAutoscalingV1NamespacedHorizontalPodAutoscaler
+> deleteCoreV1NamespacedEndpoints
+> deleteStorageV1beta1CSIDriver
+> patchCoreV1NamespacedPod
+> patchCoreV1Node
+> readAppsV1NamespacedReplicaSet
+> readStorageV1StorageClass
+> readStorageV1beta1CSIDriver
+> replaceAppsV1NamespacedReplicaSet
+> replaceCoreV1NamespacedPersistentVolumeClaim
+> replaceCoreV1NamespacedPod
+#+end_EXAMPLE
+
+*** removed
+#+NAME: removed in #3
+#+BEGIN_SRC shell
+  diff 1141017488889221121.txt 1145963446211186694.txt | grep \<
+#+END_SRC
+
+#+RESULTS: removed in #3
+#+begin_EXAMPLE
+< createAdmissionregistrationV1beta1MutatingWebhookConfiguration
+< createAdmissionregistrationV1beta1ValidatingWebhookConfiguration
+< createBatchV1NamespacedJob
+< createCoreV1NamespacedPodEviction
+< createPolicyV1beta1NamespacedPodDisruptionBudget
+< createPolicyV1beta1PodSecurityPolicy
+< deleteAdmissionregistrationV1beta1MutatingWebhookConfiguration
+< deleteAdmissionregistrationV1beta1ValidatingWebhookConfiguration
+< deleteBatchV1NamespacedJob
+< deleteCoreV1NamespacedConfigMap
+< deleteCoreV1NamespacedSecret
+< deletePolicyV1beta1PodSecurityPolicy
+< getAppsV1beta1APIResources
+< getAppsV1beta2APIResources
+< listAdmissionregistrationV1beta1ValidatingWebhookConfiguration
+< listExtensionsV1beta1NamespacedDaemonSet
+< listExtensionsV1beta1NamespacedDeployment
+< listExtensionsV1beta1NamespacedNetworkPolicy
+< listExtensionsV1beta1NamespacedReplicaSet
+< listStorageV1StorageClass
+< readBatchV1NamespacedJob
+< readBatchV1beta1NamespacedCronJob
+< readCoordinationV1beta1NamespacedLease
+< readPolicyV1beta1NamespacedPodDisruptionBudget
+< replaceAppsV1NamespacedDeployment
+< replaceAppsV1NamespacedStatefulSet
+< replacePolicyV1beta1NamespacedPodDisruptionBudget
+#+end_EXAMPLE
+
+** #3 => #4
+*** added
+#+NAME: added in #4
+#+BEGIN_SRC shell
+diff 1145963446211186694.txt 1149004346751455234.txt | grep \>
+#+END_SRC
+
+#+RESULTS: added in #4
+#+begin_EXAMPLE
+> createAdmissionregistrationV1beta1MutatingWebhookConfiguration
+> createBatchV1NamespacedJob
+> createNodeV1beta1RuntimeClass
+> deleteAdmissionregistrationV1beta1MutatingWebhookConfiguration
+> deleteCoreV1NamespacedConfigMap
+> deleteCoreV1NamespacedSecret
+> deletePolicyV1beta1PodSecurityPolicy
+> listAdmissionregistrationV1beta1ValidatingWebhookConfiguration
+> listBatchV2alpha1NamespacedCronJob
+> listStorageV1StorageClass
+> readBatchV1NamespacedJob
+> readBatchV1beta1NamespacedCronJob
+> readCoreV1NamespacedConfigMap
+> readCoreV1NamespacedSecret
+> readCoreV1NamespacedServiceAccount
+> readCoreV1Node
+> replaceAppsV1NamespacedStatefulSet
+> replaceCoreV1NamespacedConfigMap
+> replaceCoreV1NamespacedServiceAccount
+> replaceCoreV1Node
+#+end_EXAMPLE
+
+*** removed
+#+NAME: removed in #4
+#+BEGIN_SRC shell
+diff 1145963446211186694.txt 1149004346751455234.txt | grep \<
+#+END_SRC
+
+#+RESULTS: removed in #4
+#+begin_EXAMPLE
+< connectCoreV1PostNamespacedServiceProxyWithPath
+< createAppsV1NamespacedReplicaSet
+< createBatchV1beta1NamespacedCronJob
+< createCoreV1NamespacedResourceQuota
+< deleteAutoscalingV1NamespacedHorizontalPodAutoscaler
+< deleteStorageV1beta1CSIDriver
+< patchCoreV1NamespacedPod
+< patchCoreV1Node
+< readAppsV1NamespacedReplicaSet
+< readCoreV1NamespacedEndpoints
+< readCoreV1NamespacedResourceQuota
+< readCoreV1NamespacedService
+< readStorageV1StorageClass
+< readStorageV1beta1CSIDriver
+< replaceAppsV1NamespacedReplicaSet
+< replaceCoreV1NamespacedPersistentVolumeClaim
+< replaceCoreV1NamespacedService
+#+end_EXAMPLE
