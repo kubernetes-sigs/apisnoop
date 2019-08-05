@@ -2,9 +2,13 @@
 
 * Purpose
   This holds the authorative way to get setup and exploring with our hasura backend.
-
-* remember: don't commit the hasura/migrations, they should be coming from a tangled org file.
-Possibly look at commit hook that tangles org => hasura
+* Working with this repo/org file
+** Work happens in Org first
+   Within ii, our emphasis is on the documentation/org-file first.  
+   We can document and craft the queries for our db, then tangle them into our migration files.
+   as such: 
+   *NOTE: Don't commit the hasura/migrations, they should be tangled from the org file.*
+   In the future, we may add a commit hook that tangles org => hasura
 * TODO Starting up your database
 ** listing tables
 #+BEGIN_SRC sql-mode
@@ -31,7 +35,47 @@ Did not find any relations.
 
 #+RESULTS: do not run
 #+begin_src sql-mode
-ERROR:  table "api_operations" does not exist
+ERROR:  "api_operations" is not a table
+HINT:  Use DROP VIEW to remove a view.
+ERROR:  table "audit_events" does not exist
+NOTICE:  drop cascades to 7 other objects
+DETAIL:  drop cascades to view raw_paths
+drop cascades to view api_operations
+drop cascades to view operations_with_parameters
+drop cascades to view api_operations_parameters
+drop cascades to view api_operations_responses
+drop cascades to view api_resources
+drop cascades to view api_resources_fields
+DROP TABLE
+NOTICE:  drop cascades to 26 other objects
+DETAIL:  drop cascades to table hdb_catalog.hdb_version
+drop cascades to table hdb_catalog.hdb_table
+drop cascades to function hdb_catalog.hdb_table_oid_check()
+drop cascades to table hdb_catalog.hdb_relationship
+drop cascades to table hdb_catalog.hdb_permission
+drop cascades to view hdb_catalog.hdb_permission_agg
+drop cascades to view hdb_catalog.hdb_foreign_key_constraint
+drop cascades to view hdb_catalog.hdb_check_constraint
+drop cascades to view hdb_catalog.hdb_unique_constraint
+drop cascades to view hdb_catalog.hdb_primary_key
+drop cascades to function hdb_catalog.inject_table_defaults(text,text,text,text)
+drop cascades to table hdb_catalog.event_triggers
+drop cascades to table hdb_catalog.event_log
+drop cascades to table hdb_catalog.event_invocation_logs
+drop cascades to table hdb_catalog.hdb_function
+drop cascades to view hdb_catalog.hdb_function_agg
+drop cascades to table hdb_catalog.remote_schemas
+drop cascades to table hdb_catalog.hdb_schema_update_event
+drop cascades to function hdb_catalog.hdb_schema_update_event_notifier()
+drop cascades to view hdb_catalog.hdb_table_info_agg
+drop cascades to view hdb_catalog.hdb_function_info_agg
+drop cascades to function hdb_catalog.insert_event_log(text,text,text,text,json)
+drop cascades to table hdb_catalog.hdb_query_collection
+drop cascades to table hdb_catalog.hdb_allowlist
+drop cascades to table hdb_catalog.schema_migrations
+drop cascades to table hdb_catalog.migration_settings
+DROP SCHEMA
+DROP SCHEMA
 #+end_src
 
 ** setting up the hasura postgresql-permissions
@@ -176,26 +220,6 @@ CREATE TABLE
 
 * Load Operation Views
 ** api_operations view
-*** raw_paths view
-
-#+NAME: raw_paths view
-#+BEGIN_SRC sql-mode :eval never-export :tangle ../hasura/migrations/140_view_raw_paths.up.sql
-  CREATE OR REPLACE VIEW "public"."raw_paths" AS 
-    SELECT raw_swaggers.id AS raw_swagger_id,
-           d.key AS path,
-           d.value
-      FROM (raw_swaggers
-            JOIN LATERAL jsonb_each((raw_swaggers.data -> 'paths'::text)) d(key, value) ON (true))
-     ORDER BY d.key;
-#+END_SRC
-#+NAME: track raw_paths
-#+BEGIN_SRC yaml :tangle ../hasura/migrations/140_view_raw_paths.up.yaml
-- type: track_table
-  args:
-    schema: public
-    name: raw_paths
-#+END_SRC
-
 *** regex_from_path function
 #+NAME: regex_from_path.py
 #+BEGIN_SRC python :eval never
@@ -228,33 +252,38 @@ CREATE TABLE
 *** api_operations view
 #+NAME: api_operations view
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../hasura/migrations/150_view_api_operations.up.sql
-  -- DROP VIEW api_operations CASCADE;
   CREATE OR REPLACE VIEW "public"."api_operations" AS 
-    SELECT (d.value ->> 'operationId'::text) AS operation_id,
-           uuid_generate_v1() as id,
-           raw_paths.raw_swagger_id as raw_swagger_id,
+    SELECT raw_swaggers.id AS raw_swagger_id,
+           paths.key AS path,
+           regex_from_path(paths.key) as regex,
            d.key AS method,
-           raw_paths.path as path,
-           regex_from_path(raw_paths.path) as regex,
+           (d.value ->> 'operationId'::text) AS operation_id,
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-           ( SELECT split_part((cat_tag.value ->> 0), '_'::text, 1) AS split_part
-               FROM jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)) AS category,
            (d.value ->> 'description'::text) AS description,
            (d.value ->> 'x-kubernetes-action'::text) AS x_kubernetes_action,
-           ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
-                FROM jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)) AS tags,
-           ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
-                FROM jsonb_array_elements((d.value -> 'schemes'::text)) jsonstring(value)) AS schemes,
            (d.value -> 'consumes'::text) AS consumes,
            (d.value -> 'responses'::text) AS responses,
            (d.value -> 'parameters'::text) AS parameters,
-           (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated
-      FROM (raw_paths
-            JOIN LATERAL jsonb_each(raw_paths.value) d(key, value) ON (true))
-     ORDER BY (d.value ->> 'operationId'::text);
+           (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
+           split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+           string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
+           string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes
+      FROM raw_swaggers
+      , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
+      , jsonb_each(paths.value) d(key, value)
+      , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+      , jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)
+      , jsonb_array_elements((d.value -> 'schemes'::text)) schemestring(value)
+     GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
+     ORDER BY paths.key;
 #+END_SRC
+
+#+RESULTS: api_operations view
+#+begin_src sql-mode
+CREATE VIEW
+#+end_src
 
 #+NAME: track api_operations
 #+BEGIN_SRC yaml :tangle ../hasura/migrations/150_view_api_operations.up.yaml
@@ -277,9 +306,7 @@ create index api_operations_regexp on api_operations(regexp);
 #+NAME: operations_with_parameters
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../hasura/migrations/160_view_operations_with_parameters.up.sql
   CREATE OR REPLACE VIEW "public"."operations_with_parameters" AS 
-    SELECT uuid_generate_v1() AS id,
-           api_operations.id AS api_operations_id,
-           api_operations.parameters
+    SELECT api_operations.parameters
       FROM api_operations
      WHERE (api_operations.parameters IS NOT NULL)
      ORDER BY (uuid_generate_v1());
@@ -299,8 +326,7 @@ create index api_operations_regexp on api_operations(regexp);
 #+BEGIN_SRC sql-mode :eval no-export :tangle ../hasura/migrations/170_view_api_operations_parameters.up.sql
   -- DROP VIEW api_operations_parameters;
   CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
-    SELECT operations_with_parameters.api_operations_id,
-           (param.entry ->> 'name'::text) AS name,
+    SELECT (param.entry ->> 'name'::text) AS name,
            (param.entry ->> 'in'::text) AS "in",
          replace(
            CASE
@@ -334,27 +360,23 @@ create index api_operations_regexp on api_operations(regexp);
     name: api_operations_parameters
 #+END_SRC
 
-
-
 ** api_operations_responses view
 #+NAME: Responses View
 #+BEGIN_SRC sql-mode :eval no-export :tangle ../hasura/migrations/180_view_api_operations_responses.up.sql
   CREATE OR REPLACE VIEW "public"."api_operations_responses" AS 
-    SELECT uuid_generate_v1() AS id,
-           api_operations.id AS api_operations_id,
-             d.key AS code,
+    SELECT d.key AS code,
            (d.value ->> 'description'::text) AS description,
-             replace(
+           replace(
              CASE
              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> 'type'::text) IS NOT NULL))
                THEN ((d.value -> 'schema'::text) ->> 'type'::text)
              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
-              THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
+               THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
              ELSE NULL::text
-            END, '#/definitions/','') AS resource
-        FROM (api_operations
-              JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
-       ORDER BY (uuid_generate_v1());
+             END, '#/definitions/','') AS resource
+      FROM (api_operations
+            JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
+     ORDER BY (uuid_generate_v1());
 #+END_SRC
 #+NAME: track api_operations_responses
 #+BEGIN_SRC yaml :tangle ../hasura/migrations/180_view_api_operations_responses.up.yaml
@@ -451,7 +473,7 @@ CREATE VIEW "public"."api_resources" AS
 
 * Create Over View
 #+NAME: over view
-#+BEGIN_SRC sql-mode :eval never-export :tangle ../hasura/migrations/210_view_over.up.sql
+#+BEGIN_SRC sql-mode :eval never-export :notangle ../hasura/migrations/210_view_over.up.sql
   -- drop materialized view api_resources CASCADE;
   -- CREATE MATERIALIZED VIEW "public"."api_resources" AS
   CREATE OR REPLACE VIEW "public"."over" AS
@@ -499,7 +521,7 @@ CREATE VIEW "public"."api_resources" AS
 #+begin_src sql-mode
 #+end_src
 #+NAME: track over
-#+BEGIN_SRC yaml :tangle ../hasura/migrations/210_view_over.up.yaml
+#+BEGIN_SRC yaml :notangle ../hasura/migrations/210_view_over.up.yaml
 - type: track_table
   args:
     schema: public
@@ -521,9 +543,7 @@ select count(*) from "over";
 #+end_src
 
 * TODO Creating/Editing Views
-* TODO 
-
-
+* FOOTNOTES
 # Local Variables:
 # eval: (sql-connect "hasura" (concat "*SQL: postgres:data*"))
 # End:
