@@ -2,18 +2,16 @@
 -- #+NAME: Responses View
 
 CREATE OR REPLACE VIEW "public"."api_operations_responses" AS 
-  SELECT uuid_generate_v1() AS id,
-         api_operations.id AS api_operations_id,
-           d.key AS code,
+  SELECT d.key AS code,
          (d.value ->> 'description'::text) AS description,
-           replace(
+         replace(
            CASE
            WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> 'type'::text) IS NOT NULL))
              THEN ((d.value -> 'schema'::text) ->> 'type'::text)
            WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
-            THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
+             THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
            ELSE NULL::text
-          END, '#/definitions/','') AS resource
-      FROM (api_operations
-            JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
-     ORDER BY (uuid_generate_v1());
+           END, '#/definitions/','') AS resource
+    FROM (api_operations
+          JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
+   ORDER BY (uuid_generate_v1());

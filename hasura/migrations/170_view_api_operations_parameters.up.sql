@@ -4,8 +4,7 @@
 
 -- DROP VIEW api_operations_parameters;
 CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
-  SELECT operations_with_parameters.api_operations_id,
-         (param.entry ->> 'name'::text) AS name,
+  SELECT (param.entry ->> 'name'::text) AS name,
          (param.entry ->> 'in'::text) AS "in",
        replace(
          CASE
