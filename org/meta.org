@@ -32,9 +32,7 @@ SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, co
 
 #+RESULTS: do not run
 #+begin_src sql-mode
-ERROR:  table "raw_swaggers" does not exist
-ERROR:  schema "hdb_catalog" does not exist
-ERROR:  schema "hdb_views" does not exist
+DROP TABLE
 #+end_src
 
 ** setting up the hasura postgresql-permissions
@@ -79,12 +77,114 @@ ERROR:  must have admin option on role "pg_execute_server_program"
 #+end_src
 
 #+NAME: as posgres admin, setup hasura user and db
-#+BEGIN_SRC tmate
+#+BEGIN_SRC shell  :var SUDO_ASKPASS="/usr/bin/ssh-askpass" :prologue "export SUDO_ASKPASS"
+# :var DISPLAY=":0.0"
 sudo su - postgres -c psql < ~/ii/apisnoop_v3/hasura/db_setup.sql
 #+END_SRC
 
+#+RESULTS: as posgres admin, setup hasura user and db
+#+begin_EXAMPLE
+GRANT
+GRANT ROLE
+You are now connected to database "hh" as user "postgres".
+CREATE EXTENSION
+CREATE EXTENSION
+CREATE EXTENSION
+CREATE SCHEMA
+CREATE SCHEMA
+ALTER SCHEMA
+ALTER SCHEMA
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT ROLE
+#+end_EXAMPLE
+
 * TADA make sure hasura has public endpoint
 file:hasura.org
+** docker-compose.yml
+#+BEGIN_SRC yaml :tangle hasura/docker-compose.yaml
+  # hasura/docker-compose.yaml
+  version: "3.7"
+
+  services:
+   hasura:
+      #image: hasura/graphql-engine:v1.0.0-beta.3
+      # append '.cli-migrations' to auto run 'hasura migrations apply'
+      container_name: "${USER}-hasura"
+      image: hasura/graphql-engine:v1.0.0-beta.4.cli-migrations
+      restart: always
+      networks:
+        - web
+      environment:
+        # Should try and set database be read only for public
+        #- HASURA_GRAPHQL_DATABASE_URL=postgres://non-priv-user@172.17.0.1:5432/database-name
+        #- HASURA_GRAPHQL_DATABASE_URL=postgres://non-priv-user@172.17.0.1:5432/$OUTER-USER
+        # https://docs.docker.com/compose/compose-file/#variable-substitution
+        # https://docs.docker.com/compose/env-file/
+        - "HASURA_GRAPHQL_DATABASE_URL=postgres://${USER}@172.17.0.1:5432/${USER}"
+        - HASURA_GRAPHQL_ENABLE_CONSOLE=true
+      volumes:
+        - ./migrations:/hasura-migrations
+      expose:
+        - "8080"
+      labels:
+        - "traefik.docker.network=web"
+        - "traefik.enable=true"
+        - "traefik.basic.port=8080"
+        - "traefik.basic.protocol=http"
+        - "traefik.basic.frontend.rule=Host:${USER}-hasura.sharing.io"
+  #volumes:
+  #  migrations:
+  networks:
+    web:
+      external: true
+#+END_SRC
+
+** start hasura
+
+#+BEGIN_SRC shell :dir hasura
+docker-compose up -d
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+#+end_EXAMPLE
+** Watch hasura logs
+
+#+BEGIN_SRC emacs-lisp
+    (defun hasura-logs ()
+      (interactive)
+      (setq *hasura-buffer*
+            (get-buffer-create "hasura-logs"))
+      (with-current-buffer *hasura-buffer*
+        (ansi-color-for-comint-mode-on)
+        (comint-mode)
+        (spacemacs/toggle-line-numbers-on)
+       ;; (linum-mode t)
+        )
+      (let ((default-directory (file-name-directory (concat (file-name-directory buffer-file-name) "../hasura/")))
+            (logs-command "docker-compose logs -f --no-color")
+            ;; (logs-command "tail -f /var/log/messages")
+            ;;(logs-command "docker-compose logs -f --no-color 2>/dev/null | sed 's:hasura_1  | ::g' | grep '^{' | jq .")
+            )
+        (setq *hasura-process*
+              (start-file-process-shell-command
+               "hasura" *hasura-buffer* logs-command))
+        (set-process-filter *hasura-process* 'comint-output-filter)
+  )
+      )
+    (hasura-logs)
+    ;; "docker-compose logs -f| jq .")
+#+END_SRC
+
+#+RESULTS:
+#+begin_src emacs-lisp
+comint-output-filter
+#+end_src
+
 ** TODO secure hasura with simple auth
 * Create Tables and Load Data
 ** swagger.json
