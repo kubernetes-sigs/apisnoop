@@ -1,4 +1,5 @@
-#+TITLE: META
+#+NAME: META
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | TADA(d)
 
 * Purpose
   This holds the authorative way to get setup and exploring with our hasura backend.
@@ -32,6 +33,17 @@ SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, co
 
 #+RESULTS: do not run
 #+begin_src sql-mode
+ERROR:  "api_operations" is not a table
+HINT:  Use DROP VIEW to remove a view.
+ERROR:  table "audit_events" does not exist
+NOTICE:  drop cascades to 7 other objects
+DETAIL:  drop cascades to view api_operations
+drop cascades to view operations_with_parameters
+drop cascades to view orig_api_operations_parameters
+drop cascades to view api_operations_responses
+drop cascades to view api_operations_parameters
+drop cascades to view api_resources
+drop cascades to view api_resources_fields
 DROP TABLE
 #+end_src
 
@@ -373,57 +385,43 @@ create index api_operations_regexp on api_operations(regexp);
 #+END_SRC
 
 ** api_operations_parameters view
-*** operations_with_parameters view
-#+NAME: operations_with_parameters
-#+BEGIN_SRC sql-mode :eval never-export :tangle ../hasura/migrations/160_view_operations_with_parameters.up.sql
-  CREATE OR REPLACE VIEW "public"."operations_with_parameters" AS 
-    SELECT api_operations.parameters
-      FROM api_operations
-     WHERE (api_operations.parameters IS NOT NULL)
-     ORDER BY (uuid_generate_v1());
-#+END_SRC
-#+NAME: track operations_with_parameters
-#+BEGIN_SRC yaml :eval never-export :tangle ../hasura/migrations/160_view_operations_with_parameters.up.yaml
-- type: track_table
-  args:
-    schema: public
-    name: operations_with_parameters
-#+END_SRC
-
-*** api_operations real view
-
+   This only gives us 17 distinct parameters, but 4k rows.  It looks like the same parameters are used again and again across the operation_ids.  
+   All of them have a description except for the param 'body in body'.  Need to look further into what that param looks like
 #+NAME: api_operations_parameters view
-#+BEGIN_SRC sql-mode :eval no-export :tangle ../hasura/migrations/170_view_api_operations_parameters.up.sql
-  -- DROP VIEW api_operations_parameters;
+#+BEGIN_SRC sql-mode :eval no-export :tangle ../hasura/migrations/160_view_api_operations_parameters.up.sql
   CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
     SELECT (param.entry ->> 'name'::text) AS name,
            (param.entry ->> 'in'::text) AS "in",
-         replace(
-           CASE
-           WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
-             AND ((param.entry -> 'schema'::text) is not null)
+           replace(
+             CASE
+             WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
+              AND ((param.entry -> 'schema'::text) is not null)
                THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
-           ELSE (param.entry ->> 'type'::text)
-          END, '#/definitions/','') AS resource,
-          -- CASE
-          -- WHEN ((param.entry ->> 'in'::text) = 'body'::text) THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
-          -- ELSE (param.entry ->> 'description'::text)
-          -- END AS description,
-          (param.entry ->> 'description'::text) AS description,
+             ELSE (param.entry ->> 'type'::text)
+             END, '#/definitions/','') AS resource,
+           (param.entry ->> 'description'::text) AS description,
            CASE
            WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
            ELSE false
-          END AS required,
-          CASE
+            END AS required,
+           CASE
            WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
            ELSE false
-          END AS unique_items
-          -- param.entry AS full_entry
-      FROM operations_with_parameters,
-           LATERAL jsonb_array_elements(operations_with_parameters.parameters) WITH ORDINALITY param(entry, index);
+           END AS unique_items,
+           api_operations.raw_swagger_id,
+           param.entry as entry
+      FROM api_operations
+           , jsonb_array_elements(api_operations.parameters) WITH ORDINALITY param(entry, index)
+            WHERE api_operations.parameters IS NOT NULL;
 #+END_SRC
+
+#+RESULTS: api_operations_parameters view
+#+begin_src sql-mode
+CREATE VIEW
+#+end_src
+
 #+NAME: track api_operations_parameters
-#+BEGIN_SRC yaml :eval no-export :tangle ../hasura/migrations/170_view_api_operations_parameters.up.yaml
+#+BEGIN_SRC yaml :eval no-export :tangle ../hasura/migrations/160_view_api_operations_parameters.up.yaml
 - type: track_table
   args:
     schema: public
@@ -544,51 +542,42 @@ CREATE VIEW "public"."api_resources" AS
 * Create Over View
 #+NAME: over view
 #+BEGIN_SRC sql-mode :eval never-export :notangle ../hasura/migrations/210_view_over.up.sql
-  -- drop materialized view api_resources CASCADE;
-  -- CREATE MATERIALIZED VIEW "public"."api_resources" AS
   CREATE OR REPLACE VIEW "public"."over" AS
    SELECT
-      -- JOIN raw_swaggers.id = o.raw_swagger_id
-      -- JOIN raw_swaggers.id = r.raw_swagger_id
-      -- JOIN o.id = op.api_operation_id
-      -- JOIN r.id = rf.type_id
-      -- where raw_swagger.id = 2 -- for now
-      -- where raw_swagger.branch_or_tag = 'release-1.14' -- eventually
       o.operation_id,
       op.name as opname,
       op.required,
-      -- op.unique,
-      op.description as opdescription,
-      --or.code, -- links via .resources
-      --or.resource, -- links via .resources
-     ---- JOIN op.name ==
-      r.name as rname,
-      r.k8s_group,
-      r.k8s_version,
-      r.k8s_kind,
-      rf.property,
-      rf.param_type,
-      rf.param_kind,
-      rf.description,
-      rf.format,
-      rf.merge_key,
-      rf.patch_strategy
-     FROM raw_swaggers rs,
-       api_operations o,
-       api_operations_parameters op,
-       api_operations_responses resp,
-       api_resources r,
-       api_resources_fields rf
-     WHERE rs.id = o.raw_swagger_id
-       AND rs.id = r.raw_swagger_id
-       AND o.id = op.api_operations_id
-       AND r.id = rf.type_id
+      op.description as opdescription
+      -- r.name as rname,
+      -- r.k8s_group,
+      -- r.k8s_version,
+      -- r.k8s_kind,
+      -- rf.property,
+      -- rf.param_type,
+      -- rf.param_kind,
+      -- rf.description,
+      -- rf.format,
+      -- rf.merge_key,
+      -- rf.patch_strategy
+     FROM 
+       api_operations o
+       , INNER JOIN api_operations_parameters USING (raw_swagger_id) op
+     --   api_operations_responses resp,
+     --   api_resources r,
+     --   api_resources_fields rf
+     -- WHERE rs.id = o.raw_swagger_id
+     --   AND rs.id = r.raw_swagger_id
+     --   AND o.id = op.api_operations_id
+     --   AND r.id = rf.type_id
        -- AND rs.id = 1
-    ORDER BY operation_id;
+    ORDER BY o.operation_id;
 #+END_SRC
 
 #+RESULTS: over view
 #+begin_src sql-mode
+ERROR:  syntax error at or near "JOIN"
+LINE 20:      NATURAL JOIN api_operations_parameters ON (raw_swagger_...
+                      ^
 #+end_src
 #+NAME: track over
 #+BEGIN_SRC yaml :notangle ../hasura/migrations/210_view_over.up.yaml
@@ -612,8 +601,24 @@ select count(*) from "over";
 
 #+end_src
 
+* IN-PROGRESS Remove interim 'operations with parameters' view
+* NEXT Finish the Over View
+* TODO Create Import for CSV view
+  We have a file started here: [[file:test_gen.org][test_gen.org]] 
+  that brings in the work devan and caleb did to pull all the tests used in a specific/commit version of k8s.
+  If we can build a script for this, then we can have:
+  - A test name
+  - its description
+  - its link to official k8s definition
+  - a link to the lines of go code that define it.
+  
+    We can then use this as a cross refernece for any audit event that references a test.
 * TODO Creating/Editing Views
 * FOOTNOTES
 # Local Variables:
 # eval: (sql-connect "hasura" (concat "*SQL: postgres:data*"))
 # End:
+  
+  
+
+  
