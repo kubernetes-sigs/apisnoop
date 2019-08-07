@@ -19,7 +19,6 @@ async function main(testrun) {
               op_id
           }
         }
-        
     `
     const variables = {testrun}
 
