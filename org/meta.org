@@ -3,6 +3,7 @@
 
 * Purpose
   This holds the authorative way to get setup and exploring with our hasura backend.
+
 * Working with this repo/org file
 ** Work happens in Org first
    Within ii, our emphasis is on the documentation/org-file first.  
@@ -10,6 +11,82 @@
    as such: 
    *NOTE: Don't commit the hasura/migrations, they should be tangled from the org file.*
    In the future, we may add a commit hook that tangles org => hasura
+* Iteration Loop
+** listing tables
+#+BEGIN_SRC sql-mode
+\conninfo
+\d+
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+You are connected to database "zz" as user "zz" on host "172.17.0.1" at port "5432".
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
+Did not find any relations.
+#+end_src
+
+** dropping all data
+#+NAME: do not run
+#+BEGIN_SRC sql-mode :eval ask
+  drop table api_operations cascade;
+  drop table audit_events cascade;
+  drop table raw_swaggers cascade;
+  drop schema hdb_catalog cascade;
+  drop schema hdb_views cascade;
+#+END_SRC
+
+#+RESULTS: do not run
+#+begin_src sql-mode
+ERROR:  "api_operations" is not a table
+HINT:  Use DROP VIEW to remove a view.
+ERROR:  table "audit_events" does not exist
+NOTICE:  drop cascades to 6 other objects
+DETAIL:  drop cascades to view api_operations
+drop cascades to view api_operations_parameters
+drop cascades to view api_operations_responses
+drop cascades to view api_resources
+drop cascades to view api_resources_fields
+drop cascades to view over
+DROP TABLE
+NOTICE:  drop cascades to 26 other objects
+DETAIL:  drop cascades to table hdb_catalog.hdb_version
+drop cascades to table hdb_catalog.hdb_table
+drop cascades to function hdb_catalog.hdb_table_oid_check()
+drop cascades to table hdb_catalog.hdb_relationship
+drop cascades to table hdb_catalog.hdb_permission
+drop cascades to view hdb_catalog.hdb_permission_agg
+drop cascades to view hdb_catalog.hdb_foreign_key_constraint
+drop cascades to view hdb_catalog.hdb_check_constraint
+drop cascades to view hdb_catalog.hdb_unique_constraint
+drop cascades to view hdb_catalog.hdb_primary_key
+drop cascades to function hdb_catalog.inject_table_defaults(text,text,text,text)
+drop cascades to table hdb_catalog.event_triggers
+drop cascades to table hdb_catalog.event_log
+drop cascades to table hdb_catalog.event_invocation_logs
+drop cascades to table hdb_catalog.hdb_function
+drop cascades to view hdb_catalog.hdb_function_agg
+drop cascades to table hdb_catalog.remote_schemas
+drop cascades to table hdb_catalog.hdb_schema_update_event
+drop cascades to function hdb_catalog.hdb_schema_update_event_notifier()
+drop cascades to view hdb_catalog.hdb_table_info_agg
+drop cascades to view hdb_catalog.hdb_function_info_agg
+drop cascades to function hdb_catalog.insert_event_log(text,text,text,text,json)
+drop cascades to table hdb_catalog.hdb_query_collection
+drop cascades to table hdb_catalog.hdb_allowlist
+drop cascades to table hdb_catalog.schema_migrations
+drop cascades to table hdb_catalog.migration_settings
+DROP SCHEMA
+DROP SCHEMA
+#+end_src
+
+** Restart Hasura
+   #+BEGIN_SRC tmate
+     cd ~/ii/apisnoop_v3/hasura
+     docker-compose down
+     docker-compose up
+   #+END_SRC
+
+
 * TODO Starting up your database
 ** listing tables
 #+BEGIN_SRC sql-mode
@@ -251,6 +328,7 @@ CREATE TABLE
 #+END_SRC
 
 *** api_operations view
+    This grabs the 'paths' section of our swagger.json, where each path contains operation Id, tags, schemes, etc.
 #+NAME: api_operations view
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../hasura/migrations/150_view_api_operations.up.sql
   CREATE OR REPLACE VIEW "public"."api_operations" AS 
@@ -303,8 +381,7 @@ create index api_operations_regexp on api_operations(regexp);
 #+END_SRC
 
 ** api_operations_parameters view
-   This only gives us 17 distinct parameters, but 4k rows.  It looks like the same parameters are used again and again across the operation_ids.  
-   All of them have a description except for the param 'body in body'.  Need to look further into what that param looks like
+Using our api_operations view, look into the parameters field in each one.     
 #+NAME: api_operations_parameters view
 #+BEGIN_SRC sql-mode :eval no-export :tangle ../hasura/migrations/160_view_api_operations_parameters.up.sql
   CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
@@ -327,7 +404,8 @@ create index api_operations_regexp on api_operations(regexp);
            ELSE false
            END AS unique_items,
            api_operations.raw_swagger_id,
-           param.entry as entry
+           param.entry as entry,
+           api_operations.operation_id
       FROM api_operations
            , jsonb_array_elements(api_operations.parameters) WITH ORDINALITY param(entry, index)
             WHERE api_operations.parameters IS NOT NULL;
@@ -347,6 +425,8 @@ CREATE VIEW
 #+END_SRC
 
 ** api_operations_responses view
+   Similar to parameters, within each of the paths of the swagger.json, there is a responses field.  We are listing the values within this field.
+   
 #+NAME: Responses View
 #+BEGIN_SRC sql-mode :eval no-export :tangle ../hasura/migrations/180_view_api_operations_responses.up.sql
   CREATE OR REPLACE VIEW "public"."api_operations_responses" AS 
@@ -359,11 +439,19 @@ CREATE VIEW
              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
                THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
              ELSE NULL::text
-             END, '#/definitions/','') AS resource
+             END, '#/definitions/','') AS resource,
+             api_operations.operation_id,
+             api_operations.raw_swagger_id
       FROM (api_operations
             JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
      ORDER BY (uuid_generate_v1());
 #+END_SRC
+
+#+RESULTS: Responses View
+#+begin_src sql-mode
+CREATE VIEW
+#+end_src
+
 #+NAME: track api_operations_responses
 #+BEGIN_SRC yaml :tangle ../hasura/migrations/180_view_api_operations_responses.up.yaml
 - type: track_table
@@ -376,27 +464,32 @@ CREATE VIEW
 ** api_resources view
 #+NAME: api_resources view
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../hasura/migrations/190_view_api_resources.up.sql
--- drop materialized view api_resources CASCADE;
--- CREATE MATERIALIZED VIEW "public"."api_resources" AS 
-CREATE VIEW "public"."api_resources" AS 
- SELECT 
-    uuid_generate_v1() AS id,
-    raw_swaggers.id AS raw_swagger_id,
-    d.key AS name,
-    (d.value ->> 'type'::text) AS resource_type,
-    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
-    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
-    (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
-    ( SELECT string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS string_agg
-          FROM jsonb_array_elements((d.value -> 'required'::text)) jsonstring(value)) AS required_params,
-    (d.value ->> 'required'::text) as required_params_text,
-    (d.value -> 'properties'::text) AS properties,
-    -- (raw_api_definitions.data ->> 'version'::text) AS source
-    d.value
-   FROM (raw_swaggers
-     JOIN LATERAL jsonb_each((raw_swaggers.data -> 'definitions'::text)) d(key, value) ON (true))
-  ORDER BY id;
+  CREATE VIEW "public"."api_resources" AS 
+   SELECT 
+      raw_swaggers.id AS raw_swagger_id,
+      d.key AS name,
+      (d.value ->> 'type'::text) AS resource_type,
+      (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
+      (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
+      (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
+      string_agg(btrim((reqstring.value)::text, '"'::text), ', '::text) AS required_params,
+      (d.value ->> 'required'::text) as required_params_text,
+      (d.value -> 'properties'::text) AS properties,
+      d.value
+     FROM raw_swaggers
+       , jsonb_each((raw_swaggers.data -> 'definitions'::text)) d(key, value)
+       , jsonb_array_elements((d.value -> 'required'::text)) reqstring(value)
+     GROUP BY raw_swaggers.id, d.key, d.value;
+
 #+END_SRC
+
+#+RESULTS: api_resources view
+#+begin_src sql-mode
+ERROR:  relation "raw_swaggers" does not exist
+LINE 13:    FROM raw_swaggers
+                 ^
+#+end_src
+
 #+NAME: track api_resources
 #+BEGIN_SRC yaml :tangle ../hasura/migrations/190_view_api_resources.up.yaml
 - type: track_table
@@ -406,8 +499,8 @@ CREATE VIEW "public"."api_resources" AS
 #+END_SRC
 
 ** api_resources_fields view
-#+NAME: Properties View
-#+BEGIN_SRC sql-mode :eval never-export :tangle ../hasura/migrations/200_view_api_resources_fields.up.sql
+#+NAME: Older Properties View
+#+BEGIN_SRC sql-mode :eval never-export :notangle ../hasura/migrations/200_view_api_resources_fields.up.sql
   -- DROP VIEW api_resources_properties;
   -- DROP MATERIALIZED VIEW api_resources_properties;
   CREATE VIEW "public"."api_resources_fields" AS 
@@ -449,6 +542,38 @@ CREATE VIEW "public"."api_resources" AS
             JOIN LATERAL jsonb_each(api_resources.properties) d(key, value) ON (true))
      ORDER BY api_resources.id;
 #+END_SRC
+
+#+NAME: api_resources_fields view
+#+BEGIN_SRC sql-mode :eval never-export :tangle ../hasura/migrations/200_view_api_resources_fields.up.sql
+  CREATE VIEW "public"."api_resources_fields" AS 
+    SELECT api_resources.name as api_resource_name,
+           api_resources.raw_swagger_id,
+           d.key AS resource_field,
+           CASE
+           WHEN ((d.value ->> 'type'::text) IS NULL) THEN 'subtype'::text
+           ELSE (d.value ->> 'type'::text)
+             END AS param_type,
+           replace(
+             CASE
+             WHEN ((d.value ->> 'type'::text) = 'string'::text) THEN 'string'::text
+             WHEN ((d.value ->> 'type'::text) IS NULL) THEN (d.value ->> '$ref'::text)
+             WHEN ((d.value ->> 'type'::text) = 'array'::text)
+              AND ((d.value -> 'items'::text) ->> 'type'::text) IS NULL
+               THEN ((d.value -> 'items'::text) ->> '$ref'::text)
+             WHEN ((d.value ->> 'type'::text) = 'array'::text)
+              AND ((d.value -> 'items'::text) ->> '$ref'::text) IS NULL
+               THEN ((d.value -> 'items'::text) ->> 'type'::text)
+             ELSE 'integer'::text
+             END, '#/definitions/','') AS param_kind,
+           (d.value ->> 'description'::text) AS description,
+           (d.value ->> 'format'::text) AS format,
+           (d.value ->> 'x-kubernetes-patch-merge-key'::text) AS merge_key,
+           (d.value ->> 'x-kubernetes-patch-strategy'::text) AS patch_strategy,
+           d.value
+      FROM (api_resources
+            JOIN LATERAL jsonb_each(api_resources.properties) d(key, value) ON (true));
+#+END_SRC
+
 #+NAME: track api_resources_fields
 #+BEGIN_SRC yaml :tangle ../hasura/migrations/200_view_api_resources_fields.up.yaml
 - type: track_table
@@ -459,65 +584,57 @@ CREATE VIEW "public"."api_resources" AS
 
 * Create Over View
 #+NAME: over view
-#+BEGIN_SRC sql-mode :eval never-export :notangle ../hasura/migrations/210_view_over.up.sql
+#+BEGIN_SRC sql-mode :eval never-export :tangle ../hasura/migrations/210_view_over.up.sql
   CREATE OR REPLACE VIEW "public"."over" AS
-   SELECT
-      o.operation_id,
+    SELECT
       op.name as opname,
       op.required,
-      op.description as opdescription
-      -- r.name as rname,
-      -- r.k8s_group,
-      -- r.k8s_version,
-      -- r.k8s_kind,
-      -- rf.property,
-      -- rf.param_type,
-      -- rf.param_kind,
-      -- rf.description,
-      -- rf.format,
-      -- rf.merge_key,
-      -- rf.patch_strategy
-     FROM 
-       api_operations o
-       , INNER JOIN api_operations_parameters USING (raw_swagger_id) op
-     --   api_operations_responses resp,
-     --   api_resources r,
-     --   api_resources_fields rf
-     -- WHERE rs.id = o.raw_swagger_id
-     --   AND rs.id = r.raw_swagger_id
-     --   AND o.id = op.api_operations_id
-     --   AND r.id = rf.type_id
-       -- AND rs.id = 1
-    ORDER BY o.operation_id;
+      op.description as opdescription,
+      o.operation_id,
+      op.resource,
+      r.name as resource_name,
+      r.k8s_group,
+      r.k8s_version,
+      r.k8s_kind,
+      rf.resource_field,
+      rf.param_type,
+      rf.param_kind,
+      rf.description,
+      rf.format,
+      rf.merge_key,
+      rf.patch_strategy
+      FROM 
+          api_operations_parameters op
+          JOIN api_operations o ON (
+            o.raw_swagger_id = op.raw_swagger_id
+            AND
+            o.operation_id = op.operation_id
+          )
+          LEFT JOIN api_resources r ON (
+            op.resource = r.name
+            AND
+            op.raw_swagger_id = r.raw_swagger_id
+            )
+          LEFT JOIN api_resources_fields rf ON (
+            rf.api_resource_name = r.name
+            AND
+            rf.raw_swagger_id = r.raw_swagger_id
+          )
+     ORDER BY op.name;
 #+END_SRC
 
 #+RESULTS: over view
 #+begin_src sql-mode
-ERROR:  syntax error at or near "JOIN"
-LINE 20:      NATURAL JOIN api_operations_parameters ON (raw_swagger_...
-                      ^
+CREATE VIEW
 #+end_src
+
 #+NAME: track over
-#+BEGIN_SRC yaml :notangle ../hasura/migrations/210_view_over.up.yaml
+#+BEGIN_SRC yaml :tangle ../hasura/migrations/210_view_over.up.yaml
 - type: track_table
   args:
     schema: public
     name: over
 #+END_SRC
-
-#+BEGIN_SRC sql-mode
-select count(*) from "over";
-
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
- count 
--------
-     0
-(1 row)
-
-#+end_src
 
 * IN-PROGRESS Remove interim 'operations with parameters' view
 * NEXT Finish the Over View
