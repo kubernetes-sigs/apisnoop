@@ -332,7 +332,8 @@
        (create-target-script tmate-sh start-tmate-command)
        ;; (gui-select-text tmate-sh)
        (setq current-tmate-sh tmate-sh) ;; since tmate-sh is buffer-local..
-       (setq current-tmate-ssh (concat "export IISOCK=" socket " ; rm -f $IISOCK ; ssh -tAX " ssh-user-host " -L $IISOCK:$IISOCK " tmate-sh))
+       ;;(setq current-tmate-ssh (concat "export IISOCK=" socket " ; rm -f $IISOCK ; ssh -tAX " ssh-user-host " -L $IISOCK:$IISOCK " tmate-sh))
+       (setq current-tmate-ssh (concat "ssh -tAX " ssh-user-host " " tmate-sh))
 
        (with-current-buffer (get-buffer-create "start-tmate-sh" )
          (insert-for-yank "You will need to copy this manually:\n\n" )
@@ -348,8 +349,11 @@
        ;; (gui-select-text (concat "rm -fi " socket "; ssh -tAX " ssh-user "@" ssh-host " -L " socket ":" socket " " start-tmate-over-ssh-command))
        (create-target-script tmate-sh start-tmate-command)
        ;; (gui-select-text tmate-sh)
+       ;; If we work to detect if it's a remote host, this might make sense
+       ;; but for now we mostly connect to the pair box
+       ;; (setq current-tmate-ssh (concat "export II=" socket " ; rm -f $II ; ssh -tAX " ssh-user-host " -L $II:$II " tmate-sh))
        (setq current-tmate-sh tmate-sh) ;; since tmate-sh is buffer-local..
-       (setq current-tmate-ssh (concat "export II=" socket " ; rm -f $II ; ssh -tAX " ssh-user-host " -L $II:$II " tmate-sh))
+       (setq current-tmate-ssh (concat "ssh -tAX " ssh-user-host " " tmate-sh))
        (gui-select-text current-tmate-ssh)
        ; (gui-select-text start-tmate-command)
        (xclip-mode 0)
