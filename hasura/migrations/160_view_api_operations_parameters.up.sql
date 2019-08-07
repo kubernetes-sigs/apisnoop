@@ -1,6 +1,5 @@
 -- api_operations_parameters view
---    This only gives us 17 distinct parameters, but 4k rows.  It looks like the same parameters are used again and again across the operation_ids.  
---    All of them have a description except for the param 'body in body'.  Need to look further into what that param looks like
+-- Using our api_operations view, look into the parameters field in each one.     
 -- #+NAME: api_operations_parameters view
 
 CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
@@ -23,7 +22,8 @@ CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS
          ELSE false
          END AS unique_items,
          api_operations.raw_swagger_id,
-         param.entry as entry
+         param.entry as entry,
+         api_operations.operation_id
     FROM api_operations
          , jsonb_array_elements(api_operations.parameters) WITH ORDINALITY param(entry, index)
           WHERE api_operations.parameters IS NOT NULL;
