@@ -11,6 +11,7 @@ grant dba to zz;
 -- we write python functions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS plpython3u;
+CREATE EXTENSION IF NOT EXISTS plsh;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE SCHEMA IF NOT EXISTS hdb_catalog;
 CREATE SCHEMA IF NOT EXISTS hdb_views;
