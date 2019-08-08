@@ -51,8 +51,8 @@ bucket_files=[
 # and download in parallel
 downloads = {}
 @click.command()
-@click.argument('sources_yaml',default='audit-sources.yaml')
-@click.argument('dest',default='artifacts')
+@click.argument('sources_yaml',default='data/audit-sources.yaml')
+@click.argument('dest',default='data/artifacts')
 def main(sources_yaml,dest):
     # https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
     # s = yaml.load(open(sources).read(),Loader=yaml.FullLoader)

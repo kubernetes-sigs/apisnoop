@@ -32,9 +32,9 @@ def iter_lines_from_file(path: str) -> Iterator[Dict[str, Any]]:
 #------------------------ Load
 
 def recreate_audit_events_table(cursor):
-    cursor.execute(open('./hasura/migrations/10_table_audit_events.down.sql').read())
+    cursor.execute("DROP TABLE if exists public.audit_events CASCADE;")
     # cursor.execute("CREATE TABLE public.audit_events (event jsonb);")
-    cursor.execute(open('./hasura/migrations/10_table_audit_events.up.sql').read())
+    cursor.execute(open('./frontends/hasura/migrations/230_table_audit_events.up.sql').read())
 
 # http://initd.org/psycopg/docs/cursor.html#cursor.copy_from
 # https://docs.python.org/3.7/library/io.html?io.StringIO#io.StringIO
@@ -259,7 +259,7 @@ def find_openapi_entry(openapi_spec, event):
 import os
 import openapi
 @click.command()
-@click.argument('artifacts',default='artifacts')
+@click.argument('artifacts',default='data/artifacts')
 # @click.argument('dbname')
 def main(artifacts):#,dbname):
     # for now let's import the master openapi spec manually
