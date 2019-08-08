@@ -43,7 +43,7 @@ ERROR:  schema "hdb_views" does not exist
 
 ** Restart Hasura
    #+BEGIN_SRC tmate
-     cd ~/ii/apisnoop_v3/hasura
+     cd ~/ii/apisnoop_v3/apps/hasura
      docker-compose down
      docker-compose up
    #+END_SRC
@@ -400,6 +400,176 @@ ERROR:  relation "raw_audit_events" already exists
     name: raw_audit_events
 #+END_SRC
 
+** load audit_events via plpython3u
+
+#+NAME: load_audit_events.py
+#+BEGIN_SRC python :tangle load_audit_events.py
+  #!/usr/bin/env python3
+  from urllib.request import urlopen, urlretrieve
+  import os
+  import re
+  from bs4 import BeautifulSoup
+  import subprocess
+  import time
+  import glob
+  from tempfile import mkdtemp
+  from string import Template
+
+
+  def get_html(url):
+      html = urlopen(url).read()
+      soup = BeautifulSoup(html, 'html.parser')
+      return soup
+
+
+  def download_url_to_path(url, local_path):
+      local_dir = os.path.dirname(local_path)
+      if not os.path.isdir(local_dir):
+          os.makedirs(local_dir)
+      if not os.path.isfile(local_path):
+          process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
+          downloads[local_path] = process
+
+  # this global dict is used to track our wget subprocesses
+  # wget was used because the files can get to several halfa gig
+  downloads = {}
+  def load_audit_events(bucket,job):
+      bucket_url = f'https://storage.googleapis.com/kubernetes-jenkins/logs/{bucket}/{job}/'
+      artifacts_url = f'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/{bucket}/{job}/artifacts'
+      job_metadata_files = [
+          'finished.json',
+          'artifacts/metadata.json',
+          'artifacts/junit_01.xml',
+          'build-log.txt'
+      ]
+      download_path=mkdtemp(
+          dir='/tmp',
+          prefix=f'apisnoop-{bucket}-{job}')+'/'
+      combined_log_file = download_path + 'audit.log'
+      # meta data to download
+      for jobfile in job_metadata_files:
+          download_url_to_path( bucket_url + jobfile,
+                                download_path + jobfile )
+      # Use soup to grab url of each of audit.log.* (some end in .gz)
+      soup = get_html(artifacts_url)
+      master_link = soup.find(href=re.compile("master"))
+      master_soup = get_html(
+          "https://gcsweb.k8s.io" + master_link['href'])
+      log_links = master_soup.find_all(
+          href=re.compile("audit.log"))
+      # print(artifacts_url)
+      # download all logs
+      for link in log_links:
+          log_url = link['href']
+          log_file = download_path + os.path.basename(log_url)
+          # print(log_url)
+          download_url_to_path( log_url, log_file)
+      # Our Downloader uses subprocess of curl for speed
+      # Ensure all of them are complete
+      for download in downloads.keys():
+          # import ipdb; ipdb.set_trace(context=60)
+          while downloads[download].poll() is None:
+              time.sleep(5)
+              # print("Still downloading: " + download)
+          # print("Downloaded: " + download)
+          # import ipdb; ipdb.set_trace(context=60)
+      # Loop through the files, (z)cat them into a combined-audit.log
+      for logfile in sorted(glob.glob(download_path + '*kube-apiserver-audit*'), reverse=True):
+          log = open(combined_log_file, 'ab')
+          # print("Processing: " + logfile)
+          if logfile.endswith('z'):
+              subprocess.run(['zcat', logfile], stdout=log, check=True)
+          else:
+              subprocess.run(['cat', logfile], stdout=log, check=True)
+          # subprocess.call(['touch', gzfile + '.processed'], stdout=log)
+      try:
+          sql = Template("""CREATE TEMPORARY TABLE raw_audit_events_import (data jsonb not null) ;
+          copy raw_audit_events_import (data)
+          FROM PROGRAM '${cat}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
+          INSERT INTO raw_audit_events(data, bucket, job)
+          SELECT data, '${bucket}', '${job}'
+          FROM raw_audit_events_import;
+          """).substitute(
+              cat = f'cat {combined_log_file}',
+              bucket = bucket,
+              job = job
+          )
+          print(sql)
+          #rv = plpy.execute(sql)
+          return "it worked"
+      except plpy.SPIError:
+          return "something went wrong with plpy"
+      except:
+          return "something unknown went wrong"
+  if __name__ == "__main__":
+      load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234')
+  else:
+      load_audit_events(bucket,job)
+#+END_SRC
+
+#+NAME: min_load_audit_events.py
+#+BEGIN_SRC python :tangle min_load_audit_events.py
+  return f'{bucket} + {job}'
+  # from urllib.request import urlopen, urlretrieve
+  # import os
+  # import re
+  # from bs4 import BeautifulSoup
+  # import subprocess
+  # import time
+  # import glob
+  # from tempfile import mkdtemp
+  # from string import Template
+  # return "WERAN"
+#+END_SRC
+
+#+NAME: load_audit_events.sql
+#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/250_function_load_audit_events.up.sql
+  set role dba;
+  CREATE OR REPLACE FUNCTION load_audit_events(bucket text, job text)
+  RETURNS text AS $$
+  <<load_audit_events.py>>
+  $$ LANGUAGE plpython3u ;
+  reset role;
+#+END_SRC
+
+#+RESULTS: load_audit_events.sql
+#+begin_src sql-mode
+SET
+hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# hh$# CREATE FUNCTION
+RESET
+#+end_src
+
+#+BEGIN_SRC sql-mode
+\df load_audit_events
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                              List of functions
+ Schema |       Name        | Result data type |  Argument data types  | Type 
+--------+-------------------+------------------+-----------------------+------
+ public | load_audit_events | text             | bucket text, job text | func
+(1 row)
+
+#+end_src
+
+
+#+NAME: reload sample audit event
+#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/130_populate_swaggers.up.sql
+  -- delete from raw_audit_events;
+  select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');
+  -- select * from load_swagger_via_curl('release-1.15');
+  -- select * from load_swagger_via_curl('release-1.14');
+  -- select * from load_swagger_via_curl('release-1.13');
+  -- select * from load_swagger_via_curl('release-1.12');
+  -- select * from load_swagger_via_curl('release-1.11');
+  -- select * from load_swagger_via_curl('release-1.10');
+#+END_SRC
+
+#+RESULTS: reload sample audit event
+#+begin_src sql-mode
+#+end_src
+
 ** load audit_events_via local cli
 
 #+BEGIN_SRC sql-mode
@@ -512,264 +682,262 @@ Thu Aug  8 01:14:52 UTC 2019
     schema: public
     name: audit_events
 #+END_SRC
-* requestObjects
-** columns
-*** requestkind
-#+NAME: requestObject.kind
-#+BEGIN_SRC sql-mode
-    requestkind text NOT NULL,
-#+END_SRC
+** requestObjects
+*** columns
+**** requestkind
+ #+NAME: requestObject.kind
+ #+BEGIN_SRC sql-mode
+     requestkind text NOT NULL,
+ #+END_SRC
 
-**** Examples
-#+BEGIN_SRC json
-"requestObject": {
-    "kind": "SubjectAccessReview",
-#+END_SRC
+***** Examples
+ #+BEGIN_SRC json
+ "requestObject": {
+     "kind": "SubjectAccessReview",
+ #+END_SRC
 
-#+BEGIN_SRC shell
-cat kube-apiserver-audit.log | jq  -r .requestObject.kind | sort | uniq > kinds.txt
-cat kube-apiserver-audit.log | jq  -r .responseObject.kind | sort | uniq > rkinds.txt
-diff kinds.txt rkinds.txt
-#+END_SRC
+ #+BEGIN_SRC shell
+ cat kube-apiserver-audit.log | jq  -r .requestObject.kind | sort | uniq > kinds.txt
+ cat kube-apiserver-audit.log | jq  -r .responseObject.kind | sort | uniq > rkinds.txt
+ diff kinds.txt rkinds.txt
+ #+END_SRC
 
-Only requestObjects include Binding, DeleteOptions, and DeploymentRollback
-Only responsesObjects include Status and TokenRequest
+ Only requestObjects include Binding, DeleteOptions, and DeploymentRollback
+ Only responsesObjects include Status and TokenRequest
 
-#+BEGIN_SRC diff
-2d1
-< Binding
-12d10
-< DeleteOptions
-14d11
-< DeploymentRollback
-39a37
-> Status
-41a40
-> TokenRequest
-#+END_SRC
+ #+BEGIN_SRC diff
+ 2d1
+ < Binding
+ 12d10
+ < DeleteOptions
+ 14d11
+ < DeploymentRollback
+ 39a37
+ > Status
+ 41a40
+ > TokenRequest
+ #+END_SRC
 
-*** requestapiversion
-#+NAME: requestObject.apiVersion
-#+BEGIN_SRC sql-mode
-  requestapiversion text NOT NULL,
-#+END_SRC
-Might be tied to level = request, response etc
-**** examples
-#+BEGIN_SRC json
-"requestObject": {
-    "apiVersion": "authorization.k8s.io/v1",
-#+END_SRC
+**** requestapiversion
+ #+NAME: requestObject.apiVersion
+ #+BEGIN_SRC sql-mode
+   requestapiversion text NOT NULL,
+ #+END_SRC
+ Might be tied to level = request, response etc
+***** examples
+ #+BEGIN_SRC json
+ "requestObject": {
+     "apiVersion": "authorization.k8s.io/v1",
+ #+END_SRC
 
-I'm not sure here, but I feel like we should only be looking at RequestResponse... not all three.
-Huh, that was wrong.. the counts differ wildly:
+ I'm not sure here, but I feel like we should only be looking at RequestResponse... not all three.
+ Huh, that was wrong.. the counts differ wildly:
 
-*** requestmeta
-#+NAME: requestObject.metadata
-#+BEGIN_SRC sql-mode
-  requestmeta jsonb NOT NULL,
-#+END_SRC
-**** examples
-#+BEGIN_SRC json
-"requestObject": {
-    "metadata": {
-      "creationTimestamp": null
-    },
-#+END_SRC
-*** requestspec
-#+NAME: requestObject.spec
-#+BEGIN_SRC sql-mode
-  requestspec jsonb NOT NULL,
-#+END_SRC
-**** examples
-#+BEGIN_SRC json
-"requestObject": {
-    "spec": {
-      "resourceAttributes": {
-        "namespace": "kubernetes-dashboard-6069",
-        "verb": "use",
-        "group": "extensions",
-        "resource": "podsecuritypolicies",
-        "name": "e2e-test-privileged-psp"
-      },
-      "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
-    },
-#+END_SRC
-*** requeststatus
-#+NAME: requestObject.status
-#+BEGIN_SRC sql-mode
-  requeststatus jsonb NOT NULL,
-#+END_SRC
-**** examples
-#+BEGIN_SRC json
-  "responseObject": {
-    "status": {
-      "allowed": true,
-      "reason": "RBAC: allowed by RoleBinding \"kubernetes-dashboard-6069--e2e-test-privileged-psp/kubernetes-dashboard-6069\" of ClusterRole \"e2e-test-privileged-psp\" to ServiceAccount \"default/kubernetes-dashboard-6069\""
-    }
-#+END_SRC
+**** requestmeta
+ #+NAME: requestObject.metadata
+ #+BEGIN_SRC sql-mode
+   requestmeta jsonb NOT NULL,
+ #+END_SRC
+***** examples
+ #+BEGIN_SRC json
+ "requestObject": {
+     "metadata": {
+       "creationTimestamp": null
+     },
+ #+END_SRC
+**** requestspec
+ #+NAME: requestObject.spec
+ #+BEGIN_SRC sql-mode
+   requestspec jsonb NOT NULL,
+ #+END_SRC
+***** examples
+ #+BEGIN_SRC json
+ "requestObject": {
+     "spec": {
+       "resourceAttributes": {
+         "namespace": "kubernetes-dashboard-6069",
+         "verb": "use",
+         "group": "extensions",
+         "resource": "podsecuritypolicies",
+         "name": "e2e-test-privileged-psp"
+       },
+       "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
+     },
+ #+END_SRC
+**** requeststatus
+ #+NAME: requestObject.status
+ #+BEGIN_SRC sql-mode
+   requeststatus jsonb NOT NULL,
+ #+END_SRC
+***** examples
+ #+BEGIN_SRC json
+   "responseObject": {
+     "status": {
+       "allowed": true,
+       "reason": "RBAC: allowed by RoleBinding \"kubernetes-dashboard-6069--e2e-test-privileged-psp/kubernetes-dashboard-6069\" of ClusterRole \"e2e-test-privileged-psp\" to ServiceAccount \"default/kubernetes-dashboard-6069\""
+     }
+ #+END_SRC
 
-** table
+*** table
 
-We'll just load these as jsonb into the main audit_events table.
+ We'll just load these as jsonb into the main audit_events table.
 
-From https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.15/
+ From https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.15/
 
-#+BEGIN_EXAMPLE
-Resource objects typically have 3 components:
+ #+BEGIN_EXAMPLE
+ Resource objects typically have 3 components:
 
-Resource ObjectMeta: This is metadata about the resource, such as its name, type, api version, annotations, and labels. This contains fields that maybe updated both by the end user and the system (e.g. annotations).
+ Resource ObjectMeta: This is metadata about the resource, such as its name, type, api version, annotations, and labels. This contains fields that maybe updated both by the end user and the system (e.g. annotations).
 
-ResourceSpec: This is defined by the user and describes the desired state of system. Fill this in when creating or updating an object.
+ ResourceSpec: This is defined by the user and describes the desired state of system. Fill this in when creating or updating an object.
 
-ResourceStatus: This is filled in by the server and reports the current state of the system. In most cases, users don't need to change this.
-#+END_EXAMPLE
+ ResourceStatus: This is filled in by the server and reports the current state of the system. In most cases, users don't need to change this.
+ #+END_EXAMPLE
 
+ These have more information
+ #+BEGIN_SRC json
+ "requestObject": {
+     "kind": "SubjectAccessReview",
+     "apiVersion": "authorization.k8s.io/v1",
+     "metadata": {
+       "creationTimestamp": null
+     },
+     "spec": {
+       "resourceAttributes": {
+         "namespace": "kubernetes-dashboard-6069",
+         "verb": "use",
+         "group": "extensions",
+         "resource": "podsecuritypolicies",
+         "name": "e2e-test-privileged-psp"
+       },
+       "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
+     },
+     "status": {
+       "allowed": false
+     }
+   },
+ #+END_SRC
 
+** responseObjects
+*** columns
+**** responsekind
+ #+NAME: responseObject.kind
+ #+BEGIN_SRC sql-mode
+     responsekind text NOT NULL,
+ #+END_SRC
 
-These have more information
-#+BEGIN_SRC json
-"requestObject": {
-    "kind": "SubjectAccessReview",
-    "apiVersion": "authorization.k8s.io/v1",
-    "metadata": {
-      "creationTimestamp": null
-    },
-    "spec": {
-      "resourceAttributes": {
-        "namespace": "kubernetes-dashboard-6069",
-        "verb": "use",
-        "group": "extensions",
-        "resource": "podsecuritypolicies",
-        "name": "e2e-test-privileged-psp"
-      },
-      "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
-    },
-    "status": {
-      "allowed": false
-    }
-  },
-#+END_SRC
+***** Examples
+ #+BEGIN_SRC json
+ "responseObject": {
+     "kind": "SubjectAccessReview",
+ #+END_SRC
 
-* responseObjects
-** columns
-*** responsekind
-#+NAME: responseObject.kind
-#+BEGIN_SRC sql-mode
-    responsekind text NOT NULL,
-#+END_SRC
+ #+BEGIN_SRC shell
+ cat kube-apiserver-audit.log | jq  -r .responseObject.kind | sort | uniq > kinds.txt
+ cat kube-apiserver-audit.log | jq  -r .responseObject.kind | sort | uniq > rkinds.txt
+ diff kinds.txt rkinds.txt
+ #+END_SRC
 
-**** Examples
-#+BEGIN_SRC json
-"responseObject": {
-    "kind": "SubjectAccessReview",
-#+END_SRC
+ Only responseObjects include Binding, DeleteOptions, and DeploymentRollback
+ Only responsesObjects include Status and TokenResponse
 
-#+BEGIN_SRC shell
-cat kube-apiserver-audit.log | jq  -r .responseObject.kind | sort | uniq > kinds.txt
-cat kube-apiserver-audit.log | jq  -r .responseObject.kind | sort | uniq > rkinds.txt
-diff kinds.txt rkinds.txt
-#+END_SRC
+ #+BEGIN_SRC diff
+ 2d1
+ < Binding
+ 12d10
+ < DeleteOptions
+ 14d11
+ < DeploymentRollback
+ 39a37
+ > Status
+ 41a40
+ > TokenResponse
+ #+END_SRC
 
-Only responseObjects include Binding, DeleteOptions, and DeploymentRollback
-Only responsesObjects include Status and TokenResponse
+**** responseapiversion
+ #+NAME: responseObject.apiVersion
+ #+BEGIN_SRC sql-mode
+   responseapiversion text NOT NULL,
+ #+END_SRC
+ Might be tied to level = response, response etc
+***** examples
+ #+BEGIN_SRC json
+ "responseObject": {
+     "apiVersion": "authorization.k8s.io/v1",
+ #+END_SRC
 
-#+BEGIN_SRC diff
-2d1
-< Binding
-12d10
-< DeleteOptions
-14d11
-< DeploymentRollback
-39a37
-> Status
-41a40
-> TokenResponse
-#+END_SRC
+ I'm not sure here, but I feel like we should only be looking at ResponseResponse... not all three.
+ Huh, that was wrong.. the counts differ wildly:
 
-*** responseapiversion
-#+NAME: responseObject.apiVersion
-#+BEGIN_SRC sql-mode
-  responseapiversion text NOT NULL,
-#+END_SRC
-Might be tied to level = response, response etc
-**** examples
-#+BEGIN_SRC json
-"responseObject": {
-    "apiVersion": "authorization.k8s.io/v1",
-#+END_SRC
+**** responsemeta
+ #+NAME: responseObject.metadata
+ #+BEGIN_SRC sql-mode
+   responsemeta jsonb NOT NULL,
+ #+END_SRC
+***** examples
+ #+BEGIN_SRC json
+ "responseObject": {
+     "metadata": {
+       "creationTimestamp": null
+     },
+ #+END_SRC
+**** responsespec
+ #+NAME: responseObject.spec
+ #+BEGIN_SRC sql-mode
+   responsespec jsonb NOT NULL,
+ #+END_SRC
+***** examples
+ #+BEGIN_SRC json
+ "responseObject": {
+     "spec": {
+       "resourceAttributes": {
+         "namespace": "kubernetes-dashboard-6069",
+         "verb": "use",
+         "group": "extensions",
+         "resource": "podsecuritypolicies",
+         "name": "e2e-test-privileged-psp"
+       },
+       "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
+     },
+ #+END_SRC
+**** responsestatus
+ #+NAME: responseObject.status
+ #+BEGIN_SRC sql-mode
+   responsestatus jsonb NOT NULL,
+ #+END_SRC
+***** examples
+ #+BEGIN_SRC json
+   "responseObject": {
+     "status": {
+       "allowed": true,
+       "reason": "RBAC: allowed by RoleBinding \"kubernetes-dashboard-6069--e2e-test-privileged-psp/kubernetes-dashboard-6069\" of ClusterRole \"e2e-test-privileged-psp\" to ServiceAccount \"default/kubernetes-dashboard-6069\""
+     }
+ #+END_SRC
 
-I'm not sure here, but I feel like we should only be looking at ResponseResponse... not all three.
-Huh, that was wrong.. the counts differ wildly:
-
-*** responsemeta
-#+NAME: responseObject.metadata
-#+BEGIN_SRC sql-mode
-  responsemeta jsonb NOT NULL,
-#+END_SRC
-**** examples
-#+BEGIN_SRC json
-"responseObject": {
-    "metadata": {
-      "creationTimestamp": null
-    },
-#+END_SRC
-*** responsespec
-#+NAME: responseObject.spec
-#+BEGIN_SRC sql-mode
-  responsespec jsonb NOT NULL,
-#+END_SRC
-**** examples
-#+BEGIN_SRC json
-"responseObject": {
-    "spec": {
-      "resourceAttributes": {
-        "namespace": "kubernetes-dashboard-6069",
-        "verb": "use",
-        "group": "extensions",
-        "resource": "podsecuritypolicies",
-        "name": "e2e-test-privileged-psp"
-      },
-      "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
-    },
-#+END_SRC
-*** responsestatus
-#+NAME: responseObject.status
-#+BEGIN_SRC sql-mode
-  responsestatus jsonb NOT NULL,
-#+END_SRC
-**** examples
-#+BEGIN_SRC json
-  "responseObject": {
-    "status": {
-      "allowed": true,
-      "reason": "RBAC: allowed by RoleBinding \"kubernetes-dashboard-6069--e2e-test-privileged-psp/kubernetes-dashboard-6069\" of ClusterRole \"e2e-test-privileged-psp\" to ServiceAccount \"default/kubernetes-dashboard-6069\""
-    }
-#+END_SRC
-
-** Notes
-#+BEGIN_SRC json
-  "responseObject": {
-    "kind": "SubjectAccessReview",
-    "apiVersion": "authorization.k8s.io/v1",
-    "metadata": {
-      "creationTimestamp": null
-    },
-    "spec": {
-      "resourceAttributes": {
-        "namespace": "kubernetes-dashboard-6069",
-        "verb": "use",
-        "group": "extensions",
-        "resource": "podsecuritypolicies",
-        "name": "e2e-test-privileged-psp"
-      },
-      "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
-    },
-    "status": {
-      "allowed": true,
-      "reason": "RBAC: allowed by RoleBinding \"kubernetes-dashboard-6069--e2e-test-privileged-psp/kubernetes-dashboard-6069\" of ClusterRole \"e2e-test-privileged-psp\" to ServiceAccount \"default/kubernetes-dashboard-6069\""
-    }
-  },
-#+END_SRC
+*** Notes
+ #+BEGIN_SRC json
+   "responseObject": {
+     "kind": "SubjectAccessReview",
+     "apiVersion": "authorization.k8s.io/v1",
+     "metadata": {
+       "creationTimestamp": null
+     },
+     "spec": {
+       "resourceAttributes": {
+         "namespace": "kubernetes-dashboard-6069",
+         "verb": "use",
+         "group": "extensions",
+         "resource": "podsecuritypolicies",
+         "name": "e2e-test-privileged-psp"
+       },
+       "user": "system:serviceaccount:kubernetes-dashboard-6069:default"
+     },
+     "status": {
+       "allowed": true,
+       "reason": "RBAC: allowed by RoleBinding \"kubernetes-dashboard-6069--e2e-test-privileged-psp/kubernetes-dashboard-6069\" of ClusterRole \"e2e-test-privileged-psp\" to ServiceAccount \"default/kubernetes-dashboard-6069\""
+     }
+   },
+ #+END_SRC
 
 * Operation Views
 ** api_operations view
