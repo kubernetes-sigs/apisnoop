@@ -21,7 +21,22 @@
 #+begin_src sql-mode
 You are connected to database "zz" as user "zz" on host "172.17.0.1" at port "5432".
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
-Did not find any relations.
+                                List of relations
+ Schema |           Name            |   Type   | Owner |    Size    | Description 
+--------+---------------------------+----------+-------+------------+-------------
+ public | api_operations            | view     | zz    | 0 bytes    | 
+ public | api_operations_parameters | view     | zz    | 0 bytes    | 
+ public | api_operations_responses  | view     | zz    | 0 bytes    | 
+ public | api_resources             | view     | zz    | 0 bytes    | 
+ public | api_resources_fields      | view     | zz    | 0 bytes    | 
+ public | audit_events              | view     | zz    | 0 bytes    | 
+ public | over                      | view     | zz    | 0 bytes    | 
+ public | raw_audit_events          | table    | zz    | 389 MB     | 
+ public | raw_audit_events_id_seq   | sequence | zz    | 8192 bytes | 
+ public | raw_swaggers              | table    | zz    | 1752 kB    | 
+ public | raw_swaggers_id_seq       | sequence | zz    | 8192 bytes | 
+(11 rows)
+
 #+end_src
 
 ** dropping all data
@@ -522,8 +537,10 @@ ERROR:  relation "raw_audit_events" already exists
   # return "WERAN"
 #+END_SRC
 
+#+RESULTS: min_load_audit_events.py
+
 #+NAME: load_audit_events.sql
-#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/250_function_load_audit_events.up.sql
+#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/245_function_load_audit_events.up.sql
   set role dba;
   CREATE OR REPLACE FUNCTION load_audit_events(bucket text, job text)
   RETURNS text AS $$
@@ -555,7 +572,7 @@ RESET
 
 
 #+NAME: reload sample audit event
-#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/130_populate_swaggers.up.sql
+#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/250_populate_audit_events.up.sql
   -- delete from raw_audit_events;
   select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');
   -- select * from load_swagger_via_curl('release-1.15');
@@ -666,13 +683,29 @@ Thu Aug  8 01:14:52 UTC 2019
               raw.data -> 'responseObject' as response_object,
               raw.data -> 'responseStatus' as response_status,
               raw.data ->> 'stageTimestamp' as stage_timestamp,
-              raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp
-       FROM raw_audit_events raw;
+              raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
+              raw.data as data,
+              ops.operation_id
+       FROM raw_audit_events raw
+       JOIN api_operations ops ON raw.data ->> 'requestURI' ~ ops.regex;
    #+END_SRC
+   
+   #+BEGIN_SRC sql-mode
+   SELECT audit_id, operation_id, event_verb, request_uri
+   FROM audit_events
+   LIMIT 3;
+   #+END_SRC
+
 
    #+RESULTS:
    #+begin_src sql-mode
-   CREATE VIEW
+                  audit_id               |                operation_id                |    event_verb    |                    request_uri                     
+   --------------------------------------+--------------------------------------------+------------------+----------------------------------------------------
+    28a9b08e-8c39-4b2f-be08-5e4d12eb545b | deleteAppsV1CollectionNamespacedReplicaSet | deletecollection | /apis/apps/v1/namespaces/services-4757/replicasets
+    28a9b08e-8c39-4b2f-be08-5e4d12eb545b | listAppsV1NamespacedReplicaSet             | deletecollection | /apis/apps/v1/namespaces/services-4757/replicasets
+    28a9b08e-8c39-4b2f-be08-5e4d12eb545b | createAppsV1NamespacedReplicaSet           | deletecollection | /apis/apps/v1/namespaces/services-4757/replicasets
+   (3 rows)
+
    #+end_src
    
 #+NAME: track audit_events
@@ -978,6 +1011,7 @@ Thu Aug  8 01:14:52 UTC 2019
     SELECT raw_swaggers.id AS raw_swagger_id,
            paths.key AS path,
            regex_from_path(paths.key) as regex,
+           regex_from_path(paths.key) as openapi_verb,
            d.key AS method,
            (d.value ->> 'operationId'::text) AS operation_id,
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
@@ -1001,6 +1035,121 @@ Thu Aug  8 01:14:52 UTC 2019
      GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
      ORDER BY paths.key;
 #+END_SRC
+
+#+NAME: uniq audit entry verbs raw
+#+BEGIN_SRC shell
+cd /tmp/apisnoop-ci-kubernetes-e2e-gci-gce-11349620722877112346arl78tw
+cat audit.log | jq .verb | sort | uniq
+#+END_SRC
+
+#+RESULTS: uniq audit entry verbs raw
+#+begin_EXAMPLE
+"abcd"
+"create"
+"delete"
+"deletecollection"
+"get"
+"list"
+"patch"
+"post"
+"update"
+"watch"
+#+end_EXAMPLE
+
+
+#+NAME: Double check operation_id verbs
+#+BEGIN_SRC sql-mode
+SELECT DISTINCT x_kubernetes_action, method
+FROM api_operations
+order by x_kubernetes_action;
+#+END_SRC
+
+#+RESULTS: Double check operation_id verbs
+#+begin_src sql-mode
+ x_kubernetes_action | method  
+---------------------+---------
+ connect             | delete
+ connect             | get
+ connect             | head
+ connect             | options
+ connect             | patch
+ connect             | post
+ connect             | put
+ delete              | delete
+ deletecollection    | delete
+ get                 | get
+ list                | get
+ patch               | patch
+ post                | post
+ put                 | put
+ watch               | get
+ watchlist           | get
+                     | get
+(17 rows)
+
+#+end_src
+#+NAME: Double check operation_id verbs
+
+#+NAME: method = options
+#+BEGIN_SRC sql-mode
+SELECT operation_id, x_kubernetes_action, method
+FROM api_operations
+where method like 'options';
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                    operation_id                    | x_kubernetes_action | method  
+----------------------------------------------------+---------------------+---------
+ connectCoreV1OptionsNamespacedPodProxy             | connect             | options
+ connectCoreV1OptionsNamespacedPodProxyWithPath     | connect             | options
+ connectCoreV1OptionsNamespacedServiceProxy         | connect             | options
+ connectCoreV1OptionsNamespacedServiceProxyWithPath | connect             | options
+ connectCoreV1OptionsNodeProxy                      | connect             | options
+ connectCoreV1OptionsNodeProxyWithPath              | connect             | options
+(6 rows)
+
+#+end_src
+
+
+#+NAME: Double check audit_entries verbs / ops
+#+BEGIN_SRC sql-mode
+explain SELECT DISTINCT event_verb
+FROM audit_events;
+-- order by event_verb;
+#+END_SRC
+
+#+RESULTS: Double check audit_entries verbs / ops
+#+begin_src sql-mode
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Unique  (cost=18311202947114.33..18320060226114.33 rows=313532 width=32)
+   ->  Sort  (cost=18311202947114.33..18315631586614.33 rows=1771455800000 width=32)
+         Sort Key: ((raw.data ->> 'verb'::text))
+         ->  Nested Loop  (cost=8857888750630.28..17654133088298.60 rows=1771455800000 width=32)
+               Join Filter: ((raw.data ->> 'requestURI'::text) ~ ops.regex)
+               ->  Seq Scan on raw_audit_events raw  (cost=0.00..50648.32 rows=313532 width=1091)
+               ->  Materialize  (cost=8857888750630.28..9027707225240.28 rows=1130000000 width=32)
+                     ->  Subquery Scan on ops  (cost=8857888750630.28..9027693850630.28 rows=1130000000 width=32)
+                           ->  GroupAggregate  (cost=8857888750630.28..9027682550630.28 rows=1130000000 width=549)
+                                 Group Key: paths.key, raw_swaggers.id, d.key, d.value, cat_tag.value
+                                 ->  Sort  (cost=8857888750630.28..8886138750630.28 rows=11300000000000 width=132)
+                                       Sort Key: paths.key, raw_swaggers.id, d.key, d.value, cat_tag.value
+                                       ->  Nested Loop  (cost=0.02..228282828281.32 rows=11300000000000 width=132)
+                                             ->  Nested Loop  (cost=0.02..2282828281.32 rows=113000000000 width=132)
+                                                   ->  Nested Loop  (cost=0.01..22828281.31 rows=1130000000 width=132)
+                                                         ->  Nested Loop  (cost=0.01..228281.31 rows=11300000 width=100)
+                                                               ->  Nested Loop  (cost=0.01..2281.30 rows=113000 width=68)
+                                                                     ->  Seq Scan on raw_swaggers  (cost=0.00..21.30 rows=1130 width=36)
+                                                                     ->  Function Scan on jsonb_each paths  (cost=0.01..1.00 rows=100 width=64)
+                                                               ->  Function Scan on jsonb_each d  (cost=0.00..1.00 rows=100 width=64)
+                                                         ->  Function Scan on jsonb_array_elements cat_tag  (cost=0.01..1.00 rows=100 width=32)
+                                                   ->  Function Scan on jsonb_array_elements jsonstring  (cost=0.01..1.00 rows=100 width=0)
+                                             ->  Function Scan on jsonb_array_elements schemestring  (cost=0.01..1.00 rows=100 width=0)
+(23 rows)
+
+#+end_src
+
 
 #+RESULTS: api_operations view
 #+begin_src sql-mode
@@ -1284,8 +1433,95 @@ CREATE VIEW
     name: over
 #+END_SRC
 
-* IN-PROGRESS Remove interim 'operations with parameters' view
-* NEXT Finish the Over View
+* #40: PodSpec and Audit Events
+  There is only a single resource, it seems, that references podspec.  So our list of 'podspec fields' is really coming from this resource.
+  
+  #+RESULTS: Properties of podspec
+  #+begin_src sql-mode
+               field             |            name            
+  -------------------------------+----------------------------
+   hostIPC                       | io.k8s.api.core.v1.PodSpec
+   hostPID                       | io.k8s.api.core.v1.PodSpec
+   volumes                       | io.k8s.api.core.v1.PodSpec
+   affinity                      | io.k8s.api.core.v1.PodSpec
+   hostname                      | io.k8s.api.core.v1.PodSpec
+   nodeName                      | io.k8s.api.core.v1.PodSpec
+   overhead                      | io.k8s.api.core.v1.PodSpec
+   priority                      | io.k8s.api.core.v1.PodSpec
+   dnsConfig                     | io.k8s.api.core.v1.PodSpec
+   dnsPolicy                     | io.k8s.api.core.v1.PodSpec
+   subdomain                     | io.k8s.api.core.v1.PodSpec
+   containers                    | io.k8s.api.core.v1.PodSpec
+   hostAliases                   | io.k8s.api.core.v1.PodSpec
+   hostNetwork                   | io.k8s.api.core.v1.PodSpec
+   tolerations                   | io.k8s.api.core.v1.PodSpec
+   nodeSelector                  | io.k8s.api.core.v1.PodSpec
+   restartPolicy                 | io.k8s.api.core.v1.PodSpec
+   schedulerName                 | io.k8s.api.core.v1.PodSpec
+   initContainers                | io.k8s.api.core.v1.PodSpec
+   readinessGates                | io.k8s.api.core.v1.PodSpec
+   serviceAccount                | io.k8s.api.core.v1.PodSpec
+   securityContext               | io.k8s.api.core.v1.PodSpec
+   imagePullSecrets              | io.k8s.api.core.v1.PodSpec
+   preemptionPolicy              | io.k8s.api.core.v1.PodSpec
+   runtimeClassName              | io.k8s.api.core.v1.PodSpec
+   priorityClassName             | io.k8s.api.core.v1.PodSpec
+   enableServiceLinks            | io.k8s.api.core.v1.PodSpec
+   serviceAccountName            | io.k8s.api.core.v1.PodSpec
+   ephemeralContainers           | io.k8s.api.core.v1.PodSpec
+   activeDeadlineSeconds         | io.k8s.api.core.v1.PodSpec
+   shareProcessNamespace         | io.k8s.api.core.v1.PodSpec
+   topologySpreadConstraints     | io.k8s.api.core.v1.PodSpec
+   automountServiceAccountToken  | io.k8s.api.core.v1.PodSpec
+   terminationGracePeriodSeconds | io.k8s.api.core.v1.PodSpec
+  (34 rows)
+
+  #+end_src
+
+  #+RESULTS:
+  #+begin_src sql-mode
+              name            
+  ----------------------------
+   io.k8s.api.core.v1.PodSpec
+  (1 row)
+  #+end_src
+  
+  One thing we can try is to quickly connect the audit event to its api_operation, so that we get a standard definition of what happened.
+  
+  From there, we could see if that operation is part of the podSpec in some way.
+ 
+  #+NAME: Properties of podspec
+  #+BEGIN_SRC sql-mode
+    SELECT 
+      resource_field as field,
+      api_resource_name as name
+      FROM
+          api_resources_fields
+      WHERE api_resources_fields.api_resource_name ILIKE '%podspec%';
+  #+END_SRC
+
+  #+NAME: adding RegEx matching
+  #+BEGIN_SRC sql-mode
+    SELECT
+      events.request_uri,
+      ops.operation_id
+      FROM audit_events events
+         JOIN api_operations ops ON events.request_uri ~ ops.regex
+      LIMIT 3;
+  #+END_SRC
+
+  #+RESULTS: adding RegEx matching
+  #+begin_src sql-mode
+                                      request_uri                                    |                         operation_id                          
+  -----------------------------------------------------------------------------------+---------------------------------------------------------------
+   /apis/rbac.authorization.k8s.io/v1beta1/namespaces/provisioning-6870/rolebindings | deleteRbacAuthorizationV1beta1CollectionNamespacedRoleBinding
+   /apis/rbac.authorization.k8s.io/v1beta1/namespaces/provisioning-6870/rolebindings | listRbacAuthorizationV1beta1NamespacedRoleBinding
+   /apis/rbac.authorization.k8s.io/v1beta1/namespaces/provisioning-6870/rolebindings | createRbacAuthorizationV1beta1NamespacedRoleBinding
+  (3 rows)
+
+  #+end_src
+
+
 * TODO Create Import for CSV view
   We have a file started here: [[file:test_gen.org][test_gen.org]] 
   that brings in the work devan and caleb did to pull all the tests used in a specific/commit version of k8s.
@@ -1296,334 +1532,7 @@ CREATE VIEW
   - a link to the lines of go code that define it.
   
     We can then use this as a cross refernece for any audit event that references a test.
-* TODO Creating/Editing Views
 * FOOTNOTES
 # Local Variables:
 # eval: (sql-connect "hasura" (concat "*SQL: postgres:data*"))
 # End:
-  
-  
-
-  
-
-** Original Audit Events Table
-*** columns
-**** audit_id
-
- #+NAME: audit_id
- #+BEGIN_SRC sql-mode
-     audit_id uuid NOT NULL,
- #+END_SRC
-
- This is a UUID!
- But there are multiple occurences in a single log file.
-
-***** Examples
- #+BEGIN_SRC json
-   auditID: "c0793350-e7fe-42ce-93e6-8436a0eb3b39",
- #+END_SRC
-***** 285593 times each one occurs once
- #+BEGIN_SRC shell
- cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '2 "' | wc -l
- #+END_SRC
-***** 8141 times a single uuid shows up twice
- #+BEGIN_SRC shell
- cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '1 "' | wc -l
- #+END_SRC
-***** When a UUID shows up twice, the only diff is stage and stageTimestamp
- #+BEGIN_SRC shell
-  cat kube-apiserver-audit.log | jq -c '. | select( .auditID | contains("ffe9adb2-6917-49ed-b823-72c4fe4355e0"))' | jq 
- #+END_SRC
-
-   "stage": "ResponseStarted => ResponseComplete"
-   "stageTimestamp": "2019-06-17T05:19:17.898138Z",
-
- #+BEGIN_SRC shell
- cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '1 "' | wc -l
- #+END_SRC
-
-**** testrun_id
- We need something to differentiate test run
- #+NAME: testrun_id
- #+BEGIN_SRC sql-mode
-     testrun_id text,
- #+END_SRC
-**** op_id
- #+NAME: op_id
- #+BEGIN_SRC sql-mode
-     op_id text,
- #+END_SRC
-**** stage
-     "stage"
- #+NAME: stage
- #+BEGIN_SRC sql-mode
-   stage text NOT NULL,
- #+END_SRC
-**** level
- #+NAME: level
- #+BEGIN_SRC sql-mode
-   level text NOT NULL,
- #+END_SRC
-
- level: "Request", "Metadata", "RequestResponse"
-
- I'm not sure here, but I feel like we should only be looking at RequestResponse... not all three.
- Huh, that was wrong.. the counts differ wildly:
-
-***** 171724 Requests
- #+BEGIN_SRC shell
- cat kube-apiserver-audit.log | jq -c '. | select( .level | contains("Request"))' | jq -r .auditID | sort | uniq | wc -l
- #+END_SRC
-***** 122010 Metadata
- #+BEGIN_SRC shell
- cat kube-apiserver-audit.log | jq -c '. | select( .level | contains("RequestResponse"))' | jq -r .auditID | sort | uniq | wc -l
- #+END_SRC
-
-***** 26016 RequestResponse
- #+BEGIN_SRC shell
- cat kube-apiserver-audit.log | jq -c '. | select( .level | contains("RequestResponse"))' | jq -r .auditID | sort | uniq | wc -l
- #+END_SRC
-
-**** verb
- #+NAME: verb
- #+BEGIN_SRC sql-mode
-   verb text NOT NULL,
- #+END_SRC
- An http verb != endpoint verb:
- stage has quite a few values
- - create
- - delete
- - deletecollection,
- - get
- - list
- - patch
- - update
- - watch
-**** request_uri
- #+NAME: request_uri
- #+BEGIN_SRC sql-mode
-   request_uri text NOT NULL,
- #+END_SRC
-
- We'll need to use this to match against the OpenAPISpec to find the endpoint.
-
- request_uri: "/api/v1/namespaces/kube-system/pods/etcd-empty-dir-cleanup-bootstrap-e2e-master",
-**** user_agent
- #+NAME: user_agent
- #+BEGIN_SRC sql-mode
-   user_agent text,
- #+END_SRC
- For e2e.test we added support to append -- and the test name at that point it time:
-
- userAgent: "kubelet/v1.16.0 (linux/amd64) kubernetes/0e499be",
-
- It may make sense to split on '--' an store what follows as the testName.
-**** test_name
- #+NAME: test_name
- #+BEGIN_SRC sql-mode
-   test_name text,
- #+END_SRC
-
- This isn't a direct mapping, we create it if the userAgent contains '--' followed by the test name.
- For now we only see this with e2e.test.
-**** request_ts
-     "requestReceivedTimestamp"
- #+NAME: request_ts
- #+BEGIN_SRC sql-mode
-   request_ts timestamp with time zone,
- #+END_SRC
-**** stage_ts
-
- Noting that when we have a responseComplete, it's always paid with a responseStarted.
- The UUID and everything else is the same, other than the timestamp.
- I suspect this is only generated for requests that take a while.
-
- stage: "ResponseComplete", "ResponseStarted"
- #+NAME: stage_ts
- #+BEGIN_SRC sql-mode
-   stage_ts timestamp with time zone,
- #+END_SRC
-**** Kind / apiVersion                                               :unused:
-
- For every singe one the values are the same:
- kind: "Event"
- apiVersion: "audit.k8s.io/v1"
-
- #+NAME: kind
- #+BEGIN_SRC sql-mode
-   kind text,
-   "apiVersion" text,
- #+END_SRC
-**** annotations                                                     :unused:
-
- This is a json blog... not sure how to handle yet
- https://blog.hasura.io/postgres-json-and-jsonb-type-support-on-graphql-41f586e47536/
-
- Unsure we need annotations for now as they may be good for understanding a
- specific test, the data doesn't aggregate well.
-
- #+BEGIN_SRC shell
- cat kube-apiserver-audit.log | jq -r .annotations | sort | uniq
- #+END_SRC
-
- A good number of them seem to be allow or deny + reason:
-
- #+BEGIN_SRC json
-   "annotations": {
-     "authorization.k8s.io/decision": "allow",
-     "authorization.k8s.io/reason": ""
-   }
- #+END_SRC
-
- #+BEGIN_SRC sql-mode
-   annotations jsonb,
- #+END_SRC
-**** sourceIPs                                                       :unused:
- #+BEGIN_SRC sql-mode
-   "sourceIP" text,
- #+END_SRC
-
- Could likely identify pods in this way, but not useful at this time.
- sourceIPs: ["1.1.1.1"],
-**** Unused Fields                                                   :unused:
- The id could probably be dropped in favor of UUID, if we only capture ResponseStarted.
- #+BEGIN_SRC sql-mode
-   -- I'm unsure what this is
-   -- This is to point back to the job that created these logs
-   job_log_id integer NOT NULL
-   -- should it be an iteger?
-   -- maybe get rid of it completely?
-   id integer NOT NULL,
- #+END_SRC
-
-*** table
-
- #+BEGIN_SRC tmate
-   cd ~/ii/apisnoop_v3
-   python3 import_entries.py
- #+END_SRC
-
-**** SQL VIEW for JSON BLOBS
- This has one column... event which is a jsonb.
-
- #+NAME: CREATE TABLE audit_events
- #+BEGIN_SRC sql-mode :noweb yes :notangle ../apps/hasura/migrations/230_table_audit_events.up.sql
-   CREATE TABLE public.audit_events (
-     <<audit_id>>
-     <<testrun_id>>
-     <<op_id>>
-     <<stage>>
-     <<level>>
-     <<verb>>
-     <<request_uri>>
-     <<user_agent>>
-     <<test_name>>
-     <<requestObject.kind>>
-     <<requestObject.apiVersion>>
-     <<requestObject.metadata>>
-     <<requestObject.spec>>
-     <<requestObject.status>>
-     <<responseObject.kind>>
-     <<responseObject.apiVersion>>
-     <<responseObject.metadata>>
-     <<responseObject.spec>>
-     <<responseObject.status>>
-     <<request_ts>>
-     <<stage_ts>>
-     CONSTRAINT audit_id_stage PRIMARY KEY (audit_id, stage)
-   );
-   -- Indexes
-   create index audit_events_op_id on audit_events(op_id);
-   create index audit_events_testrun_id on audit_events(testrun_id);
-   --  create index audit_events_stage on audit_events(stage);
-   create index audit_events_user_agent on audit_events(user_agent);
-   create index audit_events_test_name on audit_events(test_name);
-   create index audit_events_verb on audit_events(verb);
-   create index audit_events_request_uri on audit_events(request_uri);
- #+END_SRC
-
- #+RESULTS: CREATE TABLE audit_events
- #+begin_src sql-mode
- CREATE TABLE
- CREATE INDEX
- CREATE INDEX
- CREATE INDEX
- #+end_src
-
- #+NAME: track_table audit_events
- #+BEGIN_SRC sql-mode :noweb yes :notangle ../apps/hasura/migrations/230_track_audit_events.up.yaml
- - type: track_table
-   args:
-     schema: public
-     name: audit_events
- #+END_SRC
-
- After creating the table, we have to go to the console:
- hasura.$USER.sharing.io
- http://localhost:8080/console/data/schema/public
- And click on [Track All] or [Track] for the table.
-
- I also tracked the following in network traffic, but have yet to execute them
- via a directy grahpql query.
-
- #+BEGIN_SRC shell :directory ~/apisnoop_v3
- hasura init --endpoint http://localhost:8080/v1/graphql
- export HASURA_GRAPHQL_ADMIN_SECRET=X
- # --admin-secret "X"
- #+END_SRC
-
- #+BEGIN_SRC sql-mode
-   CREATE OR REPLACE VIEW "public"."events" AS 
-    SELECT audit_events.auditID AS uuid,
-       audit_events.level AS level,
-       audit_events.verb AS verb,
-       audit_events.requestURI AS uri,
-       audit_events.userAgent AS useragent,
-       audit_events.testName AS testName,
-       -- ((audit_events.event -> 'requestObject'::text) ->> 'apiVersion'::text) AS apiversion,
-       ((audit_events.event -> 'requestObject'::text) ->> 'kind'::text) AS kind,
-       ((audit_events.event -> 'requestObject'::text) ->> 'metadata'::text) AS metadata,
-       ((audit_events.event -> 'requestObject'::text) ->> 'spec'::text) AS spec,
-       ((audit_events.event -> 'requestObject'::text) ->> 'status'::text) AS requeststatus,
-       ((audit_events.event -> 'responseObject'::text) ->> 'status'::text) AS status,
-       ((audit_events.event -> 'responseObject'::text) ->> 'kind'::text) AS responsekind,
-       ((audit_events.event -> 'responseObject'::text) ->> 'metadata'::text) AS responsemetadata,
-       ((audit_events.event -> 'responseObject'::text) ->> 'spec'::text) AS responsespec
-      FROM audit_events;
- #+END_SRC
-
- #+RESULTS:
- #+begin_src sql-mode
- ERROR:  column audit_events.event does not exist
- LINE 2:  SELECT (audit_events.event -> 'auditID'::text) AS uuid,
-                  ^
- #+end_src
-
-*** sequence
-
- #+BEGIN_SRC sql-mode
- CREATE SEQUENCE public.audit_events_id_seq
-     AS integer
-     START WITH 1
-     INCREMENT BY 1
-     NO MINVALUE
-     NO MAXVALUE
-     CACHE 1;
- ALTER SEQUENCE public.audit_events_id_seq OWNED BY public.audit_events.id;
- #+END_SRC
-
- #+RESULTS:
- : CREATE SEQUENCE
- : ALTER SEQUENCE
-*** constraints
-
- #+BEGIN_SRC sql-mode
- ALTER TABLE ONLY public.audit_events
-     ADD CONSTRAINT "audit_events_auditID_key" UNIQUE ("auditID");
- ALTER TABLE ONLY public.audit_events
-     ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
- #+END_SRC
-
- #+RESULTS:
- : ALTER TABLE
- : ALTER TABLE

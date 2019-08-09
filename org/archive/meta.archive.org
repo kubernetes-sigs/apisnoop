@@ -1,0 +1,370 @@
+#+TITLE: Meta.org Archive
+
+* Purpose
+To hold old code and headings from meta.org that may still be useful for exploration.
+* Original Audit Events Table
+** columns
+*** audit_id
+
+#+NAME: audit_id
+#+BEGIN_SRC sql-mode
+    audit_id uuid NOT NULL,
+#+END_SRC
+
+This is a UUID!
+But there are multiple occurences in a single log file.
+
+**** Examples
+#+BEGIN_SRC json
+  auditID: "c0793350-e7fe-42ce-93e6-8436a0eb3b39",
+#+END_SRC
+**** 285593 times each one occurs once
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '2 "' | wc -l
+#+END_SRC
+**** 8141 times a single uuid shows up twice
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '1 "' | wc -l
+#+END_SRC
+**** When a UUID shows up twice, the only diff is stage and stageTimestamp
+#+BEGIN_SRC shell
+ cat kube-apiserver-audit.log | jq -c '. | select( .auditID | contains("ffe9adb2-6917-49ed-b823-72c4fe4355e0"))' | jq 
+#+END_SRC
+
+  "stage": "ResponseStarted => ResponseComplete"
+  "stageTimestamp": "2019-06-17T05:19:17.898138Z",
+
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq .auditID | sort | uniq -c | grep -v '1 "' | wc -l
+#+END_SRC
+
+*** testrun_id
+We need something to differentiate test run
+#+NAME: testrun_id
+#+BEGIN_SRC sql-mode
+    testrun_id text,
+#+END_SRC
+*** op_id
+#+NAME: op_id
+#+BEGIN_SRC sql-mode
+    op_id text,
+#+END_SRC
+*** stage
+    "stage"
+#+NAME: stage
+#+BEGIN_SRC sql-mode
+  stage text NOT NULL,
+#+END_SRC
+*** level
+#+NAME: level
+#+BEGIN_SRC sql-mode
+  level text NOT NULL,
+#+END_SRC
+
+level: "Request", "Metadata", "RequestResponse"
+
+I'm not sure here, but I feel like we should only be looking at RequestResponse... not all three.
+Huh, that was wrong.. the counts differ wildly:
+
+**** 171724 Requests
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq -c '. | select( .level | contains("Request"))' | jq -r .auditID | sort | uniq | wc -l
+#+END_SRC
+**** 122010 Metadata
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq -c '. | select( .level | contains("RequestResponse"))' | jq -r .auditID | sort | uniq | wc -l
+#+END_SRC
+
+**** 26016 RequestResponse
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq -c '. | select( .level | contains("RequestResponse"))' | jq -r .auditID | sort | uniq | wc -l
+#+END_SRC
+
+*** verb
+#+NAME: verb
+#+BEGIN_SRC sql-mode
+  verb text NOT NULL,
+#+END_SRC
+An http verb != endpoint verb:
+stage has quite a few values
+- create
+- delete
+- deletecollection,
+- get
+- list
+- patch
+- update
+- watch
+*** request_uri
+#+NAME: request_uri
+#+BEGIN_SRC sql-mode
+  request_uri text NOT NULL,
+#+END_SRC
+
+We'll need to use this to match against the OpenAPISpec to find the endpoint.
+
+request_uri: "/api/v1/namespaces/kube-system/pods/etcd-empty-dir-cleanup-bootstrap-e2e-master",
+*** user_agent
+#+NAME: user_agent
+#+BEGIN_SRC sql-mode
+  user_agent text,
+#+END_SRC
+For e2e.test we added support to append -- and the test name at that point it time:
+
+userAgent: "kubelet/v1.16.0 (linux/amd64) kubernetes/0e499be",
+
+It may make sense to split on '--' an store what follows as the testName.
+*** test_name
+#+NAME: test_name
+#+BEGIN_SRC sql-mode
+  test_name text,
+#+END_SRC
+
+This isn't a direct mapping, we create it if the userAgent contains '--' followed by the test name.
+For now we only see this with e2e.test.
+*** request_ts
+    "requestReceivedTimestamp"
+#+NAME: request_ts
+#+BEGIN_SRC sql-mode
+  request_ts timestamp with time zone,
+#+END_SRC
+*** stage_ts
+
+Noting that when we have a responseComplete, it's always paid with a responseStarted.
+The UUID and everything else is the same, other than the timestamp.
+I suspect this is only generated for requests that take a while.
+
+stage: "ResponseComplete", "ResponseStarted"
+#+NAME: stage_ts
+#+BEGIN_SRC sql-mode
+  stage_ts timestamp with time zone,
+#+END_SRC
+*** Kind / apiVersion                                                :unused:
+
+For every singe one the values are the same:
+kind: "Event"
+apiVersion: "audit.k8s.io/v1"
+
+#+NAME: kind
+#+BEGIN_SRC sql-mode
+  kind text,
+  "apiVersion" text,
+#+END_SRC
+*** annotations                                                      :unused:
+
+This is a json blog... not sure how to handle yet
+https://blog.hasura.io/postgres-json-and-jsonb-type-support-on-graphql-41f586e47536/
+
+Unsure we need annotations for now as they may be good for understanding a
+specific test, the data doesn't aggregate well.
+
+#+BEGIN_SRC shell
+cat kube-apiserver-audit.log | jq -r .annotations | sort | uniq
+#+END_SRC
+
+A good number of them seem to be allow or deny + reason:
+
+#+BEGIN_SRC json
+  "annotations": {
+    "authorization.k8s.io/decision": "allow",
+    "authorization.k8s.io/reason": ""
+  }
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+  annotations jsonb,
+#+END_SRC
+*** sourceIPs                                                        :unused:
+#+BEGIN_SRC sql-mode
+  "sourceIP" text,
+#+END_SRC
+
+Could likely identify pods in this way, but not useful at this time.
+sourceIPs: ["1.1.1.1"],
+*** Unused Fields                                                    :unused:
+The id could probably be dropped in favor of UUID, if we only capture ResponseStarted.
+#+BEGIN_SRC sql-mode
+  -- I'm unsure what this is
+  -- This is to point back to the job that created these logs
+  job_log_id integer NOT NULL
+  -- should it be an iteger?
+  -- maybe get rid of it completely?
+  id integer NOT NULL,
+#+END_SRC
+
+** table
+
+#+BEGIN_SRC tmate
+  cd ~/ii/apisnoop_v3
+  python3 import_entries.py
+#+END_SRC
+
+*** SQL VIEW for JSON BLOBS
+This has one column... event which is a jsonb.
+
+#+NAME: CREATE TABLE audit_events
+#+BEGIN_SRC sql-mode :noweb yes :notangle ../apps/hasura/migrations/230_table_audit_events.up.sql
+  CREATE TABLE public.audit_events (
+    <<audit_id>>
+    <<testrun_id>>
+    <<op_id>>
+    <<stage>>
+    <<level>>
+    <<verb>>
+    <<request_uri>>
+    <<user_agent>>
+    <<test_name>>
+    <<requestObject.kind>>
+    <<requestObject.apiVersion>>
+    <<requestObject.metadata>>
+    <<requestObject.spec>>
+    <<requestObject.status>>
+    <<responseObject.kind>>
+    <<responseObject.apiVersion>>
+    <<responseObject.metadata>>
+    <<responseObject.spec>>
+    <<responseObject.status>>
+    <<request_ts>>
+    <<stage_ts>>
+    CONSTRAINT audit_id_stage PRIMARY KEY (audit_id, stage)
+  );
+  -- Indexes
+  create index audit_events_op_id on audit_events(op_id);
+  create index audit_events_testrun_id on audit_events(testrun_id);
+  --  create index audit_events_stage on audit_events(stage);
+  create index audit_events_user_agent on audit_events(user_agent);
+  create index audit_events_test_name on audit_events(test_name);
+  create index audit_events_verb on audit_events(verb);
+  create index audit_events_request_uri on audit_events(request_uri);
+#+END_SRC
+
+#+RESULTS: CREATE TABLE audit_events
+#+begin_src sql-mode
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+#+end_src
+
+#+NAME: track_table audit_events
+#+BEGIN_SRC sql-mode :noweb yes :notangle ../apps/hasura/migrations/230_track_audit_events.up.yaml
+- type: track_table
+  args:
+    schema: public
+    name: audit_events
+#+END_SRC
+
+After creating the table, we have to go to the console:
+hasura.$USER.sharing.io
+http://localhost:8080/console/data/schema/public
+And click on [Track All] or [Track] for the table.
+
+I also tracked the following in network traffic, but have yet to execute them
+via a directy grahpql query.
+
+#+BEGIN_SRC shell :directory ~/apisnoop_v3
+hasura init --endpoint http://localhost:8080/v1/graphql
+export HASURA_GRAPHQL_ADMIN_SECRET=X
+# --admin-secret "X"
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+  CREATE OR REPLACE VIEW "public"."events" AS 
+   SELECT audit_events.auditID AS uuid,
+      audit_events.level AS level,
+      audit_events.verb AS verb,
+      audit_events.requestURI AS uri,
+      audit_events.userAgent AS useragent,
+      audit_events.testName AS testName,
+      -- ((audit_events.event -> 'requestObject'::text) ->> 'apiVersion'::text) AS apiversion,
+      ((audit_events.event -> 'requestObject'::text) ->> 'kind'::text) AS kind,
+      ((audit_events.event -> 'requestObject'::text) ->> 'metadata'::text) AS metadata,
+      ((audit_events.event -> 'requestObject'::text) ->> 'spec'::text) AS spec,
+      ((audit_events.event -> 'requestObject'::text) ->> 'status'::text) AS requeststatus,
+      ((audit_events.event -> 'responseObject'::text) ->> 'status'::text) AS status,
+      ((audit_events.event -> 'responseObject'::text) ->> 'kind'::text) AS responsekind,
+      ((audit_events.event -> 'responseObject'::text) ->> 'metadata'::text) AS responsemetadata,
+      ((audit_events.event -> 'responseObject'::text) ->> 'spec'::text) AS responsespec
+     FROM audit_events;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+ERROR:  column audit_events.event does not exist
+LINE 2:  SELECT (audit_events.event -> 'auditID'::text) AS uuid,
+                 ^
+#+end_src
+
+** sequence
+
+#+BEGIN_SRC sql-mode
+CREATE SEQUENCE public.audit_events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.audit_events_id_seq OWNED BY public.audit_events.id;
+#+END_SRC
+
+#+RESULTS:
+: CREATE SEQUENCE
+: ALTER SEQUENCE
+** constraints
+
+#+RESULTS:
+: ALTER TABLE
+: ALTER TABLE
+
+#+BEGIN_SRC sql-mode
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT "audit_events_auditID_key" UNIQUE ("auditID");
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
+#+END_SRC
+* Original api_resources_fields view
+#+NAME: Older Properties View
+#+BEGIN_SRC sql-mode :eval never-export :notangle ../apps/hasura/migrations/200_view_api_resources_fields.up.sql
+  -- DROP VIEW api_resources_properties;
+  -- DROP MATERIALIZED VIEW api_resources_properties;
+  CREATE VIEW "public"."api_resources_fields" AS 
+    SELECT api_resources.id AS type_id,
+           d.key AS property,
+           CASE
+           WHEN ((d.value ->> 'type'::text) IS NULL) THEN 'subtype'::text
+           ELSE (d.value ->> 'type'::text)
+             END AS param_type,
+           replace(
+             CASE
+             WHEN ((d.value ->> 'type'::text) = 'string'::text) THEN 'string'::text
+             WHEN ((d.value ->> 'type'::text) IS NULL) THEN (d.value ->> '$ref'::text)
+             WHEN ((d.value ->> 'type'::text) = 'array'::text)
+              AND ((d.value -> 'items'::text) ->> 'type'::text) IS NULL
+               THEN ((d.value -> 'items'::text) ->> '$ref'::text)
+             WHEN ((d.value ->> 'type'::text) = 'array'::text)
+              AND ((d.value -> 'items'::text) ->> '$ref'::text) IS NULL
+               THEN ((d.value -> 'items'::text) ->> 'type'::text)
+             ELSE 'integer'::text
+             END, '#/definitions/','') AS param_kind,
+           (d.value ->> 'description'::text) AS description,
+           (d.value ->> 'format'::text) AS format,
+           (d.value ->> 'x-kubernetes-patch-merge-key'::text) AS merge_key,
+           (d.value ->> 'x-kubernetes-patch-strategy'::text) AS patch_strategy,
+           -- CASE
+           --   WHEN d.key is null THEN false
+           --   WHEN (api_resources.required_params ? d.key) THEN true
+           --   ELSE false
+           --     END
+           --   AS required,
+           -- with param type also containing array, we don't need array as a boolean
+           -- CASE
+           -- WHEN ((d.value ->> 'type'::text) = 'array'::text) THEN true
+           -- ELSE false
+           --  END AS "array"
+           d.value
+      FROM (api_resources
+            JOIN LATERAL jsonb_each(api_resources.properties) d(key, value) ON (true))
+     ORDER BY api_resources.id;
+#+END_SRC
+

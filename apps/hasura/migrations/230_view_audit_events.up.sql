@@ -19,5 +19,8 @@ CREATE OR REPLACE VIEW "public"."audit_events" AS
          raw.data -> 'responseObject' as response_object,
          raw.data -> 'responseStatus' as response_status,
          raw.data ->> 'stageTimestamp' as stage_timestamp,
-         raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp
-  FROM raw_audit_events raw;
+         raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
+         raw.data as data,
+         ops.operation_id
+  FROM raw_audit_events raw
+  JOIN api_operations ops ON raw.data ->> 'requestURI' ~ ops.regex;
