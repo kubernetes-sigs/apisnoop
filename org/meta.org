@@ -668,50 +668,539 @@ Thu Aug  8 01:14:52 UTC 2019
 
 * Audit Events View
 ** Initial View
-   #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/230_view_audit_events.up.sql
+   #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/225_material_audit_events.up.sql :results silent
+     -- CREATE MATERIALIZED VIEW "public"."audit_events_material" AS
      CREATE OR REPLACE VIEW "public"."audit_events" AS
        SELECT (raw.data ->> 'auditID') as audit_id,
               raw.bucket,
               raw.job,
-              raw.data ->> 'kind' as kind,
-              raw.data -> 'user' as event_user,
-              raw.data ->> 'verb' as event_verb,
               raw.data ->> 'level' as event_level,
               raw.data ->> 'stage' as event_stage,
-              raw.data -> 'objectRef' as object_ref,
-              raw.data -> 'sourceIPs' as source_ips,
-              raw.data ->> 'userAgent' as useragent,
+              ops.operation_id,
+              ops.k8s_action,
+              ops.http_method,
+              ops.path as op_path,
+              CASE
+              WHEN (
+                ((raw.data ->> 'verb'::text) = 'get'::text) OR
+                ((raw.data ->> 'verb'::text) = 'list'::text) OR
+                ((raw.data ->> 'verb'::text) = 'proxy'::text) )
+              THEN 'get'
+              WHEN (
+                ((raw.data ->> 'verb'::text) = 'deletecollection'::text) OR
+                ((raw.data ->> 'verb'::text) = 'delete'::text) )
+              THEN 'delete'
+              WHEN (
+                ((raw.data ->> 'verb'::text) = 'watch'::text) OR
+                ((raw.data ->> 'verb'::text) = 'watchlist'::text) )
+              THEN 'watch'
+              WHEN ((raw.data ->> 'verb'::text) = 'create'::text)
+              THEN 'post'
+              WHEN ((raw.data ->> 'verb'::text) = 'update'::text)
+              THEN 'put'
+              WHEN ((raw.data ->> 'verb'::text) = 'patch'::text)
+              THEN 'patch'
+              ELSE null
+             END AS operation_verb,
+              raw.data ->> 'verb' as event_verb,
               raw.data ->> 'apiVersion' as api_version,
               raw.data ->> 'requestURI' as request_uri,
+              -- Always "Event"
+              -- raw.data ->> 'kind' as kind,
+              raw.data ->> 'userAgent' as useragent,
+              raw.data -> 'user' as event_user,
+              raw.data -> 'objectRef' ->> 'namespace' as object_namespace,
+              raw.data -> 'objectRef' ->> 'resource' as object_type,
+              raw.data -> 'objectRef' ->> 'apiGroup' as object_group,
+              raw.data -> 'objectRef' ->> 'apiVersion' as object_ver,
+              raw.data -> 'sourceIPs' as source_ips,
               raw.data -> 'annotations' as annotations,
               raw.data -> 'requestObject' as request_object,
               raw.data -> 'responseObject' as response_object,
               raw.data -> 'responseStatus' as response_status,
               raw.data ->> 'stageTimestamp' as stage_timestamp,
               raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
-              raw.data as data,
-              ops.operation_id
+              raw.data as data
        FROM raw_audit_events raw
-       JOIN api_operations ops ON raw.data ->> 'requestURI' ~ ops.regex;
+       JOIN api_operations ops ON
+            -- of done in order, this should limit our regex to < 5 targets to compare
+         -- raw.data ->> 'requestURI' ~ ops.regex;
+         ((CASE
+         WHEN (
+           ((raw.data ->> 'verb'::text) = 'get'::text) OR
+           ((raw.data ->> 'verb'::text) = 'list'::text) OR
+           ((raw.data ->> 'verb'::text) = 'proxy'::text))
+         THEN 'get'
+         WHEN (
+           ((raw.data ->> 'verb'::text) = 'deletecollection'::text) OR
+           ((raw.data ->> 'verb'::text) = 'delete'::text) )
+         THEN 'delete'
+         WHEN (
+           ((raw.data ->> 'verb'::text) = 'watch'::text) OR
+           ((raw.data ->> 'verb'::text) = 'watchlist'::text) )
+         THEN 'watch'
+         WHEN ((raw.data ->> 'verb'::text) = 'create'::text)
+         THEN 'post'
+         WHEN ((raw.data ->> 'verb'::text) = 'update'::text)
+         THEN 'put'
+         WHEN ((raw.data ->> 'verb'::text) = 'patch'::text)
+           THEN 'patch'
+          END = ops.http_method)
+        AND raw.data ->> 'requestURI' ~ ops.regex);
+            -- OR raw.data ->> 'requestURI' ~ ops.regex;
+        -- WITH NO DATA;
    #+END_SRC
-   
+
    #+BEGIN_SRC sql-mode
-   SELECT audit_id, operation_id, event_verb, request_uri
+   SELECT event_verb, http_method, k8s_action, operation_id, object_group, object_ver, object_type
    FROM audit_events
-   LIMIT 3;
+   where true
+   -- and resource_ver not like '%beta%'
+   and event_verb not like 'patch'
+   and event_verb not like 'deletecollection'
+   and event_verb not like 'delete' -- everything is delete
+   and event_verb not like 'list'
+   and event_verb not like 'get'
+   -- and event_verb not like 'create'
+   and event_verb not like 'update'
+   and object_type = 'pods'
+   and not operation_id = 'createCoreV1NamespacedPod'
+   and not operation_id = 'connectCoreV1PostNamespacedPodAttach'
+   and not operation_id = 'createCoreV1NamespacedPodBinding'
+   and not operation_id = 'createCoreV1NamespacedPodEviction'
+   and not operation_id = 'connectCoreV1PostNamespacedPodExec'
+   and not operation_id = 'connectCoreV1PostNamespacedPodPortforward'
+   -- and event_verb = 'create'
+   -- order by operation_id
+   LIMIT 300;
    #+END_SRC
+
+   #+RESULTS:
+   #+begin_src sql-mode
+    event_verb | http_method | k8s_action |               operation_id                | object_group | object_ver | object_type 
+   ------------+-------------+------------+-------------------------------------------+--------------+------------+-------------
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+    create     | post        | connect    | connectCoreV1PostNamespacedPodPortforward |              | v1         | pods
+   (14 rows)
+
+   #+end_src
+
+   #+BEGIN_SRC sql-mode :results silent
+     -- CREATE MATERIALIZED VIEW "public"."audit_events_podspec" AS
+     CREATE OR REPLACE VIEW "public"."audit_events_podspec" AS
+       SELECT (raw.data ->> 'auditID') as audit_id,
+              raw.bucket,
+              raw.job,
+              raw.data ->> 'level' as event_level,
+              raw.data ->> 'stage' as event_stage,
+              ops.operation_id,
+              ops.http_method,
+              ops.k8s_action,
+              raw.data ->> 'verb' as event_verb,
+              raw.data ->> 'apiVersion' as api_version,
+              raw.data ->> 'requestURI' as request_uri,
+              -- Always "Event"
+              -- raw.data ->> 'kind' as kind,
+              raw.data ->> 'userAgent' as useragent,
+              raw.data -> 'user' as event_user,
+              raw.data -> 'objectRef' ->> 'namespace' as object_namespace,
+              raw.data -> 'objectRef' ->> 'resource' as object_type,
+              raw.data -> 'objectRef' ->> 'apiGroup' as object_group,
+              raw.data -> 'objectRef' ->> 'apiVersion' as object_ver,
+              raw.data -> 'sourceIPs' as source_ips,
+              raw.data -> 'annotations' as annotations,
+              raw.data -> 'requestObject' as request_object,
+              raw.data -> 'responseObject' as response_object,
+              raw.data -> 'responseStatus' as response_status,
+              raw.data ->> 'stageTimestamp' as stage_timestamp,
+              raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
+              raw.data as data
+       FROM raw_audit_events raw
+       JOIN api_operations ops ON
+            -- of done in order, this should limit our regex to < 5 targets to compare
+         raw.data ->> 'requestURI' ~ ops.regex;
+        --     raw.data ->> 'verb'       = ops.k8s_action
+        -- AND raw.data ->> 'requestURI' ~ ops.regex;
+        -- WITH NO DATA;
+   #+END_SRC
+
+#+BEGIN_SRC sql-mode
+   SELECT event_verb, http_method, k8s_action, operation_id, object_group, object_ver, object_type
+   FROM audit_events_podspec
+   where true
+   -- and resource_ver not like '%beta%'
+   and event_verb not like 'patch'
+   and event_verb not like 'deletecollection'
+   and event_verb not like 'delete'
+   and event_verb not like 'list'
+   and event_verb not like 'get'
+   -- and event_verb = 'create'
+   LIMIT 300;
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_src sql-mode
+    event_verb | http_method |    k8s_action    |                         operation_id                          |       object_group        | object_ver |     object_type      
+   ------------+-------------+------------------+---------------------------------------------------------------+---------------------------+------------+----------------------
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteRbacAuthorizationV1beta1CollectionNamespacedRoleBinding | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | get         | list             | listRbacAuthorizationV1beta1NamespacedRoleBinding             | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | post        | post             | createRbacAuthorizationV1beta1NamespacedRoleBinding           | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedPod                           |                           | v1         | pods
+    create     | get         | list             | listCoreV1NamespacedPod                                       |                           | v1         | pods
+    create     | post        | post             | createCoreV1NamespacedPod                                     |                           | v1         | pods
+    create     | post        | post             | createAuthorizationV1beta1SubjectAccessReview                 | authorization.k8s.io      | v1beta1    | subjectaccessreviews
+    update     | get         | get              | readAppsV1NamespacedStatefulSetStatus                         | apps                      | v1         | statefulsets
+    update     | patch       | patch            | patchAppsV1NamespacedStatefulSetStatus                        | apps                      | v1         | statefulsets
+    update     | put         | put              | replaceAppsV1NamespacedStatefulSetStatus                      | apps                      | v1         | statefulsets
+    create     | post        | post             | createCoreV1NamespacedPodBinding                              |                           | v1         | pods
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | get         | list             | listCoreV1Namespace                                           |                           | v1         | namespaces
+    create     | post        | post             | createCoreV1Namespace                                         |                           | v1         | namespaces
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | get         | connect          | connectCoreV1GetNamespacedPodExec                             |                           | v1         | pods
+    create     | post        | connect          | connectCoreV1PostNamespacedPodExec                            |                           | v1         | pods
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    create     | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    create     | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedConfigMap                     |                           | v1         | configmaps
+    watch      | get         | list             | listCoreV1NamespacedConfigMap                                 |                           | v1         | configmaps
+    watch      | post        | post             | createCoreV1NamespacedConfigMap                               |                           | v1         | configmaps
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    update     | delete      | delete           | deleteCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    update     | get         | get              | readCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    update     | patch       | patch            | patchCoreV1NamespacedServiceAccount                           |                           | v1         | serviceaccounts
+    update     | put         | put              | replaceCoreV1NamespacedServiceAccount                         |                           | v1         | serviceaccounts
+    update     | put         | put              | replaceCoreV1NamespaceFinalize                                |                           | v1         | namespaces
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteRbacAuthorizationV1beta1CollectionNamespacedRoleBinding | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | get         | list             | listRbacAuthorizationV1beta1NamespacedRoleBinding             | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | post        | post             | createRbacAuthorizationV1beta1NamespacedRoleBinding           | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedPod                           |                           | v1         | pods
+    create     | get         | list             | listCoreV1NamespacedPod                                       |                           | v1         | pods
+    create     | post        | post             | createCoreV1NamespacedPod                                     |                           | v1         | pods
+    create     | get         | connect          | connectCoreV1GetNamespacedPodExec                             |                           | v1         | pods
+    create     | post        | connect          | connectCoreV1PostNamespacedPodExec                            |                           | v1         | pods
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | post        | post             | createAuthorizationV1beta1SubjectAccessReview                 | authorization.k8s.io      | v1beta1    | subjectaccessreviews
+    update     | put         | put              | replaceCoreV1NamespaceFinalize                                |                           | v1         | namespaces
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    update     | put         | put              | replaceCoreV1NamespaceFinalize                                |                           | v1         | namespaces
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | get         | list             | listCoreV1Namespace                                           |                           | v1         | namespaces
+    create     | post        | post             | createCoreV1Namespace                                         |                           | v1         | namespaces
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    create     | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    create     | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    update     | delete      | delete           | deleteCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    update     | get         | get              | readCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    update     | patch       | patch            | patchCoreV1NamespacedServiceAccount                           |                           | v1         | serviceaccounts
+    update     | put         | put              | replaceCoreV1NamespacedServiceAccount                         |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | delete      | deletecollection | deleteRbacAuthorizationV1beta1CollectionNamespacedRoleBinding | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | get         | list             | listRbacAuthorizationV1beta1NamespacedRoleBinding             | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | post        | post             | createRbacAuthorizationV1beta1NamespacedRoleBinding           | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    update     | delete      | delete           | deleteCoordinationV1beta1NamespacedLease                      | coordination.k8s.io       | v1beta1    | leases
+    update     | get         | get              | readCoordinationV1beta1NamespacedLease                        | coordination.k8s.io       | v1beta1    | leases
+    update     | patch       | patch            | patchCoordinationV1beta1NamespacedLease                       | coordination.k8s.io       | v1beta1    | leases
+    update     | put         | put              | replaceCoordinationV1beta1NamespacedLease                     | coordination.k8s.io       | v1beta1    | leases
+    create     | post        | post             | createAuthorizationV1beta1SubjectAccessReview                 | authorization.k8s.io      | v1beta1    | subjectaccessreviews
+    update     | delete      | delete           | deleteCoordinationV1beta1NamespacedLease                      | coordination.k8s.io       | v1beta1    | leases
+    update     | get         | get              | readCoordinationV1beta1NamespacedLease                        | coordination.k8s.io       | v1beta1    | leases
+    update     | patch       | patch            | patchCoordinationV1beta1NamespacedLease                       | coordination.k8s.io       | v1beta1    | leases
+    update     | put         | put              | replaceCoordinationV1beta1NamespacedLease                     | coordination.k8s.io       | v1beta1    | leases
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteRbacAuthorizationV1beta1CollectionClusterRoleBinding    | rbac.authorization.k8s.io | v1beta1    | clusterrolebindings
+    create     | get         | list             | listRbacAuthorizationV1beta1ClusterRoleBinding                | rbac.authorization.k8s.io | v1beta1    | clusterrolebindings
+    create     | post        | post             | createRbacAuthorizationV1beta1ClusterRoleBinding              | rbac.authorization.k8s.io | v1beta1    | clusterrolebindings
+    create     | post        | post             | createAuthorizationV1beta1SubjectAccessReview                 | authorization.k8s.io      | v1beta1    | subjectaccessreviews
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedPod                           |                           | v1         | pods
+    create     | get         | list             | listCoreV1NamespacedPod                                       |                           | v1         | pods
+    create     | post        | post             | createCoreV1NamespacedPod                                     |                           | v1         | pods
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedPodBinding                              |                           | v1         | pods
+    update     | get         | get              | readBatchV1NamespacedJobStatus                                | batch                     | v1         | jobs
+    update     | patch       | patch            | patchBatchV1NamespacedJobStatus                               | batch                     | v1         | jobs
+    update     | put         | put              | replaceBatchV1NamespacedJobStatus                             | batch                     | v1         | jobs
+    update     | delete      | delete           | deleteCoordinationV1beta1NamespacedLease                      | coordination.k8s.io       | v1beta1    | leases
+    update     | get         | get              | readCoordinationV1beta1NamespacedLease                        | coordination.k8s.io       | v1beta1    | leases
+    update     | patch       | patch            | patchCoordinationV1beta1NamespacedLease                       | coordination.k8s.io       | v1beta1    | leases
+    update     | put         | put              | replaceCoordinationV1beta1NamespacedLease                     | coordination.k8s.io       | v1beta1    | leases
+    update     | delete      | delete           | deleteCoordinationV1beta1NamespacedLease                      | coordination.k8s.io       | v1beta1    | leases
+    update     | get         | get              | readCoordinationV1beta1NamespacedLease                        | coordination.k8s.io       | v1beta1    | leases
+    update     | patch       | patch            | patchCoordinationV1beta1NamespacedLease                       | coordination.k8s.io       | v1beta1    | leases
+    update     | put         | put              | replaceCoordinationV1beta1NamespacedLease                     | coordination.k8s.io       | v1beta1    | leases
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedPod                           |                           | v1         | pods
+    create     | get         | list             | listCoreV1NamespacedPod                                       |                           | v1         | pods
+    create     | post        | post             | createCoreV1NamespacedPod                                     |                           | v1         | pods
+    create     | post        | post             | createCoreV1NamespacedPodBinding                              |                           | v1         | pods
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    update     | delete      | delete           | deleteCoordinationV1beta1NamespacedLease                      | coordination.k8s.io       | v1beta1    | leases
+    update     | get         | get              | readCoordinationV1beta1NamespacedLease                        | coordination.k8s.io       | v1beta1    | leases
+    update     | patch       | patch            | patchCoordinationV1beta1NamespacedLease                       | coordination.k8s.io       | v1beta1    | leases
+    update     | put         | put              | replaceCoordinationV1beta1NamespacedLease                     | coordination.k8s.io       | v1beta1    | leases
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    update     | delete      | delete           | deleteCoreV1NamespacedConfigMap                               |                           | v1         | configmaps
+    update     | get         | get              | readCoreV1NamespacedConfigMap                                 |                           | v1         | configmaps
+    update     | patch       | patch            | patchCoreV1NamespacedConfigMap                                |                           | v1         | configmaps
+    update     | put         | put              | replaceCoreV1NamespacedConfigMap                              |                           | v1         | configmaps
+    update     | put         | put              | replaceCoreV1NamespaceFinalize                                |                           | v1         | namespaces
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedPod                           |                           | v1         | pods
+    create     | get         | list             | listCoreV1NamespacedPod                                       |                           | v1         | pods
+    create     | post        | post             | createCoreV1NamespacedPod                                     |                           | v1         | pods
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    update     | put         | put              | replaceCoreV1NamespaceFinalize                                |                           | v1         | namespaces
+    update     | delete      | delete           | deleteCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    update     | get         | get              | readCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    update     | patch       | patch            | patchCoreV1NamespacedServiceAccount                           |                           | v1         | serviceaccounts
+    update     | put         | put              | replaceCoreV1NamespacedServiceAccount                         |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    watch      | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    watch      | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    update     | get         | get              | readBatchV1beta1NamespacedCronJobStatus                       | batch                     | v1beta1    | cronjobs
+    update     | patch       | patch            | patchBatchV1beta1NamespacedCronJobStatus                      | batch                     | v1beta1    | cronjobs
+    update     | put         | put              | replaceBatchV1beta1NamespacedCronJobStatus                    | batch                     | v1beta1    | cronjobs
+    update     | get         | get              | readBatchV1beta1NamespacedCronJobStatus                       | batch                     | v1beta1    | cronjobs
+    update     | patch       | patch            | patchBatchV1beta1NamespacedCronJobStatus                      | batch                     | v1beta1    | cronjobs
+    update     | put         | put              | replaceBatchV1beta1NamespacedCronJobStatus                    | batch                     | v1beta1    | cronjobs
+    update     | get         | get              | readBatchV1beta1NamespacedCronJobStatus                       | batch                     | v1beta1    | cronjobs
+    update     | patch       | patch            | patchBatchV1beta1NamespacedCronJobStatus                      | batch                     | v1beta1    | cronjobs
+    update     | put         | put              | replaceBatchV1beta1NamespacedCronJobStatus                    | batch                     | v1beta1    | cronjobs
+    update     | get         | get              | readBatchV1beta1NamespacedCronJobStatus                       | batch                     | v1beta1    | cronjobs
+    update     | patch       | patch            | patchBatchV1beta1NamespacedCronJobStatus                      | batch                     | v1beta1    | cronjobs
+    update     | put         | put              | replaceBatchV1beta1NamespacedCronJobStatus                    | batch                     | v1beta1    | cronjobs
+    update     | get         | get              | readBatchV1beta1NamespacedCronJobStatus                       | batch                     | v1beta1    | cronjobs
+    update     | patch       | patch            | patchBatchV1beta1NamespacedCronJobStatus                      | batch                     | v1beta1    | cronjobs
+    update     | put         | put              | replaceBatchV1beta1NamespacedCronJobStatus                    | batch                     | v1beta1    | cronjobs
+    update     | get         | get              | readBatchV1beta1NamespacedCronJobStatus                       | batch                     | v1beta1    | cronjobs
+    update     | patch       | patch            | patchBatchV1beta1NamespacedCronJobStatus                      | batch                     | v1beta1    | cronjobs
+    update     | put         | put              | replaceBatchV1beta1NamespacedCronJobStatus                    | batch                     | v1beta1    | cronjobs
+    update     | put         | put              | replaceCoreV1NamespaceFinalize                                |                           | v1         | namespaces
+    create     | get         | list             | listCoreV1Namespace                                           |                           | v1         | namespaces
+    create     | post        | post             | createCoreV1Namespace                                         |                           | v1         | namespaces
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    create     | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    create     | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    update     | delete      | delete           | deleteCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    update     | get         | get              | readCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    update     | patch       | patch            | patchCoreV1NamespacedServiceAccount                           |                           | v1         | serviceaccounts
+    update     | put         | put              | replaceCoreV1NamespacedServiceAccount                         |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteRbacAuthorizationV1beta1CollectionNamespacedRoleBinding | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | get         | list             | listRbacAuthorizationV1beta1NamespacedRoleBinding             | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | post        | post             | createRbacAuthorizationV1beta1NamespacedRoleBinding           | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | post        | post             | createAuthorizationV1beta1SubjectAccessReview                 | authorization.k8s.io      | v1beta1    | subjectaccessreviews
+    create     | get         | list             | listCoreV1Namespace                                           |                           | v1         | namespaces
+    create     | post        | post             | createCoreV1Namespace                                         |                           | v1         | namespaces
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    create     | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    create     | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | get         | list             | listCoreV1Namespace                                           |                           | v1         | namespaces
+    create     | post        | post             | createCoreV1Namespace                                         |                           | v1         | namespaces
+    update     | delete      | delete           | deleteCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    update     | get         | get              | readCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    update     | patch       | patch            | patchCoreV1NamespacedServiceAccount                           |                           | v1         | serviceaccounts
+    update     | put         | put              | replaceCoreV1NamespacedServiceAccount                         |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    create     | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    create     | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedSecret                        |                           | v1         | secrets
+    create     | get         | list             | listCoreV1NamespacedSecret                                    |                           | v1         | secrets
+    create     | post        | post             | createCoreV1NamespacedSecret                                  |                           | v1         | secrets
+    update     | delete      | delete           | deleteCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    update     | get         | get              | readCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    update     | patch       | patch            | patchCoreV1NamespacedServiceAccount                           |                           | v1         | serviceaccounts
+    update     | put         | put              | replaceCoreV1NamespacedServiceAccount                         |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteRbacAuthorizationV1beta1CollectionNamespacedRoleBinding | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | get         | list             | listRbacAuthorizationV1beta1NamespacedRoleBinding             | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | post        | post             | createRbacAuthorizationV1beta1NamespacedRoleBinding           | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | get         | list             | listCoreV1Namespace                                           |                           | v1         | namespaces
+    create     | post        | post             | createCoreV1Namespace                                         |                           | v1         | namespaces
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteRbacAuthorizationV1beta1CollectionNamespacedRoleBinding | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | get         | list             | listRbacAuthorizationV1beta1NamespacedRoleBinding             | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    create     | post        | post             | createRbacAuthorizationV1beta1NamespacedRoleBinding           | rbac.authorization.k8s.io | v1beta1    | rolebindings
+    watch      | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    watch      | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    watch      | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+    create     | delete      | deletecollection | deleteCoreV1CollectionNamespacedServiceAccount                |                           | v1         | serviceaccounts
+    create     | get         | list             | listCoreV1NamespacedServiceAccount                            |                           | v1         | serviceaccounts
+    create     | post        | post             | createCoreV1NamespacedServiceAccount                          |                           | v1         | serviceaccounts
+   (300 rows)
+
+   #+end_src
+
+
+#+BEGIN_SRC sql-mode
+   SELECT count(audit_id)
+   FROM audit_events;
+ #+END_SRC
 
 
    #+RESULTS:
    #+begin_src sql-mode
-                  audit_id               |                operation_id                |    event_verb    |                    request_uri                     
-   --------------------------------------+--------------------------------------------+------------------+----------------------------------------------------
-    28a9b08e-8c39-4b2f-be08-5e4d12eb545b | deleteAppsV1CollectionNamespacedReplicaSet | deletecollection | /apis/apps/v1/namespaces/services-4757/replicasets
-    28a9b08e-8c39-4b2f-be08-5e4d12eb545b | listAppsV1NamespacedReplicaSet             | deletecollection | /apis/apps/v1/namespaces/services-4757/replicasets
-    28a9b08e-8c39-4b2f-be08-5e4d12eb545b | createAppsV1NamespacedReplicaSet           | deletecollection | /apis/apps/v1/namespaces/services-4757/replicasets
-   (3 rows)
+    count 
+   -------
+        0
+   (1 row)
 
    #+end_src
+   #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/230_view_audit_events.up.sql :results silent
+     CREATE OR REPLACE VIEW "public"."audit_events" AS
+       SELECT audit_id,
+              bucket,
+              job,
+              event_level,
+              event_stage,
+              operation_id,
+              event_verb,
+              api_version,
+              request_uri,
+              useragent,
+              event_user,
+              object_name,
+              object_namespace,
+              event_resource,
+              object_api_version,
+              object_ref,
+              source_ips,
+              annotations,
+              request_object,
+              response_object,
+              response_status,
+              stage_timestamp,
+              request_received_timestamp,
+              data
+       FROM audit_events_material;
+   #+END_SRC
    
 #+NAME: track audit_events
 #+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/230_audit_events.up.yaml
@@ -999,7 +1488,7 @@ Thu Aug  8 01:14:52 UTC 2019
 #+END_SRC
 
 #+NAME: regex_from_path.sql
-#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/145_function_regex_from_path.up.sql
+#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/145_function_regex_from_path.up.sql :results silent
   set role dba;
   CREATE OR REPLACE FUNCTION regex_from_path(path text)
   RETURNS text AS $$
@@ -1011,19 +1500,18 @@ Thu Aug  8 01:14:52 UTC 2019
 *** api_operations view
     This grabs the 'paths' section of our swagger.json, where each path contains operation Id, tags, schemes, etc.
 #+NAME: api_operations view
-#+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/150_view_api_operations.up.sql
+#+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/150_view_api_operations.up.sql :results silent
   CREATE OR REPLACE VIEW "public"."api_operations" AS 
     SELECT raw_swaggers.id AS raw_swagger_id,
            paths.key AS path,
            regex_from_path(paths.key) as regex,
-           regex_from_path(paths.key) as openapi_verb,
-           d.key AS method,
+           d.key AS http_method,
+           (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
            (d.value ->> 'operationId'::text) AS operation_id,
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
            (d.value ->> 'description'::text) AS description,
-           (d.value ->> 'x-kubernetes-action'::text) AS x_kubernetes_action,
            (d.value -> 'consumes'::text) AS consumes,
            (d.value -> 'responses'::text) AS responses,
            (d.value -> 'parameters'::text) AS parameters,
@@ -1064,32 +1552,32 @@ cat audit.log | jq .verb | sort | uniq
 
 #+NAME: Double check operation_id verbs
 #+BEGIN_SRC sql-mode
-SELECT DISTINCT x_kubernetes_action, method
+SELECT DISTINCT k8s_action, http_method
 FROM api_operations
-order by x_kubernetes_action;
+order by k8s_action;
 #+END_SRC
 
 #+RESULTS: Double check operation_id verbs
 #+begin_src sql-mode
- x_kubernetes_action | method  
----------------------+---------
- connect             | delete
- connect             | get
- connect             | head
- connect             | options
- connect             | patch
- connect             | post
- connect             | put
- delete              | delete
- deletecollection    | delete
- get                 | get
- list                | get
- patch               | patch
- post                | post
- put                 | put
- watch               | get
- watchlist           | get
-                     | get
+    k8s_action    | http_method 
+------------------+-------------
+ connect          | delete
+ connect          | get
+ connect          | head
+ connect          | options
+ connect          | patch
+ connect          | post
+ connect          | put
+ delete           | delete
+ deletecollection | delete
+ get              | get
+ list             | get
+ patch            | patch
+ post             | post
+ put              | put
+ watch            | get
+ watchlist        | get
+                  | get
 (17 rows)
 
 #+end_src
@@ -1097,25 +1585,24 @@ order by x_kubernetes_action;
 
 #+NAME: method = options
 #+BEGIN_SRC sql-mode
-SELECT operation_id, x_kubernetes_action, method
+SELECT operation_id, k8s_action, http_method, path
 FROM api_operations
-where method like 'options';
+where http_method like 'options';
 #+END_SRC
 
-#+RESULTS:
+#+RESULTS: method = options
 #+begin_src sql-mode
-                    operation_id                    | x_kubernetes_action | method  
-----------------------------------------------------+---------------------+---------
- connectCoreV1OptionsNamespacedPodProxy             | connect             | options
- connectCoreV1OptionsNamespacedPodProxyWithPath     | connect             | options
- connectCoreV1OptionsNamespacedServiceProxy         | connect             | options
- connectCoreV1OptionsNamespacedServiceProxyWithPath | connect             | options
- connectCoreV1OptionsNodeProxy                      | connect             | options
- connectCoreV1OptionsNodeProxyWithPath              | connect             | options
+                    operation_id                    | k8s_action | http_method |                            path                             
+----------------------------------------------------+------------+-------------+-------------------------------------------------------------
+ connectCoreV1OptionsNamespacedPodProxy             | connect    | options     | /api/v1/namespaces/{namespace}/pods/{name}/proxy
+ connectCoreV1OptionsNamespacedPodProxyWithPath     | connect    | options     | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path}
+ connectCoreV1OptionsNamespacedServiceProxy         | connect    | options     | /api/v1/namespaces/{namespace}/services/{name}/proxy
+ connectCoreV1OptionsNamespacedServiceProxyWithPath | connect    | options     | /api/v1/namespaces/{namespace}/services/{name}/proxy/{path}
+ connectCoreV1OptionsNodeProxy                      | connect    | options     | /api/v1/nodes/{name}/proxy
+ connectCoreV1OptionsNodeProxyWithPath              | connect    | options     | /api/v1/nodes/{name}/proxy/{path}
 (6 rows)
 
 #+end_src
-
 
 #+NAME: Double check audit_entries verbs / ops
 #+BEGIN_SRC sql-mode
