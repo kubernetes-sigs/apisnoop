@@ -20,6 +20,15 @@ CREATE OR REPLACE VIEW "public"."api_operations" AS
          split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
          string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
          string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes
+         -- CASE
+         --  WHEN k8s_action IN ('get', 'list', 'proxy') THEN 'get'
+         --  WHEN k8s_action IN ('deleteCollection', 'delete') THEN 'delete'
+         --  WHEN k8s_action IN ('watch', 'watchlist', 'watch') THEN 'watch'
+         --  WHEN k8s_actions = 'create' THEN 'post'
+         --  WHEN k8s_action = 'update' THEN 'put'
+         -- WHEN k8s_action = 'patch' THEN 'patch'
+         -- ELSE NULL
+         --   END as event_verb
     FROM raw_swaggers
     , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
     , jsonb_each(paths.value) d(key, value)

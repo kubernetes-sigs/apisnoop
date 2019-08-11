@@ -9,3 +9,48 @@ CREATE TABLE raw_swaggers (
     -- definition_id text NOT NULL,
     data jsonb NOT NULL
 );
+
+-- swagger.json INDEX
+
+-- #+NAME: general index the raw_swagger
+
+CREATE INDEX idx_swagger_jsonb_ops ON raw_swaggers USING GIN (data jsonb_ops);
+CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers USING GIN (data jsonb_path_ops);
+     -- api_operations view:
+     --  , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
+     --  , jsonb_each(paths.value) d(key, value)
+     --  , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+     --  , jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)
+     --  , jsonb_array_elements((d.value -> 'schemes'::text)) schemestring(value)
+     -- GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
+     -- ORDER BY paths.key;
+     -- api_resources view:
+     --   , jsonb_each((raw_swaggers.data -> 'definitions'::text)) d(key, value)
+     --   , jsonb_array_elements((d.value -> 'required'::text)) reqstring(value)
+     -- GROUP BY raw_swaggers.id, d.key, d.value;
+-- CREATE INDEX idx_swagger_X ON raw_swagger USING GIN ((jsb->‘X’));
+-- CREATE INDEX idx_swagger_X ON raw_swagger USING BTREE ((jsb->>‘X’));
+-- CREATE INDEX idx_swagger_X ON raw_swagger USING HASH ((jsb->>‘X’))
+
+
+
+-- #+NAME: api_operations indexes the raw_swagger
+
+-- CREATE INDEX idx_swagger_gin_paths ON raw_swaggers USING GIN ((data->>'paths'));
+-- CREATE INDEX idx_swagger_btree_paths ON raw_swaggers USING BTREE ((data->>'paths'));
+-- CREATE INDEX idx_swagger_hash_paths ON raw_swaggers USING HASH ((data->>'paths'))
+     -- api_operations view:
+     --  , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
+     --  , jsonb_each(paths.value) d(key, value)
+     --  , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+     --  , jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)
+     --  , jsonb_array_elements((d.value -> 'schemes'::text)) schemestring(value)
+     -- GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
+     -- ORDER BY paths.key;
+     -- api_resources view:
+     --   , jsonb_each((raw_swaggers.data -> 'definitions'::text)) d(key, value)
+     --   , jsonb_array_elements((d.value -> 'required'::text)) reqstring(value)
+     -- GROUP BY raw_swaggers.id, d.key, d.value;
+-- CREATE INDEX idx_swagger_X ON raw_swagger USING GIN ((jsb->‘X’));
+-- CREATE INDEX idx_swagger_X ON raw_swagger USING BTREE ((jsb->>‘X’));
+-- CREATE INDEX idx_swagger_X ON raw_swagger USING HASH ((jsb->>‘X’))
