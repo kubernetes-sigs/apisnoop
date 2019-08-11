@@ -4,7 +4,8 @@
 * Purpose
   This holds the authorative way to get setup and exploring with our hasura backend.
 
-* Working with this repo/org file** Work happens in Org first
+* Working with this repo/org file
+** Work happens in Org first
    Within ii, our emphasis is on the documentation/org-file first.  
    We can document and craft the queries for our db, then tangle them into our migration files.
    as such: 
@@ -13,35 +14,21 @@
 * Iteration Loop
 ** listing tables
 #+BEGIN_SRC sql-mode
-\conninfo
-\d+
+  \conninfo
+  \d+
 #+END_SRC
 
 #+RESULTS:
 #+begin_src sql-mode
 You are connected to database "zz" as user "zz" on host "172.17.0.1" at port "5432".
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
-                                List of relations
- Schema |           Name            |   Type   | Owner |    Size    | Description 
---------+---------------------------+----------+-------+------------+-------------
- public | api_operations            | view     | zz    | 0 bytes    | 
- public | api_operations_parameters | view     | zz    | 0 bytes    | 
- public | api_operations_responses  | view     | zz    | 0 bytes    | 
- public | api_resources             | view     | zz    | 0 bytes    | 
- public | api_resources_fields      | view     | zz    | 0 bytes    | 
- public | audit_events              | view     | zz    | 0 bytes    | 
- public | over                      | view     | zz    | 0 bytes    | 
- public | raw_audit_events          | table    | zz    | 389 MB     | 
- public | raw_audit_events_id_seq   | sequence | zz    | 8192 bytes | 
- public | raw_swaggers              | table    | zz    | 1752 kB    | 
- public | raw_swaggers_id_seq       | sequence | zz    | 8192 bytes | 
-(11 rows)
-
+Did not find any relations.
 #+end_src
+
 
 ** dropping all data
 #+NAME: do not run
-#+BEGIN_SRC sql-mode :eval ask
+#+BEGIN_SRC sql-mode
   drop table raw_swaggers cascade;
   drop table raw_audit_events cascade;
   drop schema hdb_catalog cascade;
@@ -58,13 +45,20 @@ ERROR:  schema "hdb_views" does not exist
 
 ** Restart Hasura
    #+NAME: iteration loop
-   #+BEGIN_SRC tmate
+   #+BEGIN_SRC tmate 
+     #:dir ~/ii/apisnoop_v3/apps/hasura
      cd ~/ii/apisnoop_v3/apps/hasura
+     echo docker-compose down
      docker-compose down
      # drop all data while down
-     echo 'drop table raw_swaggers cascade; drop table raw_audit_events cascade; drop schema hdb_catalog cascade;' | psql
-     docker-compose up
+     echo 'drop table raw_swaggers cascade; drop table raw_audit_events cascade; drop schema hdb_views cascade; drop schema hdb_catalog cascade; drop table zraw_audit_events cascade;' | psql
+     echo docker-compose up
+     docker-compose up -d
    #+END_SRC
+
+   #+RESULTS: iteration loop
+   #+begin_EXAMPLE
+   #+end_EXAMPLE
 
 ** setting up the hasura postgresql-permissions
    
@@ -262,7 +256,7 @@ docker-compose up -d
         (spacemacs/toggle-line-numbers-on)
        ;; (linum-mode t)
         )
-      (let ((default-directory (file-name-directory (concat (file-name-directory buffer-file-name) "../hasura/")))
+      (let ((default-directory (file-name-directory (concat (file-name-directory buffer-file-name) "../apps/hasura/")))
             (logs-command "docker-compose logs -f --no-color")
             ;; (logs-command "tail -f /var/log/messages")
             ;;(logs-command "docker-compose logs -f --no-color 2>/dev/null | sed 's:hasura_1  | ::g' | grep '^{' | jq .")
@@ -688,7 +682,7 @@ Indexes:
   CREATE TEMPORARY TABLE raw_audit_events_import (data jsonb not null) ;
   copy raw_audit_events_import (data)
   FROM STDIN (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
-  INSERT INTO raw_audit_events(data, bucket, job)
+  INSERT INTO raw_audit_events(data, bucket, job, audit_id)
   SELECT data, '$BUCKET', '$JOB'
   FROM raw_audit_events_import;
   "
@@ -698,8 +692,7 @@ Indexes:
 
 #+RESULTS: load_audit_events.sh
 #+begin_EXAMPLE
-INSERT 0 313431
-Thu Aug  8 01:14:52 UTC 2019
+Sun Aug 11 21:09:02 UTC 2019
 #+end_EXAMPLE
 
 #+BEGIN_SRC sql-mode
@@ -732,7 +725,6 @@ Thu Aug  8 01:14:52 UTC 2019
 #+end_src
 
 * Audit Events View
-
 ** event_verb_to_http_method
 
 #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/222_function_verb_to_method.up.sql :results silent
@@ -781,10 +773,8 @@ select * from event_verb_to_http_method('proxy');
 
 #+end_src
 
-
 ** Initial View
    #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/225_material_audit_events.up.sql :results silent
-     -- CREATE MATERIALIZED VIEW "public"."audit_events_material" AS
      CREATE OR REPLACE VIEW "public"."audit_events" AS
        SELECT (raw.data ->> 'auditID') as audit_id,
               raw.bucket,
@@ -817,13 +807,14 @@ select * from event_verb_to_http_method('proxy');
               raw.data as data
        FROM raw_audit_events raw
        JOIN api_operations ops ON
-            -- of done in order, this should limit our regex to < 5 targets to compare
-         -- raw.data ->> 'requestURI' ~ ops.regex;
               ((event_verb_to_http_method(raw.data ->> 'verb'::text) = ops.http_method)
               AND raw.data ->> 'requestURI' ~ ops.regex);
+   #+END_SRC
+            -- of done in order, this should limit our regex to < 5 targets to compare
+         -- raw.data ->> 'requestURI' ~ ops.regex;
             -- OR raw.data ->> 'requestURI' ~ ops.regex;
         -- WITH NO DATA;
-   #+END_SRC
+       -- CREATE MATERIALIZED VIEW "public"."audit_events_material" AS
 
 ** audit_event indexes
 
@@ -1249,7 +1240,7 @@ select * from event_verb_to_http_method('proxy');
    (1 row)
 
    #+end_src
-   #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/230_view_audit_events.up.sql :results silent
+   #+BEGIN_SRC sql-mode :notangle ../apps/hasura/migrations/230_view_audit_events.up.sql :results silent
      CREATE OR REPLACE VIEW "public"."audit_events" AS
        SELECT audit_id,
               bucket,
@@ -1594,7 +1585,17 @@ select * from event_verb_to_http_method('proxy');
            (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
            split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
            string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
-           string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes
+           string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
+           CASE
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('get', 'list', 'proxy') THEN 'get'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('deleteCollection', 'delete', 'deletecollection') THEN 'delete'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('watch', 'watchlist', 'watch') THEN 'watch'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('create', 'post') THEN 'post'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ( 'update', 'put' ) THEN 'put'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch' THEN 'patch'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN 'connect'
+           ELSE NULL
+             END as event_verb
       FROM raw_swaggers
       , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
       , jsonb_each(paths.value) d(key, value)
@@ -1605,11 +1606,34 @@ select * from event_verb_to_http_method('proxy');
      ORDER BY paths.key;
 #+END_SRC
 
+#+BEGIN_SRC sql-mode
+  select DISTINCT event_verb, k8s_action, path
+  from api_operations
+  WHERE k8s_action = 'connect';
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+ event_verb | k8s_action |                            path                             
+------------+------------+-------------------------------------------------------------
+ connect    | connect    | /api/v1/namespaces/{namespace}/pods/{name}/attach
+ connect    | connect    | /api/v1/namespaces/{namespace}/pods/{name}/exec
+ connect    | connect    | /api/v1/namespaces/{namespace}/pods/{name}/portforward
+ connect    | connect    | /api/v1/namespaces/{namespace}/pods/{name}/proxy
+ connect    | connect    | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path}
+ connect    | connect    | /api/v1/namespaces/{namespace}/services/{name}/proxy
+ connect    | connect    | /api/v1/namespaces/{namespace}/services/{name}/proxy/{path}
+ connect    | connect    | /api/v1/nodes/{name}/proxy
+ connect    | connect    | /api/v1/nodes/{name}/proxy/{path}
+(9 rows)
+
+#+end_src
+
 #+NAME: api_operations indexes the raw_swagger
 #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/100_table_raw_swaggers.up.sql :results silent
-  CREATE INDEX idx_swagger_gin_paths ON raw_swagger USING GIN ((data->>'paths'));
-  CREATE INDEX idx_swagger_btree_paths ON raw_swagger USING BTREE ((data->>'paths'));
-  CREATE INDEX idx_swagger_hash_paths ON raw_swagger USING HASH ((data->>'paths'))
+  -- CREATE INDEX idx_swagger_gin_paths ON raw_swaggers USING GIN ((data->>'paths'));
+  -- CREATE INDEX idx_swagger_btree_paths ON raw_swaggers USING BTREE ((data->>'paths'));
+  -- CREATE INDEX idx_swagger_hash_paths ON raw_swaggers USING HASH ((data->>'paths'))
        -- api_operations view:
        --  , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
        --  , jsonb_each(paths.value) d(key, value)
@@ -2137,6 +2161,124 @@ CREATE VIEW
   - a link to the lines of go code that define it.
   
     We can then use this as a cross refernece for any audit event that references a test.
+* TODO Indexed raw_audit_events                                                                                                                                                       
+*** What does Success look like?                                                                                                                                                  
+ - figure out how to get a count on a where clause                                                                                                                                
+ - figure out how to get a distinct on something.                                                                                                                                 
+ -  Being able to accurately fill out the hit counts in this query: https://hackmd.io/mnjYC64uQ1eKTr6PIXp5dw?view                                                                 
+*** what's the itching confusion?                                                                                                                                                 
+ - Proper way to index so that we can do a distinct                                                                                                                               
+ - we have to avoid a table scan. Must have index for any place where we are trying to reference a row.                                                                           
+   -  e.g. if table says `WHERE audit_event.parameter LIKE '%podspec%' we would need an index on audiet_event.parameter                                                           
+ - api_operations: need to calculate, and leave as entry, 'audit_event_verb' (whetever its called) so we have a direct match later on audit_event table.                          
+◉ FOOTNOTES...                                                                                                                                                 
+*** Experiment
+    What if we just load the event_verb and audit_id as distint columsn when the table is first being populated, since we are pulling from a temp table anyway?
+    
+    I can confirm it works with auditId(audit_id), verb(event_verb), and requestURI(request_uri).
+    
+    So we are putting the load of the work onto the population of data, instead of on the query, and this is happening from a raw file--and so it is much quicker..  
+    Now, I am wondering if we can add operationID too, using a JOIN ON regex and verb.
+    This requires setting up our api_operations a bit differently.
+****  Create Table
+    So we'll make a table that is expecting audit_id and event_verb 
+ #+NAME: raw_audit_events test
+ #+BEGIN_SRC sql-mode :notangle ../apps/hasura/migrations/220_table_raw_audit_events.up.sql :results silent
+ CREATE TABLE zraw_audit_events (
+     id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+     ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+     bucket text,
+     job text,
+     data jsonb NOT NULL,
+     audit_id text,
+     event_verb text,
+     request_uri text
+ );
+ #+END_SRC
+**** Iteration Loop
+    
+ #+NAME: Confirm Table Exists
+ #+BEGIN_SRC sql-mode
+   \d zraw_audit_events;
+   -- delete from raw_audit_events;
+ #+END_SRC
+
+ #+RESULTS: Confirm Table Exists
+ #+begin_src sql-mode
+                                   Table "public.zraw_audit_events"
+    Column    |            Type             | Collation | Nullable |             Default              
+ -------------+-----------------------------+-----------+----------+----------------------------------
+  id          | integer                     |           | not null | generated by default as identity
+  ingested_at | timestamp without time zone |           |          | CURRENT_TIMESTAMP
+  bucket      | text                        |           |          | 
+  job         | text                        |           |          | 
+  data        | jsonb                       |           | not null | 
+  audit_id    | text                        |           |          | 
+  event_verb  | text                        |           |          | 
+  request_uri | text                        |           |          | 
+ Indexes:
+     "zraw_audit_events_pkey" PRIMARY KEY, btree (id)
+
+ #+end_src
+
+ #+NAME: Drop Table
+ #+BEGIN_SRC sql-mode
+ DROP TABLE IF EXISTS zraw_audit_events;
+ #+END_SRC
+
+ #+RESULTS: Drop Table
+ #+begin_src sql-mode
+ DROP TABLE
+ #+end_src
+
+ #+NAME: Test that new columns Work
+ #+BEGIN_SRC sql-mode
+ SELECT event_verb, audit_id, request_uri
+ FROM zraw_audit_events
+ LIMIT 8;
+ #+END_SRC
+
+ #+RESULTS: Test that new columns Work
+ #+begin_src sql-mode
+  event_verb |               audit_id               |                                    request_uri                                    
+ ------------+--------------------------------------+-----------------------------------------------------------------------------------
+  create     | 75e19c0d-c781-4c4c-92a3-5f7f6db45a55 | /apis/rbac.authorization.k8s.io/v1beta1/namespaces/provisioning-6870/rolebindings
+  get        | 81af8a3d-3549-4fb7-a66d-6216cb1d4301 | /api/v1/namespaces/pod-disks-2883
+  get        | 9d6f6b0f-606f-402b-acef-3b1eaa90aa3f | /api/v1/namespaces/provisioning-9596/persistentvolumeclaims/pvc-9zfxd
+  get        | dffee443-b53b-4419-a5a9-c2bfde1ea692 | /api/v1/namespaces/statefulset-1093/pods/ss-1
+  get        | 48f84bd9-3f57-45fe-ac5a-ad7696411d98 | /api/v1/namespaces/provisioning-6158
+  get        | 618d3b5f-2b9c-44cc-8be0-721498504dba | /api/v1/namespaces/downward-api-7025
+  get        | ebdbc0ab-01dd-41a1-aee1-9075c5ff7f5d | /apis/scheduling.k8s.io/v1?timeout=32s
+  get        | 92791863-3383-462c-96ce-35136dac1de1 | /apis/apiextensions.k8s.io/v1beta1?timeout=32s
+ (8 rows)
+
+ #+end_src
+
+**** Load Audit Events
+ #+NAME: experimental load_audit_events.sh
+ #+BEGIN_SRC shell :var AUDIT_LOG="../data/artifacts/ci-kubernetes-e2e-gci-gce/1134962072287711234/combined-audit.log"
+
+   BUCKET='ci-kubernetes-e2e-gci-gce'
+   JOB='1134962072287711234'
+   SQL="
+   CREATE TEMPORARY TABLE raw_audit_events_import (data jsonb not null) ;
+   copy raw_audit_events_import (data)
+   FROM STDIN (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
+   INSERT INTO zraw_audit_events(data, bucket, job, audit_id, event_verb, request_uri)
+   SELECT data, '$BUCKET', '$JOB', (data ->> 'auditID'), (data ->> 'verb'), (data ->> 'requestURI')
+   FROM raw_audit_events_import;
+   "
+   cat $AUDIT_LOG | psql -c "$SQL"
+   date
+ #+END_SRC
+
+ #+RESULTS: experimental load_audit_events.sh
+ #+begin_EXAMPLE
+ INSERT 0 313431
+ Sun Aug 11 23:02:32 UTC 2019
+ #+end_EXAMPLE
+    
+*** foot
 * FOOTNOTES
 # Local Variables:
 # eval: (sql-connect "hasura" (concat "*SQL: postgres:data*"))
