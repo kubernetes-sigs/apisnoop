@@ -732,6 +732,56 @@ Thu Aug  8 01:14:52 UTC 2019
 #+end_src
 
 * Audit Events View
+
+** event_verb_to_http_method
+
+#+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/222_function_verb_to_method.up.sql :results silent
+  CREATE FUNCTION event_verb_to_http_method(verb text) RETURNS text as $$
+  BEGIN
+    CASE
+    WHEN verb = 'get' OR
+         verb = 'list' OR
+         verb = 'proxy'
+    THEN return 'get' ;
+
+    WHEN verb = 'deletecollection' OR
+         verb = 'delete'
+    THEN return 'delete' ;
+
+    WHEN verb = 'watch' OR
+         verb = 'watchlist'
+    THEN return 'watch' ;
+
+    WHEN verb = 'create'
+    THEN return 'post' ;
+
+    WHEN verb = 'update'
+    THEN return 'put' ;
+
+    WHEN verb = 'patch'
+    THEN return 'patch' ;
+
+    ELSE return null ;
+    END CASE;
+  END;
+  $$ LANGUAGE plpgsql;
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+select * from event_verb_to_http_method('proxy');
+-- select * from event_verb_to_http_method('deletecollection');
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+ event_verb_to_http_method 
+---------------------------
+ get
+(1 row)
+
+#+end_src
+
+
 ** Initial View
    #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/225_material_audit_events.up.sql :results silent
      -- CREATE MATERIALIZED VIEW "public"."audit_events_material" AS
@@ -744,29 +794,8 @@ Thu Aug  8 01:14:52 UTC 2019
               ops.operation_id,
               ops.k8s_action,
               ops.http_method,
+              event_verb_to_http_method(raw.data ->> 'verb') AS operation_verb,
               ops.path as op_path,
-              CASE
-              WHEN (
-                ((raw.data ->> 'verb'::text) = 'get'::text) OR
-                ((raw.data ->> 'verb'::text) = 'list'::text) OR
-                ((raw.data ->> 'verb'::text) = 'proxy'::text) )
-              THEN 'get'
-              WHEN (
-                ((raw.data ->> 'verb'::text) = 'deletecollection'::text) OR
-                ((raw.data ->> 'verb'::text) = 'delete'::text) )
-              THEN 'delete'
-              WHEN (
-                ((raw.data ->> 'verb'::text) = 'watch'::text) OR
-                ((raw.data ->> 'verb'::text) = 'watchlist'::text) )
-              THEN 'watch'
-              WHEN ((raw.data ->> 'verb'::text) = 'create'::text)
-              THEN 'post'
-              WHEN ((raw.data ->> 'verb'::text) = 'update'::text)
-              THEN 'put'
-              WHEN ((raw.data ->> 'verb'::text) = 'patch'::text)
-              THEN 'patch'
-              ELSE null
-             END AS operation_verb,
               raw.data ->> 'verb' as event_verb,
               raw.data ->> 'apiVersion' as api_version,
               raw.data ->> 'requestURI' as request_uri,
@@ -790,31 +819,13 @@ Thu Aug  8 01:14:52 UTC 2019
        JOIN api_operations ops ON
             -- of done in order, this should limit our regex to < 5 targets to compare
          -- raw.data ->> 'requestURI' ~ ops.regex;
-         ((CASE
-         WHEN (
-           ((raw.data ->> 'verb'::text) = 'get'::text) OR
-           ((raw.data ->> 'verb'::text) = 'list'::text) OR
-           ((raw.data ->> 'verb'::text) = 'proxy'::text))
-         THEN 'get'
-         WHEN (
-           ((raw.data ->> 'verb'::text) = 'deletecollection'::text) OR
-           ((raw.data ->> 'verb'::text) = 'delete'::text) )
-         THEN 'delete'
-         WHEN (
-           ((raw.data ->> 'verb'::text) = 'watch'::text) OR
-           ((raw.data ->> 'verb'::text) = 'watchlist'::text) )
-         THEN 'watch'
-         WHEN ((raw.data ->> 'verb'::text) = 'create'::text)
-         THEN 'post'
-         WHEN ((raw.data ->> 'verb'::text) = 'update'::text)
-         THEN 'put'
-         WHEN ((raw.data ->> 'verb'::text) = 'patch'::text)
-           THEN 'patch'
-          END = ops.http_method)
-        AND raw.data ->> 'requestURI' ~ ops.regex);
+              ((event_verb_to_http_method(raw.data ->> 'verb'::text) = ops.http_method)
+              AND raw.data ->> 'requestURI' ~ ops.regex);
             -- OR raw.data ->> 'requestURI' ~ ops.regex;
         -- WITH NO DATA;
    #+END_SRC
+
+** audit_event indexes
 
    #+BEGIN_SRC sql-mode
    SELECT event_verb, http_method, k8s_action, operation_id, object_group, object_ver, object_type
