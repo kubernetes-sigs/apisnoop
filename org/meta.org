@@ -4,7 +4,8 @@
 * Purpose
   This holds the authorative way to get setup and exploring with our hasura backend.
 
-* Working with this repo/org file** Work happens in Org first
+* Working with this repo/org file
+** Work happens in Org first
    Within ii, our emphasis is on the documentation/org-file first.  
    We can document and craft the queries for our db, then tangle them into our migration files.
    as such: 
@@ -13,37 +14,39 @@
 * Iteration Loop
 ** listing tables
 #+BEGIN_SRC sql-mode
-\conninfo
-\d+
+  \conninfo
+  \d+
 #+END_SRC
 
 #+RESULTS:
 #+begin_src sql-mode
 You are connected to database "zz" as user "zz" on host "172.17.0.1" at port "5432".
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
-                                List of relations
- Schema |           Name            |   Type   | Owner |    Size    | Description 
---------+---------------------------+----------+-------+------------+-------------
- public | api_operations            | view     | zz    | 0 bytes    | 
- public | api_operations_parameters | view     | zz    | 0 bytes    | 
- public | api_operations_responses  | view     | zz    | 0 bytes    | 
- public | api_resources             | view     | zz    | 0 bytes    | 
- public | api_resources_fields      | view     | zz    | 0 bytes    | 
- public | audit_events              | view     | zz    | 0 bytes    | 
- public | over                      | view     | zz    | 0 bytes    | 
- public | raw_audit_events          | table    | zz    | 389 MB     | 
- public | raw_audit_events_id_seq   | sequence | zz    | 8192 bytes | 
- public | raw_swaggers              | table    | zz    | 1752 kB    | 
- public | raw_swaggers_id_seq       | sequence | zz    | 8192 bytes | 
+                                  List of relations
+  Schema   |           Name            |   Type   | Owner |    Size    | Description 
+-----------+---------------------------+----------+-------+------------+-------------
+ pg_temp_5 | raw_audit_events_import   | table    | zz    | 8192 bytes | 
+ public    | api_operations            | view     | zz    | 0 bytes    | 
+ public    | api_operations_parameters | view     | zz    | 0 bytes    | 
+ public    | api_operations_responses  | view     | zz    | 0 bytes    | 
+ public    | api_resources             | view     | zz    | 0 bytes    | 
+ public    | api_resources_fields      | view     | zz    | 0 bytes    | 
+ public    | over                      | view     | zz    | 0 bytes    | 
+ public    | raw_audit_events          | table    | zz    | 8192 bytes | 
+ public    | raw_audit_events_id_seq   | sequence | zz    | 8192 bytes | 
+ public    | raw_swaggers              | table    | zz    | 1752 kB    | 
+ public    | raw_swaggers_id_seq       | sequence | zz    | 8192 bytes | 
 (11 rows)
 
 #+end_src
 
+
 ** dropping all data
 #+NAME: do not run
-#+BEGIN_SRC sql-mode :eval ask
+#+BEGIN_SRC sql-mode
   drop table raw_swaggers cascade;
   drop table raw_audit_events cascade;
+  drop table zraw_audit_events cascade;
   drop schema hdb_catalog cascade;
   drop schema hdb_views cascade;
 #+END_SRC
@@ -51,20 +54,24 @@ SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, co
 #+RESULTS: do not run
 #+begin_src sql-mode
 ERROR:  table "raw_swaggers" does not exist
-ERROR:  table "raw_audit_events" does not exist
-ERROR:  schema "hdb_catalog" does not exist
-ERROR:  schema "hdb_views" does not exist
 #+end_src
 
 ** Restart Hasura
    #+NAME: iteration loop
-   #+BEGIN_SRC tmate
+   #+BEGIN_SRC tmate 
+     #:dir ~/ii/apisnoop_v3/apps/hasura
      cd ~/ii/apisnoop_v3/apps/hasura
+     echo docker-compose down
      docker-compose down
      # drop all data while down
-     echo 'drop table raw_swaggers cascade; drop table raw_audit_events cascade; drop schema hdb_catalog cascade;' | psql
-     docker-compose up
+     echo 'drop table raw_swaggers cascade; drop table raw_audit_events cascade; drop schema hdb_views cascade; drop schema hdb_catalog cascade; drop table zraw_audit_events cascade;' | psql
+     echo docker-compose up
+     docker-compose up -d
    #+END_SRC
+
+   #+RESULTS: iteration loop
+   #+begin_EXAMPLE
+   #+end_EXAMPLE
 
 ** setting up the hasura postgresql-permissions
    
@@ -89,6 +96,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS plpython3u;
 CREATE EXTENSION IF NOT EXISTS plsh;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE SCHEMA IF NOT EXISTS hdb_catalog;
 CREATE SCHEMA IF NOT EXISTS hdb_views;
 -- make the user an owner of system schemas
@@ -262,7 +270,7 @@ docker-compose up -d
         (spacemacs/toggle-line-numbers-on)
        ;; (linum-mode t)
         )
-      (let ((default-directory (file-name-directory (concat (file-name-directory buffer-file-name) "../hasura/")))
+      (let ((default-directory (file-name-directory (concat (file-name-directory buffer-file-name) "../apps/hasura/")))
             (logs-command "docker-compose logs -f --no-color")
             ;; (logs-command "tail -f /var/log/messages")
             ;;(logs-command "docker-compose logs -f --no-color 2>/dev/null | sed 's:hasura_1  | ::g' | grep '^{' | jq .")
@@ -589,7 +597,7 @@ ERROR:  relation "idx_audit_events_jsonb_path_jobs" already exists
 #+RESULTS: min_load_audit_events.py
 
 #+NAME: load_audit_events.sql
-#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/245_function_load_audit_events.up.sql :results silent
+#+BEGIN_SRC sql-mode :noweb yes :notangle ../apps/hasura/migrations/245_function_load_audit_events.up.sql :results silent
   set role dba;
   CREATE OR REPLACE FUNCTION load_audit_events(bucket text, job text)
   RETURNS text AS $$
@@ -624,7 +632,7 @@ DELETE 0
 
 
 #+NAME: reload sample audit event
-#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/250_populate_audit_events.up.sql
+#+BEGIN_SRC sql-mode :noweb yes :notangle ../apps/hasura/migrations/250_populate_audit_events.up.sql
   select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');
   -- select * from load_swagger_via_curl('release-1.15');
   -- select * from load_swagger_via_curl('release-1.14');
@@ -688,7 +696,7 @@ Indexes:
   CREATE TEMPORARY TABLE raw_audit_events_import (data jsonb not null) ;
   copy raw_audit_events_import (data)
   FROM STDIN (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
-  INSERT INTO raw_audit_events(data, bucket, job)
+  INSERT INTO raw_audit_events(data, bucket, job, audit_id)
   SELECT data, '$BUCKET', '$JOB'
   FROM raw_audit_events_import;
   "
@@ -698,8 +706,7 @@ Indexes:
 
 #+RESULTS: load_audit_events.sh
 #+begin_EXAMPLE
-INSERT 0 313431
-Thu Aug  8 01:14:52 UTC 2019
+Sun Aug 11 21:09:02 UTC 2019
 #+end_EXAMPLE
 
 #+BEGIN_SRC sql-mode
@@ -732,10 +739,9 @@ Thu Aug  8 01:14:52 UTC 2019
 #+end_src
 
 * Audit Events View
-
 ** event_verb_to_http_method
 
-#+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/222_function_verb_to_method.up.sql :results silent
+#+BEGIN_SRC sql-mode :notangle ../apps/hasura/migrations/222_function_verb_to_method.up.sql :results silent
   CREATE FUNCTION event_verb_to_http_method(verb text) RETURNS text as $$
   BEGIN
     CASE
@@ -781,10 +787,8 @@ select * from event_verb_to_http_method('proxy');
 
 #+end_src
 
-
 ** Initial View
-   #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/225_material_audit_events.up.sql :results silent
-     -- CREATE MATERIALIZED VIEW "public"."audit_events_material" AS
+   #+BEGIN_SRC sql-mode :notangle ../apps/hasura/migrations/225_material_audit_events.up.sql :results silent
      CREATE OR REPLACE VIEW "public"."audit_events" AS
        SELECT (raw.data ->> 'auditID') as audit_id,
               raw.bucket,
@@ -815,15 +819,13 @@ select * from event_verb_to_http_method('proxy');
               raw.data ->> 'stageTimestamp' as stage_timestamp,
               raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
               raw.data as data
-       FROM raw_audit_events raw
-       JOIN api_operations ops ON
+       FROM raw_audit_events raw;
+   #+END_SRC
             -- of done in order, this should limit our regex to < 5 targets to compare
          -- raw.data ->> 'requestURI' ~ ops.regex;
-              ((event_verb_to_http_method(raw.data ->> 'verb'::text) = ops.http_method)
-              AND raw.data ->> 'requestURI' ~ ops.regex);
             -- OR raw.data ->> 'requestURI' ~ ops.regex;
         -- WITH NO DATA;
-   #+END_SRC
+       -- CREATE MATERIALIZED VIEW "public"."audit_events_material" AS
 
 ** audit_event indexes
 
@@ -1249,7 +1251,7 @@ select * from event_verb_to_http_method('proxy');
    (1 row)
 
    #+end_src
-   #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/230_view_audit_events.up.sql :results silent
+   #+BEGIN_SRC sql-mode :notangle ../apps/hasura/migrations/230_view_audit_events.up.sql :results silent
      CREATE OR REPLACE VIEW "public"."audit_events" AS
        SELECT audit_id,
               bucket,
@@ -1279,7 +1281,7 @@ select * from event_verb_to_http_method('proxy');
    #+END_SRC
    
 #+NAME: track audit_events
-#+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/230_audit_events.up.yaml
+#+BEGIN_SRC yaml :notangle ../apps/hasura/migrations/230_audit_events.up.yaml
 - type: track_table
   args:
     schema: public
@@ -1594,7 +1596,17 @@ select * from event_verb_to_http_method('proxy');
            (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
            split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
            string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
-           string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes
+           string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
+           CASE
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('get', 'list', 'proxy') THEN 'get'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('deleteCollection', 'delete', 'deletecollection') THEN 'delete'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('watch', 'watchlist', 'watch') THEN 'watch'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('create', 'post') THEN 'post'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ( 'update', 'put' ) THEN 'put'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch' THEN 'patch'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN 'connect'
+           ELSE NULL
+             END as event_verb
       FROM raw_swaggers
       , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
       , jsonb_each(paths.value) d(key, value)
@@ -1607,9 +1619,9 @@ select * from event_verb_to_http_method('proxy');
 
 #+NAME: api_operations indexes the raw_swagger
 #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/100_table_raw_swaggers.up.sql :results silent
-  CREATE INDEX idx_swagger_gin_paths ON raw_swagger USING GIN ((data->>'paths'));
-  CREATE INDEX idx_swagger_btree_paths ON raw_swagger USING BTREE ((data->>'paths'));
-  CREATE INDEX idx_swagger_hash_paths ON raw_swagger USING HASH ((data->>'paths'))
+  -- CREATE INDEX idx_swagger_gin_paths ON raw_swaggers USING GIN ((data->>'paths'));
+  -- CREATE INDEX idx_swagger_btree_paths ON raw_swaggers USING BTREE ((data->>'paths'));
+  -- CREATE INDEX idx_swagger_hash_paths ON raw_swaggers USING HASH ((data->>'paths'))
        -- api_operations view:
        --  , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
        --  , jsonb_each(paths.value) d(key, value)
@@ -1626,141 +1638,6 @@ select * from event_verb_to_http_method('proxy');
   -- CREATE INDEX idx_swagger_X ON raw_swagger USING BTREE ((jsb->>‘X’));
   -- CREATE INDEX idx_swagger_X ON raw_swagger USING HASH ((jsb->>‘X’))
   #+END_SRC
-
-  #+RESULTS: api_operations indexes the raw_swagger
-  #+begin_src sql-mode
-      event_verb    
-  ------------------
-   create
-   delete
-   deletecollection
-   get
-   list
-   patch
-   update
-  (7 rows)
-
-  #+end_src
-
-#
-#+NAME: uniq audit entry verbs raw
-#+BEGIN_SRC shell
-cd /tmp/apisnoop-ci-kubernetes-e2e-gci-gce-11349620722877112346arl78tw
-cat audit.log | jq .verb | sort | uniq
-#+END_SRC
-
-#+RESULTS: uniq audit entry verbs raw
-#+begin_EXAMPLE
-"abcd"
-"create"
-"delete"
-"deletecollection"
-"get"
-"list"
-"patch"
-"post"
-"update"
-"watch"
-#+end_EXAMPLE
-
-
-#+NAME: Double check operation_id verbs
-#+BEGIN_SRC sql-mode
-SELECT DISTINCT k8s_action, http_method
-FROM api_operations
-order by k8s_action;
-#+END_SRC
-
-#+RESULTS: Double check operation_id verbs
-#+begin_src sql-mode
-    k8s_action    | http_method 
-------------------+-------------
- connect          | delete
- connect          | get
- connect          | head
- connect          | options
- connect          | patch
- connect          | post
- connect          | put
- delete           | delete
- deletecollection | delete
- get              | get
- list             | get
- patch            | patch
- post             | post
- put              | put
- watch            | get
- watchlist        | get
-                  | get
-(17 rows)
-
-#+end_src
-#+NAME: Double check operation_id verbs
-
-#+NAME: method = options
-#+BEGIN_SRC sql-mode
-SELECT operation_id, k8s_action, http_method, path
-FROM api_operations
-where http_method like 'options';
-#+END_SRC
-
-#+RESULTS: method = options
-#+begin_src sql-mode
-                    operation_id                    | k8s_action | http_method |                            path                             
-----------------------------------------------------+------------+-------------+-------------------------------------------------------------
- connectCoreV1OptionsNamespacedPodProxy             | connect    | options     | /api/v1/namespaces/{namespace}/pods/{name}/proxy
- connectCoreV1OptionsNamespacedPodProxyWithPath     | connect    | options     | /api/v1/namespaces/{namespace}/pods/{name}/proxy/{path}
- connectCoreV1OptionsNamespacedServiceProxy         | connect    | options     | /api/v1/namespaces/{namespace}/services/{name}/proxy
- connectCoreV1OptionsNamespacedServiceProxyWithPath | connect    | options     | /api/v1/namespaces/{namespace}/services/{name}/proxy/{path}
- connectCoreV1OptionsNodeProxy                      | connect    | options     | /api/v1/nodes/{name}/proxy
- connectCoreV1OptionsNodeProxyWithPath              | connect    | options     | /api/v1/nodes/{name}/proxy/{path}
-(6 rows)
-
-#+end_src
-
-#+NAME: Double check audit_entries verbs / ops
-#+BEGIN_SRC sql-mode
-explain SELECT DISTINCT event_verb
-FROM audit_events;
--- order by event_verb;
-#+END_SRC
-
-#+RESULTS: Double check audit_entries verbs / ops
-#+begin_src sql-mode
-                                                                   QUERY PLAN                                                                   
-------------------------------------------------------------------------------------------------------------------------------------------------
- Unique  (cost=18311202947114.33..18320060226114.33 rows=313532 width=32)
-   ->  Sort  (cost=18311202947114.33..18315631586614.33 rows=1771455800000 width=32)
-         Sort Key: ((raw.data ->> 'verb'::text))
-         ->  Nested Loop  (cost=8857888750630.28..17654133088298.60 rows=1771455800000 width=32)
-               Join Filter: ((raw.data ->> 'requestURI'::text) ~ ops.regex)
-               ->  Seq Scan on raw_audit_events raw  (cost=0.00..50648.32 rows=313532 width=1091)
-               ->  Materialize  (cost=8857888750630.28..9027707225240.28 rows=1130000000 width=32)
-                     ->  Subquery Scan on ops  (cost=8857888750630.28..9027693850630.28 rows=1130000000 width=32)
-                           ->  GroupAggregate  (cost=8857888750630.28..9027682550630.28 rows=1130000000 width=549)
-                                 Group Key: paths.key, raw_swaggers.id, d.key, d.value, cat_tag.value
-                                 ->  Sort  (cost=8857888750630.28..8886138750630.28 rows=11300000000000 width=132)
-                                       Sort Key: paths.key, raw_swaggers.id, d.key, d.value, cat_tag.value
-                                       ->  Nested Loop  (cost=0.02..228282828281.32 rows=11300000000000 width=132)
-                                             ->  Nested Loop  (cost=0.02..2282828281.32 rows=113000000000 width=132)
-                                                   ->  Nested Loop  (cost=0.01..22828281.31 rows=1130000000 width=132)
-                                                         ->  Nested Loop  (cost=0.01..228281.31 rows=11300000 width=100)
-                                                               ->  Nested Loop  (cost=0.01..2281.30 rows=113000 width=68)
-                                                                     ->  Seq Scan on raw_swaggers  (cost=0.00..21.30 rows=1130 width=36)
-                                                                     ->  Function Scan on jsonb_each paths  (cost=0.01..1.00 rows=100 width=64)
-                                                               ->  Function Scan on jsonb_each d  (cost=0.00..1.00 rows=100 width=64)
-                                                         ->  Function Scan on jsonb_array_elements cat_tag  (cost=0.01..1.00 rows=100 width=32)
-                                                   ->  Function Scan on jsonb_array_elements jsonstring  (cost=0.01..1.00 rows=100 width=0)
-                                             ->  Function Scan on jsonb_array_elements schemestring  (cost=0.01..1.00 rows=100 width=0)
-(23 rows)
-
-#+end_src
-
-
-#+RESULTS: api_operations view
-#+begin_src sql-mode
-CREATE VIEW
-#+end_src
 
 #+NAME: track api_operations
 #+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/150_view_api_operations.up.yaml
@@ -1860,6 +1737,133 @@ CREATE VIEW
     schema: public
     name: api_operations_responses
 #+END_SRC
+
+** Materialized api_operations
+*** table
+    #+BEGIN_SRC sql-mode
+   -- DROP MATERIALIZED VIEW api_operations_material;
+    #+END_SRC
+
+    #+RESULTS:
+    #+begin_src sql-mode
+    ERROR:  syntax error at or near "PRIMARY"
+    LINE 1: ALTER materialized view api_operations_material PRIMARY KEY ...
+                                                            ^
+    #+end_src
+
+#+BEGIN_SRC sql-mode
+-- unique index
+
+     -- ALTER materialized view api_operations_material PRIMARY KEY (raw_swagger_id, event_verb, regex);
+
+#+END_SRC
+
+
+
+#+NAME: api_operations_material
+#+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/150_view_api_operations.up.sql :results silent
+  CREATE MATERIALIZED VIEW "public"."api_operations_material" AS 
+    SELECT raw_swaggers.id AS raw_swagger_id,
+           paths.key AS path,
+           regex_from_path(paths.key) as regex,
+           d.key AS http_method,
+           (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+           (d.value ->> 'operationId'::text) AS operation_id,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+           (d.value ->> 'description'::text) AS description,
+           (d.value -> 'consumes'::text) AS consumes,
+           (d.value -> 'responses'::text) AS responses,
+           (d.value -> 'parameters'::text) AS parameters,
+           (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
+           split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+           string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
+           string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
+           CASE
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('get', 'list', 'proxy') THEN 'get'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('deleteCollection', 'delete', 'deletecollection') THEN 'delete'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('watch', 'watchlist', 'watch') THEN 'watch'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('create', 'post') THEN 'post'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ( 'update', 'put' ) THEN 'put'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch' THEN 'patch'
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN 'connect'
+           ELSE NULL
+             END as event_verb
+      FROM raw_swaggers
+      , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
+      , jsonb_each(paths.value) d(key, value)
+      , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+      , jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)
+      , jsonb_array_elements((d.value -> 'schemes'::text)) schemestring(value)
+     GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
+     ORDER BY paths.key;
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+    CREATE index api_operations_materialized_event_verb ON api_operations_material            (event_verb);
+    CREATE index api_operations_materialized_regex_gist  ON api_operations_material USING GIST (regex gist_trgm_ops);
+    CREATE index api_operations_materialized_regex_gin  ON api_operations_material USING GIN  (regex gin_trgm_ops);
+  --  CREATE UNIQUE INDEX ON api_operations_material(raw_swagger_id, http_method, regex);
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+CREATE INDEX
+ERROR:  relation "api_operations_materialized_event_verb" already exists
+ERROR:  relation "api_operations_materialized_regex_gin" already exists
+#+end_src
+
+  -- CREATE UNIQUE INDEX ON api_operations_material(raw_swagger_id, event_verb, regex);
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+CREATE INDEX
+#+end_src
+
+*** indexes
+
+#+NAME: index the raw_audit_events
+#+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/150_view_api_operations.up.sql :results silent
+-- CREATE INDEX idx_api_operations_material_primary ON api_operations_material USING (raw_swagger_id, event_verb, regex);
+-- CREATE INDEX idx_audit_events_level_btree      ON raw_audit_events USING BTREE ((data->>'level'));
+-- CREATE INDEX idx_audit_events_level_hash       ON raw_audit_events USING HASH  ((data->>'level'));
+-- CREATE INDEX idx_api_operations_material_jsonb_ops ON raw_audit_events USING GIN (data jsonb_ops);
+-- CREATE INDEX idx_audit_events_jsonb_path_jobs  ON raw_audit_events USING GIN (data jsonb_path_ops);
+-- CREATE INDEX idx_audit_events_level_btree      ON raw_audit_events USING BTREE ((data->>'level'));
+-- CREATE INDEX idx_audit_events_level_hash       ON raw_audit_events USING HASH  ((data->>'level'));
+-- CREATE INDEX idx_audit_events_stage_btree      ON raw_audit_events USING BTREE ((data->>'stage'));
+-- CREATE INDEX idx_audit_events_stage_hash       ON raw_audit_events USING HASH  ((data->>'stage'));
+-- CREATE INDEX idx_audit_events_verb_btree       ON raw_audit_events USING BTREE ((data->>'verb'));
+-- CREATE INDEX idx_audit_events_verb_hash        ON raw_audit_events USING HASH  ((data->>'verb'));
+-- CREATE INDEX idx_audit_events_apiVersion_btree ON raw_audit_events USING BTREE ((data->>'apiVersion'));
+-- CREATE INDEX idx_audit_events_apiVersion_hash  ON raw_audit_events USING HASH  ((data->>'apiVersion'));
+-- CREATE INDEX idx_audit_events_requestURI_btree ON raw_audit_events USING BTREE ((data->>'requestURI'));
+-- CREATE INDEX idx_audit_events_requestURI_hash  ON raw_audit_events USING HASH  ((data->>'requestURI'));
+-- CREATE INDEX idx_audit_events_userAgent_btree  ON raw_audit_events USING BTREE ((data->>'userAgent'));
+-- CREATE INDEX idx_audit_events_userAgent_hash   ON raw_audit_events USING HASH  ((data->>'userAgent'));
+-- CREATE INDEX idx_audit_events_namespace_btree  ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'namespace'));
+-- CREATE INDEX idx_audit_events_namespace_hash   ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'namespace'));
+-- CREATE INDEX idx_audit_events_resource_btree   ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'resource'));
+-- CREATE INDEX idx_audit_events_resource_hash    ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'resource'));
+-- CREATE INDEX idx_audit_events_apiGroup_btree   ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'apiGroup'));
+-- CREATE INDEX idx_audit_events_apiGroup_hash    ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'apiGroup'));
+-- CREATE INDEX idx_audit_events_apiVersion_btree ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'apiVersion'));
+-- CREATE INDEX idx_audit_events_apiVersion_hash  ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'apiVersion'));
+-- CREATE INDEX idx_audit_events_requests_gin     ON raw_audit_events USING GIN ((data->'requestObject'));
+-- CREATE INDEX idx_audit_events_requests_gin     ON raw_audit_events USING GIN ((data->'requestObject'));
+-- CREATE INDEX idx_audit_events_namespace_hash   ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'namespace'));
+-- CREATE INDEX idx_audit_events_X_gin  ON raw_audit_events USING GIN ((data->'X'));
+-- CREATE INDEX idx_audit_events_X_btree ON raw_audit_events USING BTREE ((data->'X'));
+-- CREATE INDEX idx_audit_events_X_hash ON raw_audit_events USING HASH ((data->'X'));
+-- CREATE INDEX idx_audit_events_X ON raw_audit_events USING GIN ((jsb->‘X’));
+-- CREATE INDEX idx_audit_events_X ON raw_audit_events USING BTREE ((jsb->>‘X’));
+-- CREATE INDEX idx_audit_events_X ON raw_audit_events USING HASH ((jsb->>‘X’))
+#+END_SRC
+
+
+
 
 * Resource Views
 ** api_resources view
@@ -2137,17 +2141,251 @@ CREATE VIEW
   - a link to the lines of go code that define it.
   
     We can then use this as a cross refernece for any audit event that references a test.
-* Dump: Questions
-** Indexed raw_audit_events
-*** what's the itching confusion?
- - Proper way to index so that we can do a distinct
- - we have to avoid a table scan. Must have index for any place where we are trying to reference a row.
-   -  e.g. if table says `WHERE audit_event.parameter LIKE '%podspec%' we would need an index on audiet_event.parameter 
- - api_operations: need to calculate, and leave as entry, 'audit_event_verb' (whetever its called) so we have a direct match later on audit_event table.
-*** What does Success look like?
- - figure out how to get a count on a where clause
- - figure out how to get a distinct on something.
- -  Being able to accurately fill out the hit counts in this query: https://hackmd.io/mnjYC64uQ1eKTr6PIXp5dw?view
+* TODO Indexed raw_audit_events                                                                                                                                                       
+*** What does Success look like?                                                                                                                                                  
+ - figure out how to get a count on a where clause                                                                                                                                
+ - figure out how to get a distinct on something.                                                                                                                                 
+ -  Being able to accurately fill out the hit counts in this query: https://hackmd.io/mnjYC64uQ1eKTr6PIXp5dw?view                                                                 
+*** what's the itching confusion?                                                                                                                                                 
+ - Proper way to index so that we can do a distinct                                                                                                                               
+ - we have to avoid a table scan. Must have index for any place where we are trying to reference a row.                                                                           
+   -  e.g. if table says `WHERE audit_event.parameter LIKE '%podspec%' we would need an index on audiet_event.parameter                                                           
+ - api_operations: need to calculate, and leave as entry, 'audit_event_verb' (whetever its called) so we have a direct match later on audit_event table.                          
+◉ FOOTNOTES...                                                                                                                                                 
+*** Experiment
+    What if we just load the event_verb and audit_id as distint columsn when the table is first being populated, since we are pulling from a temp table anyway?
+    
+    I can confirm it works with auditId(audit_id), verb(event_verb), and requestURI(request_uri).
+    
+    So we are putting the load of the work onto the population of data, instead of on the query, and this is happening from a raw file--and so it is much quicker..  
+    Now, I am wondering if we can add operationID too, using a JOIN ON regex and verb.
+    This requires setting up our api_operations a bit differently.
+    
+    We updated api_operations to include an event_verb, and should be able to run a query where we join the table based on the verb and regex matching.  but the query was hanging, likely because it was taking way too long to walk the tree of two un-indexed views.  Our strategythen is to amek both materialized views, that we can then create indexes on, to then make the joins much faster.
+****  Create Table
+    So we'll make a table that is expecting audit_id and event_verb 
+ #+NAME: raw_audit_events test
+ #+BEGIN_SRC sql-mode :notangle ../apps/hasura/migrations/220_table_raw_audit_events.up.sql :results silent
+ CREATE TABLE zraw_audit_events (
+     id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+     ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+     bucket text,
+     job text,
+     data jsonb NOT NULL,
+     audit_id text,
+     event_verb text,
+     request_uri text,
+     operation_id text
+ );
+ #+END_SRC
+**** Iteration Loop
+    
+ #+NAME: Confirm Table Exists
+ #+BEGIN_SRC sql-mode
+   \d zraw_audit_events;
+   -- delete from raw_audit_events;
+ #+END_SRC
+
+ #+RESULTS: Confirm Table Exists
+ #+begin_src sql-mode
+                                    Table "public.zraw_audit_events"
+     Column    |            Type             | Collation | Nullable |             Default              
+ --------------+-----------------------------+-----------+----------+----------------------------------
+  id           | integer                     |           | not null | generated by default as identity
+  ingested_at  | timestamp without time zone |           |          | CURRENT_TIMESTAMP
+  bucket       | text                        |           |          | 
+  job          | text                        |           |          | 
+  data         | jsonb                       |           | not null | 
+  audit_id     | text                        |           |          | 
+  event_verb   | text                        |           |          | 
+  request_uri  | text                        |           |          | 
+  operation_id | text                        |           |          | 
+ Indexes:
+     "zraw_audit_events_pkey" PRIMARY KEY, btree (id)
+
+ #+end_src
+
+ #+NAME: Drop Table
+ #+BEGIN_SRC sql-mode
+ DROP TABLE IF EXISTS zraw_audit_events;
+ #+END_SRC
+
+ #+RESULTS: Drop Table
+ #+begin_src sql-mode
+ DROP TABLE
+ #+end_src
+
+ #+NAME: Test that new columns Work
+ #+BEGIN_SRC sql-mode
+ SELECT event_verb, audit_id, request_uri
+ FROM zraw_audit_events
+ LIMIT 8;
+ #+END_SRC
+
+ #+RESULTS: Test that new columns Work
+ #+begin_src sql-mode
+  event_verb | audit_id | request_uri 
+ ------------+----------+-------------
+ (0 rows)
+
+ #+end_src
+
+**** Load Audit Events
+     
+     We need to match our event to an operation ID.
+     An operation ID is unique on raw_swagger_id, http method, and regex.
+     So we should try to match the vent on the same three.
+     raw.data ->> 'requestURI' ~ ops.regex
+     raw.data ->> 'verb' = 
+     ops.raw_swagger_id = 1
+#+NAME: experimental load_audit_events.sh
+ #+BEGIN_SRC shell :var AUDIT_LOG="../data/artifacts/ci-kubernetes-e2e-gci-gce/1134962072287711234/combined-audit.log"
+
+  BUCKET='ci-kubernetes-e2e-gci-gce'
+  JOB='1134962072287711234'
+  SQL="
+  CREATE TEMPORARY TABLE raw_audit_events_import (data jsonb not null) ;
+  copy raw_audit_events_import (data)
+  FROM STDIN (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
+  INSERT INTO zraw_audit_events(data, bucket, job, audit_id, event_verb, request_uri, operation_id)
+  SELECT raw.data, '$BUCKET', '$JOB', (raw.data ->> 'auditID'), (raw.data ->> 'verb'), (raw.data ->> 'requestURI'), ops.operation_id
+  FROM raw_audit_events_import raw
+  JOIN api_operations_material ops ON
+       ops.raw_swagger_id = 1
+       AND raw.data ->> 'verb' = ops.event_verb
+       AND raw.data ->> 'requestURI' ~ ops.regex;
+  "
+  cat $AUDIT_LOG | psql -c "$SQL"
+  date
+ #+END_SRC
+
+ #+RESULTS: experimental load_audit_events.sh
+ #+begin_EXAMPLE
+ INSERT 0 57170
+ Mon Aug 12 03:17:25 UTC 2019
+ #+end_EXAMPLE
+    
+ #+BEGIN_SRC sql-mode
+SELECT DISTINCT audit_id, operation_id
+FROM zraw_audit_events;
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql-mode
+  event_verb |                           operation_id                           
+ ------------+------------------------------------------------------------------
+  delete     | deleteRbacAuthorizationV1beta1NamespacedRoleBinding
+  get        | readCoreV1NamespacedReplicationControllerScale
+  delete     | deleteCoreV1NamespacedSecret
+  get        | readExtensionsV1beta1NamespacedDeployment
+  delete     | deleteCoreV1NamespacedReplicationController
+  delete     | deleteAppsV1NamespacedDeployment
+  get        | readCoreV1ComponentStatus
+  delete     | deleteCoreV1NamespacedConfigMap
+  patch      | patchCoreV1NodeStatus
+  delete     | deleteAppsV1NamespacedDaemonSet
+  patch      | patchBatchV1NamespacedJob
+  patch      | patchCoreV1NamespacedService
+  get        | readBatchV1NamespacedJob
+  get        | readCoreV1NamespacedServiceAccount
+  get        | readCoreV1PersistentVolume
+  patch      | patchExtensionsV1beta1NamespacedReplicaSet
+  delete     | deleteAdmissionregistrationV1beta1ValidatingWebhookConfiguration
+  get        | readStorageV1beta1VolumeAttachment
+  delete     | deleteCoreV1NamespacedServiceAccount
+  get        | readCertificatesV1beta1CertificateSigningRequest
+  delete     | deleteBatchV1beta1NamespacedCronJob
+  get        | readApiextensionsV1beta1CustomResourceDefinition
+  get        | readExtensionsV1beta1NamespacedReplicaSet
+  get        | readBatchV1beta1NamespacedCronJob
+  patch      | patchCoreV1Namespace
+  get        | readAppsV1NamespacedStatefulSet
+  patch      | patchCoreV1Node
+  get        | readAppsV1NamespacedReplicaSetScale
+  get        | readCoreV1NamespacedSecret
+  patch      | patchCoreV1NamespacedConfigMap
+  delete     | deleteExtensionsV1beta1NamespacedDeployment
+  patch      | patchCoreV1NamespacedPersistentVolumeClaimStatus
+  get        | readRbacAuthorizationV1NamespacedRole
+  patch      | patchExtensionsV1beta1NamespacedDaemonSet
+  patch      | patchRbacAuthorizationV1ClusterRoleBinding
+  delete     | deletePolicyV1beta1PodSecurityPolicy
+  delete     | deleteRbacAuthorizationV1beta1ClusterRoleBinding
+  delete     | deleteAppsV1NamespacedReplicaSet
+  delete     | deleteSchedulingV1PriorityClass
+  get        | readCoreV1Namespace
+  delete     | deleteApiextensionsV1beta1CustomResourceDefinition
+  delete     | deleteCertificatesV1beta1CertificateSigningRequest
+  get        | readStorageV1beta1CSIDriver
+  get        | readAppsV1NamespacedDaemonSet
+  delete     | deleteRbacAuthorizationV1NamespacedRole
+  patch      | patchAppsV1NamespacedReplicaSet
+  patch      | patchCoreV1NamespacedReplicationController
+  patch      | patchCoreV1NamespacedPod
+  delete     | deleteCoreV1NamespacedResourceQuota
+  delete     | deleteAppsV1NamespacedStatefulSet
+  delete     | deleteAutoscalingV1NamespacedHorizontalPodAutoscaler
+  get        | readRbacAuthorizationV1ClusterRole
+  get        | readApiregistrationV1beta1APIService
+  delete     | deleteAppsV1NamespacedControllerRevision
+  get        | readSchedulingV1beta1PriorityClass
+  get        | readCoreV1NamespacedConfigMap
+  delete     | deleteAdmissionregistrationV1beta1MutatingWebhookConfiguration
+  get        | readNodeV1beta1RuntimeClass
+  delete     | deleteCoreV1NamespacedPod
+  patch      | patchExtensionsV1beta1NamespacedDeployment
+  get        | readCoreV1NamespacedPersistentVolumeClaim
+  patch      | patchAppsV1NamespacedDeployment
+  get        | readCoreV1Node
+  get        | readCoreV1NamespacedEndpoints
+  delete     | deleteRbacAuthorizationV1NamespacedRoleBinding
+  get        | readAppsV1NamespacedReplicaSet
+  delete     | deleteCoreV1NamespacedPersistentVolumeClaim
+  delete     | deleteCoreV1PersistentVolume
+  delete     | deleteRbacAuthorizationV1ClusterRoleBinding
+  delete     | deleteStorageV1StorageClass
+  patch      | patchCoreV1NamespacedPodStatus
+  get        | readRbacAuthorizationV1NamespacedRoleBinding
+  delete     | deleteRbacAuthorizationV1ClusterRole
+  delete     | deleteBatchV1NamespacedJob
+  get        | readPolicyV1beta1PodSecurityPolicy
+  patch      | patchPolicyV1beta1PodSecurityPolicy
+  get        | readCoordinationV1beta1NamespacedLease
+  patch      | patchCoreV1PersistentVolume
+  delete     | deleteCoreV1NamespacedLimitRange
+  delete     | deleteExtensionsV1beta1NamespacedReplicaSet
+  get        | readCoreV1NamespacedPod
+  delete     | deleteStorageV1beta1CSIDriver
+  get        | readCoreV1NamespacedLimitRange
+  delete     | deleteCoreV1NamespacedService
+  get        | readRbacAuthorizationV1ClusterRoleBinding
+  delete     | deleteApiregistrationV1beta1APIService
+  get        | readAppsV1NamespacedStatefulSetScale
+  delete     | deleteNodeV1beta1RuntimeClass
+  get        | readPolicyV1beta1NamespacedPodDisruptionBudget
+  get        | readAppsV1NamespacedDeployment
+  delete     | deleteCoreV1NamespacedEndpoints
+  get        | readExtensionsV1beta1NamespacedDaemonSet
+  delete     | deleteApiregistrationV1APIService
+  get        | readCoreV1NamespacedPodLog
+  get        | readCoreV1NamespacedResourceQuota
+  get        | readStorageV1beta1CSINode
+  patch      | patchApiextensionsV1beta1CustomResourceDefinition
+  get        | readAppsV1NamespacedControllerRevision
+  delete     | deleteCoreV1Namespace
+  delete     | deleteStorageV1VolumeAttachment
+  get        | readStorageV1StorageClass
+  get        | readAppsV1NamespacedDeploymentScale
+  get        | readStorageV1VolumeAttachment
+  get        | readCoreV1NamespacedReplicationController
+  delete     | deleteRbacAuthorizationV1beta1ClusterRole
+  get        | readCoreV1NamespacedService
+  patch      | patchRbacAuthorizationV1NamespacedRoleBinding
+  patch      | patchBatchV1beta1NamespacedCronJob
+ (108 rows)
+
+ #+end_src
+
 * FOOTNOTES
 ** load audit_events_via local cli
 
