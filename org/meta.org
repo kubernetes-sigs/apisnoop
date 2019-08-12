@@ -340,7 +340,6 @@ CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers USING GIN (data jsonb_pa
 -- CREATE INDEX idx_swagger_X ON raw_swagger USING HASH ((jsb->>‘X’))
 #+END_SRC
 
-
 ** load swagger via curl
 
 #+NAME: load_swagger_via_curl.py
@@ -1691,7 +1690,8 @@ Using our api_operations view, look into the parameters field in each one.
 
 #+RESULTS: api_operations_parameters view
 #+begin_src sql-mode
-CREATE VIEW
+ERROR:  missing FROM-clause entry for table "api_operations"
+LINE 23:          api_operations.raw_swagger_id,
 #+end_src
 
 #+NAME: track api_operations_parameters
@@ -1739,27 +1739,16 @@ CREATE VIEW
 #+END_SRC
 
 ** Materialized api_operations
-*** table
+*** drop table
     #+BEGIN_SRC sql-mode
-   -- DROP MATERIALIZED VIEW api_operations_material;
+    DROP MATERIALIZED VIEW api_operations_material;
     #+END_SRC
 
     #+RESULTS:
     #+begin_src sql-mode
-    ERROR:  syntax error at or near "PRIMARY"
-    LINE 1: ALTER materialized view api_operations_material PRIMARY KEY ...
-                                                            ^
+    DROP MATERIALIZED VIEW
     #+end_src
-
-#+BEGIN_SRC sql-mode
--- unique index
-
-     -- ALTER materialized view api_operations_material PRIMARY KEY (raw_swagger_id, event_verb, regex);
-
-#+END_SRC
-
-
-
+*** api_operations_material
 #+NAME: api_operations_material
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/150_view_api_operations.up.sql :results silent
   CREATE MATERIALIZED VIEW "public"."api_operations_material" AS 
@@ -1773,9 +1762,9 @@ CREATE VIEW
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
            (d.value ->> 'description'::text) AS description,
-           (d.value -> 'consumes'::text) AS consumes,
-           (d.value -> 'responses'::text) AS responses,
-           (d.value -> 'parameters'::text) AS parameters,
+           (d.value -> 'consumes'::text)::jsonb AS consumes,
+           (d.value -> 'responses'::text)::jsonb AS responses,
+           (d.value -> 'parameters'::text)::jsonb AS parameters,
            (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
            split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
            string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
@@ -1800,32 +1789,29 @@ CREATE VIEW
      ORDER BY paths.key;
 #+END_SRC
 
-#+BEGIN_SRC sql-mode
-    CREATE index api_operations_materialized_event_verb ON api_operations_material            (event_verb);
-    CREATE index api_operations_materialized_regex_gist  ON api_operations_material USING GIST (regex gist_trgm_ops);
-    CREATE index api_operations_materialized_regex_gin  ON api_operations_material USING GIN  (regex gin_trgm_ops);
-  --  CREATE UNIQUE INDEX ON api_operations_material(raw_swagger_id, http_method, regex);
-#+END_SRC
+**** indexes
 
-#+RESULTS:
-#+begin_src sql-mode
-CREATE INDEX
-ERROR:  relation "api_operations_materialized_event_verb" already exists
-ERROR:  relation "api_operations_materialized_regex_gin" already exists
-#+end_src
-
-  -- CREATE UNIQUE INDEX ON api_operations_material(raw_swagger_id, event_verb, regex);
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-CREATE INDEX
-#+end_src
-
-*** indexes
-
-#+NAME: index the raw_audit_events
+#+NAME: index the api_operations_material
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/150_view_api_operations.up.sql :results silent
+    CREATE UNIQUE INDEX                                  ON api_operations_material(raw_swagger_id, http_method, regex);
+    CREATE INDEX api_operations_materialized_event_verb  ON api_operations_material            (event_verb);
+    CREATE INDEX api_operations_materialized_k8s_action  ON api_operations_material            (k8s_action);
+    CREATE INDEX api_operations_materialized_k8s_group   ON api_operations_material            (k8s_group);
+    CREATE INDEX api_operations_materialized_k8s_version ON api_operations_material            (k8s_version);
+    CREATE INDEX api_operations_materialized_k8s_kind    ON api_operations_material            (k8s_kind);
+    CREATE INDEX api_operations_materialized_tags        ON api_operations_material            (tags);
+    CREATE INDEX api_operations_materialized_schemes     ON api_operations_material            (schemes);
+    CREATE INDEX api_operations_materialized_regex_gist  ON api_operations_material USING GIST (regex gist_trgm_ops);
+    CREATE INDEX api_operations_materialized_regex_gin   ON api_operations_material USING GIN  (regex gin_trgm_ops);
+    CREATE INDEX api_operations_materialized_consumes_ops   ON api_operations_material USING GIN  (consumes jsonb_ops);
+    CREATE INDEX api_operations_materialized_consumes_path  ON api_operations_material USING GIN  (consumes jsonb_path_ops);
+    CREATE INDEX api_operations_materialized_parameters_ops   ON api_operations_material USING GIN  (parameters jsonb_ops);
+    CREATE INDEX api_operations_materialized_parameters_path  ON api_operations_material USING GIN  (parameters jsonb_path_ops);
+    CREATE INDEX api_operations_materialized_responses_ops   ON api_operations_material USING GIN  (responses jsonb_ops);
+    CREATE INDEX api_operations_materialized_responses_path  ON api_operations_material USING GIN  (responses jsonb_path_ops);
+#+END_SRC
+
+#+BEGIN_SRC sql-mode :eval never-export :notangle ../apps/hasura/migrations/150_view_api_operations.up.sql :results silent
 -- CREATE INDEX idx_api_operations_material_primary ON api_operations_material USING (raw_swagger_id, event_verb, regex);
 -- CREATE INDEX idx_audit_events_level_btree      ON raw_audit_events USING BTREE ((data->>'level'));
 -- CREATE INDEX idx_audit_events_level_hash       ON raw_audit_events USING HASH  ((data->>'level'));
@@ -1862,8 +1848,61 @@ CREATE INDEX
 -- CREATE INDEX idx_audit_events_X ON raw_audit_events USING HASH ((jsb->>‘X’))
 #+END_SRC
 
+** api_operations_parameters_material
+*** drop table
+    #+BEGIN_SRC sql-mode
+    DROP MATERIALIZED VIEW api_operations_parameters_material;
+    #+END_SRC
 
+    #+RESULTS:
+    #+begin_src sql-mode
+    DROP MATERIALIZED VIEW
+    #+end_src
+*** table
+Using our api_operations_material view, look into the parameters field in each one.     
+#+NAME: api_operations_parameters_material view
+#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/160_view_api_operations_parameters.up.sql
+  CREATE MATERIALIZED VIEW "public"."api_operations_parameters_material" AS 
+    SELECT (param.entry ->> 'name'::text) AS name,
+           (param.entry ->> 'in'::text) AS "in",
+           -- for resource:
+           -- if param is body in body, take its $ref from its schema
+           -- otherwise, take its type
+           replace(
+             CASE
+             WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
+              AND ((param.entry -> 'schema'::text) is not null)
+               THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+             ELSE (param.entry ->> 'type'::text)
+             END, '#/definitions/','') AS resource,
+           (param.entry ->> 'description'::text) AS description,
+           CASE
+           WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
+           ELSE false
+            END AS required,
+           CASE
+           WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
+           ELSE false
+           END AS unique_items,
+           api_operations_material.raw_swagger_id,
+           param.entry as entry,
+           api_operations_material.operation_id
+      FROM api_operations_material
+           , jsonb_array_elements(api_operations_material.parameters) WITH ORDINALITY param(entry, index)
+            WHERE api_operations_material.parameters IS NOT NULL;
+#+END_SRC
 
+#+RESULTS: api_operations_parameters_material view
+#+begin_src sql-mode
+SELECT 3375
+#+end_src
+*** indexes
+#+NAME: index the api_operations_material
+#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/160_view_api_operations_parameters.up.sql
+    CREATE UNIQUE INDEX                                  ON api_operations_parameters_material(raw_swagger_id, operation_id, name);
+    CREATE INDEX api_parameters_materialized_resource    ON api_operations_parameters_material            (resource);
+    CREATE INDEX api_parameters_materialized_entry       ON api_operations_parameters_material            (entry);
+#+END_SRC
 
 * Resource Views
 ** api_resources view
@@ -2238,7 +2277,7 @@ CREATE VIEW
      raw.data ->> 'requestURI' ~ ops.regex
      raw.data ->> 'verb' = 
      ops.raw_swagger_id = 1
-#+NAME: experimental load_audit_events.sh
+ #+NAME: experimental load_audit_events.sh
  #+BEGIN_SRC shell :var AUDIT_LOG="../data/artifacts/ci-kubernetes-e2e-gci-gce/1134962072287711234/combined-audit.log"
 
   BUCKET='ci-kubernetes-e2e-gci-gce'
@@ -2255,16 +2294,18 @@ CREATE VIEW
        AND raw.data ->> 'verb' = ops.event_verb
        AND raw.data ->> 'requestURI' ~ ops.regex;
   "
-  cat $AUDIT_LOG | psql -c "$SQL"
+  cat $AUDIT_LOG | psql -c "$SQL" 2>&1
   date
  #+END_SRC
 
  #+RESULTS: experimental load_audit_events.sh
  #+begin_EXAMPLE
- INSERT 0 57170
- Mon Aug 12 03:17:25 UTC 2019
+ INSERT 0 0
+ Mon Aug 12 05:34:21 UTC 2019
  #+end_EXAMPLE
-    
+ ** event_verb_to_http_method
+
+  
  #+BEGIN_SRC sql-mode
 SELECT DISTINCT audit_id, operation_id
 FROM zraw_audit_events;
