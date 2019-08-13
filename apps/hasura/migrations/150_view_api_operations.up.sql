@@ -39,10 +39,7 @@ CREATE OR REPLACE VIEW "public"."api_operations" AS
    GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
    ORDER BY paths.key;
 
-
-
-
-
+-- api_operations_material
 -- #+NAME: api_operations_material
 
 CREATE MATERIALIZED VIEW "public"."api_operations_material" AS 
@@ -56,9 +53,9 @@ CREATE MATERIALIZED VIEW "public"."api_operations_material" AS
          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
          (d.value ->> 'description'::text) AS description,
-         (d.value -> 'consumes'::text) AS consumes,
-         (d.value -> 'responses'::text) AS responses,
-         (d.value -> 'parameters'::text) AS parameters,
+         (d.value -> 'consumes'::text)::jsonb AS consumes,
+         (d.value -> 'responses'::text)::jsonb AS responses,
+         (d.value -> 'parameters'::text)::jsonb AS parameters,
          (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
          split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
          string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
@@ -84,39 +81,21 @@ CREATE MATERIALIZED VIEW "public"."api_operations_material" AS
 
 -- indexes
 
--- #+NAME: index the raw_audit_events
+-- #+NAME: index the api_operations_material
 
--- CREATE INDEX idx_api_operations_material_primary ON api_operations_material USING (raw_swagger_id, event_verb, regex);
--- CREATE INDEX idx_audit_events_level_btree      ON raw_audit_events USING BTREE ((data->>'level'));
--- CREATE INDEX idx_audit_events_level_hash       ON raw_audit_events USING HASH  ((data->>'level'));
--- CREATE INDEX idx_api_operations_material_jsonb_ops ON raw_audit_events USING GIN (data jsonb_ops);
--- CREATE INDEX idx_audit_events_jsonb_path_jobs  ON raw_audit_events USING GIN (data jsonb_path_ops);
--- CREATE INDEX idx_audit_events_level_btree      ON raw_audit_events USING BTREE ((data->>'level'));
--- CREATE INDEX idx_audit_events_level_hash       ON raw_audit_events USING HASH  ((data->>'level'));
--- CREATE INDEX idx_audit_events_stage_btree      ON raw_audit_events USING BTREE ((data->>'stage'));
--- CREATE INDEX idx_audit_events_stage_hash       ON raw_audit_events USING HASH  ((data->>'stage'));
--- CREATE INDEX idx_audit_events_verb_btree       ON raw_audit_events USING BTREE ((data->>'verb'));
--- CREATE INDEX idx_audit_events_verb_hash        ON raw_audit_events USING HASH  ((data->>'verb'));
--- CREATE INDEX idx_audit_events_apiVersion_btree ON raw_audit_events USING BTREE ((data->>'apiVersion'));
--- CREATE INDEX idx_audit_events_apiVersion_hash  ON raw_audit_events USING HASH  ((data->>'apiVersion'));
--- CREATE INDEX idx_audit_events_requestURI_btree ON raw_audit_events USING BTREE ((data->>'requestURI'));
--- CREATE INDEX idx_audit_events_requestURI_hash  ON raw_audit_events USING HASH  ((data->>'requestURI'));
--- CREATE INDEX idx_audit_events_userAgent_btree  ON raw_audit_events USING BTREE ((data->>'userAgent'));
--- CREATE INDEX idx_audit_events_userAgent_hash   ON raw_audit_events USING HASH  ((data->>'userAgent'));
--- CREATE INDEX idx_audit_events_namespace_btree  ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'namespace'));
--- CREATE INDEX idx_audit_events_namespace_hash   ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'namespace'));
--- CREATE INDEX idx_audit_events_resource_btree   ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'resource'));
--- CREATE INDEX idx_audit_events_resource_hash    ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'resource'));
--- CREATE INDEX idx_audit_events_apiGroup_btree   ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'apiGroup'));
--- CREATE INDEX idx_audit_events_apiGroup_hash    ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'apiGroup'));
--- CREATE INDEX idx_audit_events_apiVersion_btree ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'apiVersion'));
--- CREATE INDEX idx_audit_events_apiVersion_hash  ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'apiVersion'));
--- CREATE INDEX idx_audit_events_requests_gin     ON raw_audit_events USING GIN ((data->'requestObject'));
--- CREATE INDEX idx_audit_events_requests_gin     ON raw_audit_events USING GIN ((data->'requestObject'));
--- CREATE INDEX idx_audit_events_namespace_hash   ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'namespace'));
--- CREATE INDEX idx_audit_events_X_gin  ON raw_audit_events USING GIN ((data->'X'));
--- CREATE INDEX idx_audit_events_X_btree ON raw_audit_events USING BTREE ((data->'X'));
--- CREATE INDEX idx_audit_events_X_hash ON raw_audit_events USING HASH ((data->'X'));
--- CREATE INDEX idx_audit_events_X ON raw_audit_events USING GIN ((jsb->‘X’));
--- CREATE INDEX idx_audit_events_X ON raw_audit_events USING BTREE ((jsb->>‘X’));
--- CREATE INDEX idx_audit_events_X ON raw_audit_events USING HASH ((jsb->>‘X’))
+CREATE UNIQUE INDEX                                  ON api_operations_material(raw_swagger_id, http_method, regex);
+CREATE INDEX api_operations_materialized_event_verb  ON api_operations_material            (event_verb);
+CREATE INDEX api_operations_materialized_k8s_action  ON api_operations_material            (k8s_action);
+CREATE INDEX api_operations_materialized_k8s_group   ON api_operations_material            (k8s_group);
+CREATE INDEX api_operations_materialized_k8s_version ON api_operations_material            (k8s_version);
+CREATE INDEX api_operations_materialized_k8s_kind    ON api_operations_material            (k8s_kind);
+CREATE INDEX api_operations_materialized_tags        ON api_operations_material            (tags);
+CREATE INDEX api_operations_materialized_schemes     ON api_operations_material            (schemes);
+CREATE INDEX api_operations_materialized_regex_gist  ON api_operations_material USING GIST (regex gist_trgm_ops);
+CREATE INDEX api_operations_materialized_regex_gin   ON api_operations_material USING GIN  (regex gin_trgm_ops);
+CREATE INDEX api_operations_materialized_consumes_ops   ON api_operations_material USING GIN  (consumes jsonb_ops);
+CREATE INDEX api_operations_materialized_consumes_path  ON api_operations_material USING GIN  (consumes jsonb_path_ops);
+CREATE INDEX api_operations_materialized_parameters_ops   ON api_operations_material USING GIN  (parameters jsonb_ops);
+CREATE INDEX api_operations_materialized_parameters_path  ON api_operations_material USING GIN  (parameters jsonb_path_ops);
+CREATE INDEX api_operations_materialized_responses_ops   ON api_operations_material USING GIN  (responses jsonb_ops);
+CREATE INDEX api_operations_materialized_responses_path  ON api_operations_material USING GIN  (responses jsonb_path_ops);
