@@ -2959,7 +2959,59 @@ order by field;
 
 #+end_src
 
+** What that looks like as a based
+#+BEGIN_SRC sql-mode
+select distinct resource_field as podspec_field, 0 as other_hits, 0 as e2e_hits, 0 as conf_hits
+from api_resources_fields
+where api_resource_name like '%PodSpec%'
+order by podspec_field; 
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+         podspec_field         | other_hits | e2e_hits | conf_hits 
+-------------------------------+------------+----------+-----------
+ activeDeadlineSeconds         |          0 |        0 |         0
+ affinity                      |          0 |        0 |         0
+ automountServiceAccountToken  |          0 |        0 |         0
+ containers                    |          0 |        0 |         0
+ dnsConfig                     |          0 |        0 |         0
+ dnsPolicy                     |          0 |        0 |         0
+ enableServiceLinks            |          0 |        0 |         0
+ ephemeralContainers           |          0 |        0 |         0
+ hostAliases                   |          0 |        0 |         0
+ hostIPC                       |          0 |        0 |         0
+ hostname                      |          0 |        0 |         0
+ hostNetwork                   |          0 |        0 |         0
+ hostPID                       |          0 |        0 |         0
+ imagePullSecrets              |          0 |        0 |         0
+ initContainers                |          0 |        0 |         0
+ nodeName                      |          0 |        0 |         0
+ nodeSelector                  |          0 |        0 |         0
+ overhead                      |          0 |        0 |         0
+ preemptionPolicy              |          0 |        0 |         0
+ priority                      |          0 |        0 |         0
+ priorityClassName             |          0 |        0 |         0
+ readinessGates                |          0 |        0 |         0
+ restartPolicy                 |          0 |        0 |         0
+ runtimeClassName              |          0 |        0 |         0
+ schedulerName                 |          0 |        0 |         0
+ securityContext               |          0 |        0 |         0
+ serviceAccount                |          0 |        0 |         0
+ serviceAccountName            |          0 |        0 |         0
+ shareProcessNamespace         |          0 |        0 |         0
+ subdomain                     |          0 |        0 |         0
+ terminationGracePeriodSeconds |          0 |        0 |         0
+ tolerations                   |          0 |        0 |         0
+ topologySpreadConstraints     |          0 |        0 |         0
+ volumes                       |          0 |        0 |         0
+(34 rows)
+
+#+end_src
+
+
 ** In some way, this api_resources evententually have a leaf property of PodSpec
+
 
 #+BEGIN_SRC sql-mode
   select distinct api_resource_name, resource_field as field, param_kind as kind
@@ -4727,6 +4779,837 @@ order by name ;
  io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceList
  io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceSpec
 (175 rows)
+
+#+end_src
+
+** foo
+
+* PodSpec Fields Hits Per Operation/Test+UserAgent
+#+BEGIN_SRC sql-mode
+  CREATE MATERIALIZED VIEW "public"."podspec_field_coverage_material" AS 
+  SELECT DISTINCT
+    audit_events.operation_id,
+    jsonb_object_keys(audit_events.request_object -> 'spec'::text) AS podspec_field,
+    count(event_field.event_field) AS hits,
+    split_part(audit_events.useragent, '--', 2) as test,
+    split_part(audit_events.useragent, '--', 1) as useragent
+    FROM audit_events,
+         LATERAL
+           jsonb_object_keys(audit_events.request_object -> 'spec'::text)
+           event_field(event_field)
+   WHERE (audit_events.request_object ->> 'kind'::text) = 'Pod'::text
+     AND audit_events.operation_id !~~ '%alpha%'::text
+     AND audit_events.operation_id !~~ '%beta%'::text
+   GROUP BY operation_id, podspec_field, useragent
+  UNION
+  SELECT DISTINCT
+    audit_events.operation_id,
+    jsonb_object_keys(audit_events.request_object -> 'template' -> 'spec'::text) AS podspec_field,
+    count(event_field.event_field) AS hits,
+    split_part(audit_events.useragent, '--', 2) as test,
+    split_part(audit_events.useragent, '--', 1) as useragent
+    FROM audit_events,
+         LATERAL
+           jsonb_object_keys(audit_events.request_object -> 'template' -> 'spec'::text)
+           event_field(event_field)
+   WHERE (audit_events.request_object ->> 'kind'::text) = 'PodTemplate'::text
+     AND audit_events.operation_id !~~ '%alpha%'::text
+     AND audit_events.operation_id !~~ '%beta%'::text
+   GROUP BY operation_id, podspec_field, useragent
+  UNION
+  SELECT DISTINCT
+    audit_events.operation_id,
+    jsonb_object_keys(audit_events.request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+    count(event_field.event_field) AS hits,
+    split_part(audit_events.useragent, '--', 2) as test,
+    split_part(audit_events.useragent, '--', 1) as useragent
+    FROM audit_events,
+         LATERAL
+           jsonb_object_keys(audit_events.request_object -> 'spec' -> 'template' -> 'spec'::text)
+           event_field(event_field)
+   WHERE (audit_events.request_object->>'kind' = 'DaemonSet'
+     OR  audit_events.request_object->>'kind' = 'Deployment'
+     OR  audit_events.request_object->>'kind' = 'ReplicationController'
+     OR  audit_events.request_object->>'kind' = 'StatefulSet'
+     OR  audit_events.request_object->>'kind' = 'Job'
+     OR  audit_events.request_object->>'kind' = 'ReplicaSet')
+     AND audit_events.operation_id !~~ '%alpha%'::text
+     AND audit_events.operation_id !~~ '%beta%'::text
+   GROUP BY operation_id, podspec_field, useragent;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+SELECT 6572
+#+end_src
+
+#+BEGIN_SRC sql-mode
+create view podspec_field_coverage as select * from podspec_field_coverage_material;
+#+END_SRC
+
+* Pre-Final Report
+** other_hits
+#+BEGIN_SRC sql-mode
+  select
+    podspec_field,
+    sum(hits) as other_hits,
+    -- useragent
+    0 as e2e_hits,
+    0 as conf_hits
+    from podspec_field_coverage
+  where test = ''
+  and useragent not like 'e2e.test%'
+  group by podspec_field
+  -- group by podspec_field, useragent
+  order by other_hits;
+  -- order by useragent, hits;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+         podspec_field         | other_hits | e2e_hits | conf_hits 
+-------------------------------+------------+----------+-----------
+ activeDeadlineSeconds         |         18 |        0 |         0
+ priority                      |        900 |        0 |         0
+ affinity                      |       1213 |        0 |         0
+ hostNetwork                   |       2687 |        0 |         0
+ nodeSelector                  |       3260 |        0 |         0
+ priorityClassName             |       3731 |        0 |         0
+ tolerations                   |       4820 |        0 |         0
+ subdomain                     |       5253 |        0 |         0
+ hostname                      |       5469 |        0 |         0
+ nodeName                      |       8379 |        0 |         0
+ serviceAccount                |      12025 |        0 |         0
+ serviceAccountName            |      12025 |        0 |         0
+ enableServiceLinks            |      12097 |        0 |         0
+ volumes                       |      15598 |        0 |         0
+ securityContext               |      27717 |        0 |         0
+ schedulerName                 |      27717 |        0 |         0
+ restartPolicy                 |      27717 |        0 |         0
+ terminationGracePeriodSeconds |      27717 |        0 |         0
+ containers                    |      27717 |        0 |         0
+ dnsPolicy                     |      27717 |        0 |         0
+(20 rows)
+
+#+end_src
+** e2e.test without test
+
+#+BEGIN_SRC sql-mode
+  select
+    podspec_field,
+    0 as other_hits,
+    sum(hits) as e2e_hits,
+    0 as conf_hits
+    from podspec_field_coverage
+  where useragent like 'e2e.test%'
+  and test not like '%Conformance%'
+  group by podspec_field
+  -- group by podspec_field, useragent
+  order by e2e_hits;
+  -- order by useragent, hits;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+         podspec_field         | other_hits | e2e_hits | conf_hits 
+-------------------------------+------------+----------+-----------
+ readinessGates                |          0 |        8 |         0
+ activeDeadlineSeconds         |          0 |        8 |         0
+ dnsConfig                     |          0 |       16 |         0
+ hostIPC                       |          0 |       16 |         0
+ hostPID                       |          0 |       16 |         0
+ priorityClassName             |          0 |       32 |         0
+ runtimeClassName              |          0 |       36 |         0
+ automountServiceAccountToken  |          0 |       36 |         0
+ affinity                      |          0 |       43 |         0
+ priority                      |          0 |       83 |         0
+ tolerations                   |          0 |       83 |         0
+ hostname                      |          0 |       85 |         0
+ subdomain                     |          0 |       85 |         0
+ nodeSelector                  |          0 |      257 |         0
+ serviceAccount                |          0 |     1199 |         0
+ serviceAccountName            |          0 |     1199 |         0
+ initContainers                |          0 |     1315 |         0
+ hostNetwork                   |          0 |     1574 |         0
+ nodeName                      |          0 |     4170 |         0
+ enableServiceLinks            |          0 |     6506 |         0
+ volumes                       |          0 |     6903 |         0
+ schedulerName                 |          0 |    13194 |         0
+ containers                    |          0 |    13194 |         0
+ restartPolicy                 |          0 |    13194 |         0
+ dnsPolicy                     |          0 |    13194 |         0
+ terminationGracePeriodSeconds |          0 |    13194 |         0
+ securityContext               |          0 |    13194 |         0
+(27 rows)
+
+#+end_src
+
+** e2e.test with non-conformance test
+
+#+BEGIN_SRC sql-mode
+  select
+    podspec_field,
+    0 as other_hits,
+    0 as e2e_hits,
+    sum(hits) as conf_hits
+    from podspec_field_coverage
+  where test like '%Conformance%'
+  group by podspec_field
+  -- group by podspec_field, useragent
+  order by conf_hits;
+  -- order by useragent, hits;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+         podspec_field         | other_hits | e2e_hits | conf_hits 
+-------------------------------+------------+----------+-----------
+ imagePullSecrets              |          0 |        0 |         8
+ hostAliases                   |          0 |        0 |         8
+ activeDeadlineSeconds         |          0 |        0 |        14
+ initContainers                |          0 |        0 |        32
+ hostNetwork                   |          0 |        0 |        41
+ subdomain                     |          0 |        0 |        60
+ hostname                      |          0 |        0 |        60
+ automountServiceAccountToken  |          0 |        0 |        60
+ priority                      |          0 |        0 |       105
+ tolerations                   |          0 |        0 |       105
+ nodeName                      |          0 |        0 |       127
+ nodeSelector                  |          0 |        0 |       128
+ serviceAccount                |          0 |        0 |       201
+ serviceAccountName            |          0 |        0 |       201
+ volumes                       |          0 |        0 |       876
+ enableServiceLinks            |          0 |        0 |      1741
+ terminationGracePeriodSeconds |          0 |        0 |      2063
+ securityContext               |          0 |        0 |      2063
+ containers                    |          0 |        0 |      2063
+ restartPolicy                 |          0 |        0 |      2063
+ dnsPolicy                     |          0 |        0 |      2063
+ schedulerName                 |          0 |        0 |      2063
+(22 rows)
+
+#+end_src
+
+
+#+BEGIN_SRC sql-mode
+select distinct resource_field as field, 0 as hits, 0 as test_hits, 0 as conformance_hits
+from api_resources_fields
+where api_resource_name like '%PodSpec%'
+order by field;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+             field             | hits | test_hits | conformance_hits 
+-------------------------------+------+-----------+------------------
+ activeDeadlineSeconds         |    0 |         0 |                0
+ affinity                      |    0 |         0 |                0
+ automountServiceAccountToken  |    0 |         0 |                0
+ containers                    |    0 |         0 |                0
+ dnsConfig                     |    0 |         0 |                0
+ dnsPolicy                     |    0 |         0 |                0
+ enableServiceLinks            |    0 |         0 |                0
+ ephemeralContainers           |    0 |         0 |                0
+ hostAliases                   |    0 |         0 |                0
+ hostIPC                       |    0 |         0 |                0
+ hostname                      |    0 |         0 |                0
+ hostNetwork                   |    0 |         0 |                0
+ hostPID                       |    0 |         0 |                0
+ imagePullSecrets              |    0 |         0 |                0
+ initContainers                |    0 |         0 |                0
+ nodeName                      |    0 |         0 |                0
+ nodeSelector                  |    0 |         0 |                0
+ overhead                      |    0 |         0 |                0
+ preemptionPolicy              |    0 |         0 |                0
+ priority                      |    0 |         0 |                0
+ priorityClassName             |    0 |         0 |                0
+ readinessGates                |    0 |         0 |                0
+ restartPolicy                 |    0 |         0 |                0
+ runtimeClassName              |    0 |         0 |                0
+ schedulerName                 |    0 |         0 |                0
+ securityContext               |    0 |         0 |                0
+ serviceAccount                |    0 |         0 |                0
+ serviceAccountName            |    0 |         0 |                0
+ shareProcessNamespace         |    0 |         0 |                0
+ subdomain                     |    0 |         0 |                0
+ terminationGracePeriodSeconds |    0 |         0 |                0
+ tolerations                   |    0 |         0 |                0
+ topologySpreadConstraints     |    0 |         0 |                0
+ volumes                       |    0 |         0 |                0
+(34 rows)
+
+#+end_src
+
+* UNION Final Report
+#+BEGIN_SRC sql-mode
+  create view summary as
+  select distinct resource_field as podspec_field,
+                  0 as other_hits,
+                  0 as e2e_hits,
+                  0 as conf_hits
+    from api_resources_fields
+   where api_resource_name like '%PodSpec%'
+   UNION
+  select
+    podspec_field,
+    sum(hits) as other_hits,
+    0 as e2e_hits,
+    0 as conf_hits
+    from podspec_field_coverage
+   where useragent not like 'e2e.test%'
+   group by podspec_field
+   UNION
+  select
+    podspec_field,
+    0 as other_hits,
+    sum(hits) as e2e_hits,
+    0 as conf_hits
+    from podspec_field_coverage
+   where useragent like 'e2e.test%'
+     and test not like '%Conformance%'
+   group by podspec_field
+   UNION
+  select
+    podspec_field,
+    0 as other_hits,
+    0 as e2e_hits,
+    sum(hits) as conf_hits
+    from podspec_field_coverage
+   where useragent like 'e2e.test%'
+     and test like '%Conformance%'
+   group by podspec_field;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+CREATE VIEW
+#+end_src
+
+
+#+BEGIN_SRC sql-mode
+select distinct podspec_field,
+      sum(other_hits) as other_hits,
+      sum(e2e_hits) as e2e_hits,
+      sum(conf_hits) as conf_hits
+from summary
+group by podspec_field
+order by conf_hits, e2e_hits, other_hits;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+         podspec_field         | other_hits | e2e_hits | conf_hits 
+-------------------------------+------------+----------+-----------
+ ephemeralContainers           |          0 |        0 |         0
+ overhead                      |          0 |        0 |         0
+ preemptionPolicy              |          0 |        0 |         0
+ shareProcessNamespace         |          0 |        0 |         0
+ topologySpreadConstraints     |          0 |        0 |         0
+ readinessGates                |          0 |        8 |         0
+ dnsConfig                     |          0 |       16 |         0
+ hostIPC                       |          0 |       16 |         0
+ hostPID                       |          0 |       16 |         0
+ priorityClassName             |       3731 |       32 |         0
+ runtimeClassName              |          0 |       36 |         0
+ affinity                      |       1213 |       43 |         0
+ hostAliases                   |          0 |        0 |         8
+ imagePullSecrets              |          0 |        0 |         8
+ activeDeadlineSeconds         |         18 |        8 |        14
+ initContainers                |          0 |     1315 |        32
+ hostNetwork                   |       2687 |     1574 |        41
+ automountServiceAccountToken  |          0 |       36 |        60
+ subdomain                     |       5253 |       85 |        60
+ hostname                      |       5469 |       85 |        60
+ priority                      |        900 |       83 |       105
+ tolerations                   |       4820 |       83 |       105
+ nodeName                      |       8379 |     4170 |       127
+ nodeSelector                  |       3260 |      257 |       128
+ serviceAccount                |      12025 |     1199 |       201
+ serviceAccountName            |      12025 |     1199 |       201
+ volumes                       |      15598 |     6903 |       876
+ enableServiceLinks            |      12097 |     6506 |      1741
+ containers                    |      27717 |    13194 |      2063
+ dnsPolicy                     |      27717 |    13194 |      2063
+ restartPolicy                 |      27717 |    13194 |      2063
+ schedulerName                 |      27717 |    13194 |      2063
+ securityContext               |      27717 |    13194 |      2063
+ terminationGracePeriodSeconds |      27717 |    13194 |      2063
+(34 rows)
+
+#+end_src
+
+
+
+* OTHER
+** PodTemplate.template.spec
+   
+#+BEGIN_SRC sql-mode
+  SELECT DISTINCT
+    audit_events.operation_id,
+    jsonb_object_keys(audit_events.request_object -> 'template' -> 'spec'::text) AS podspec_field,
+    count(event_field.event_field) AS hits
+    FROM audit_events,
+         LATERAL
+           jsonb_object_keys(audit_events.request_object -> 'template' -> 'spec'::text)
+           event_field(event_field)
+   WHERE (audit_events.request_object ->> 'kind'::text) = 'PodTemplate'::text
+     AND audit_events.operation_id !~~ '%alpha%'::text
+     AND audit_events.operation_id !~~ '%beta%'::text
+   GROUP BY operation_id, podspec_field
+   ORDER BY (count(event_field.event_field));
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+           operation_id            |         podspec_field         | hits 
+-----------------------------------+-------------------------------+------
+ createCoreV1NamespacedPodTemplate | containers                    | 4920
+ createCoreV1NamespacedPodTemplate | dnsPolicy                     | 4920
+ createCoreV1NamespacedPodTemplate | restartPolicy                 | 4920
+ createCoreV1NamespacedPodTemplate | schedulerName                 | 4920
+ createCoreV1NamespacedPodTemplate | securityContext               | 4920
+ createCoreV1NamespacedPodTemplate | terminationGracePeriodSeconds | 4920
+(6 rows)
+
+#+end_src
+
+** *.spec.template.spec
+#+BEGIN_SRC sql-mode
+  SELECT DISTINCT
+    audit_events.operation_id,
+    jsonb_object_keys(audit_events.request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+    count(event_field.event_field) AS hits
+    FROM audit_events,
+         LATERAL
+           jsonb_object_keys(audit_events.request_object -> 'spec' -> 'template' -> 'spec'::text)
+           event_field(event_field)
+   WHERE (audit_events.request_object->>'kind' = 'DaemonSet'
+     OR  audit_events.request_object->>'kind' = 'Deployment'
+     OR  audit_events.request_object->>'kind' = 'ReplicationController'
+     OR  audit_events.request_object->>'kind' = 'StatefulSet'
+     OR  audit_events.request_object->>'kind' = 'Job'
+     OR  audit_events.request_object->>'kind' = 'ReplicaSet')
+     AND audit_events.operation_id !~~ '%alpha%'::text
+     AND audit_events.operation_id !~~ '%beta%'::text
+   GROUP BY operation_id, podspec_field
+   ORDER BY (count(event_field.event_field));
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                    operation_id                    |         podspec_field         | hits 
+----------------------------------------------------+-------------------------------+------
+ createCoreV1NamespacedReplicationController        | nodeSelector                  |    7
+ replaceAppsV1NamespacedStatefulSet                 | nodeName                      |    7
+ createCoreV1NamespacedReplicationController        | volumes                       |   14
+ createAppsV1NamespacedDeployment                   | nodeSelector                  |   20
+ createAppsV1NamespacedDaemonSet                    | nodeSelector                  |   25
+ createAppsV1NamespacedDaemonSet                    | priorityClassName             |   25
+ createAppsV1NamespacedDaemonSet                    | tolerations                   |   25
+ createAppsV1NamespacedReplicaSet                   | nodeSelector                  |   52
+ replaceCoreV1NamespacedReplicationController       | containers                    |   54
+ replaceCoreV1NamespacedReplicationController       | dnsPolicy                     |   54
+ replaceCoreV1NamespacedReplicationController       | restartPolicy                 |   54
+ replaceCoreV1NamespacedReplicationController       | schedulerName                 |   54
+ replaceCoreV1NamespacedReplicationController       | securityContext               |   54
+ replaceCoreV1NamespacedReplicationController       | terminationGracePeriodSeconds |   54
+ createAppsV1NamespacedDeployment                   | priorityClassName             |   55
+ createAppsV1NamespacedDeployment                   | tolerations                   |   55
+ replaceAppsV1NamespacedStatefulSet                 | volumes                       |   56
+ replaceCoreV1NamespacedReplicationControllerStatus | volumes                       |   56
+ createAppsV1NamespacedDeployment                   | serviceAccount                |   72
+ createAppsV1NamespacedDeployment                   | serviceAccountName            |   72
+ replaceAppsV1NamespacedReplicaSet                  | nodeSelector                  |   72
+ createAppsV1NamespacedReplicaSet                   | tolerations                   |   77
+ createAppsV1NamespacedReplicaSet                   | serviceAccount                |   94
+ createAppsV1NamespacedReplicaSet                   | serviceAccountName            |   94
+ replaceAppsV1NamespacedReplicaSet                  | priorityClassName             |   94
+ replaceAppsV1NamespacedReplicaSet                  | serviceAccount                |   94
+ replaceAppsV1NamespacedReplicaSet                  | serviceAccountName            |   94
+ replaceAppsV1NamespacedReplicaSet                  | tolerations                   |   94
+ replaceAppsV1NamespacedReplicaSet                  | volumes                       |   94
+ createAppsV1NamespacedReplicaSet                   | priorityClassName             |  109
+ createBatchV1NamespacedJob                         | volumes                       |  112
+ createBatchV1NamespacedJob                         | containers                    |  154
+ createBatchV1NamespacedJob                         | dnsPolicy                     |  154
+ createBatchV1NamespacedJob                         | restartPolicy                 |  154
+ createBatchV1NamespacedJob                         | schedulerName                 |  154
+ createBatchV1NamespacedJob                         | securityContext               |  154
+ createBatchV1NamespacedJob                         | terminationGracePeriodSeconds |  154
+ createAppsV1NamespacedDeployment                   | volumes                       |  174
+ replaceAppsV1NamespacedStatefulSet                 | containers                    |  183
+ replaceAppsV1NamespacedStatefulSet                 | dnsPolicy                     |  183
+ replaceAppsV1NamespacedStatefulSet                 | restartPolicy                 |  183
+ replaceAppsV1NamespacedStatefulSet                 | schedulerName                 |  183
+ replaceAppsV1NamespacedStatefulSet                 | securityContext               |  183
+ replaceAppsV1NamespacedStatefulSet                 | terminationGracePeriodSeconds |  183
+ replaceAppsV1NamespacedDeployment                  | containers                    |  228
+ replaceAppsV1NamespacedDeployment                  | dnsPolicy                     |  228
+ replaceAppsV1NamespacedDeployment                  | restartPolicy                 |  228
+ replaceAppsV1NamespacedDeployment                  | schedulerName                 |  228
+ replaceAppsV1NamespacedDeployment                  | securityContext               |  228
+ replaceAppsV1NamespacedDeployment                  | terminationGracePeriodSeconds |  228
+ createCoreV1NamespacedReplicationController        | containers                    |  279
+ createCoreV1NamespacedReplicationController        | dnsPolicy                     |  279
+ createCoreV1NamespacedReplicationController        | restartPolicy                 |  279
+ createCoreV1NamespacedReplicationController        | schedulerName                 |  279
+ createCoreV1NamespacedReplicationController        | securityContext               |  279
+ createCoreV1NamespacedReplicationController        | terminationGracePeriodSeconds |  279
+ createAppsV1NamespacedDaemonSet                    | nodeName                      |  286
+ replaceBatchV1NamespacedJobStatus                  | volumes                       |  287
+ replaceCoreV1NamespacedReplicationControllerStatus | nodeSelector                  |  294
+ createAppsV1NamespacedDaemonSet                    | volumes                       |  299
+ createAppsV1NamespacedDeployment                   | containers                    |  300
+ createAppsV1NamespacedDeployment                   | dnsPolicy                     |  300
+ createAppsV1NamespacedDeployment                   | restartPolicy                 |  300
+ createAppsV1NamespacedDeployment                   | schedulerName                 |  300
+ createAppsV1NamespacedDeployment                   | securityContext               |  300
+ createAppsV1NamespacedDeployment                   | terminationGracePeriodSeconds |  300
+ createAppsV1NamespacedDaemonSet                    | containers                    |  311
+ createAppsV1NamespacedDaemonSet                    | dnsPolicy                     |  311
+ createAppsV1NamespacedDaemonSet                    | hostNetwork                   |  311
+ createAppsV1NamespacedDaemonSet                    | restartPolicy                 |  311
+ createAppsV1NamespacedDaemonSet                    | schedulerName                 |  311
+ createAppsV1NamespacedDaemonSet                    | securityContext               |  311
+ createAppsV1NamespacedDaemonSet                    | serviceAccount                |  311
+ createAppsV1NamespacedDaemonSet                    | serviceAccountName            |  311
+ createAppsV1NamespacedDaemonSet                    | terminationGracePeriodSeconds |  311
+ replaceBatchV1NamespacedJobStatus                  | containers                    |  353
+ replaceBatchV1NamespacedJobStatus                  | dnsPolicy                     |  353
+ replaceBatchV1NamespacedJobStatus                  | restartPolicy                 |  353
+ replaceBatchV1NamespacedJobStatus                  | schedulerName                 |  353
+ replaceBatchV1NamespacedJobStatus                  | securityContext               |  353
+ replaceBatchV1NamespacedJobStatus                  | terminationGracePeriodSeconds |  353
+ replaceAppsV1NamespacedDeploymentStatus            | nodeSelector                  |  400
+ replaceAppsV1NamespacedReplicaSet                  | containers                    |  418
+ replaceAppsV1NamespacedReplicaSet                  | dnsPolicy                     |  418
+ replaceAppsV1NamespacedReplicaSet                  | restartPolicy                 |  418
+ replaceAppsV1NamespacedReplicaSet                  | schedulerName                 |  418
+ replaceAppsV1NamespacedReplicaSet                  | securityContext               |  418
+ replaceAppsV1NamespacedReplicaSet                  | terminationGracePeriodSeconds |  418
+ replaceAppsV1NamespacedReplicaSetStatus            | tolerations                   |  530
+ replaceAppsV1NamespacedReplicaSetStatus            | nodeSelector                  |  560
+ replaceAppsV1NamespacedReplicaSetStatus            | serviceAccount                |  581
+ replaceAppsV1NamespacedReplicaSetStatus            | serviceAccountName            |  581
+ replaceAppsV1NamespacedDaemonSetStatus             | nodeSelector                  |  611
+ replaceAppsV1NamespacedDaemonSetStatus             | priorityClassName             |  611
+ replaceAppsV1NamespacedDaemonSetStatus             | tolerations                   |  611
+ createAppsV1NamespacedReplicaSet                   | volumes                       |  658
+ replaceAppsV1NamespacedDaemonSetStatus             | nodeName                      |  715
+ replaceAppsV1NamespacedDeploymentStatus            | priorityClassName             |  733
+ replaceAppsV1NamespacedDeploymentStatus            | tolerations                   |  733
+ replaceAppsV1NamespacedReplicaSetStatus            | priorityClassName             |  794
+ replaceAppsV1NamespacedDeploymentStatus            | serviceAccount                |  818
+ replaceAppsV1NamespacedDeploymentStatus            | serviceAccountName            |  818
+ createAppsV1NamespacedStatefulSet                  | serviceAccount                |  830
+ createAppsV1NamespacedStatefulSet                  | serviceAccountName            |  830
+ createAppsV1NamespacedStatefulSet                  | nodeName                      |  837
+ createAppsV1NamespacedStatefulSet                  | volumes                       |  858
+ createAppsV1NamespacedStatefulSet                  | containers                    |  901
+ createAppsV1NamespacedStatefulSet                  | dnsPolicy                     |  901
+ createAppsV1NamespacedStatefulSet                  | restartPolicy                 |  901
+ createAppsV1NamespacedStatefulSet                  | schedulerName                 |  901
+ createAppsV1NamespacedStatefulSet                  | securityContext               |  901
+ createAppsV1NamespacedStatefulSet                  | terminationGracePeriodSeconds |  901
+ replaceAppsV1NamespacedReplicaSetStatus            | volumes                       |  921
+ replaceAppsV1NamespacedDaemonSetStatus             | volumes                       | 1170
+ createAppsV1NamespacedReplicaSet                   | containers                    | 1212
+ createAppsV1NamespacedReplicaSet                   | dnsPolicy                     | 1212
+ createAppsV1NamespacedReplicaSet                   | restartPolicy                 | 1212
+ createAppsV1NamespacedReplicaSet                   | schedulerName                 | 1212
+ createAppsV1NamespacedReplicaSet                   | securityContext               | 1212
+ createAppsV1NamespacedReplicaSet                   | terminationGracePeriodSeconds | 1212
+ replaceAppsV1NamespacedDaemonSetStatus             | containers                    | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | dnsPolicy                     | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | hostNetwork                   | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | restartPolicy                 | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | schedulerName                 | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | securityContext               | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | serviceAccount                | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | serviceAccountName            | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | terminationGracePeriodSeconds | 1326
+ replaceAppsV1NamespacedStatefulSetStatus           | serviceAccount                | 1710
+ replaceAppsV1NamespacedStatefulSetStatus           | serviceAccountName            | 1710
+ replaceAppsV1NamespacedStatefulSetStatus           | nodeName                      | 1745
+ replaceCoreV1NamespacedReplicationControllerStatus | containers                    | 1772
+ replaceCoreV1NamespacedReplicationControllerStatus | dnsPolicy                     | 1772
+ replaceCoreV1NamespacedReplicationControllerStatus | restartPolicy                 | 1772
+ replaceCoreV1NamespacedReplicationControllerStatus | schedulerName                 | 1772
+ replaceCoreV1NamespacedReplicationControllerStatus | securityContext               | 1772
+ replaceCoreV1NamespacedReplicationControllerStatus | terminationGracePeriodSeconds | 1772
+ replaceAppsV1NamespacedDeploymentStatus            | volumes                       | 1792
+ replaceAppsV1NamespacedStatefulSetStatus           | volumes                       | 2263
+ replaceAppsV1NamespacedStatefulSetStatus           | containers                    | 3144
+ replaceAppsV1NamespacedStatefulSetStatus           | dnsPolicy                     | 3144
+ replaceAppsV1NamespacedStatefulSetStatus           | restartPolicy                 | 3144
+ replaceAppsV1NamespacedStatefulSetStatus           | schedulerName                 | 3144
+ replaceAppsV1NamespacedStatefulSetStatus           | securityContext               | 3144
+ replaceAppsV1NamespacedStatefulSetStatus           | terminationGracePeriodSeconds | 3144
+ replaceAppsV1NamespacedReplicaSetStatus            | containers                    | 3205
+ replaceAppsV1NamespacedReplicaSetStatus            | dnsPolicy                     | 3205
+ replaceAppsV1NamespacedReplicaSetStatus            | restartPolicy                 | 3205
+ replaceAppsV1NamespacedReplicaSetStatus            | schedulerName                 | 3205
+ replaceAppsV1NamespacedReplicaSetStatus            | securityContext               | 3205
+ replaceAppsV1NamespacedReplicaSetStatus            | terminationGracePeriodSeconds | 3205
+ replaceAppsV1NamespacedDeploymentStatus            | containers                    | 3870
+ replaceAppsV1NamespacedDeploymentStatus            | dnsPolicy                     | 3870
+ replaceAppsV1NamespacedDeploymentStatus            | restartPolicy                 | 3870
+ replaceAppsV1NamespacedDeploymentStatus            | schedulerName                 | 3870
+ replaceAppsV1NamespacedDeploymentStatus            | securityContext               | 3870
+ replaceAppsV1NamespacedDeploymentStatus            | terminationGracePeriodSeconds | 3870
+(158 rows)
+
+#+end_src
+
+* PodSpec Operations per Test Hit
+** Pod.spec
+#+BEGIN_SRC sql-mode
+  SELECT DISTINCT
+    audit_events.operation_id,
+    unnest(jsonb_object_keys(audit_events.request_object -> 'spec'::text) ||
+           jsonb_object_keys(audit_events.request_object -> 'template' -> 'spec'::text)) as podspec_field,
+    count(event_field.event_field) AS test_hits
+    FROM audit_events,
+         LATERAL
+           unnest(jsonb_object_keys(audit_events.request_object -> 'spec'::text) ||
+                  jsonb_object_keys(audit_events.request_object -> 'template' -> 'spec'::text))
+           event_field(event_field)
+   WHERE ((audit_events.request_object ->> 'kind'::text) = 'Pod'::text
+          OR (audit_events.request_object ->> 'kind'::text) = 'PodTemplate'::text)
+     AND audit_events.operation_id !~~ '%alpha%'::text
+     AND audit_events.operation_id !~~ '%beta%'::text
+     -- AND audit_events.useragent like '%e2e.test%--%' -- test_hits
+     -- AND audit_events.useragent like '%e2e.test%--%Conformance%' -- conformance_hits
+   GROUP BY operation_id, podspec_field
+   ORDER BY (count(event_field.event_field)) DESC;
+   -- ORDER BY operation_id, (count(event_field.event_field));
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+ERROR:  function unnest(text) does not exist
+LINE 9:          unnest(
+                 ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+#+end_src
+
+** PodTemplate.template.spec
+   
+#+BEGIN_SRC sql-mode
+  SELECT DISTINCT
+    audit_events.operation_id,
+    jsonb_object_keys(audit_events.request_object -> 'template' -> 'spec'::text) AS podspec_field,
+    count(event_field.event_field) AS hits
+    FROM audit_events,
+         LATERAL
+           jsonb_object_keys(audit_events.request_object -> 'template' -> 'spec'::text)
+           event_field(event_field)
+   WHERE (audit_events.request_object ->> 'kind'::text) = 'PodTemplate'::text
+     AND audit_events.operation_id !~~ '%alpha%'::text
+     AND audit_events.operation_id !~~ '%beta%'::text
+   GROUP BY operation_id, podspec_field
+   ORDER BY (count(event_field.event_field));
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+           operation_id            |         podspec_field         | hits 
+-----------------------------------+-------------------------------+------
+ createCoreV1NamespacedPodTemplate | containers                    | 4920
+ createCoreV1NamespacedPodTemplate | dnsPolicy                     | 4920
+ createCoreV1NamespacedPodTemplate | restartPolicy                 | 4920
+ createCoreV1NamespacedPodTemplate | schedulerName                 | 4920
+ createCoreV1NamespacedPodTemplate | securityContext               | 4920
+ createCoreV1NamespacedPodTemplate | terminationGracePeriodSeconds | 4920
+(6 rows)
+
+#+end_src
+
+** *.spec.template.spec
+#+BEGIN_SRC sql-mode
+  SELECT DISTINCT
+    audit_events.operation_id,
+    jsonb_object_keys(audit_events.request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+    count(event_field.event_field) AS hits
+    FROM audit_events,
+         LATERAL
+           jsonb_object_keys(audit_events.request_object -> 'spec' -> 'template' -> 'spec'::text)
+           event_field(event_field)
+   WHERE (audit_events.request_object->>'kind' = 'DaemonSet'
+     OR  audit_events.request_object->>'kind' = 'Deployment'
+     OR  audit_events.request_object->>'kind' = 'ReplicationController'
+     OR  audit_events.request_object->>'kind' = 'StatefulSet'
+     OR  audit_events.request_object->>'kind' = 'Job'
+     OR  audit_events.request_object->>'kind' = 'ReplicaSet')
+     AND audit_events.operation_id !~~ '%alpha%'::text
+     AND audit_events.operation_id !~~ '%beta%'::text
+   GROUP BY operation_id, podspec_field
+   ORDER BY (count(event_field.event_field));
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                    operation_id                    |         podspec_field         | hits 
+----------------------------------------------------+-------------------------------+------
+ createCoreV1NamespacedReplicationController        | nodeSelector                  |    7
+ replaceAppsV1NamespacedStatefulSet                 | nodeName                      |    7
+ createCoreV1NamespacedReplicationController        | volumes                       |   14
+ createAppsV1NamespacedDeployment                   | nodeSelector                  |   20
+ createAppsV1NamespacedDaemonSet                    | nodeSelector                  |   25
+ createAppsV1NamespacedDaemonSet                    | priorityClassName             |   25
+ createAppsV1NamespacedDaemonSet                    | tolerations                   |   25
+ createAppsV1NamespacedReplicaSet                   | nodeSelector                  |   52
+ replaceCoreV1NamespacedReplicationController       | containers                    |   54
+ replaceCoreV1NamespacedReplicationController       | dnsPolicy                     |   54
+ replaceCoreV1NamespacedReplicationController       | restartPolicy                 |   54
+ replaceCoreV1NamespacedReplicationController       | schedulerName                 |   54
+ replaceCoreV1NamespacedReplicationController       | securityContext               |   54
+ replaceCoreV1NamespacedReplicationController       | terminationGracePeriodSeconds |   54
+ createAppsV1NamespacedDeployment                   | priorityClassName             |   55
+ createAppsV1NamespacedDeployment                   | tolerations                   |   55
+ replaceAppsV1NamespacedStatefulSet                 | volumes                       |   56
+ replaceCoreV1NamespacedReplicationControllerStatus | volumes                       |   56
+ createAppsV1NamespacedDeployment                   | serviceAccount                |   72
+ createAppsV1NamespacedDeployment                   | serviceAccountName            |   72
+ replaceAppsV1NamespacedReplicaSet                  | nodeSelector                  |   72
+ createAppsV1NamespacedReplicaSet                   | tolerations                   |   77
+ createAppsV1NamespacedReplicaSet                   | serviceAccount                |   94
+ createAppsV1NamespacedReplicaSet                   | serviceAccountName            |   94
+ replaceAppsV1NamespacedReplicaSet                  | priorityClassName             |   94
+ replaceAppsV1NamespacedReplicaSet                  | serviceAccount                |   94
+ replaceAppsV1NamespacedReplicaSet                  | serviceAccountName            |   94
+ replaceAppsV1NamespacedReplicaSet                  | tolerations                   |   94
+ replaceAppsV1NamespacedReplicaSet                  | volumes                       |   94
+ createAppsV1NamespacedReplicaSet                   | priorityClassName             |  109
+ createBatchV1NamespacedJob                         | volumes                       |  112
+ createBatchV1NamespacedJob                         | containers                    |  154
+ createBatchV1NamespacedJob                         | dnsPolicy                     |  154
+ createBatchV1NamespacedJob                         | restartPolicy                 |  154
+ createBatchV1NamespacedJob                         | schedulerName                 |  154
+ createBatchV1NamespacedJob                         | securityContext               |  154
+ createBatchV1NamespacedJob                         | terminationGracePeriodSeconds |  154
+ createAppsV1NamespacedDeployment                   | volumes                       |  174
+ replaceAppsV1NamespacedStatefulSet                 | containers                    |  183
+ replaceAppsV1NamespacedStatefulSet                 | dnsPolicy                     |  183
+ replaceAppsV1NamespacedStatefulSet                 | restartPolicy                 |  183
+ replaceAppsV1NamespacedStatefulSet                 | schedulerName                 |  183
+ replaceAppsV1NamespacedStatefulSet                 | securityContext               |  183
+ replaceAppsV1NamespacedStatefulSet                 | terminationGracePeriodSeconds |  183
+ replaceAppsV1NamespacedDeployment                  | containers                    |  228
+ replaceAppsV1NamespacedDeployment                  | dnsPolicy                     |  228
+ replaceAppsV1NamespacedDeployment                  | restartPolicy                 |  228
+ replaceAppsV1NamespacedDeployment                  | schedulerName                 |  228
+ replaceAppsV1NamespacedDeployment                  | securityContext               |  228
+ replaceAppsV1NamespacedDeployment                  | terminationGracePeriodSeconds |  228
+ createCoreV1NamespacedReplicationController        | containers                    |  279
+ createCoreV1NamespacedReplicationController        | dnsPolicy                     |  279
+ createCoreV1NamespacedReplicationController        | restartPolicy                 |  279
+ createCoreV1NamespacedReplicationController        | schedulerName                 |  279
+ createCoreV1NamespacedReplicationController        | securityContext               |  279
+ createCoreV1NamespacedReplicationController        | terminationGracePeriodSeconds |  279
+ createAppsV1NamespacedDaemonSet                    | nodeName                      |  286
+ replaceBatchV1NamespacedJobStatus                  | volumes                       |  287
+ replaceCoreV1NamespacedReplicationControllerStatus | nodeSelector                  |  294
+ createAppsV1NamespacedDaemonSet                    | volumes                       |  299
+ createAppsV1NamespacedDeployment                   | containers                    |  300
+ createAppsV1NamespacedDeployment                   | dnsPolicy                     |  300
+ createAppsV1NamespacedDeployment                   | restartPolicy                 |  300
+ createAppsV1NamespacedDeployment                   | schedulerName                 |  300
+ createAppsV1NamespacedDeployment                   | securityContext               |  300
+ createAppsV1NamespacedDeployment                   | terminationGracePeriodSeconds |  300
+ createAppsV1NamespacedDaemonSet                    | containers                    |  311
+ createAppsV1NamespacedDaemonSet                    | dnsPolicy                     |  311
+ createAppsV1NamespacedDaemonSet                    | hostNetwork                   |  311
+ createAppsV1NamespacedDaemonSet                    | restartPolicy                 |  311
+ createAppsV1NamespacedDaemonSet                    | schedulerName                 |  311
+ createAppsV1NamespacedDaemonSet                    | securityContext               |  311
+ createAppsV1NamespacedDaemonSet                    | serviceAccount                |  311
+ createAppsV1NamespacedDaemonSet                    | serviceAccountName            |  311
+ createAppsV1NamespacedDaemonSet                    | terminationGracePeriodSeconds |  311
+ replaceBatchV1NamespacedJobStatus                  | containers                    |  353
+ replaceBatchV1NamespacedJobStatus                  | dnsPolicy                     |  353
+ replaceBatchV1NamespacedJobStatus                  | restartPolicy                 |  353
+ replaceBatchV1NamespacedJobStatus                  | schedulerName                 |  353
+ replaceBatchV1NamespacedJobStatus                  | securityContext               |  353
+ replaceBatchV1NamespacedJobStatus                  | terminationGracePeriodSeconds |  353
+ replaceAppsV1NamespacedDeploymentStatus            | nodeSelector                  |  400
+ replaceAppsV1NamespacedReplicaSet                  | containers                    |  418
+ replaceAppsV1NamespacedReplicaSet                  | dnsPolicy                     |  418
+ replaceAppsV1NamespacedReplicaSet                  | restartPolicy                 |  418
+ replaceAppsV1NamespacedReplicaSet                  | schedulerName                 |  418
+ replaceAppsV1NamespacedReplicaSet                  | securityContext               |  418
+ replaceAppsV1NamespacedReplicaSet                  | terminationGracePeriodSeconds |  418
+ replaceAppsV1NamespacedReplicaSetStatus            | tolerations                   |  530
+ replaceAppsV1NamespacedReplicaSetStatus            | nodeSelector                  |  560
+ replaceAppsV1NamespacedReplicaSetStatus            | serviceAccount                |  581
+ replaceAppsV1NamespacedReplicaSetStatus            | serviceAccountName            |  581
+ replaceAppsV1NamespacedDaemonSetStatus             | nodeSelector                  |  611
+ replaceAppsV1NamespacedDaemonSetStatus             | priorityClassName             |  611
+ replaceAppsV1NamespacedDaemonSetStatus             | tolerations                   |  611
+ createAppsV1NamespacedReplicaSet                   | volumes                       |  658
+ replaceAppsV1NamespacedDaemonSetStatus             | nodeName                      |  715
+ replaceAppsV1NamespacedDeploymentStatus            | priorityClassName             |  733
+ replaceAppsV1NamespacedDeploymentStatus            | tolerations                   |  733
+ replaceAppsV1NamespacedReplicaSetStatus            | priorityClassName             |  794
+ replaceAppsV1NamespacedDeploymentStatus            | serviceAccount                |  818
+ replaceAppsV1NamespacedDeploymentStatus            | serviceAccountName            |  818
+ createAppsV1NamespacedStatefulSet                  | serviceAccount                |  830
+ createAppsV1NamespacedStatefulSet                  | serviceAccountName            |  830
+ createAppsV1NamespacedStatefulSet                  | nodeName                      |  837
+ createAppsV1NamespacedStatefulSet                  | volumes                       |  858
+ createAppsV1NamespacedStatefulSet                  | containers                    |  901
+ createAppsV1NamespacedStatefulSet                  | dnsPolicy                     |  901
+ createAppsV1NamespacedStatefulSet                  | restartPolicy                 |  901
+ createAppsV1NamespacedStatefulSet                  | schedulerName                 |  901
+ createAppsV1NamespacedStatefulSet                  | securityContext               |  901
+ createAppsV1NamespacedStatefulSet                  | terminationGracePeriodSeconds |  901
+ replaceAppsV1NamespacedReplicaSetStatus            | volumes                       |  921
+ replaceAppsV1NamespacedDaemonSetStatus             | volumes                       | 1170
+ createAppsV1NamespacedReplicaSet                   | containers                    | 1212
+ createAppsV1NamespacedReplicaSet                   | dnsPolicy                     | 1212
+ createAppsV1NamespacedReplicaSet                   | restartPolicy                 | 1212
+ createAppsV1NamespacedReplicaSet                   | schedulerName                 | 1212
+ createAppsV1NamespacedReplicaSet                   | securityContext               | 1212
+ createAppsV1NamespacedReplicaSet                   | terminationGracePeriodSeconds | 1212
+ replaceAppsV1NamespacedDaemonSetStatus             | containers                    | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | dnsPolicy                     | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | hostNetwork                   | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | restartPolicy                 | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | schedulerName                 | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | securityContext               | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | serviceAccount                | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | serviceAccountName            | 1326
+ replaceAppsV1NamespacedDaemonSetStatus             | terminationGracePeriodSeconds | 1326
+ replaceAppsV1NamespacedStatefulSetStatus           | serviceAccount                | 1710
+ replaceAppsV1NamespacedStatefulSetStatus           | serviceAccountName            | 1710
+ replaceAppsV1NamespacedStatefulSetStatus           | nodeName                      | 1745
+ replaceCoreV1NamespacedReplicationControllerStatus | containers                    | 1772
+ replaceCoreV1NamespacedReplicationControllerStatus | dnsPolicy                     | 1772
+ replaceCoreV1NamespacedReplicationControllerStatus | restartPolicy                 | 1772
+ replaceCoreV1NamespacedReplicationControllerStatus | schedulerName                 | 1772
+ replaceCoreV1NamespacedReplicationControllerStatus | securityContext               | 1772
+ replaceCoreV1NamespacedReplicationControllerStatus | terminationGracePeriodSeconds | 1772
+ replaceAppsV1NamespacedDeploymentStatus            | volumes                       | 1792
+ replaceAppsV1NamespacedStatefulSetStatus           | volumes                       | 2263
+ replaceAppsV1NamespacedStatefulSetStatus           | containers                    | 3144
+ replaceAppsV1NamespacedStatefulSetStatus           | dnsPolicy                     | 3144
+ replaceAppsV1NamespacedStatefulSetStatus           | restartPolicy                 | 3144
+ replaceAppsV1NamespacedStatefulSetStatus           | schedulerName                 | 3144
+ replaceAppsV1NamespacedStatefulSetStatus           | securityContext               | 3144
+ replaceAppsV1NamespacedStatefulSetStatus           | terminationGracePeriodSeconds | 3144
+ replaceAppsV1NamespacedReplicaSetStatus            | containers                    | 3205
+ replaceAppsV1NamespacedReplicaSetStatus            | dnsPolicy                     | 3205
+ replaceAppsV1NamespacedReplicaSetStatus            | restartPolicy                 | 3205
+ replaceAppsV1NamespacedReplicaSetStatus            | schedulerName                 | 3205
+ replaceAppsV1NamespacedReplicaSetStatus            | securityContext               | 3205
+ replaceAppsV1NamespacedReplicaSetStatus            | terminationGracePeriodSeconds | 3205
+ replaceAppsV1NamespacedDeploymentStatus            | containers                    | 3870
+ replaceAppsV1NamespacedDeploymentStatus            | dnsPolicy                     | 3870
+ replaceAppsV1NamespacedDeploymentStatus            | restartPolicy                 | 3870
+ replaceAppsV1NamespacedDeploymentStatus            | schedulerName                 | 3870
+ replaceAppsV1NamespacedDeploymentStatus            | securityContext               | 3870
+ replaceAppsV1NamespacedDeploymentStatus            | terminationGracePeriodSeconds | 3870
+(158 rows)
 
 #+end_src
 
