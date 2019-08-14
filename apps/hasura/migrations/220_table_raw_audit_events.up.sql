@@ -19,6 +19,8 @@ CREATE UNLOGGED TABLE raw_audit_events (
 
 -- #+NAME: index the raw_audit_events
 
-CREATE INDEX idx_audit_events_primary          ON raw_audit_events (bucket, job, audit_id, stage);
+-- TODO fix keys
+-- CREATE INDEX idx_audit_events_primary          ON raw_audit_events (bucket, job, audit_id, stage);
+-- ALTER TABLE raw_audit_events add primary key using index idx_audit_events_primary;
 CREATE INDEX idx_audit_events_jsonb_ops        ON raw_audit_events USING GIN (data jsonb_ops);
 CREATE INDEX idx_audit_events_jsonb_path_jobs  ON raw_audit_events USING GIN (data jsonb_path_ops);

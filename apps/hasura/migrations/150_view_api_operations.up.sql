@@ -1,5 +1,6 @@
 -- api_operations view
 --     This grabs the 'paths' section of our swagger.json, where each path contains operation Id, tags, schemes, etc.
+
 -- #+NAME: api_operations view
 
 CREATE OR REPLACE VIEW "public"."api_operations" AS 
