@@ -1356,6 +1356,7 @@ select * from event_verb_to_http_method('proxy');
 
 *** api_operations view
     This grabs the 'paths' section of our swagger.json, where each path contains operation Id, tags, schemes, etc.
+
 #+NAME: api_operations view
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/150_view_api_operations.up.sql :results silent
   CREATE OR REPLACE VIEW "public"."api_operations" AS 
@@ -1434,6 +1435,7 @@ create index api_operations_method on api_operations(method);
 create index api_operations_regexp on api_operations(regexp);
 #+END_SRC
 
+*** TODO refactor this view so scheme and tags are just arrays, and not string_aggs
 ** api_operations_parameters view
 Using our api_operations view, look into the parameters field in each one.     
 #+NAME: api_operations_parameters view
@@ -1767,8 +1769,8 @@ SELECT 3375
 * Resource Views
 ** api_resources view
 #+NAME: api_resources view
-#+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/190_view_api_resources.up.sql
-  CREATE VIEW "public"."api_resources" AS 
+#+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/190_view_api_resources.up.sql :results silent
+  CREATE OR REPLACE VIEW "public"."api_resources" AS 
    SELECT 
       raw_swaggers.id AS raw_swagger_id,
       d.key AS name,
@@ -1776,23 +1778,14 @@ SELECT 3375
       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
-      string_agg(btrim((reqstring.value)::text, '"'::text), ', '::text) AS required_params,
-      (d.value ->> 'required'::text) as required_params_text,
+      ((d.value -> 'required'::text)) as required_params,
       (d.value -> 'properties'::text) AS properties,
       d.value
      FROM raw_swaggers
        , jsonb_each((raw_swaggers.data -> 'definitions'::text)) d(key, value)
-       , jsonb_array_elements((d.value -> 'required'::text)) reqstring(value)
      GROUP BY raw_swaggers.id, d.key, d.value;
-
 #+END_SRC
 
-#+RESULTS: api_resources view
-#+begin_src sql-mode
-ERROR:  relation "raw_swaggers" does not exist
-LINE 13:    FROM raw_swaggers
-                 ^
-#+end_src
 
 #+NAME: track api_resources
 #+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/190_view_api_resources.up.yaml
@@ -1877,6 +1870,11 @@ LINE 13:    FROM raw_swaggers
       FROM (api_resources
             JOIN LATERAL jsonb_each(api_resources.properties) d(key, value) ON (true));
 #+END_SRC
+
+#+RESULTS: api_resources_fields view
+#+begin_src sql-mode
+CREATE VIEW
+#+end_src
 
 #+NAME: track api_resources_fields
 #+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/200_view_api_resources_fields.up.yaml
@@ -2939,84 +2937,1304 @@ order by field;
 
 #+end_src
 
-** where is PodSecurityContext
+** In some way, this api_resources evententually have a leaf property of PodSpec
 
-*** Pod is a kind
-#+BEGIN_SRC shell :wrap "SRC json"
-cat ~/go/src/k8s.io/kubernetes/api/openapi-spec/swagger.json | jq '.definitions["io.k8s.api.core.v1.Pod"]'
-#+END_SRC
-
-#+RESULTS:
-#+begin_SRC json
-{
-  "description": "Pod is a collection of containers that can run on a host. This resource is created by clients and scheduled onto hosts.",
-  "properties": {
-    "apiVersion": {
-      "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
-      "type": "string"
-    },
-    "kind": {
-      "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
-      "type": "string"
-    },
-    "metadata": {
-      "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta",
-      "description": "Standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata"
-    },
-    "spec": {
-      "$ref": "#/definitions/io.k8s.api.core.v1.PodSpec",
-      "description": "Specification of the desired behavior of the pod. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status"
-    },
-    "status": {
-      "$ref": "#/definitions/io.k8s.api.core.v1.PodStatus",
-      "description": "Most recently observed status of the pod. This data may not be up to date. Populated by the system. Read-only. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status"
-    }
-  },
-  "type": "object",
-  "x-kubernetes-group-version-kind": [
-    {
-      "group": "",
-      "kind": "Pod",
-      "version": "v1"
-    }
-  ]
-}
-#+end_SRC
-*** Pod is used by operations
 #+BEGIN_SRC sql-mode
-select k8s_version, k8s_kind, description from api_operations_material where k8s_kind = 'Pod';
+  select distinct api_resource_name, resource_field as field, param_kind as kind
+  from api_resources_fields
+  where (
+           param_kind like '%PodSpec'
+       OR  param_kind like '%DaemonSet'
+       OR  param_kind like '%DaemonSetList'
+       OR  param_kind like '%DaemonSetSpec'
+       OR  param_kind like '%DaemonSetUpdateStrategy'
+       OR  param_kind like '%RollingUpdateDaemonSet' -- leaf
+       OR  param_kind like '%Deployment'
+       OR  param_kind like '%DeploymentList'
+       OR  param_kind like '%DeploymentSpec'
+       OR  param_kind like '%DeploymentStrategy'
+       OR  param_kind like '%RollingUpdateDeployment' -- leaf
+       OR  param_kind like '%ReplicaSet' -- parameters
+       OR  param_kind like '%ReplicaSetList'
+       OR  param_kind like '%ReplicaSetSpec'
+       OR  param_kind like '%StatefulSet'
+       OR  param_kind like '%StatefulSetList'
+       OR  param_kind like '%StatefulSetSpec'
+       OR  param_kind like '%Job'
+       OR  param_kind like '%JobList'
+       OR  param_kind like '%JobSpec'
+       OR  param_kind like '%Pod'
+       OR  param_kind like '%PodList'
+       OR  param_kind like '%PodTemplate'
+       OR  param_kind like '%PodTemplateList'
+       OR  param_kind like '%PodTemplateSpec'
+       OR  param_kind like '%ReplicationController'
+       OR  param_kind like '%ReplicationControllerList'
+       OR  param_kind like '%ReplicationControllerSpec'
+         )
+  and api_resource_name not like '%alpha%'
+  and api_resource_name not like '%beta%'
+  order by api_resource_name, kind; 
 #+END_SRC
 
 #+RESULTS:
 #+begin_src sql-mode
- k8s_version | k8s_kind |                                                                                description                                                                                 
--------------+----------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- v1          | Pod      | delete collection of Pod 
- v1          | Pod      | list or watch objects of kind Pod
- v1          | Pod      | create a Pod
- v1          | Pod      | delete a Pod
- v1          | Pod      | read the specified Pod
- v1          | Pod      | partially update the specified Pod
- v1          | Pod      | replace the specified Pod
- v1          | Pod      | read log of the specified Pod
- v1          | Pod      | read status of the specified Pod
- v1          | Pod      | partially update status of the specified Pod
- v1          | Pod      | replace status of the specified Pod
- v1          | Pod      | list or watch objects of kind Pod
- v1          | Pod      | watch individual changes to a list of Pod. deprecated: use the 'watch' parameter with a list operation instead.
- v1          | Pod      | watch changes to an object of kind Pod. deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter.
- v1          | Pod      | watch individual changes to a list of Pod. deprecated: use the 'watch' parameter with a list operation instead.
-(15 rows)
+              api_resource_name               |     field      |                     kind                     
+----------------------------------------------+----------------+----------------------------------------------
+ io.k8s.api.apps.v1.DaemonSet                 | spec           | io.k8s.api.apps.v1.DaemonSetSpec
+ io.k8s.api.apps.v1.DaemonSetList             | items          | io.k8s.api.apps.v1.DaemonSet
+ io.k8s.api.apps.v1.DaemonSetSpec             | updateStrategy | io.k8s.api.apps.v1.DaemonSetUpdateStrategy
+ io.k8s.api.apps.v1.DaemonSetSpec             | template       | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.apps.v1.DaemonSetUpdateStrategy   | rollingUpdate  | io.k8s.api.apps.v1.RollingUpdateDaemonSet
+ io.k8s.api.apps.v1.Deployment                | spec           | io.k8s.api.apps.v1.DeploymentSpec
+ io.k8s.api.apps.v1.DeploymentList            | items          | io.k8s.api.apps.v1.Deployment
+ io.k8s.api.apps.v1.DeploymentSpec            | strategy       | io.k8s.api.apps.v1.DeploymentStrategy
+ io.k8s.api.apps.v1.DeploymentSpec            | template       | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.apps.v1.DeploymentStrategy        | rollingUpdate  | io.k8s.api.apps.v1.RollingUpdateDeployment
+ io.k8s.api.apps.v1.ReplicaSet                | spec           | io.k8s.api.apps.v1.ReplicaSetSpec
+ io.k8s.api.apps.v1.ReplicaSetList            | items          | io.k8s.api.apps.v1.ReplicaSet
+ io.k8s.api.apps.v1.ReplicaSetSpec            | template       | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.apps.v1.StatefulSet               | spec           | io.k8s.api.apps.v1.StatefulSetSpec
+ io.k8s.api.apps.v1.StatefulSetList           | items          | io.k8s.api.apps.v1.StatefulSet
+ io.k8s.api.apps.v1.StatefulSetSpec           | template       | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.batch.v1.Job                      | spec           | io.k8s.api.batch.v1.JobSpec
+ io.k8s.api.batch.v1.JobList                  | items          | io.k8s.api.batch.v1.Job
+ io.k8s.api.batch.v1.JobSpec                  | template       | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.core.v1.Pod                       | spec           | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.core.v1.PodList                   | items          | io.k8s.api.core.v1.Pod
+ io.k8s.api.core.v1.PodTemplate               | template       | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.core.v1.PodTemplateList           | items          | io.k8s.api.core.v1.PodTemplate
+ io.k8s.api.core.v1.PodTemplateSpec           | spec           | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.core.v1.ReplicationController     | spec           | io.k8s.api.core.v1.ReplicationControllerSpec
+ io.k8s.api.core.v1.ReplicationControllerList | items          | io.k8s.api.core.v1.ReplicationController
+ io.k8s.api.core.v1.ReplicationControllerSpec | template       | io.k8s.api.core.v1.PodTemplateSpec
+(27 rows)
+
+#+end_src
+
+** api_operations with a parameter whose property eventually hits PodSpec
+   show us the operation id's of parameters whose resource column value exists in the view 'resources touched by podspec'
+
+#+BEGIN_SRC sql-mode
+select distinct request_object->'kind' as kind from audit_events order by kind;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+               kind               
+----------------------------------
+ "APIService"
+ "Binding"
+ "CertificateSigningRequest"
+ "ClusterRole"
+ "ClusterRoleBinding"
+ "ControllerRevision"
+ "CronJob"
+ "CSIDriver"
+ "CSINode"
+ "CustomResourceDefinition"
+ "DaemonSet"
+ "DeleteOptions"
+ "Deployment"
+ "DeploymentRollback"
+ "Endpoints"
+ "HorizontalPodAutoscaler"
+ "Job"
+ "LimitRange"
+ "MutatingWebhookConfiguration"
+ "Namespace"
+ "Node"
+ "PersistentVolume"
+ "PersistentVolumeClaim"
+ "Pod"
+ "PodDisruptionBudget"
+ "PodSecurityPolicy"
+ "PodTemplate"
+ "PriorityClass"
+ "ReplicaSet"
+ "ReplicationController"
+ "ResourceQuota"
+ "Role"
+ "RoleBinding"
+ "RuntimeClass"
+ "Scale"
+ "Service"
+ "ServiceAccount"
+ "StatefulSet"
+ "StorageClass"
+ "SubjectAccessReview"
+ "ValidatingWebhookConfiguration"
+ "VolumeAttachment"
+ 
+(43 rows)
+
+#+end_src
+
+#+name: daemonset.spec.templace.spec hits for podspec
+#+begin_src sql-mode
+select
+distinct jsonb_object_keys(request_object->'spec'->'template'->'spec') as podspec_fields
+from audit_events
+where request_object->>'kind' = 'DaemonSet';
+   or request_object->>'kind' = 'Deployment'
+-- DaemonSet -> 'DaemonSetSpec' -> 'PodTemplateSpec' -> 'PodSpec'
+--              'spec'          -> 'template'        -> 'spec'
+#+END_SRC
+
+#+NAME: Pod.spec hits
+#+BEGIN_SRC sql-mode
+select
+-- distinct operation_id, jsonb_object_keys(request_object->'spec') as podspec_fields
+distinct jsonb_object_keys(request_object->'spec') as podspec_fields
+from audit_events
+where request_object->>'kind' = 'Pod'
+  and operation_id not like '%alpha%'
+  and operation_id not like '%beta%';
+-- order by operation_id;
+#+END_SRC
+
+#+RESULTS: Pod.spec hits
+#+begin_src sql-mode
+        podspec_fields         
+-------------------------------
+ volumes
+ enableServiceLinks
+ nodeSelector
+ terminationGracePeriodSeconds
+ hostPID
+ containers
+ hostname
+ priorityClassName
+ subdomain
+ nodeName
+ hostNetwork
+ restartPolicy
+ securityContext
+ hostAliases
+ dnsPolicy
+ hostIPC
+ tolerations
+ priority
+ automountServiceAccountToken
+ imagePullSecrets
+ readinessGates
+ schedulerName
+ serviceAccountName
+ dnsConfig
+ activeDeadlineSeconds
+ serviceAccount
+ runtimeClassName
+ affinity
+ initContainers
+(29 rows)
+
+#+end_src
+
+
+#+NAME: PodTemplate.template.spec hits
+#+BEGIN_SRC sql-mode
+select
+-- distinct operation_id, jsonb_object_keys(request_object->'template'->'spec') as podspec_fields
+distinct jsonb_object_keys(request_object->'template'->'spec') as podspec_fields
+from audit_events
+where request_object->>'kind' = 'PodTemplate'
+  and operation_id not like '%alpha%'
+  and operation_id not like '%beta%'
+order by operation_id;
+#+END_SRC
+
+#+RESULTS: PodTemplate.template.spec hits
+#+begin_src sql-mode
+           operation_id            |        podspec_fields         
+-----------------------------------+-------------------------------
+ createCoreV1NamespacedPodTemplate | containers
+ createCoreV1NamespacedPodTemplate | dnsPolicy
+ createCoreV1NamespacedPodTemplate | restartPolicy
+ createCoreV1NamespacedPodTemplate | schedulerName
+ createCoreV1NamespacedPodTemplate | securityContext
+ createCoreV1NamespacedPodTemplate | terminationGracePeriodSeconds
+(6 rows)
+
+#+end_src
+
+
+#+NAME: *.spec.template.spec hits for PodSpec
+#+BEGIN_SRC sql-mode
+select
+distinct operation_id, jsonb_object_keys(request_object->'spec'->'template'->'spec') as podspec_fields
+from audit_events
+where (request_object->>'kind' = 'DaemonSet'
+   or  request_object->>'kind' = 'Deployment'
+   or  request_object->>'kind' = 'ReplicationController'
+   or  request_object->>'kind' = 'StatefulSet'
+   or  request_object->>'kind' = 'Job'
+   or  request_object->>'kind' = 'ReplicaSet')
+  and operation_id not like '%alpha%'
+  and operation_id not like '%beta%'
+order by operation_id;
+-- DaemonSet -> 'DaemonSetSpec' -> 'PodTemplateSpec' -> 'PodSpec'
+--              'spec'          -> 'template'        -> 'spec'
+#+END_SRC
+
+#+RESULTS: *.spec.template.spec hits for PodSpec
+#+begin_src sql-mode
+                    operation_id                    |        podspec_fields         
+----------------------------------------------------+-------------------------------
+ createAppsV1NamespacedDaemonSet                    | containers
+ createAppsV1NamespacedDaemonSet                    | dnsPolicy
+ createAppsV1NamespacedDaemonSet                    | hostNetwork
+ createAppsV1NamespacedDaemonSet                    | nodeName
+ createAppsV1NamespacedDaemonSet                    | nodeSelector
+ createAppsV1NamespacedDaemonSet                    | priorityClassName
+ createAppsV1NamespacedDaemonSet                    | restartPolicy
+ createAppsV1NamespacedDaemonSet                    | schedulerName
+ createAppsV1NamespacedDaemonSet                    | securityContext
+ createAppsV1NamespacedDaemonSet                    | serviceAccount
+ createAppsV1NamespacedDaemonSet                    | serviceAccountName
+ createAppsV1NamespacedDaemonSet                    | terminationGracePeriodSeconds
+ createAppsV1NamespacedDaemonSet                    | tolerations
+ createAppsV1NamespacedDaemonSet                    | volumes
+ createAppsV1NamespacedDeployment                   | containers
+ createAppsV1NamespacedDeployment                   | dnsPolicy
+ createAppsV1NamespacedDeployment                   | nodeSelector
+ createAppsV1NamespacedDeployment                   | priorityClassName
+ createAppsV1NamespacedDeployment                   | restartPolicy
+ createAppsV1NamespacedDeployment                   | schedulerName
+ createAppsV1NamespacedDeployment                   | securityContext
+ createAppsV1NamespacedDeployment                   | serviceAccount
+ createAppsV1NamespacedDeployment                   | serviceAccountName
+ createAppsV1NamespacedDeployment                   | terminationGracePeriodSeconds
+ createAppsV1NamespacedDeployment                   | tolerations
+ createAppsV1NamespacedDeployment                   | volumes
+ createAppsV1NamespacedReplicaSet                   | containers
+ createAppsV1NamespacedReplicaSet                   | dnsPolicy
+ createAppsV1NamespacedReplicaSet                   | nodeSelector
+ createAppsV1NamespacedReplicaSet                   | priorityClassName
+ createAppsV1NamespacedReplicaSet                   | restartPolicy
+ createAppsV1NamespacedReplicaSet                   | schedulerName
+ createAppsV1NamespacedReplicaSet                   | securityContext
+ createAppsV1NamespacedReplicaSet                   | serviceAccount
+ createAppsV1NamespacedReplicaSet                   | serviceAccountName
+ createAppsV1NamespacedReplicaSet                   | terminationGracePeriodSeconds
+ createAppsV1NamespacedReplicaSet                   | tolerations
+ createAppsV1NamespacedReplicaSet                   | volumes
+ createAppsV1NamespacedStatefulSet                  | containers
+ createAppsV1NamespacedStatefulSet                  | dnsPolicy
+ createAppsV1NamespacedStatefulSet                  | nodeName
+ createAppsV1NamespacedStatefulSet                  | restartPolicy
+ createAppsV1NamespacedStatefulSet                  | schedulerName
+ createAppsV1NamespacedStatefulSet                  | securityContext
+ createAppsV1NamespacedStatefulSet                  | serviceAccount
+ createAppsV1NamespacedStatefulSet                  | serviceAccountName
+ createAppsV1NamespacedStatefulSet                  | terminationGracePeriodSeconds
+ createAppsV1NamespacedStatefulSet                  | volumes
+ createBatchV1NamespacedJob                         | containers
+ createBatchV1NamespacedJob                         | dnsPolicy
+ createBatchV1NamespacedJob                         | restartPolicy
+ createBatchV1NamespacedJob                         | schedulerName
+ createBatchV1NamespacedJob                         | securityContext
+ createBatchV1NamespacedJob                         | terminationGracePeriodSeconds
+ createBatchV1NamespacedJob                         | volumes
+ createCoreV1NamespacedReplicationController        | containers
+ createCoreV1NamespacedReplicationController        | dnsPolicy
+ createCoreV1NamespacedReplicationController        | nodeSelector
+ createCoreV1NamespacedReplicationController        | restartPolicy
+ createCoreV1NamespacedReplicationController        | schedulerName
+ createCoreV1NamespacedReplicationController        | securityContext
+ createCoreV1NamespacedReplicationController        | terminationGracePeriodSeconds
+ createCoreV1NamespacedReplicationController        | volumes
+ replaceAppsV1NamespacedDaemonSetStatus             | containers
+ replaceAppsV1NamespacedDaemonSetStatus             | dnsPolicy
+ replaceAppsV1NamespacedDaemonSetStatus             | hostNetwork
+ replaceAppsV1NamespacedDaemonSetStatus             | nodeName
+ replaceAppsV1NamespacedDaemonSetStatus             | nodeSelector
+ replaceAppsV1NamespacedDaemonSetStatus             | priorityClassName
+ replaceAppsV1NamespacedDaemonSetStatus             | restartPolicy
+ replaceAppsV1NamespacedDaemonSetStatus             | schedulerName
+ replaceAppsV1NamespacedDaemonSetStatus             | securityContext
+ replaceAppsV1NamespacedDaemonSetStatus             | serviceAccount
+ replaceAppsV1NamespacedDaemonSetStatus             | serviceAccountName
+ replaceAppsV1NamespacedDaemonSetStatus             | terminationGracePeriodSeconds
+ replaceAppsV1NamespacedDaemonSetStatus             | tolerations
+ replaceAppsV1NamespacedDaemonSetStatus             | volumes
+ replaceAppsV1NamespacedDeployment                  | containers
+ replaceAppsV1NamespacedDeployment                  | dnsPolicy
+ replaceAppsV1NamespacedDeployment                  | restartPolicy
+ replaceAppsV1NamespacedDeployment                  | schedulerName
+ replaceAppsV1NamespacedDeployment                  | securityContext
+ replaceAppsV1NamespacedDeployment                  | terminationGracePeriodSeconds
+ replaceAppsV1NamespacedDeploymentStatus            | containers
+ replaceAppsV1NamespacedDeploymentStatus            | dnsPolicy
+ replaceAppsV1NamespacedDeploymentStatus            | nodeSelector
+ replaceAppsV1NamespacedDeploymentStatus            | priorityClassName
+ replaceAppsV1NamespacedDeploymentStatus            | restartPolicy
+ replaceAppsV1NamespacedDeploymentStatus            | schedulerName
+ replaceAppsV1NamespacedDeploymentStatus            | securityContext
+ replaceAppsV1NamespacedDeploymentStatus            | serviceAccount
+ replaceAppsV1NamespacedDeploymentStatus            | serviceAccountName
+ replaceAppsV1NamespacedDeploymentStatus            | terminationGracePeriodSeconds
+ replaceAppsV1NamespacedDeploymentStatus            | tolerations
+ replaceAppsV1NamespacedDeploymentStatus            | volumes
+ replaceAppsV1NamespacedReplicaSet                  | containers
+ replaceAppsV1NamespacedReplicaSet                  | dnsPolicy
+ replaceAppsV1NamespacedReplicaSet                  | nodeSelector
+ replaceAppsV1NamespacedReplicaSet                  | priorityClassName
+ replaceAppsV1NamespacedReplicaSet                  | restartPolicy
+ replaceAppsV1NamespacedReplicaSet                  | schedulerName
+ replaceAppsV1NamespacedReplicaSet                  | securityContext
+ replaceAppsV1NamespacedReplicaSet                  | serviceAccount
+ replaceAppsV1NamespacedReplicaSet                  | serviceAccountName
+ replaceAppsV1NamespacedReplicaSet                  | terminationGracePeriodSeconds
+ replaceAppsV1NamespacedReplicaSet                  | tolerations
+ replaceAppsV1NamespacedReplicaSet                  | volumes
+ replaceAppsV1NamespacedReplicaSetStatus            | containers
+ replaceAppsV1NamespacedReplicaSetStatus            | dnsPolicy
+ replaceAppsV1NamespacedReplicaSetStatus            | nodeSelector
+ replaceAppsV1NamespacedReplicaSetStatus            | priorityClassName
+ replaceAppsV1NamespacedReplicaSetStatus            | restartPolicy
+ replaceAppsV1NamespacedReplicaSetStatus            | schedulerName
+ replaceAppsV1NamespacedReplicaSetStatus            | securityContext
+ replaceAppsV1NamespacedReplicaSetStatus            | serviceAccount
+ replaceAppsV1NamespacedReplicaSetStatus            | serviceAccountName
+ replaceAppsV1NamespacedReplicaSetStatus            | terminationGracePeriodSeconds
+ replaceAppsV1NamespacedReplicaSetStatus            | tolerations
+ replaceAppsV1NamespacedReplicaSetStatus            | volumes
+ replaceAppsV1NamespacedStatefulSet                 | containers
+ replaceAppsV1NamespacedStatefulSet                 | dnsPolicy
+ replaceAppsV1NamespacedStatefulSet                 | nodeName
+ replaceAppsV1NamespacedStatefulSet                 | restartPolicy
+ replaceAppsV1NamespacedStatefulSet                 | schedulerName
+ replaceAppsV1NamespacedStatefulSet                 | securityContext
+ replaceAppsV1NamespacedStatefulSet                 | terminationGracePeriodSeconds
+ replaceAppsV1NamespacedStatefulSet                 | volumes
+ replaceAppsV1NamespacedStatefulSetStatus           | containers
+ replaceAppsV1NamespacedStatefulSetStatus           | dnsPolicy
+ replaceAppsV1NamespacedStatefulSetStatus           | nodeName
+ replaceAppsV1NamespacedStatefulSetStatus           | restartPolicy
+ replaceAppsV1NamespacedStatefulSetStatus           | schedulerName
+ replaceAppsV1NamespacedStatefulSetStatus           | securityContext
+ replaceAppsV1NamespacedStatefulSetStatus           | serviceAccount
+ replaceAppsV1NamespacedStatefulSetStatus           | serviceAccountName
+ replaceAppsV1NamespacedStatefulSetStatus           | terminationGracePeriodSeconds
+ replaceAppsV1NamespacedStatefulSetStatus           | volumes
+ replaceBatchV1NamespacedJobStatus                  | containers
+ replaceBatchV1NamespacedJobStatus                  | dnsPolicy
+ replaceBatchV1NamespacedJobStatus                  | restartPolicy
+ replaceBatchV1NamespacedJobStatus                  | schedulerName
+ replaceBatchV1NamespacedJobStatus                  | securityContext
+ replaceBatchV1NamespacedJobStatus                  | terminationGracePeriodSeconds
+ replaceBatchV1NamespacedJobStatus                  | volumes
+ replaceCoreV1NamespacedReplicationController       | containers
+ replaceCoreV1NamespacedReplicationController       | dnsPolicy
+ replaceCoreV1NamespacedReplicationController       | restartPolicy
+ replaceCoreV1NamespacedReplicationController       | schedulerName
+ replaceCoreV1NamespacedReplicationController       | securityContext
+ replaceCoreV1NamespacedReplicationController       | terminationGracePeriodSeconds
+ replaceCoreV1NamespacedReplicationControllerStatus | containers
+ replaceCoreV1NamespacedReplicationControllerStatus | dnsPolicy
+ replaceCoreV1NamespacedReplicationControllerStatus | nodeSelector
+ replaceCoreV1NamespacedReplicationControllerStatus | restartPolicy
+ replaceCoreV1NamespacedReplicationControllerStatus | schedulerName
+ replaceCoreV1NamespacedReplicationControllerStatus | securityContext
+ replaceCoreV1NamespacedReplicationControllerStatus | terminationGracePeriodSeconds
+ replaceCoreV1NamespacedReplicationControllerStatus | volumes
+(158 rows)
+
+#+end_src
+
+
+
+ #+BEGIN_SRC sql-mode
+     select distinct resource
+     -- select operation_id, resource
+     from api_operations_parameters
+     where (
+           resource like '%PodSpec'
+       OR  resource like '%DaemonSet'
+       OR  resource like '%DaemonSetList'
+       OR  resource like '%DaemonSetSpec'
+       OR  resource like '%DaemonSetUpdateStrategy'
+       OR  resource like '%RollingUpdateDaemonSet' -- leaf
+       OR  resource like '%Deployment'
+       OR  resource like '%DeploymentList'
+       OR  resource like '%DeploymentSpec'
+       OR  resource like '%DeploymentStrategy'
+       OR  resource like '%RollingUpdateDeployment' -- leaf
+       OR  resource like '%ReplicaSet' -- parameters
+       OR  resource like '%ReplicaSetList'
+       OR  resource like '%ReplicaSetSpec'
+       OR  resource like '%StatefulSet'
+       OR  resource like '%StatefulSetList'
+       OR  resource like '%StatefulSetSpec'
+       OR  resource like '%Job'
+       OR  resource like '%JobList'
+       OR  resource like '%JobSpec'
+       OR  resource like '%Pod'
+       OR  resource like '%PodList'
+       OR  resource like '%PodTemplate'
+       OR  resource like '%PodTemplateList'
+       OR  resource like '%PodTemplateSpec'
+       OR  resource like '%ReplicationController'
+       OR  resource like '%ReplicationControllerList'
+       OR  resource like '%ReplicationControllerSpec'
+     )
+       AND  resource not ilike '%alpha%'
+       and resource not ilike '%beta%'
+     order by resource;
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_src sql-mode
+                    resource                 
+   ------------------------------------------
+    io.k8s.api.apps.v1.DaemonSet
+    io.k8s.api.apps.v1.Deployment
+    io.k8s.api.apps.v1.ReplicaSet
+    io.k8s.api.apps.v1.StatefulSet
+    io.k8s.api.batch.v1.Job
+    io.k8s.api.core.v1.Pod
+    io.k8s.api.core.v1.PodTemplate
+    io.k8s.api.core.v1.ReplicationController
+   (8 rows)
+
+   #+end_src
+
+
+#+BEGIN_SRC sql-mode
+  select distinct api_resource_name, resource_field, param_kind
+  from api_resources_fields
+  -- where api_resource_name like '%\.v1\.ReplicationController'
+  -- where api_resource_name like '%\.v1\.ReplicationControllerSpec'
+  -- where api_resource_name like '%\.v1\.PodTemplate'
+  -- where api_resource_name like '%\.v1\.PodTemplateSpec'
+  -- where api_resource_name like '%\.v1\.Pod'
+  -- where api_resource_name like '%\.v1\.Job'
+  -- where api_resource_name like '%\.v1\.JobSpec'
+  -- where api_resource_name like '%\.StatefulSet'
+  -- where api_resource_name like '%\.StatefulSetSpec'
+  -- where api_resource_name like '%\.ReplicaSet'
+  -- where api_resource_name like '%\.ReplicaSetSpec'
+  -- where api_resource_name like '%\.Deployment'
+  -- where api_resource_name like '%\.DeploymentSpec'
+  -- where api_resource_name like '%\.DaemonSet'
+  -- where api_resource_name like '%\.DaemonSetSpec'
+  -- where api_resource_name like '%\.PodTemplateSpec'
+  and api_resource_name not like '%beta%'
+  and api_resource_name not like '%alpha%'
+  order by api_resource_name;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+              api_resource_name               | resource_field  |             param_kind             
+----------------------------------------------+-----------------+------------------------------------
+ io.k8s.api.core.v1.ReplicationControllerSpec | replicas        | integer
+ io.k8s.api.core.v1.ReplicationControllerSpec | template        | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.core.v1.ReplicationControllerSpec | selector        | integer
+ io.k8s.api.core.v1.ReplicationControllerSpec | minReadySeconds | integer
+(4 rows)
+
+#+end_src
+** The Possible Parameter List
+
+#+BEGIN_SRC sql-mode
+  select distinct api_resource_name
+  from api_resources_fields
+  where (
+           param_kind like '%PodSpec'
+       OR  param_kind like '%DaemonSet'
+       OR  param_kind like '%DaemonSetList'
+       OR  param_kind like '%DaemonSetSpec'
+       OR  param_kind like '%DaemonSetUpdateStrategy'
+       OR  param_kind like '%RollingUpdateDaemonSet' -- leaf
+       OR  param_kind like '%Deployment'
+       OR  param_kind like '%DeploymentList'
+       OR  param_kind like '%DeploymentSpec'
+       OR  param_kind like '%DeploymentStrategy'
+       OR  param_kind like '%RollingUpdateDeployment' -- leaf
+       OR  param_kind like '%ReplicaSet' -- parameters
+       OR  param_kind like '%ReplicaSetList'
+       OR  param_kind like '%ReplicaSetSpec'
+       OR  param_kind like '%StatefulSet'
+       OR  param_kind like '%StatefulSetList'
+       OR  param_kind like '%StatefulSetSpec'
+       OR  param_kind like '%Job'
+       OR  param_kind like '%JobList'
+       OR  param_kind like '%JobSpec'
+       OR  param_kind like '%Pod'
+       OR  param_kind like '%PodList'
+       OR  param_kind like '%PodTemplate'
+       OR  param_kind like '%PodTemplateList'
+       OR  param_kind like '%PodTemplateSpec'
+       OR  param_kind like '%ReplicationController'
+       OR  param_kind like '%ReplicationControllerList'
+       OR  param_kind like '%ReplicationControllerSpec'
+         )
+  and api_resource_name not like '%alpha%'
+  and api_resource_name not like '%beta%'
+  order by api_resource_name;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+              api_resource_name               
+----------------------------------------------
+ io.k8s.api.apps.v1.DaemonSet
+ io.k8s.api.apps.v1.DaemonSetList
+ io.k8s.api.apps.v1.DaemonSetSpec
+ io.k8s.api.apps.v1.DaemonSetUpdateStrategy
+ io.k8s.api.apps.v1.Deployment
+ io.k8s.api.apps.v1.DeploymentList
+ io.k8s.api.apps.v1.DeploymentSpec
+ io.k8s.api.apps.v1.DeploymentStrategy
+ io.k8s.api.apps.v1.ReplicaSet
+ io.k8s.api.apps.v1.ReplicaSetList
+ io.k8s.api.apps.v1.ReplicaSetSpec
+ io.k8s.api.apps.v1.StatefulSet
+ io.k8s.api.apps.v1.StatefulSetList
+ io.k8s.api.apps.v1.StatefulSetSpec
+ io.k8s.api.batch.v1.Job
+ io.k8s.api.batch.v1.JobList
+ io.k8s.api.batch.v1.JobSpec
+ io.k8s.api.core.v1.Pod
+ io.k8s.api.core.v1.PodList
+ io.k8s.api.core.v1.PodTemplate
+ io.k8s.api.core.v1.PodTemplateList
+ io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.core.v1.ReplicationController
+ io.k8s.api.core.v1.ReplicationControllerList
+ io.k8s.api.core.v1.ReplicationControllerSpec
+(25 rows)
+
+#+end_src
+** notes
+#+BEGIN_SRC sql-mode
+select distinct api_resource_name, resource_field as field, param_kind as kind
+from api_resources_fields
+where param_kind like '%PodTemplateSpec'
+and api_resource_name not like '%alpha%'
+and api_resource_name not like '%beta%'
+order by field; 
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+              api_resource_name               |  field   |                kind                
+----------------------------------------------+----------+------------------------------------
+ io.k8s.api.core.v1.ReplicationControllerSpec | template | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.core.v1.PodTemplate               | template | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.apps.v1.DeploymentSpec            | template | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.apps.v1.StatefulSetSpec           | template | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.apps.v1.DaemonSetSpec             | template | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.apps.v1.ReplicaSetSpec            | template | io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.batch.v1.JobSpec                  | template | io.k8s.api.core.v1.PodTemplateSpec
+(7 rows)
+
+#+end_src
+** Pod is a property Stateful,Relica,Daemon{SetSpec} Job,ReplicationController,Depeloyment{Spec) and PodTemplate
+
+#+BEGIN_SRC sql-mode
+select distinct api_resource_name, resource_field as field, param_kind as kind, 0 as hits, 0 as test_hits, 0 as conformance_hits
+from api_resources_fields
+where param_kind like '%PodTemplateSpec%'
+and api_resource_name not like '%alpha%'
+and api_resource_name not like '%beta%'
+order by field; 
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+              api_resource_name               |  field   |                kind                | hits | test_hits | conformance_hits 
+----------------------------------------------+----------+------------------------------------+------+-----------+------------------
+ io.k8s.api.apps.v1.StatefulSetSpec           | template | io.k8s.api.core.v1.PodTemplateSpec |    0 |         0 |                0
+ io.k8s.api.apps.v1.ReplicaSetSpec            | template | io.k8s.api.core.v1.PodTemplateSpec |    0 |         0 |                0
+ io.k8s.api.apps.v1.DaemonSetSpec             | template | io.k8s.api.core.v1.PodTemplateSpec |    0 |         0 |                0
+ io.k8s.api.core.v1.ReplicationControllerSpec | template | io.k8s.api.core.v1.PodTemplateSpec |    0 |         0 |                0
+ io.k8s.api.apps.v1.DeploymentSpec            | template | io.k8s.api.core.v1.PodTemplateSpec |    0 |         0 |                0
+ io.k8s.api.core.v1.PodTemplate               | template | io.k8s.api.core.v1.PodTemplateSpec |    0 |         0 |                0
+ io.k8s.api.batch.v1.JobSpec                  | template | io.k8s.api.core.v1.PodTemplateSpec |    0 |         0 |                0
+(7 rows)
 
 #+end_src
 ** Pod is not in api_resources
 
 #+BEGIN_SRC sql-mode
-
-
+select operation_id, k8s_version, k8s_kind, description
+from api_operations_material
+where false
+OR k8s_kind = 'Pod'
+OR k8s_kind = 'PodTemplate';
 #+END_SRC
 
+#+RESULTS:
+#+begin_src sql-mode
+                operation_id                 | k8s_version |  k8s_kind   |                                                                                    description                                                                                     
+---------------------------------------------+-------------+-------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ deleteCoreV1CollectionNamespacedPod         | v1          | Pod         | delete collection of Pod
+ listCoreV1NamespacedPod                     | v1          | Pod         | list or watch objects of kind Pod
+ createCoreV1NamespacedPod                   | v1          | Pod         | create a Pod
+ deleteCoreV1NamespacedPod                   | v1          | Pod         | delete a Pod
+ readCoreV1NamespacedPod                     | v1          | Pod         | read the specified Pod
+ patchCoreV1NamespacedPod                    | v1          | Pod         | partially update the specified Pod
+ replaceCoreV1NamespacedPod                  | v1          | Pod         | replace the specified Pod
+ readCoreV1NamespacedPodLog                  | v1          | Pod         | read log of the specified Pod
+ readCoreV1NamespacedPodStatus               | v1          | Pod         | read status of the specified Pod
+ patchCoreV1NamespacedPodStatus              | v1          | Pod         | partially update status of the specified Pod
+ replaceCoreV1NamespacedPodStatus            | v1          | Pod         | replace status of the specified Pod
+ deleteCoreV1CollectionNamespacedPodTemplate | v1          | PodTemplate | delete collection of PodTemplate
+ listCoreV1NamespacedPodTemplate             | v1          | PodTemplate | list or watch objects of kind PodTemplate
+ createCoreV1NamespacedPodTemplate           | v1          | PodTemplate | create a PodTemplate
+ deleteCoreV1NamespacedPodTemplate           | v1          | PodTemplate | delete a PodTemplate
+ readCoreV1NamespacedPodTemplate             | v1          | PodTemplate | read the specified PodTemplate
+ patchCoreV1NamespacedPodTemplate            | v1          | PodTemplate | partially update the specified PodTemplate
+ replaceCoreV1NamespacedPodTemplate          | v1          | PodTemplate | replace the specified PodTemplate
+ listCoreV1PodForAllNamespaces               | v1          | Pod         | list or watch objects of kind Pod
+ listCoreV1PodTemplateForAllNamespaces       | v1          | PodTemplate | list or watch objects of kind PodTemplate
+ watchCoreV1NamespacedPodList                | v1          | Pod         | watch individual changes to a list of Pod. deprecated: use the 'watch' parameter with a list operation instead.
+ watchCoreV1NamespacedPod                    | v1          | Pod         | watch changes to an object of kind Pod. deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter.
+ watchCoreV1NamespacedPodTemplateList        | v1          | PodTemplate | watch individual changes to a list of PodTemplate. deprecated: use the 'watch' parameter with a list operation instead.
+ watchCoreV1NamespacedPodTemplate            | v1          | PodTemplate | watch changes to an object of kind PodTemplate. deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter.
+ watchCoreV1PodListForAllNamespaces          | v1          | Pod         | watch individual changes to a list of Pod. deprecated: use the 'watch' parameter with a list operation instead.
+ watchCoreV1PodTemplateListForAllNamespaces  | v1          | PodTemplate | watch individual changes to a list of PodTemplate. deprecated: use the 'watch' parameter with a list operation instead.
+(26 rows)
 
+#+end_src
+
+** where is PodSecurityContext
+
+*** Pod is  kind
+#+BEGIN_SRC shell :wrap "SRC json"
+          curl https://raw.githubusercontent.com/kubernetes/kubernetes/master/api/openapi-spec/swagger.json \
+| jq '.definitions["io.k8s.api.core.v1.Pod"].properties.spec'
+#+END_SRC
+
+#+RESULTS:
+#+begin_SRC json
+{
+  "$ref": "#/definitions/io.k8s.api.core.v1.PodSpec",
+  "description": "Specification of the desired behavior of the pod. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status"
+}
+#+end_SRC
+
+
+#+BEGIN_SRC sql-mode
+select distinct name
+from api_resources
+order by name;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                                              name                                               
+-------------------------------------------------------------------------------------------------
+ io.k8s.api.admissionregistration.v1beta1.MutatingWebhook
+ io.k8s.api.admissionregistration.v1beta1.MutatingWebhookConfigurationList
+ io.k8s.api.admissionregistration.v1beta1.ServiceReference
+ io.k8s.api.admissionregistration.v1beta1.ValidatingWebhook
+ io.k8s.api.admissionregistration.v1beta1.ValidatingWebhookConfigurationList
+ io.k8s.api.admissionregistration.v1.MutatingWebhook
+ io.k8s.api.admissionregistration.v1.MutatingWebhookConfigurationList
+ io.k8s.api.admissionregistration.v1.ServiceReference
+ io.k8s.api.admissionregistration.v1.ValidatingWebhook
+ io.k8s.api.admissionregistration.v1.ValidatingWebhookConfigurationList
+ io.k8s.api.apps.v1beta1.ControllerRevision
+ io.k8s.api.apps.v1beta1.ControllerRevisionList
+ io.k8s.api.apps.v1beta1.DeploymentCondition
+ io.k8s.api.apps.v1beta1.DeploymentList
+ io.k8s.api.apps.v1beta1.DeploymentRollback
+ io.k8s.api.apps.v1beta1.DeploymentSpec
+ io.k8s.api.apps.v1beta1.ScaleStatus
+ io.k8s.api.apps.v1beta1.StatefulSetCondition
+ io.k8s.api.apps.v1beta1.StatefulSetList
+ io.k8s.api.apps.v1beta1.StatefulSetSpec
+ io.k8s.api.apps.v1beta1.StatefulSetStatus
+ io.k8s.api.apps.v1beta2.ControllerRevision
+ io.k8s.api.apps.v1beta2.ControllerRevisionList
+ io.k8s.api.apps.v1beta2.DaemonSetCondition
+ io.k8s.api.apps.v1beta2.DaemonSetList
+ io.k8s.api.apps.v1beta2.DaemonSetSpec
+ io.k8s.api.apps.v1beta2.DaemonSetStatus
+ io.k8s.api.apps.v1beta2.DeploymentCondition
+ io.k8s.api.apps.v1beta2.DeploymentList
+ io.k8s.api.apps.v1beta2.DeploymentSpec
+ io.k8s.api.apps.v1beta2.ReplicaSetCondition
+ io.k8s.api.apps.v1beta2.ReplicaSetList
+ io.k8s.api.apps.v1beta2.ReplicaSetSpec
+ io.k8s.api.apps.v1beta2.ReplicaSetStatus
+ io.k8s.api.apps.v1beta2.ScaleStatus
+ io.k8s.api.apps.v1beta2.StatefulSetCondition
+ io.k8s.api.apps.v1beta2.StatefulSetList
+ io.k8s.api.apps.v1beta2.StatefulSetSpec
+ io.k8s.api.apps.v1beta2.StatefulSetStatus
+ io.k8s.api.apps.v1.ControllerRevision
+ io.k8s.api.apps.v1.ControllerRevisionList
+ io.k8s.api.apps.v1.DaemonSetCondition
+ io.k8s.api.apps.v1.DaemonSetList
+ io.k8s.api.apps.v1.DaemonSetSpec
+ io.k8s.api.apps.v1.DaemonSetStatus
+ io.k8s.api.apps.v1.DeploymentCondition
+ io.k8s.api.apps.v1.DeploymentList
+ io.k8s.api.apps.v1.DeploymentSpec
+ io.k8s.api.apps.v1.ReplicaSetCondition
+ io.k8s.api.apps.v1.ReplicaSetList
+ io.k8s.api.apps.v1.ReplicaSetSpec
+ io.k8s.api.apps.v1.ReplicaSetStatus
+ io.k8s.api.apps.v1.StatefulSetCondition
+ io.k8s.api.apps.v1.StatefulSetList
+ io.k8s.api.apps.v1.StatefulSetSpec
+ io.k8s.api.apps.v1.StatefulSetStatus
+ io.k8s.api.auditregistration.v1alpha1.AuditSinkList
+ io.k8s.api.auditregistration.v1alpha1.AuditSinkSpec
+ io.k8s.api.auditregistration.v1alpha1.Policy
+ io.k8s.api.auditregistration.v1alpha1.ServiceReference
+ io.k8s.api.auditregistration.v1alpha1.Webhook
+ io.k8s.api.authentication.v1beta1.TokenReview
+ io.k8s.api.authentication.v1.TokenRequest
+ io.k8s.api.authentication.v1.TokenRequestSpec
+ io.k8s.api.authentication.v1.TokenRequestStatus
+ io.k8s.api.authentication.v1.TokenReview
+ io.k8s.api.authorization.v1beta1.LocalSubjectAccessReview
+ io.k8s.api.authorization.v1beta1.NonResourceRule
+ io.k8s.api.authorization.v1beta1.ResourceRule
+ io.k8s.api.authorization.v1beta1.SelfSubjectAccessReview
+ io.k8s.api.authorization.v1beta1.SelfSubjectRulesReview
+ io.k8s.api.authorization.v1beta1.SubjectAccessReview
+ io.k8s.api.authorization.v1beta1.SubjectAccessReviewStatus
+ io.k8s.api.authorization.v1beta1.SubjectRulesReviewStatus
+ io.k8s.api.authorization.v1.LocalSubjectAccessReview
+ io.k8s.api.authorization.v1.NonResourceRule
+ io.k8s.api.authorization.v1.ResourceRule
+ io.k8s.api.authorization.v1.SelfSubjectAccessReview
+ io.k8s.api.authorization.v1.SelfSubjectRulesReview
+ io.k8s.api.authorization.v1.SubjectAccessReview
+ io.k8s.api.authorization.v1.SubjectAccessReviewStatus
+ io.k8s.api.authorization.v1.SubjectRulesReviewStatus
+ io.k8s.api.autoscaling.v1.CrossVersionObjectReference
+ io.k8s.api.autoscaling.v1.HorizontalPodAutoscalerList
+ io.k8s.api.autoscaling.v1.HorizontalPodAutoscalerSpec
+ io.k8s.api.autoscaling.v1.HorizontalPodAutoscalerStatus
+ io.k8s.api.autoscaling.v1.ScaleStatus
+ io.k8s.api.autoscaling.v2beta1.CrossVersionObjectReference
+ io.k8s.api.autoscaling.v2beta1.ExternalMetricSource
+ io.k8s.api.autoscaling.v2beta1.ExternalMetricStatus
+ io.k8s.api.autoscaling.v2beta1.HorizontalPodAutoscalerCondition
+ io.k8s.api.autoscaling.v2beta1.HorizontalPodAutoscalerList
+ io.k8s.api.autoscaling.v2beta1.HorizontalPodAutoscalerSpec
+ io.k8s.api.autoscaling.v2beta1.HorizontalPodAutoscalerStatus
+ io.k8s.api.autoscaling.v2beta1.MetricSpec
+ io.k8s.api.autoscaling.v2beta1.MetricStatus
+ io.k8s.api.autoscaling.v2beta1.ObjectMetricSource
+ io.k8s.api.autoscaling.v2beta1.ObjectMetricStatus
+ io.k8s.api.autoscaling.v2beta1.PodsMetricSource
+ io.k8s.api.autoscaling.v2beta1.PodsMetricStatus
+ io.k8s.api.autoscaling.v2beta1.ResourceMetricSource
+ io.k8s.api.autoscaling.v2beta1.ResourceMetricStatus
+ io.k8s.api.autoscaling.v2beta2.CrossVersionObjectReference
+ io.k8s.api.autoscaling.v2beta2.ExternalMetricSource
+ io.k8s.api.autoscaling.v2beta2.ExternalMetricStatus
+ io.k8s.api.autoscaling.v2beta2.HorizontalPodAutoscalerCondition
+ io.k8s.api.autoscaling.v2beta2.HorizontalPodAutoscalerList
+ io.k8s.api.autoscaling.v2beta2.HorizontalPodAutoscalerSpec
+ io.k8s.api.autoscaling.v2beta2.HorizontalPodAutoscalerStatus
+ io.k8s.api.autoscaling.v2beta2.MetricIdentifier
+ io.k8s.api.autoscaling.v2beta2.MetricSpec
+ io.k8s.api.autoscaling.v2beta2.MetricStatus
+ io.k8s.api.autoscaling.v2beta2.MetricTarget
+ io.k8s.api.autoscaling.v2beta2.ObjectMetricSource
+ io.k8s.api.autoscaling.v2beta2.ObjectMetricStatus
+ io.k8s.api.autoscaling.v2beta2.PodsMetricSource
+ io.k8s.api.autoscaling.v2beta2.PodsMetricStatus
+ io.k8s.api.autoscaling.v2beta2.ResourceMetricSource
+ io.k8s.api.autoscaling.v2beta2.ResourceMetricStatus
+ io.k8s.api.batch.v1beta1.CronJobList
+ io.k8s.api.batch.v1beta1.CronJobSpec
+ io.k8s.api.batch.v1.JobCondition
+ io.k8s.api.batch.v1.JobList
+ io.k8s.api.batch.v1.JobSpec
+ io.k8s.api.batch.v2alpha1.CronJobList
+ io.k8s.api.batch.v2alpha1.CronJobSpec
+ io.k8s.api.certificates.v1beta1.CertificateSigningRequestCondition
+ io.k8s.api.certificates.v1beta1.CertificateSigningRequestList
+ io.k8s.api.certificates.v1beta1.CertificateSigningRequestSpec
+ io.k8s.api.coordination.v1beta1.LeaseList
+ io.k8s.api.coordination.v1.LeaseList
+ io.k8s.api.core.v1.AttachedVolume
+ io.k8s.api.core.v1.AWSElasticBlockStoreVolumeSource
+ io.k8s.api.core.v1.AzureDiskVolumeSource
+ io.k8s.api.core.v1.AzureFilePersistentVolumeSource
+ io.k8s.api.core.v1.AzureFileVolumeSource
+ io.k8s.api.core.v1.Binding
+ io.k8s.api.core.v1.CephFSPersistentVolumeSource
+ io.k8s.api.core.v1.CephFSVolumeSource
+ io.k8s.api.core.v1.CinderPersistentVolumeSource
+ io.k8s.api.core.v1.CinderVolumeSource
+ io.k8s.api.core.v1.ComponentCondition
+ io.k8s.api.core.v1.ComponentStatusList
+ io.k8s.api.core.v1.ConfigMapKeySelector
+ io.k8s.api.core.v1.ConfigMapList
+ io.k8s.api.core.v1.ConfigMapNodeConfigSource
+ io.k8s.api.core.v1.Container
+ io.k8s.api.core.v1.ContainerImage
+ io.k8s.api.core.v1.ContainerPort
+ io.k8s.api.core.v1.ContainerStateTerminated
+ io.k8s.api.core.v1.ContainerStatus
+ io.k8s.api.core.v1.CSIPersistentVolumeSource
+ io.k8s.api.core.v1.CSIVolumeSource
+ io.k8s.api.core.v1.DaemonEndpoint
+ io.k8s.api.core.v1.DownwardAPIVolumeFile
+ io.k8s.api.core.v1.EndpointAddress
+ io.k8s.api.core.v1.EndpointPort
+ io.k8s.api.core.v1.EndpointsList
+ io.k8s.api.core.v1.EnvVar
+ io.k8s.api.core.v1.EphemeralContainer
+ io.k8s.api.core.v1.Event
+ io.k8s.api.core.v1.EventList
+ io.k8s.api.core.v1.FlexPersistentVolumeSource
+ io.k8s.api.core.v1.FlexVolumeSource
+ io.k8s.api.core.v1.GCEPersistentDiskVolumeSource
+ io.k8s.api.core.v1.GitRepoVolumeSource
+ io.k8s.api.core.v1.GlusterfsPersistentVolumeSource
+ io.k8s.api.core.v1.GlusterfsVolumeSource
+ io.k8s.api.core.v1.HostPathVolumeSource
+ io.k8s.api.core.v1.HTTPGetAction
+ io.k8s.api.core.v1.HTTPHeader
+ io.k8s.api.core.v1.ISCSIPersistentVolumeSource
+ io.k8s.api.core.v1.ISCSIVolumeSource
+ io.k8s.api.core.v1.KeyToPath
+ io.k8s.api.core.v1.LimitRangeList
+ io.k8s.api.core.v1.LimitRangeSpec
+ io.k8s.api.core.v1.LocalVolumeSource
+ io.k8s.api.core.v1.NamespaceList
+ io.k8s.api.core.v1.NFSVolumeSource
+ io.k8s.api.core.v1.NodeAddress
+ io.k8s.api.core.v1.NodeCondition
+ io.k8s.api.core.v1.NodeList
+ io.k8s.api.core.v1.NodeSelector
+ io.k8s.api.core.v1.NodeSelectorRequirement
+ io.k8s.api.core.v1.NodeSystemInfo
+ io.k8s.api.core.v1.ObjectFieldSelector
+ io.k8s.api.core.v1.PersistentVolumeClaimCondition
+ io.k8s.api.core.v1.PersistentVolumeClaimList
+ io.k8s.api.core.v1.PersistentVolumeClaimVolumeSource
+ io.k8s.api.core.v1.PersistentVolumeList
+ io.k8s.api.core.v1.PhotonPersistentDiskVolumeSource
+ io.k8s.api.core.v1.PodAffinityTerm
+ io.k8s.api.core.v1.PodCondition
+ io.k8s.api.core.v1.PodList
+ io.k8s.api.core.v1.PodReadinessGate
+ io.k8s.api.core.v1.PodSpec
+ io.k8s.api.core.v1.PodTemplateList
+ io.k8s.api.core.v1.PortworxVolumeSource
+ io.k8s.api.core.v1.PreferredSchedulingTerm
+ io.k8s.api.core.v1.ProjectedVolumeSource
+ io.k8s.api.core.v1.QuobyteVolumeSource
+ io.k8s.api.core.v1.RBDPersistentVolumeSource
+ io.k8s.api.core.v1.RBDVolumeSource
+ io.k8s.api.core.v1.ReplicationControllerCondition
+ io.k8s.api.core.v1.ReplicationControllerList
+ io.k8s.api.core.v1.ReplicationControllerStatus
+ io.k8s.api.core.v1.ResourceFieldSelector
+ io.k8s.api.core.v1.ResourceQuotaList
+ io.k8s.api.core.v1.ScaleIOPersistentVolumeSource
+ io.k8s.api.core.v1.ScaleIOVolumeSource
+ io.k8s.api.core.v1.ScopedResourceSelectorRequirement
+ io.k8s.api.core.v1.SecretKeySelector
+ io.k8s.api.core.v1.SecretList
+ io.k8s.api.core.v1.ServiceAccountList
+ io.k8s.api.core.v1.ServiceAccountTokenProjection
+ io.k8s.api.core.v1.ServiceList
+ io.k8s.api.core.v1.ServicePort
+ io.k8s.api.core.v1.Sysctl
+ io.k8s.api.core.v1.Taint
+ io.k8s.api.core.v1.TCPSocketAction
+ io.k8s.api.core.v1.TopologySelectorLabelRequirement
+ io.k8s.api.core.v1.TopologySpreadConstraint
+ io.k8s.api.core.v1.TypedLocalObjectReference
+ io.k8s.api.core.v1.Volume
+ io.k8s.api.core.v1.VolumeDevice
+ io.k8s.api.core.v1.VolumeMount
+ io.k8s.api.core.v1.VsphereVirtualDiskVolumeSource
+ io.k8s.api.core.v1.WeightedPodAffinityTerm
+ io.k8s.api.events.v1beta1.Event
+ io.k8s.api.events.v1beta1.EventList
+ io.k8s.api.events.v1beta1.EventSeries
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceColumnDefinition
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceConversion
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinition
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionCondition
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionList
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionNames
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionSpec
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionStatus
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionVersion
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceSubresourceScale
+ io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.ServiceReference
+ io.k8s.api.extensions.v1beta1.AllowedCSIDriver
+ io.k8s.api.extensions.v1beta1.AllowedFlexVolume
+ io.k8s.api.extensions.v1beta1.DaemonSetCondition
+ io.k8s.api.extensions.v1beta1.DaemonSetList
+ io.k8s.api.extensions.v1beta1.DaemonSetSpec
+ io.k8s.api.extensions.v1beta1.DaemonSetStatus
+ io.k8s.api.extensions.v1beta1.DeploymentCondition
+ io.k8s.api.extensions.v1beta1.DeploymentList
+ io.k8s.api.extensions.v1beta1.DeploymentRollback
+ io.k8s.api.extensions.v1beta1.DeploymentSpec
+ io.k8s.api.extensions.v1beta1.HostPortRange
+ io.k8s.api.extensions.v1beta1.HTTPIngressPath
+ io.k8s.api.extensions.v1beta1.HTTPIngressRuleValue
+ io.k8s.api.extensions.v1beta1.IDRange
+ io.k8s.api.extensions.v1beta1.IngressBackend
+ io.k8s.api.extensions.v1beta1.IngressList
+ io.k8s.api.extensions.v1beta1.IPBlock
+ io.k8s.api.extensions.v1beta1.NetworkPolicyList
+ io.k8s.api.extensions.v1beta1.NetworkPolicySpec
+ io.k8s.api.extensions.v1beta1.PodSecurityPolicyList
+ io.k8s.api.extensions.v1beta1.PodSecurityPolicySpec
+ io.k8s.api.extensions.v1beta1.ReplicaSetCondition
+ io.k8s.api.extensions.v1beta1.ReplicaSetList
+ io.k8s.api.extensions.v1beta1.ReplicaSetStatus
+ io.k8s.api.extensions.v1beta1.RunAsGroupStrategyOptions
+ io.k8s.api.extensions.v1beta1.RunAsUserStrategyOptions
+ io.k8s.api.extensions.v1beta1.RuntimeClassStrategyOptions
+ io.k8s.api.extensions.v1beta1.ScaleStatus
+ io.k8s.api.extensions.v1beta1.SELinuxStrategyOptions
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIGroup
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIGroupList
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIResource
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIResourceList
+ io.k8s.apimachinery.pkg.apis.meta.v1.APIVersions
+ io.k8s.apimachinery.pkg.apis.meta.v1.GroupVersionForDiscovery
+ io.k8s.apimachinery.pkg.apis.meta.v1.LabelSelectorRequirement
+ io.k8s.apimachinery.pkg.apis.meta.v1.OwnerReference
+ io.k8s.apimachinery.pkg.apis.meta.v1.ServerAddressByClientCIDR
+ io.k8s.apimachinery.pkg.apis.meta.v1.WatchEvent
+ io.k8s.apimachinery.pkg.runtime.RawExtension
+ io.k8s.apimachinery.pkg.version.Info
+ io.k8s.api.networking.v1beta1.HTTPIngressPath
+ io.k8s.api.networking.v1beta1.HTTPIngressRuleValue
+ io.k8s.api.networking.v1beta1.IngressBackend
+ io.k8s.api.networking.v1beta1.IngressList
+ io.k8s.api.networking.v1.IPBlock
+ io.k8s.api.networking.v1.NetworkPolicyList
+ io.k8s.api.networking.v1.NetworkPolicySpec
+ io.k8s.api.node.v1alpha1.RuntimeClass
+ io.k8s.api.node.v1alpha1.RuntimeClassList
+ io.k8s.api.node.v1alpha1.RuntimeClassSpec
+ io.k8s.api.node.v1beta1.RuntimeClass
+ io.k8s.api.node.v1beta1.RuntimeClassList
+ io.k8s.api.policy.v1beta1.AllowedCSIDriver
+ io.k8s.api.policy.v1beta1.AllowedFlexVolume
+ io.k8s.api.policy.v1beta1.HostPortRange
+ io.k8s.api.policy.v1beta1.IDRange
+ io.k8s.api.policy.v1beta1.PodDisruptionBudgetList
+ io.k8s.api.policy.v1beta1.PodDisruptionBudgetStatus
+ io.k8s.api.policy.v1beta1.PodSecurityPolicyList
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec
+ io.k8s.api.policy.v1beta1.RunAsGroupStrategyOptions
+ io.k8s.api.policy.v1beta1.RunAsUserStrategyOptions
+ io.k8s.api.policy.v1beta1.RuntimeClassStrategyOptions
+ io.k8s.api.policy.v1beta1.SELinuxStrategyOptions
+ io.k8s.api.rbac.v1alpha1.ClusterRoleBinding
+ io.k8s.api.rbac.v1alpha1.ClusterRoleBindingList
+ io.k8s.api.rbac.v1alpha1.ClusterRoleList
+ io.k8s.api.rbac.v1alpha1.PolicyRule
+ io.k8s.api.rbac.v1alpha1.RoleBinding
+ io.k8s.api.rbac.v1alpha1.RoleBindingList
+ io.k8s.api.rbac.v1alpha1.RoleList
+ io.k8s.api.rbac.v1alpha1.RoleRef
+ io.k8s.api.rbac.v1alpha1.Subject
+ io.k8s.api.rbac.v1beta1.ClusterRoleBinding
+ io.k8s.api.rbac.v1beta1.ClusterRoleBindingList
+ io.k8s.api.rbac.v1beta1.ClusterRoleList
+ io.k8s.api.rbac.v1beta1.PolicyRule
+ io.k8s.api.rbac.v1beta1.RoleBinding
+ io.k8s.api.rbac.v1beta1.RoleBindingList
+ io.k8s.api.rbac.v1beta1.RoleList
+ io.k8s.api.rbac.v1beta1.RoleRef
+ io.k8s.api.rbac.v1beta1.Subject
+ io.k8s.api.rbac.v1.ClusterRoleBinding
+ io.k8s.api.rbac.v1.ClusterRoleBindingList
+ io.k8s.api.rbac.v1.ClusterRoleList
+ io.k8s.api.rbac.v1.PolicyRule
+ io.k8s.api.rbac.v1.RoleBinding
+ io.k8s.api.rbac.v1.RoleBindingList
+ io.k8s.api.rbac.v1.RoleList
+ io.k8s.api.rbac.v1.RoleRef
+ io.k8s.api.rbac.v1.Subject
+ io.k8s.api.scheduling.v1alpha1.PriorityClass
+ io.k8s.api.scheduling.v1alpha1.PriorityClassList
+ io.k8s.api.scheduling.v1beta1.PriorityClass
+ io.k8s.api.scheduling.v1beta1.PriorityClassList
+ io.k8s.api.scheduling.v1.PriorityClass
+ io.k8s.api.scheduling.v1.PriorityClassList
+ io.k8s.api.settings.v1alpha1.PodPresetList
+ io.k8s.api.storage.v1alpha1.VolumeAttachment
+ io.k8s.api.storage.v1alpha1.VolumeAttachmentList
+ io.k8s.api.storage.v1alpha1.VolumeAttachmentSpec
+ io.k8s.api.storage.v1alpha1.VolumeAttachmentStatus
+ io.k8s.api.storage.v1beta1.CSIDriver
+ io.k8s.api.storage.v1beta1.CSIDriverList
+ io.k8s.api.storage.v1beta1.CSINode
+ io.k8s.api.storage.v1beta1.CSINodeDriver
+ io.k8s.api.storage.v1beta1.CSINodeList
+ io.k8s.api.storage.v1beta1.CSINodeSpec
+ io.k8s.api.storage.v1beta1.StorageClass
+ io.k8s.api.storage.v1beta1.StorageClassList
+ io.k8s.api.storage.v1beta1.VolumeAttachment
+ io.k8s.api.storage.v1beta1.VolumeAttachmentList
+ io.k8s.api.storage.v1beta1.VolumeAttachmentSpec
+ io.k8s.api.storage.v1beta1.VolumeAttachmentStatus
+ io.k8s.api.storage.v1.StorageClass
+ io.k8s.api.storage.v1.StorageClassList
+ io.k8s.api.storage.v1.VolumeAttachment
+ io.k8s.api.storage.v1.VolumeAttachmentList
+ io.k8s.api.storage.v1.VolumeAttachmentSpec
+ io.k8s.api.storage.v1.VolumeAttachmentStatus
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceCondition
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceList
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceSpec
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1beta1.APIServiceCondition
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1beta1.APIServiceList
+ io.k8s.kube-aggregator.pkg.apis.apiregistration.v1beta1.APIServiceSpec
+(369 rows)
+
+#+end_src
+
+*** PodSpec is a kind
+#+BEGIN_SRC shell :wrap "SRC json"
+cat ~/go/src/k8s.io/kubernetes/api/openapi-spec/swagger.json | jq '.definitions["io.k8s.api.core.v1.PodSpec"]'
+#+END_SRC
+
+#+RESULTS:
+#+begin_SRC json
+{
+  "description": "PodSpec is a description of a pod.",
+  "properties": {
+    "activeDeadlineSeconds": {
+      "description": "Optional duration in seconds the pod may be active on the node relative to StartTime before the system will actively try to mark it failed and kill associated containers. Value must be a positive integer.",
+      "format": "int64",
+      "type": "integer"
+    },
+    "affinity": {
+      "$ref": "#/definitions/io.k8s.api.core.v1.Affinity",
+      "description": "If specified, the pod's scheduling constraints"
+    },
+    "automountServiceAccountToken": {
+      "description": "AutomountServiceAccountToken indicates whether a service account token should be automatically mounted.",
+      "type": "boolean"
+    },
+    "containers": {
+      "description": "List of containers belonging to the pod. Containers cannot currently be added or removed. There must be at least one container in a Pod. Cannot be updated.",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.Container"
+      },
+      "type": "array",
+      "x-kubernetes-patch-merge-key": "name",
+      "x-kubernetes-patch-strategy": "merge"
+    },
+    "dnsConfig": {
+      "$ref": "#/definitions/io.k8s.api.core.v1.PodDNSConfig",
+      "description": "Specifies the DNS parameters of a pod. Parameters specified here will be merged to the generated DNS configuration based on DNSPolicy."
+    },
+    "dnsPolicy": {
+      "description": "Set DNS policy for the pod. Defaults to \"ClusterFirst\". Valid values are 'ClusterFirstWithHostNet', 'ClusterFirst', 'Default' or 'None'. DNS parameters given in DNSConfig will be merged with the policy selected with DNSPolicy. To have DNS options set along with hostNetwork, you have to specify DNS policy explicitly to 'ClusterFirstWithHostNet'.",
+      "type": "string"
+    },
+    "enableServiceLinks": {
+      "description": "EnableServiceLinks indicates whether information about services should be injected into pod's environment variables, matching the syntax of Docker links. Optional: Defaults to true.",
+      "type": "boolean"
+    },
+    "ephemeralContainers": {
+      "description": "EphemeralContainers is the list of ephemeral containers that run in this pod. Ephemeral containers are added to an existing pod as a result of a user-initiated action such as troubleshooting. This list is read-only in the pod spec. It may not be specified in a create or modified in an update of a pod or pod template. To add an ephemeral container use the pod's ephemeralcontainers subresource, which allows update using the EphemeralContainers kind. This field is alpha-level and is only honored by servers that enable the EphemeralContainers feature.",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.EphemeralContainer"
+      },
+      "type": "array",
+      "x-kubernetes-patch-merge-key": "name",
+      "x-kubernetes-patch-strategy": "merge"
+    },
+    "hostAliases": {
+      "description": "HostAliases is an optional list of hosts and IPs that will be injected into the pod's hosts file if specified. This is only valid for non-hostNetwork pods.",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.HostAlias"
+      },
+      "type": "array",
+      "x-kubernetes-patch-merge-key": "ip",
+      "x-kubernetes-patch-strategy": "merge"
+    },
+    "hostIPC": {
+      "description": "Use the host's ipc namespace. Optional: Default to false.",
+      "type": "boolean"
+    },
+    "hostNetwork": {
+      "description": "Host networking requested for this pod. Use the host's network namespace. If this option is set, the ports that will be used must be specified. Default to false.",
+      "type": "boolean"
+    },
+    "hostPID": {
+      "description": "Use the host's pid namespace. Optional: Default to false.",
+      "type": "boolean"
+    },
+    "hostname": {
+      "description": "Specifies the hostname of the Pod If not specified, the pod's hostname will be set to a system-defined value.",
+      "type": "string"
+    },
+    "imagePullSecrets": {
+      "description": "ImagePullSecrets is an optional list of references to secrets in the same namespace to use for pulling any of the images used by this PodSpec. If specified, these secrets will be passed to individual puller implementations for them to use. For example, in the case of docker, only DockerConfig type secrets are honored. More info: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.LocalObjectReference"
+      },
+      "type": "array",
+      "x-kubernetes-patch-merge-key": "name",
+      "x-kubernetes-patch-strategy": "merge"
+    },
+    "initContainers": {
+      "description": "List of initialization containers belonging to the pod. Init containers are executed in order prior to containers being started. If any init container fails, the pod is considered to have failed and is handled according to its restartPolicy. The name for an init container or normal container must be unique among all containers. Init containers may not have Lifecycle actions, Readiness probes, or Liveness probes. The resourceRequirements of an init container are taken into account during scheduling by finding the highest request/limit for each resource type, and then using the max of of that value or the sum of the normal containers. Limits are applied to init containers in a similar fashion. Init containers cannot currently be added or removed. Cannot be updated. More info: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.Container"
+      },
+      "type": "array",
+      "x-kubernetes-patch-merge-key": "name",
+      "x-kubernetes-patch-strategy": "merge"
+    },
+    "nodeName": {
+      "description": "NodeName is a request to schedule this pod onto a specific node. If it is non-empty, the scheduler simply schedules this pod onto that node, assuming that it fits resource requirements.",
+      "type": "string"
+    },
+    "nodeSelector": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "NodeSelector is a selector which must be true for the pod to fit on a node. Selector which must match a node's labels for the pod to be scheduled on that node. More info: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/",
+      "type": "object"
+    },
+    "overhead": {
+      "additionalProperties": {
+        "$ref": "#/definitions/io.k8s.apimachinery.pkg.api.resource.Quantity"
+      },
+      "description": "Overhead represents the resource overhead associated with running a pod for a given RuntimeClass. This field will be autopopulated at admission time by the RuntimeClass admission controller. If the RuntimeClass admission controller is enabled, overhead must not be set in Pod create requests. The RuntimeClass admission controller will reject Pod create requests which have the overhead already set. If RuntimeClass is configured and selected in the PodSpec, Overhead will be set to the value defined in the corresponding RuntimeClass, otherwise it will remain unset and treated as zero. More info: https://git.k8s.io/enhancements/keps/sig-node/20190226-pod-overhead.md This field is alpha-level as of Kubernetes v1.16, and is only honored by servers that enable the PodOverhead feature.",
+      "type": "object"
+    },
+    "preemptionPolicy": {
+      "description": "PreemptionPolicy is the Policy for preempting pods with lower priority. One of Never, PreemptLowerPriority. Defaults to PreemptLowerPriority if unset. This field is alpha-level and is only honored by servers that enable the NonPreemptingPriority feature.",
+      "type": "string"
+    },
+    "priority": {
+      "description": "The priority value. Various system components use this field to find the priority of the pod. When Priority Admission Controller is enabled, it prevents users from setting this field. The admission controller populates this field from PriorityClassName. The higher the value, the higher the priority.",
+      "format": "int32",
+      "type": "integer"
+    },
+    "priorityClassName": {
+      "description": "If specified, indicates the pod's priority. \"system-node-critical\" and \"system-cluster-critical\" are two special keywords which indicate the highest priorities with the former being the highest priority. Any other name must be defined by creating a PriorityClass object with that name. If not specified, the pod priority will be default or zero if there is no default.",
+      "type": "string"
+    },
+    "readinessGates": {
+      "description": "If specified, all readiness gates will be evaluated for pod readiness. A pod is ready when all its containers are ready AND all conditions specified in the readiness gates have status equal to \"True\" More info: https://git.k8s.io/enhancements/keps/sig-network/0007-pod-ready%2B%2B.md",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.PodReadinessGate"
+      },
+      "type": "array"
+    },
+    "restartPolicy": {
+      "description": "Restart policy for all containers within the pod. One of Always, OnFailure, Never. Default to Always. More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy",
+      "type": "string"
+    },
+    "runtimeClassName": {
+      "description": "RuntimeClassName refers to a RuntimeClass object in the node.k8s.io group, which should be used to run this pod.  If no RuntimeClass resource matches the named class, the pod will not be run. If unset or empty, the \"legacy\" RuntimeClass will be used, which is an implicit class with an empty definition that uses the default runtime handler. More info: https://git.k8s.io/enhancements/keps/sig-node/runtime-class.md This is a beta feature as of Kubernetes v1.14.",
+      "type": "string"
+    },
+    "schedulerName": {
+      "description": "If specified, the pod will be dispatched by specified scheduler. If not specified, the pod will be dispatched by default scheduler.",
+      "type": "string"
+    },
+    "securityContext": {
+      "$ref": "#/definitions/io.k8s.api.core.v1.PodSecurityContext",
+      "description": "SecurityContext holds pod-level security attributes and common container settings. Optional: Defaults to empty.  See type description for default values of each field."
+    },
+    "serviceAccount": {
+      "description": "DeprecatedServiceAccount is a depreciated alias for ServiceAccountName. Deprecated: Use serviceAccountName instead.",
+      "type": "string"
+    },
+    "serviceAccountName": {
+      "description": "ServiceAccountName is the name of the ServiceAccount to use to run this pod. More info: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/",
+      "type": "string"
+    },
+    "shareProcessNamespace": {
+      "description": "Share a single process namespace between all of the containers in a pod. When this is set containers will be able to view and signal processes from other containers in the same pod, and the first process in each container will not be assigned PID 1. HostPID and ShareProcessNamespace cannot both be set. Optional: Default to false. This field is beta-level and may be disabled with the PodShareProcessNamespace feature.",
+      "type": "boolean"
+    },
+    "subdomain": {
+      "description": "If specified, the fully qualified Pod hostname will be \"<hostname>.<subdomain>.<pod namespace>.svc.<cluster domain>\". If not specified, the pod will not have a domainname at all.",
+      "type": "string"
+    },
+    "terminationGracePeriodSeconds": {
+      "description": "Optional duration in seconds the pod needs to terminate gracefully. May be decreased in delete request. Value must be non-negative integer. The value zero indicates delete immediately. If this value is nil, the default grace period will be used instead. The grace period is the duration in seconds after the processes running in the pod are sent a termination signal and the time when the processes are forcibly halted with a kill signal. Set this value longer than the expected cleanup time for your process. Defaults to 30 seconds.",
+      "format": "int64",
+      "type": "integer"
+    },
+    "tolerations": {
+      "description": "If specified, the pod's tolerations.",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.Toleration"
+      },
+      "type": "array"
+    },
+    "topologySpreadConstraints": {
+      "description": "TopologySpreadConstraints describes how a group of pods ought to spread across topology domains. Scheduler will schedule pods in a way which abides by the constraints. This field is alpha-level and is only honored by clusters that enables the EvenPodsSpread feature. All topologySpreadConstraints are ANDed.",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint"
+      },
+      "type": "array",
+      "x-kubernetes-list-map-keys": [
+        "topologyKey",
+        "whenUnsatisfiable"
+      ],
+      "x-kubernetes-list-type": "map",
+      "x-kubernetes-patch-merge-key": "topologyKey",
+      "x-kubernetes-patch-strategy": "merge"
+    },
+    "volumes": {
+      "description": "List of volumes that can be mounted by containers belonging to the pod. More info: https://kubernetes.io/docs/concepts/storage/volumes",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.Volume"
+      },
+      "type": "array",
+      "x-kubernetes-patch-merge-key": "name",
+      "x-kubernetes-patch-strategy": "merge,retainKeys"
+    }
+  },
+  "required": [
+    "containers"
+  ],
+  "type": "object"
+}
+#+end_SRC
+*** Pod is used by operations
+#+BEGIN_SRC sql-mode
+select operation_id, k8s_version, k8s_kind, description from api_operations_material where k8s_kind = 'Pod';
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+            operation_id             | k8s_version | k8s_kind |                                                                                description                                                                                 
+-------------------------------------+-------------+----------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ deleteCoreV1CollectionNamespacedPod | v1          | Pod      | delete collection of Pod
+ listCoreV1NamespacedPod             | v1          | Pod      | list or watch objects of kind Pod
+ createCoreV1NamespacedPod           | v1          | Pod      | create a Pod
+ deleteCoreV1NamespacedPod           | v1          | Pod      | delete a Pod
+ readCoreV1NamespacedPod             | v1          | Pod      | read the specified Pod
+ patchCoreV1NamespacedPod            | v1          | Pod      | partially update the specified Pod
+ replaceCoreV1NamespacedPod          | v1          | Pod      | replace the specified Pod
+ readCoreV1NamespacedPodLog          | v1          | Pod      | read log of the specified Pod
+ readCoreV1NamespacedPodStatus       | v1          | Pod      | read status of the specified Pod
+ patchCoreV1NamespacedPodStatus      | v1          | Pod      | partially update status of the specified Pod
+ replaceCoreV1NamespacedPodStatus    | v1          | Pod      | replace status of the specified Pod
+ listCoreV1PodForAllNamespaces       | v1          | Pod      | list or watch objects of kind Pod
+ watchCoreV1NamespacedPodList        | v1          | Pod      | watch individual changes to a list of Pod. deprecated: use the 'watch' parameter with a list operation instead.
+ watchCoreV1NamespacedPod            | v1          | Pod      | watch changes to an object of kind Pod. deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter.
+ watchCoreV1PodListForAllNamespaces  | v1          | Pod      | watch individual changes to a list of Pod. deprecated: use the 'watch' parameter with a list operation instead.
+(15 rows)
+
+#+end_src
 
 ** distinct api_resource_name from api_resource_fields don't have Pod
 
@@ -3239,22 +4457,6 @@ order by resource;
 
 #+end_src
 
-** Nothing else uses PodSpec as a field !
-
-#+BEGIN_SRC sql-mode
-select distinct api_resource_name, resource_field as field, param_kind as kind, 0 as hits, 0 as test_hits, 0 as conformance_hits
-from api_resources_fields
-where param_kind like '%PodSpec%'
-order by field; 
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
- api_resource_name | field | kind | hits | test_hits | conformance_hits 
--------------------+-------+------+------+-----------+------------------
-(0 rows)
-
-#+end_src
 ** What operations use it as a parameter?
 
 #+BEGIN_SRC sql-mode
