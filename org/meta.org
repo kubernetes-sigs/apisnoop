@@ -20,9 +20,27 @@
 
 #+RESULTS:
 #+begin_src sql-mode
-You are connected to database "zz" as user "zz" on host "172.17.0.1" at port "5432".
+You are connected to database "hh" as user "hh" on host "172.17.0.1" at port "5432".
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
-Did not find any relations.
+                                         List of relations
+ Schema |                Name                |       Type        | Owner |    Size    | Description 
+--------+------------------------------------+-------------------+-------+------------+-------------
+ public | api_operations                     | view              | hh    | 0 bytes    | 
+ public | api_operations_material            | materialized view | hh    | 1704 kB    | 
+ public | api_operations_parameters          | view              | hh    | 0 bytes    | 
+ public | api_operations_parameters_material | materialized view | hh    | 2744 kB    | 
+ public | api_operations_responses           | view              | hh    | 0 bytes    | 
+ public | api_resources                      | view              | hh    | 0 bytes    | 
+ public | api_resources_fields               | view              | hh    | 0 bytes    | 
+ public | audit_events                       | view              | hh    | 0 bytes    | 
+ public | improved_api_resources             | view              | hh    | 0 bytes    | 
+ public | podspec_fields                     | view              | hh    | 0 bytes    | 
+ public | podspec_fields_with_count          | view              | hh    | 0 bytes    | 
+ public | raw_audit_events                   | table             | hh    | 1195 MB    | 
+ public | raw_swaggers                       | table             | hh    | 1760 kB    | 
+ public | raw_swaggers_id_seq                | sequence          | hh    | 8192 bytes | 
+(14 rows)
+
 #+end_src
 
 ** dropping all data
@@ -52,11 +70,15 @@ DROP TABLE
    #+NAME: iteration loop
    #+BEGIN_SRC tmate 
      #:dir ~/ii/apisnoop_v3/apps/hasura
-     cd ~/ii/apisnoop_v3/apps/hasura
+     cd ~/ii/apisnoop_v3/apps/
+     mkdir -p $USER-hasura
+     cd $USER-hasura
+     ln -sf ../hasura/* .
+     # cd ~/ii/apisnoop_v3/apps/$USER-hasura
      echo docker-compose down
      docker-compose down
      # drop all data while down
-     echo 'drop table raw_swaggers cascade; drop table raw_audit_events cascade; drop schema hdb_views cascade; drop schema hdb_catalog cascade; drop table zraw_audit_events cascade;' | psql
+     echo 'drop table raw_swaggers cascade; drop table raw_audit_events cascade; drop schema hdb_views cascade; drop schema hdb_catalog cascade; drop table zraw_audit_events cascade;' | psql $USER
      echo docker-compose up
      docker-compose up -d
    #+END_SRC
@@ -183,9 +205,9 @@ WARNING:  no privileges were granted for
 
 #+NAME: as posgres admin, setup hasura user and db
 #+BEGIN_SRC tmate
-#+BEGIN_SRC shell  :var SUDO_ASKPASS="/usr/bin/ssh-askpass" :prologue "export SUDO_ASKPASS"
-# :var DISPLAY=":0.0"
-sudo su - postgres -c psql < ~/ii/apisnoop_v3/apps/hasura/db_setup.sql
+  #+BEGIN_SRC shell  :var SUDO_ASKPASS="/usr/bin/ssh-askpass" :prologue "export SUDO_ASKPASS"
+  # :var DISPLAY=":0.0"
+  sudo su - postgres -c psql < ~/ii/apisnoop_v3/apps/hasura/db_setup.sql
 #+END_SRC
 
 #+RESULTS: as posgres admin, setup hasura user and db
@@ -3083,52 +3105,110 @@ where request_object->>'kind' = 'DaemonSet';
 
 #+NAME: Pod.spec hits
 #+BEGIN_SRC sql-mode
-select
--- distinct operation_id, jsonb_object_keys(request_object->'spec') as podspec_fields
-distinct jsonb_object_keys(request_object->'spec') as podspec_fields
-from audit_events
-where request_object->>'kind' = 'Pod'
-  and operation_id not like '%alpha%'
-  and operation_id not like '%beta%';
--- order by operation_id;
+  select
+  -- distinct operation_id, jsonb_object_keys(request_object->'spec') as podspec_fields
+  distinct jsonb_object_keys(request_object->'spec') as podspec_field,
+  count(event_field)
+  from audit_events
+  , jsonb_object_keys(request_object->'spec') event_field
+  where request_object->>'kind' = 'Pod'
+    and operation_id not like '%alpha%'
+    and operation_id not like '%beta%'
+  group by podspec_field;
+  -- order by operation_id;
 #+END_SRC
 
 #+RESULTS: Pod.spec hits
 #+begin_src sql-mode
-        podspec_fields         
--------------------------------
- volumes
- enableServiceLinks
- nodeSelector
- terminationGracePeriodSeconds
- hostPID
- containers
- hostname
- priorityClassName
- subdomain
- nodeName
- hostNetwork
- restartPolicy
- securityContext
- hostAliases
- dnsPolicy
- hostIPC
- tolerations
- priority
- automountServiceAccountToken
- imagePullSecrets
- readinessGates
- schedulerName
- serviceAccountName
- dnsConfig
- activeDeadlineSeconds
- serviceAccount
- runtimeClassName
- affinity
- initContainers
+         podspec_field         | count 
+-------------------------------+-------
+ activeDeadlineSeconds         |    40
+ affinity                      |  1256
+ automountServiceAccountToken  |    96
+ containers                    | 20344
+ dnsConfig                     |    16
+ dnsPolicy                     | 20344
+ enableServiceLinks            | 20344
+ hostAliases                   |     8
+ hostIPC                       |    16
+ hostname                      |  5614
+ hostNetwork                   |  2665
+ hostPID                       |    16
+ imagePullSecrets              |     8
+ initContainers                |  1347
+ nodeName                      |  9086
+ nodeSelector                  |  1604
+ priority                      |  1088
+ priorityClassName             |  1342
+ readinessGates                |     8
+ restartPolicy                 | 20344
+ runtimeClassName              |    36
+ schedulerName                 | 20344
+ securityContext               | 20344
+ serviceAccount                |  7589
+ serviceAccountName            |  7589
+ subdomain                     |  5398
+ terminationGracePeriodSeconds | 20344
+ tolerations                   |  2883
+ volumes                       | 14623
 (29 rows)
 
 #+end_src
+
+#+BEGIN_SRC sql-mode
+create or replace view "public"."podspec_audits" as
+  select audit_id
+  jsonb_object_keys(request_object->'spec') as fields,
+  from audit_events
+  where request_object->>'kind' = 'Pod'
+    and operation_id not like '%alpha%'
+    and operation_id not like '%beta%';
+#+END_SRC
+
+
+
+#+BEGIN_SRC sql-mode
+select p.podspec_field 
+from podspec_fields p;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+         podspec_field         
+-------------------------------
+ activeDeadlineSeconds
+ affinity
+ automountServiceAccountToken
+ containers
+ dnsConfig
+ dnsPolicy
+ enableServiceLinks
+ hostAliases
+ hostIPC
+ hostname
+ hostNetwork
+ hostPID
+ imagePullSecrets
+ initContainers
+ nodeName
+ nodeSelector
+ priority
+ priorityClassName
+ readinessGates
+ restartPolicy
+ runtimeClassName
+ schedulerName
+ securityContext
+ serviceAccount
+ serviceAccountName
+ subdomain
+ terminationGracePeriodSeconds
+ tolerations
+ volumes
+(29 rows)
+
+#+end_src
+
 
 
 #+NAME: PodTemplate.template.spec hits
