@@ -1,11 +1,11 @@
--- TODO opdescription => op_param_description
+-- Create
 -- #+NAME: over view
 
 CREATE OR REPLACE VIEW "public"."over" AS
   SELECT
-    op.name as opname,
-    op.required,
-    op.description as opdescription,
+    op.name as param_name,
+    op.required as param_required,
+    op.description as param_description,
     o.operation_id,
     op.resource,
     r.name as resource_name,

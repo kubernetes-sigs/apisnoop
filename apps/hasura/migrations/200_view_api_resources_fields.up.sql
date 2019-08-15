@@ -1,5 +1,4 @@
-
-
+-- Create
 -- #+NAME: api_resources_fields view
 
 CREATE VIEW "public"."api_resources_fields" AS 

@@ -1,5 +1,5 @@
--- api_resources view
--- #+NAME: api_resources view
+-- Create
+--  #+NAME: api_resources view
 
 CREATE VIEW "public"."api_resources" AS 
  SELECT 
