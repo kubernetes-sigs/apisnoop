@@ -60,7 +60,7 @@
                   ":noweb yes"
                   " :noweb-ref " item-str
                   " :comments org"
-                  " :eval no-export"
+                  " :eval never-export"
                   " :results code"
                   " :product postgres"
                   " :session data"
@@ -74,7 +74,7 @@
                   ":noweb yes"
                   " :noweb-ref " item-str
                   " :comments org"
-                  " :eval no-export"
+                  " :eval never-export"
                   " :results silent "
                   " :session (concat user-login-name \":main\" )"
                   ;; " :session (concat user-login-name \":\" " item-str ")"
@@ -91,7 +91,7 @@
                   ":noweb yes"
                   " :noweb-ref " item-str
                   " :comments org"
-                  " :eval no-export"
+                  " :eval never-export"
                   " :results code"
                   " :exports both"
                   ))
@@ -100,7 +100,7 @@
                   ":noweb yes"
                   " :noweb-ref " item-str
                   " :comments org"
-                  " :eval no-export"
+                  " :eval never-export"
                   " :results code"
                   " :exports both"
                   ))
@@ -109,7 +109,7 @@
                   ":noweb yes"
                   " :noweb-ref " item-str
                   " :comments org"
-                  " :eval no-export"
+                  " :eval never-export"
                   " :results output code verbatis replace"
                   " :exports both"
                   " :wrap EXAMPLE"
@@ -132,7 +132,7 @@
                   ":noweb yes"
                   " :noweb-ref " item-str
                   " :comments org"
-                  " :eval no-export"
+                  " :eval never-export"
                   " :results output code verbatis replace"
                   " :exports both"
                   " :wrap EXAMPLE"
