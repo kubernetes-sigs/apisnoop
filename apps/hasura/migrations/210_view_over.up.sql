@@ -1,5 +1,5 @@
 -- Create
--- #+NAME: over view
+--  #+NAME: over view
 
 CREATE OR REPLACE VIEW "public"."over" AS
   SELECT
@@ -19,7 +19,7 @@ CREATE OR REPLACE VIEW "public"."over" AS
     rf.format,
     rf.merge_key,
     rf.patch_strategy
-    FROM 
+    FROM
         api_operations_parameters op
         JOIN api_operations o ON (
           o.raw_swagger_id = op.raw_swagger_id

@@ -12,5 +12,7 @@ CREATE TABLE raw_swaggers (
 -- Index Table
 -- #+NAME: general index the raw_swagger
 
-CREATE INDEX idx_swagger_jsonb_ops ON raw_swaggers USING GIN (data jsonb_ops);
-CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers USING GIN (data jsonb_path_ops);
+CREATE INDEX idx_swagger_jsonb_ops ON raw_swaggers
+  USING GIN (data jsonb_ops);
+CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers
+  USING GIN (data jsonb_path_ops);

@@ -12,6 +12,7 @@
   We do this by creating a postgres database, importing in raw swagger.jsons' and raw audit_events into their respective tables, and then building out a series of views that illuminate the state 
 * Next Steps
 ** TODO Code / Tree Walking is hard without a map
+** TODO Materialize api_operations so regex matching works
 ** TODO Questions beget questions story... shining a light
 ** TODO generate alpha field attribute
 https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version
@@ -89,8 +90,10 @@ CREATE TABLE raw_swaggers (
 *** Index Table
 #+NAME: general index the raw_swagger
 #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/100_table_raw_swaggers.up.sql :results silent
-CREATE INDEX idx_swagger_jsonb_ops ON raw_swaggers USING GIN (data jsonb_ops);
-CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers USING GIN (data jsonb_path_ops);
+  CREATE INDEX idx_swagger_jsonb_ops ON raw_swaggers
+    USING GIN (data jsonb_ops);
+  CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers
+    USING GIN (data jsonb_path_ops);
 #+END_SRC
 *** Track Table
 #+NAME: track raw_swaggers
@@ -102,12 +105,15 @@ CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers USING GIN (data jsonb_pa
 #+END_SRC
 ** 120: Function for load swagger via curl
 #+NAME: load_swagger_via_curl.py
-#+BEGIN_SRC python :eval never
+#+BEGIN_SRC python :eval never :exports none
   # should probably sanitize branch_or_tag
   try:
       from string import Template
-      sql = Template("copy raw_swaggers (data) FROM PROGRAM '$curl' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');").substitute(
-          curl =  f'curl https://raw.githubusercontent.com/kubernetes/kubernetes/{branch_or_tag}/api/openapi-spec/swagger.json | jq -c .'
+      sql = Template("copy raw_swaggers (data) \
+  FROM PROGRAM '$curl' \
+  (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');").substitute(
+      curl =  f'curl https://raw.githubusercontent.com/kubernetes/kubernetes/\
+  {branch_or_tag}/api/openapi-spec/swagger.json | jq -c .'
       )
       rv = plpy.execute(sql)
       return "it worked"
@@ -140,10 +146,10 @@ CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers USING GIN (data jsonb_pa
 * Operation Views
   These are views derived from the 'data->path' section of our raw_swaggers table.
 ** 150: api_operations view
-    This grabs the 'paths' section of our swagger.json, where each path contains operation Id, tags, schemes, etc.
+   This grabs the 'paths' section of our swagger.json, where each path contains operation Id, tags, schemes, etc.
 *** Define regex_from_path function
 #+NAME: regex_from_path.py
-#+BEGIN_SRC python :eval never
+#+BEGIN_SRC python :eval never :export none
   import re
   if path is None:
     return None
@@ -174,41 +180,42 @@ CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers USING GIN (data jsonb_pa
 #+NAME: api_operations view
 #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/150_view_api_operations.up.sql :results silent
   CREATE OR REPLACE VIEW "public"."api_operations" AS 
-    SELECT raw_swaggers.id AS raw_swagger_id,
-           paths.key AS path,
-           regex_from_path(paths.key) as regex,
-           d.key AS http_method,
-           (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
-           (d.value ->> 'operationId'::text) AS operation_id,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-           (d.value ->> 'description'::text) AS description,
-           (d.value -> 'consumes'::text) AS consumes,
-           (d.value -> 'responses'::text) AS responses,
-           (d.value -> 'parameters'::text) AS parameters,
-           (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
-           split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
-           string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
-           string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
-           CASE
-            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('get', 'list', 'proxy') THEN 'get'
-            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('deleteCollection', 'delete', 'deletecollection') THEN 'delete'
-            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('watch', 'watchlist', 'watch') THEN 'watch'
-            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ('create', 'post') THEN 'post'
-            WHEN (d.value ->> 'x-kubernetes-action'::text) IN ( 'update', 'put' ) THEN 'put'
-            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch' THEN 'patch'
-            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN 'connect'
-           ELSE NULL
-             END as event_verb
-      FROM raw_swaggers
-      , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
-      , jsonb_each(paths.value) d(key, value)
-      , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
-      , jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)
-      , jsonb_array_elements((d.value -> 'schemes'::text)) schemestring(value)
-     GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
-     ORDER BY paths.key;
+    SELECT * from api_operations_material;
+    -- SELECT raw_swaggers.id AS raw_swagger_id,
+    --        paths.key AS path,
+    --        regex_from_path(paths.key) as regex,
+    --        d.key AS http_method,
+    --        d.value->>'x-kubernetes-action' AS k8s_action,
+    --        d.value->>'operationId' AS operation_id,
+    --        d.value->'x-kubernetes-group-version-kind'->>'group' AS k8s_group,
+    --        d.value->'x-kubernetes-group-version-kind'->>'version' AS k8s_version,
+    --        d.value->'x-kubernetes-group-version-kind'->>'kind' AS k8s_kind,
+    --        d.value->>'description' AS description,
+    --        d.value->'consumes' AS consumes,
+    --        d.value->'responses' AS responses,
+    --        d.value->'parameters' AS parameters,
+    --        (lower((d.value ->> 'description')) ~~ '%deprecated%') AS deprecated,
+    --        split_part((cat_tag.value ->> 0), '_', 1) AS category,
+    --        string_agg(btrim((jsonstring.value)::text, '"'), ', ') AS tags,
+    --        string_agg(btrim((schemestring.value)::text, '"'), ', ') AS schemes,
+    --        CASE
+    --         WHEN d.value->>'x-kubernetes-action' IN ('get', 'list', 'proxy') THEN 'get'
+    --         WHEN d.value->>'x-kubernetes-action' IN ('deleteCollection', 'delete', 'deletecollection') THEN 'delete'
+    --         WHEN d.value->>'x-kubernetes-action' IN ('watch', 'watchlist', 'watch') THEN 'watch'
+    --         WHEN d.value->>'x-kubernetes-action' IN ('create', 'post') THEN 'post'
+    --         WHEN d.value->>'x-kubernetes-action' IN ( 'update', 'put' ) THEN 'put'
+    --         WHEN d.value->>'x-kubernetes-action' = 'patch' THEN 'patch'
+    --         WHEN d.value->>'x-kubernetes-action' = 'connect' THEN 'connect'
+    --        ELSE NULL
+    --          END as event_verb
+    --   FROM raw_swaggers
+    --   , jsonb_each(raw_swaggers.data->'paths') paths(key, value)
+    --   , jsonb_each(paths.value) d(key, value)
+    --   , jsonb_array_elements(d.value->'tags') cat_tag(value)
+    --   , jsonb_array_elements(d.value->'tags') jsonstring(value)
+    --   , jsonb_array_elements(d.value->'schemes') schemestring(value)
+    --  GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
+    --  ORDER BY paths.key;
 #+END_SRC
 *** Track View
 #+NAME: track api_operations
@@ -219,6 +226,9 @@ CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers USING GIN (data jsonb_pa
     name: api_operations
 #+END_SRC
 
+*** Index (not possible on view)
+It may be that if we index api_operations as a table (or materialized table)
+we won't need the golang indexer.
 
 #+NAME: possible indexes
 #+BEGIN_SRC sql-mode
@@ -575,7 +585,7 @@ CREATE INDEX idx_audit_events_jsonb_path_jobs  ON raw_audit_events USING GIN (da
 ** 245: load_audit_events Function
 *** Python Code
 #+NAME: load_audit_events.py
-#+BEGIN_SRC python :noweb yes 
+#+BEGIN_SRC python :noweb yes :exports none
   #:tangle ../apps/hasura/migrations/245_function_load_audit_events.up.sql :results silent
   #!/usr/bin/env python3
   from urllib.request import urlopen, urlretrieve
@@ -664,18 +674,20 @@ CREATE INDEX idx_audit_events_jsonb_path_jobs  ON raw_audit_events USING GIN (da
   INSERT INTO raw_audit_events(bucket, job,
                                audit_id, stage,
                                event_verb, request_uri,
-                               -- operation_id,
+                               operation_id,
                                data)
   SELECT '${bucket}', '${job}',
          (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
          (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
-         -- ops.operation_id,
+         ops.operation_id,
          raw.data 
     FROM raw_audit_events_import raw
-           -- LEFT JOIN api_operations_material ops ON
-           -- ops.raw_swagger_id = 1
-           --     AND raw.data ->> 'verb' = ANY(ops.event_verb)
-           --    AND raw.data ->> 'requestURI' ~ ops.regex;
+           -- FIXME: this join is necesary, but expensive
+           -- https://github.com/cncf/apisnoopregexp is an alterative approach
+           LEFT JOIN api_operations_material ops ON
+             ops.raw_swagger_id = 1
+               AND raw.data ->> 'verb' = ANY(ops.event_verb)
+               AND raw.data ->> 'requestURI' ~ ops.regex;
           """).substitute(
               audit_logfile = combined_log_file,
               bucket = bucket,
@@ -967,7 +979,7 @@ Run the following as the postgres user via psql:
 https://docs.hasura.io/1.0/graphql/manual/deployment/postgres-permissions.html
 
 #+NAME: hasura-user
-#+BEGIN_SRC shell :results silent
+#+BEGIN_SRC shell :eval never-export :results silent
 echo -n $USER
 #+END_SRC
 

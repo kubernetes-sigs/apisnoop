@@ -2017,6 +2017,91 @@ select api_resource_name, resource_field, param_kind from api_resources_fields
 
 #+end_src
 
+* foo
+#+BEGIN_SRC sql-mode
+\d+ api_operations_material
+
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                        Materialized view "public.api_operations_material"
+     Column     |  Type   | Collation | Nullable | Default | Storage  | Stats target | Description 
+----------------+---------+-----------+----------+---------+----------+--------------+-------------
+ raw_swagger_id | integer |           |          |         | plain    |              | 
+ path           | text    |           |          |         | extended |              | 
+ regex          | text    |           |          |         | extended |              | 
+ http_method    | text    |           |          |         | extended |              | 
+ k8s_action     | text    |           |          |         | extended |              | 
+ operation_id   | text    |           |          |         | extended |              | 
+ k8s_group      | text    |           |          |         | extended |              | 
+ k8s_version    | text    |           |          |         | extended |              | 
+ k8s_kind       | text    |           |          |         | extended |              | 
+ description    | text    |           |          |         | extended |              | 
+ consumes       | jsonb   |           |          |         | extended |              | 
+ responses      | jsonb   |           |          |         | extended |              | 
+ parameters     | jsonb   |           |          |         | extended |              | 
+ deprecated     | boolean |           |          |         | plain    |              | 
+ category       | text    |           |          |         | extended |              | 
+ tags           | text    |           |          |         | extended |              | 
+ schemes        | text    |           |          |         | extended |              | 
+ event_verb     | text[]  |           |          |         | extended |              | 
+Indexes:
+    "api_operations_materialized_consumes_ops" gin (consumes)
+    "api_operations_materialized_consumes_path" gin (consumes jsonb_path_ops)
+    "api_operations_materialized_event_verb" btree (event_verb)
+    "api_operations_materialized_k8s_action" btree (k8s_action)
+    "api_operations_materialized_k8s_group" btree (k8s_group)
+    "api_operations_materialized_k8s_kind" btree (k8s_kind)
+    "api_operations_materialized_k8s_version" btree (k8s_version)
+    "api_operations_materialized_parameters_ops" gin (parameters)
+    "api_operations_materialized_parameters_path" gin (parameters jsonb_path_ops)
+    "api_operations_materialized_regex_gin" gin (regex gin_trgm_ops)
+    "api_operations_materialized_regex_gist" gist (regex gist_trgm_ops)
+    "api_operations_materialized_responses_ops" gin (responses)
+    "api_operations_materialized_responses_path" gin (responses jsonb_path_ops)
+    "api_operations_materialized_schemes" btree (schemes)
+    "api_operations_materialized_tags" btree (tags)
+View definition:
+ SELECT raw_swaggers.id AS raw_swagger_id,
+    paths.key AS path,
+    regex_from_path(paths.key) AS regex,
+    d.key AS http_method,
+    d.value ->> 'x-kubernetes-action'::text AS k8s_action,
+    d.value ->> 'operationId'::text AS operation_id,
+    (d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text AS k8s_group,
+    (d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text AS k8s_version,
+    (d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text AS k8s_kind,
+    d.value ->> 'description'::text AS description,
+    d.value -> 'consumes'::text AS consumes,
+    d.value -> 'responses'::text AS responses,
+    d.value -> 'parameters'::text AS parameters,
+    lower(d.value ->> 'description'::text) ~~ '%deprecated%'::text AS deprecated,
+    split_part(cat_tag.value ->> 0, '_'::text, 1) AS category,
+    string_agg(btrim(jsonstring.value::text, '"'::text), ', '::text) AS tags,
+    string_agg(btrim(schemestring.value::text, '"'::text), ', '::text) AS schemes,
+        CASE
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'get'::text THEN ARRAY['get'::text]
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'list'::text THEN ARRAY['list'::text]
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'proxy'::text THEN ARRAY['proxy'::text]
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'deletecollection'::text THEN ARRAY['deletecollection'::text]
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'watch'::text THEN ARRAY['watch'::text]
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'post'::text THEN ARRAY['post'::text, 'create'::text]
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'put'::text THEN ARRAY['put'::text, 'update'::text]
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch'::text THEN ARRAY['patch'::text]
+            WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect'::text THEN ARRAY['connect'::text]
+            ELSE NULL::text[]
+        END AS event_verb
+   FROM raw_swaggers,
+    LATERAL jsonb_each(raw_swaggers.data -> 'paths'::text) paths(key, value),
+    LATERAL jsonb_each(paths.value) d(key, value),
+    LATERAL jsonb_array_elements(d.value -> 'tags'::text) cat_tag(value),
+    LATERAL jsonb_array_elements(d.value -> 'tags'::text) jsonstring(value),
+    LATERAL jsonb_array_elements(d.value -> 'schemes'::text) schemestring(value)
+  GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
+  ORDER BY paths.key;
+
+#+end_src
 
 * FOOTNOTES
 # Local Variables:
