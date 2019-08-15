@@ -433,11 +433,61 @@ create index api_operations_method on api_operations(method);
 create index api_operations_regexp on api_operations(regexp);
 #+END_SRC
 
-** api_operations_parameters view
+** 160: api_operations_parameters view
 Using our api_operations view, look into the parameters field in each one.     
-#+NAME: api_operations_parameters view
-#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/160_view_api_operations_parameters.up.sql
-  CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
+*** Create
+ #+NAME: api_operations_parameters view
+ #+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/160_view_api_operations_parameters.up.sql
+   CREATE OR REPLACE VIEW "public"."api_operations_parameters" AS 
+     SELECT (param.entry ->> 'name'::text) AS name,
+            (param.entry ->> 'in'::text) AS "in",
+            -- for resource:
+            -- if param is body in body, take its $ref from its schema
+            -- otherwise, take its type
+            replace(
+              CASE
+              WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
+               AND ((param.entry -> 'schema'::text) is not null)
+                THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+              ELSE (param.entry ->> 'type'::text)
+              END, '#/definitions/','') AS resource,
+            (param.entry ->> 'description'::text) AS description,
+            CASE
+            WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
+            ELSE false
+             END AS required,
+            CASE
+            WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
+            ELSE false
+            END AS unique_items,
+            api_operations.raw_swagger_id,
+            param.entry as entry,
+            api_operations.operation_id
+       FROM api_operations
+            , jsonb_array_elements(api_operations.parameters) WITH ORDINALITY param(entry, index)
+             WHERE api_operations.parameters IS NOT NULL;
+ #+END_SRC
+*** Track
+ #+RESULTS: api_operations_parameters view
+ #+begin_src sql-mode
+ ERROR:  missing FROM-clause entry for table "api_operations"
+ LINE 23:          api_operations.raw_swagger_id,
+ #+end_src
+
+ #+NAME: track api_operations_parameters
+ #+BEGIN_SRC yaml :eval no-export :tangle ../apps/hasura/migrations/160_view_api_operations_parameters.up.yaml
+ - type: track_table
+   args:
+     schema: public
+     name: api_operations_parameters
+ #+END_SRC
+
+** 170: api_operations_parameters_material
+*** Create
+Using our api_operations_material view, look into the parameters field in each one.     
+#+NAME: api_operations_parameters_material view
+#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/170_view_api_operations_parameters_material.up.sql
+  CREATE MATERIALIZED VIEW "public"."api_operations_parameters_material" AS 
     SELECT (param.entry ->> 'name'::text) AS name,
            (param.entry ->> 'in'::text) AS "in",
            -- for resource:
@@ -459,75 +509,63 @@ Using our api_operations view, look into the parameters field in each one.
            WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
            ELSE false
            END AS unique_items,
-           api_operations.raw_swagger_id,
+           api_operations_material.raw_swagger_id,
            param.entry as entry,
-           api_operations.operation_id
-      FROM api_operations
-           , jsonb_array_elements(api_operations.parameters) WITH ORDINALITY param(entry, index)
-            WHERE api_operations.parameters IS NOT NULL;
+           api_operations_material.operation_id
+      FROM api_operations_material
+           , jsonb_array_elements(api_operations_material.parameters) WITH ORDINALITY param(entry, index)
+            WHERE api_operations_material.parameters IS NOT NULL;
+#+END_SRC
+*** Track
+ #+NAME: track api_operations_material
+ #+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/170_view_api_operations_material.up.yaml
+ - type: track_table
+   args:
+     schema: public
+     name: api_operations_paramters_material
+ #+END_SRC
+*** Index
+#+NAME: index the api_operations_material
+#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/160_view_api_operations_parameters.up.sql
+    CREATE UNIQUE INDEX                                  ON api_operations_parameters_material(raw_swagger_id, operation_id, name);
+    CREATE INDEX api_parameters_materialized_resource    ON api_operations_parameters_material            (resource);
+    CREATE INDEX api_parameters_materialized_entry       ON api_operations_parameters_material            (entry);
 #+END_SRC
 
-#+RESULTS: api_operations_parameters view
-#+begin_src sql-mode
-ERROR:  missing FROM-clause entry for table "api_operations"
-LINE 23:          api_operations.raw_swagger_id,
-#+end_src
-
-#+NAME: track api_operations_parameters
-#+BEGIN_SRC yaml :eval no-export :tangle ../apps/hasura/migrations/160_view_api_operations_parameters.up.yaml
-- type: track_table
-  args:
-    schema: public
-    name: api_operations_parameters
-#+END_SRC
-
-** api_operations_responses view
+** 180: api_operations_responses view
    Similar to parameters, within each of the paths of the swagger.json, there is a responses field.  We are listing the values within this field.
-   
-#+NAME: Responses View
-#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/180_view_api_operations_responses.up.sql
-  CREATE OR REPLACE VIEW "public"."api_operations_responses" AS 
-    SELECT d.key AS code,
-           (d.value ->> 'description'::text) AS description,
-           replace(
-             CASE
-             WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> 'type'::text) IS NOT NULL))
-               THEN ((d.value -> 'schema'::text) ->> 'type'::text)
-             WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
-               THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
-             ELSE NULL::text
-             END, '#/definitions/','') AS resource,
-             api_operations.operation_id,
-             api_operations.raw_swagger_id
-      FROM (api_operations
-            JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
-     ORDER BY (uuid_generate_v1());
-#+END_SRC
+*** Create   
+ #+NAME: Responses View
+ #+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/180_view_api_operations_responses.up.sql
+   CREATE OR REPLACE VIEW "public"."api_operations_responses" AS 
+     SELECT d.key AS code,
+            (d.value ->> 'description'::text) AS description,
+            replace(
+              CASE
+              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> 'type'::text) IS NOT NULL))
+                THEN ((d.value -> 'schema'::text) ->> 'type'::text)
+              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
+                THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
+              ELSE NULL::text
+              END, '#/definitions/','') AS resource,
+              api_operations.operation_id,
+              api_operations.raw_swagger_id
+       FROM (api_operations
+             JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
+      ORDER BY (uuid_generate_v1());
+ #+END_SRC
+*** Track
+ #+NAME: track api_operations_responses
+ #+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/180_view_api_operations_responses.up.yaml
+ - type: track_table
+   args:
+     schema: public
+     name: api_operations_responses
+ #+END_SRC
 
-#+RESULTS: Responses View
-#+begin_src sql-mode
-CREATE VIEW
-#+end_src
-
-#+NAME: track api_operations_responses
-#+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/180_view_api_operations_responses.up.yaml
-- type: track_table
-  args:
-    schema: public
-    name: api_operations_responses
-#+END_SRC
-
-** api_operations_material
-*** table
-#+BEGIN_SRC sql-mode
-  DROP MATERIALIZED view api_operations_material;
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-ERROR:  materialized view "api_operations_material" does not exist
-#+end_src
-
+** 250: api_operations_material view
+   We can track this, but it won't show up in Hasura as it does not support materialized views yet.  We can still use it to create _other_ views hasura can see though.
+*** Create
 #+NAME: api_operations_material
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/250_view_api_operations_material.up.sql :results silent
   CREATE MATERIALIZED VIEW "public"."api_operations_material" AS 
@@ -569,88 +607,15 @@ ERROR:  materialized view "api_operations_material" does not exist
      GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
      ORDER BY paths.key;
 #+END_SRC
-
-#+BEGIN_SRC sql-mode
-    CREATE index api_operations_materialized_event_verb ON api_operations_material            (event_verb);
-    CREATE index api_operations_materialized_regex_gist  ON api_operations_material USING GIST (regex gist_trgm_ops);
-    CREATE index api_operations_materialized_regex_gin  ON api_operations_material USING GIN  (regex gin_trgm_ops);
-  --  CREATE UNIQUE INDEX ON api_operations_material(raw_swagger_id, http_method, regex);
-#+END_SRC
-
-#+NAME: k8s_action
-#+BEGIN_SRC sql-mode
-SELECT
-distinct k8s_action
-FROM api_operations_material
-order by k8s_action;
-#+END_SRC
-
-watch, post, list, get, delete, deleteCollection, patch,
-#+RESULTS: event_verb
-#+begin_src sql-mode
-    event_verb    
-------------------
- abcd
- create
- delete
- deletecollection
- get
- list
- patch
- post
- update
- watch
-(10 rows)
-
-#+end_src
-#+RESULTS: k8s_action
-#+begin_src sql-mode
-    k8s_action    
-------------------
- connect
- delete
- deletecollection
- get
- list
- patch
- post
- put
- watch
- watchlist
- 
-(11 rows)
-
-#+end_src
-
-#+NAME: event_verb
-#+BEGIN_SRC sql-mode
-  SELECT
-  distinct event_verb
-  from zraw_audit_events
-  order by event_verb;
-#+END_SRC
-
-
-
-#+RESULTS:
-#+begin_src sql-mode
-    event_verb    
-------------------
- list
- deletecollection
- delete
- update
- get
- create
- post
- abcd
- watch
- patch
-(10 rows)
-
-#+end_src
-**** indexes
-
+*** Track
+ #+NAME: track api_operations_material
+ #+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/180_view_api_operations_material.up.yaml
+ - type: track_table
+   args:
+     schema: public
+     name: api_operations_material
+ #+END_SRC
+*** Index
 #+NAME: index the api_operations_material
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/150_view_api_operations.up.sql :results silent
     CREATE UNIQUE INDEX                                  ON api_operations_material(raw_swagger_id, http_method, regex);
@@ -670,99 +635,6 @@ watch, post, list, get, delete, deleteCollection, patch,
     CREATE INDEX api_operations_materialized_responses_ops   ON api_operations_material USING GIN  (responses jsonb_ops);
     CREATE INDEX api_operations_materialized_responses_path  ON api_operations_material USING GIN  (responses jsonb_path_ops);
 #+END_SRC
-
-#+BEGIN_SRC sql-mode :eval never-export :notangle ../apps/hasura/migrations/150_view_api_operations.up.sql :results silent
--- CREATE INDEX idx_api_operations_material_primary ON api_operations_material USING (raw_swagger_id, event_verb, regex);
--- CREATE INDEX idx_audit_events_level_btree      ON raw_audit_events USING BTREE ((data->>'level'));
--- CREATE INDEX idx_audit_events_level_hash       ON raw_audit_events USING HASH  ((data->>'level'));
--- CREATE INDEX idx_api_operations_material_jsonb_ops ON raw_audit_events USING GIN (data jsonb_ops);
--- CREATE INDEX idx_audit_events_jsonb_path_jobs  ON raw_audit_events USING GIN (data jsonb_path_ops);
--- CREATE INDEX idx_audit_events_level_btree      ON raw_audit_events USING BTREE ((data->>'level'));
--- CREATE INDEX idx_audit_events_level_hash       ON raw_audit_events USING HASH  ((data->>'level'));
--- CREATE INDEX idx_audit_events_stage_btree      ON raw_audit_events USING BTREE ((data->>'stage'));
--- CREATE INDEX idx_audit_events_stage_hash       ON raw_audit_events USING HASH  ((data->>'stage'));
--- CREATE INDEX idx_audit_events_verb_btree       ON raw_audit_events USING BTREE ((data->>'verb'));
--- CREATE INDEX idx_audit_events_verb_hash        ON raw_audit_events USING HASH  ((data->>'verb'));
--- CREATE INDEX idx_audit_events_apiVersion_btree ON raw_audit_events USING BTREE ((data->>'apiVersion'));
--- CREATE INDEX idx_audit_events_apiVersion_hash  ON raw_audit_events USING HASH  ((data->>'apiVersion'));
--- CREATE INDEX idx_audit_events_requestURI_btree ON raw_audit_events USING BTREE ((data->>'requestURI'));
--- CREATE INDEX idx_audit_events_requestURI_hash  ON raw_audit_events USING HASH  ((data->>'requestURI'));
--- CREATE INDEX idx_audit_events_userAgent_btree  ON raw_audit_events USING BTREE ((data->>'userAgent'));
--- CREATE INDEX idx_audit_events_userAgent_hash   ON raw_audit_events USING HASH  ((data->>'userAgent'));
--- CREATE INDEX idx_audit_events_namespace_btree  ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'namespace'));
--- CREATE INDEX idx_audit_events_namespace_hash   ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'namespace'));
--- CREATE INDEX idx_audit_events_resource_btree   ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'resource'));
--- CREATE INDEX idx_audit_events_resource_hash    ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'resource'));
--- CREATE INDEX idx_audit_events_apiGroup_btree   ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'apiGroup'));
--- CREATE INDEX idx_audit_events_apiGroup_hash    ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'apiGroup'));
--- CREATE INDEX idx_audit_events_apiVersion_btree ON raw_audit_events USING BTREE ((data->'objectRef' ->> 'apiVersion'));
--- CREATE INDEX idx_audit_events_apiVersion_hash  ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'apiVersion'));
--- CREATE INDEX idx_audit_events_requests_gin     ON raw_audit_events USING GIN ((data->'requestObject'));
--- CREATE INDEX idx_audit_events_requests_gin     ON raw_audit_events USING GIN ((data->'requestObject'));
--- CREATE INDEX idx_audit_events_namespace_hash   ON raw_audit_events USING HASH  ((data->'objectRef' ->> 'namespace'));
--- CREATE INDEX idx_audit_events_X_gin  ON raw_audit_events USING GIN ((data->'X'));
--- CREATE INDEX idx_audit_events_X_btree ON raw_audit_events USING BTREE ((data->'X'));
--- CREATE INDEX idx_audit_events_X_hash ON raw_audit_events USING HASH ((data->'X'));
--- CREATE INDEX idx_audit_events_X ON raw_audit_events USING GIN ((jsb->‘X’));
--- CREATE INDEX idx_audit_events_X ON raw_audit_events USING BTREE ((jsb->>‘X’));
--- CREATE INDEX idx_audit_events_X ON raw_audit_events USING HASH ((jsb->>‘X’))
-#+END_SRC
-
-** api_operations_parameters_material
-*** drop table
-    #+BEGIN_SRC sql-mode
-    DROP MATERIALIZED VIEW api_operations_parameters_material;
-    #+END_SRC
-
-    #+RESULTS:
-    #+begin_src sql-mode
-    DROP MATERIALIZED VIEW
-    #+end_src
-*** table
-Using our api_operations_material view, look into the parameters field in each one.     
-#+NAME: api_operations_parameters_material view
-#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/160_view_api_operations_parameters.up.sql
-  CREATE MATERIALIZED VIEW "public"."api_operations_parameters_material" AS 
-    SELECT (param.entry ->> 'name'::text) AS name,
-           (param.entry ->> 'in'::text) AS "in",
-           -- for resource:
-           -- if param is body in body, take its $ref from its schema
-           -- otherwise, take its type
-           replace(
-             CASE
-             WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
-              AND ((param.entry -> 'schema'::text) is not null)
-               THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
-             ELSE (param.entry ->> 'type'::text)
-             END, '#/definitions/','') AS resource,
-           (param.entry ->> 'description'::text) AS description,
-           CASE
-           WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
-           ELSE false
-            END AS required,
-           CASE
-           WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
-           ELSE false
-           END AS unique_items,
-           api_operations_material.raw_swagger_id,
-           param.entry as entry,
-           api_operations_material.operation_id
-      FROM api_operations_material
-           , jsonb_array_elements(api_operations_material.parameters) WITH ORDINALITY param(entry, index)
-            WHERE api_operations_material.parameters IS NOT NULL;
-#+END_SRC
-#+RESULTS: api_operations_parameters_material view
-#+begin_src sql-mode
-SELECT 3375
-#+end_src
-*** indexes
-#+NAME: index the api_operations_material
-#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/160_view_api_operations_parameters.up.sql
-    CREATE UNIQUE INDEX                                  ON api_operations_parameters_material(raw_swagger_id, operation_id, name);
-    CREATE INDEX api_parameters_materialized_resource    ON api_operations_parameters_material            (resource);
-    CREATE INDEX api_parameters_materialized_entry       ON api_operations_parameters_material            (entry);
-#+END_SRC
-
 * Resource Views
 ** api_resources view
 #+NAME: api_resources view

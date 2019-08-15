@@ -1,5 +1,4 @@
--- raw_audit_events
-
+-- Create
 -- #+NAME: raw_audit_events
 
 CREATE TABLE raw_audit_events (

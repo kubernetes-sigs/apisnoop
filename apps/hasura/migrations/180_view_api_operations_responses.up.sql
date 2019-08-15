@@ -1,7 +1,5 @@
--- api_operations_responses view
---    Similar to parameters, within each of the paths of the swagger.json, there is a responses field.  We are listing the values within this field.
-   
--- #+NAME: Responses View
+-- Create   
+--  #+NAME: Responses View
 
 CREATE OR REPLACE VIEW "public"."api_operations_responses" AS 
   SELECT d.key AS code,

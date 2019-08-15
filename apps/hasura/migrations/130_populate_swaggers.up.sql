@@ -1,5 +1,4 @@
-
-
+-- 130: Populate Swaggers Up
 -- #+NAME: reload swaggers for particluar releases
 
 delete from raw_swaggers;

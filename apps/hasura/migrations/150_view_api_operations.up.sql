@@ -1,5 +1,4 @@
--- api_operations view
---     This grabs the 'paths' section of our swagger.json, where each path contains operation Id, tags, schemes, etc.
+-- Create View
 -- #+NAME: api_operations view
 
 CREATE OR REPLACE VIEW "public"."api_operations" AS 
@@ -39,8 +38,7 @@ CREATE OR REPLACE VIEW "public"."api_operations" AS
    GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
    ORDER BY paths.key;
 
--- indexes
-
+-- Index
 -- #+NAME: index the api_operations_material
 
 CREATE UNIQUE INDEX                                  ON api_operations_material(raw_swagger_id, http_method, regex);
