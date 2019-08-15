@@ -10,288 +10,70 @@
   This holds the the thoughts, processes, and code used to create a queryable view into the k8s audit events, and how they relate to the operations and resources defined in the k8s openAPI spec.
 #+ATTR_REVEAL: :frag (appear) 
   We do this by creating a postgres database, importing in raw swagger.jsons' and raw audit_events into their respective tables, and then building out a series of views that illuminate the state 
-* Working with this repo/org file
-** Work happens in Org first
-   Within ii, our emphasis is on the documentation/org-file first.  
-   We can document and craft the queries for our db, then tangle them into our migration files.
-   as such: 
-   *NOTE: Don't commit the hasura/migrations, they should be tangled from the org file.*
-   In the future, we may add a commit hook that tangles org => hasura
+* Next Steps
+** TODO Code / Tree Walking is hard without a map
+** TODO Questions beget questions story... shining a light
+** TODO generate alpha field attribute
+https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version
 
+#+BEGIN_EXAMPLE
+> include details about the alpha-level in the field description
+> ...
+> // This field is alpha-level and is only honored by servers that enable the Frobber2D feature.
+#+END_EXAMPLE
 
+** TODO Feature gate attribute
+https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version
 
+#+BEGIN_EXAMPLE
+> include details about the alpha-level in the field description
+> ...
+> // This field is alpha-level and is only honored by servers that enable the Frobber2D feature.
+#+END_EXAMPLE
 
+** TODO Suggest tests to write
+*** TODO Description of what we are trying to write
+** TODO Is the choice of implementation making this harder than it needs to be?
+30-40k lines / parsing
+ie: What about AWK and cut and gron?
+*** knative aggregrates at runtime
+Recursively looks at 
+*** It won't really click until we see ALL the fields
 
-* Iteration Loop
-** listing tables
-#+BEGIN_SRC sql-mode :eval never-export
-  \conninfo
-  \d+
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode :noeval
-You are connected to database "zz" as user "zz" on host "172.17.0.1" at port "5432".
-SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
-Did not find any relations.
-#+end_src
-
-** dropping all data
-#+NAME: do not run
-#+BEGIN_SRC sql-mode :noeval
-  drop table raw_swaggers cascade;
-  drop table raw_audit_events cascade;
-  drop schema hdb_catalog cascade;
-  drop schema hdb_views cascade;
-#+END_SRC
-
-#+RESULTS: do not run
-#+begin_src sql-mode
-NOTICE:  drop cascades to 8 other objects
-DETAIL:  drop cascades to view api_operations
-drop cascades to view api_operations_parameters
-drop cascades to view api_operations_responses
-drop cascades to materialized view api_operations_material
-drop cascades to materialized view api_operations_parameters_material
-drop cascades to view api_resources
-drop cascades to view api_resources_fields
-drop cascades to view over
-DROP TABLE
-#+end_src
-** Restart Hasura
-   #+NAME: iteration loop
-   #+BEGIN_SRC tmate 
-     #:dir ~/ii/apisnoop_v3/apps/hasura
-     cd ~/ii/apisnoop_v3/apps/hasura
-     echo docker-compose down
-     docker-compose down
-     # drop all data while down
-     echo 'drop table raw_swaggers cascade; drop table raw_audit_events cascade; drop schema hdb_views cascade; drop schema hdb_catalog cascade; drop table zraw_audit_events cascade;' | psql
-     echo docker-compose up
-     docker-compose up -d
-   #+END_SRC
-
-   #+RESULTS: iteration loop
-   #+begin_EXAMPLE
-   #+end_EXAMPLE
-
-** setting up the hasura postgresql-permissions
-   
-Run the following as the postgres user via psql:
-https://docs.hasura.io/1.0/graphql/manual/deployment/postgres-permissions.html
-
-#+NAME: hasura-user
-#+BEGIN_SRC shell :results silent
-echo -n $USER
-#+END_SRC
-
-#+NAME: create database and granting all privs to a user
-#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/db_setup.sql
-create database <<hasura-user()>>;
--- create user myuser with encrypted password 'mypass';
-grant all privileges on database <<hasura-user()>> to <<hasura-user()>>;
-create role dba with superuser noinherit;
-grant dba to <<hasura-user()>>;
-\connect <<hasura-user()>>
--- we write python functions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS plpython3u;
-CREATE EXTENSION IF NOT EXISTS plsh;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE SCHEMA IF NOT EXISTS hdb_catalog;
-CREATE SCHEMA IF NOT EXISTS hdb_views;
--- make the user an owner of system schemas
-ALTER SCHEMA hdb_catalog OWNER TO <<hasura-user()>>;
-ALTER SCHEMA hdb_views OWNER TO <<hasura-user()>>;
-GRANT SELECT ON ALL TABLES IN SCHEMA information_schema TO <<hasura-user()>>;
-GRANT SELECT ON ALL TABLES IN SCHEMA pg_catalog TO <<hasura-user()>>;
-GRANT USAGE ON SCHEMA public TO <<hasura-user()>>;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO <<hasura-user()>>;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO <<hasura-user()>>;
-GRANT pg_execute_server_program TO <<hasura-user()>>;
-#+END_SRC
-
-#+RESULTS: create database and granting all privs to a user
-#+begin_src sql-mode
-ERROR:  database "zz" already exists
-WARNING:  no privileges were granted for "zz"
-GRANT
-ERROR:  must be superuser to create superusers
-ERROR:  must be superuser to alter superusers
-SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
-You are now connected to database "zz" as user "zz".
-NOTICE:  extension "uuid-ossp" already exists, skipping
-CREATE EXTENSION
-NOTICE:  extension "plpython3u" already exists, skipping
-CREATE EXTENSION
-ERROR:  permission denied to create extension "plsh"
-HINT:  Must be superuser to create this extension.
-NOTICE:  extension "pgcrypto" already exists, skipping
-CREATE EXTENSION
-NOTICE:  schema "hdb_catalog" already exists, skipping
-CREATE SCHEMA
-NOTICE:  schema "hdb_views" already exists, skipping
-CREATE SCHEMA
-ALTER SCHEMA
-ALTER SCHEMA
-WARNING:  no privileges were granted for "sql_features"
-WARNING:  no privileges were granted for "sql_implementation_info"
-WARNING:  no privileges were granted for "sql_languages"
-WARNING:  no privileges were granted for "sql_packages"
-WARNING:  no privileges were granted for "sql_parts"
-WARNING:  no privileges were granted for "sql_sizing"
-WARNING:  no privileges were granted for "sql_sizing_profiles"
-WARNING:  no privileges were granted for "collations"
-WARNING:  no privileges were granted for "collation_character_set_applicability"
-WARNING:  no privileges were granted for "column_domain_usage"
-WARNING:  no privileges were granted for "constraint_column_usage"
-WARNING:  no privileges were granted for "domains"
-WARNING:  no privileges were granted for "constraint_table_usage"
-WARNING:  no privileges were granted for "domain_constraints"
-WARNING:  no privileges were granted for "role_column_grants"
-WARNING:  no privileges were granted for "enabled_roles"
-WARNING:  no privileges were granted for "referential_constraints"
-WARNING:  no privileges were granted for "parameters"
-WARNING:  no privileges were granted for "routine_privileges"
-WARNING:  no privileges were granted for "role_routine_grants"
-WARNING:  no privileges were granted for "routines"
-WARNING:  no privileges were granted for "schemata"
-WARNING:  no privileges were granted for "table_constraints"
-WARNING:  no privileges were granted for "sequences"
-WARNING:  no privileges were granted for "triggered_update_columns"
-WARNING:  no privileges were granted for "table_privileges"
-WARNING:  no privileges were granted for "role_table_grants"
-WARNING:  no privileges were granted for "triggers"
-WARNING:  no privileges were granted for "tables"
-WARNING:  no privileges were granted for "transforms"
-WARNING:  no privileges were granted for "role_udt_grants"
-WARNING:  no privileges were granted for "udt_privileges"
-WARNING:  no privileges were granted for "role_usage_grants"
-WARNING:  no privileges were granted for "usage_privileges"
-WARNING:  no privileges were granted for "user_defined_types"
-WARNING:  no privileges were granted for "view_column_usage"
-WARNING:  no privileges were granted for "view_routine_usage"
-WARNING:  no privileges were granted for "view_table_usage"
-WARNING:  no privileges were granted for "views"
-WARNING:  no privileges were granted for "data_type_privileges"
-WARNING:  no privileges were granted for "user_mapping_options"
-WARNING:  no privileges were granted for "element_types"
-WARNING:  no privileges were granted for "_pg_foreign_table_columns"
-WARNING:  no privileges were granted for "column_options"
-WARNING:  no privileges were granted for "_pg_foreign_data_wrappers"
-WARNING:  no privileges were granted for "foreign_data_wrapper_options"
-WARNING:  no privileges were granted for "user_mappings"
-WARNING:  no privileges were granted for "foreign_data_wrappers"
-WARNING:  no privileges were granted for "_pg_foreign_servers"
-WARNING:  no privileges were granted for "foreign_server_options"
-WARNING:  no privileges were granted for "foreign_servers"
-WARNING:  no privileges were granted for "_pg_foreign_tables"
-WARNING:  no privileges were granted for "key_column_usage"
-WARNING:  no privileges were granted for 
-#+end_src
-
-#+NAME: as posgres admin, setup hasura user and db
-#+BEGIN_SRC tmate
-#+BEGIN_SRC shell  :var SUDO_ASKPASS="/usr/bin/ssh-askpass" :prologue "export SUDO_ASKPASS"
-# :var DISPLAY=":0.0"
-sudo su - postgres -c psql < ~/ii/apisnoop_v3/apps/hasura/db_setup.sql
-#+END_SRC
-
-#+RESULTS: as posgres admin, setup hasura user and db
-#+begin_EXAMPLE
-#+end_EXAMPLE
-
-* Hasura
-** config.yaml
-
-Can be used by itself to run hasura cli or console from another host
-
-#+NAME: hasura config.yaml
-#+BEGIN_SRC yaml :tangle ../apps/hasura/config.yaml
-endpoint: http://sharing.io:8888
-#+END_SRC
-
-** docker-compose.yml
-#+NAME: hasura docker-compose
-#+BEGIN_SRC yaml :tangle ../apps/hasura/docker-compose.yaml
-  # hasura/docker-compose.yaml
-  version: "3.7"
-
-  services:
-   hasura:
-      #image: hasura/graphql-engine:v1.0.0-beta.3
-      # append '.cli-migrations' to auto run 'hasura migrations apply'
-      container_name: "${USER}-hasura"
-      image: hasura/graphql-engine:v1.0.0-beta.4.cli-migrations
-      restart: always
-      networks:
-        - web
-      environment:
-        # Should try and set database be read only for public
-        #- HASURA_GRAPHQL_DATABASE_URL=postgres://non-priv-user@172.17.0.1:5432/database-name
-        #- HASURA_GRAPHQL_DATABASE_URL=postgres://non-priv-user@172.17.0.1:5432/$OUTER-USER
-        # https://docs.docker.com/compose/compose-file/#variable-substitution
-        # https://docs.docker.com/compose/env-file/
-        - "HASURA_GRAPHQL_DATABASE_URL=postgres://${USER}@172.17.0.1:5432/${USER}"
-        - HASURA_GRAPHQL_ENABLE_CONSOLE=true
-      volumes:
-        - ./migrations:/hasura-migrations
-      expose:
-        - "8080"
-      labels:
-        - "traefik.docker.network=web"
-        - "traefik.enable=true"
-        - "traefik.basic.port=8080"
-        - "traefik.basic.protocol=http"
-        - "traefik.basic.frontend.rule=Host:${USER}-hasura.sharing.io"
-  #volumes:
-  #  migrations:
-  networks:
-    web:
-      external: true
-#+END_SRC
-
-** Watch hasura logs
-#+NAME: Watch Hasura Logs
-#+BEGIN_SRC emacs-lisp
-    (defun hasura-logs ()
-      (interactive)
-      (setq *hasura-buffer*
-            (get-buffer-create "hasura-logs"))
-      (with-current-buffer *hasura-buffer*
-        (ansi-color-for-comint-mode-on)
-        (comint-mode)
-        (spacemacs/toggle-line-numbers-on)
-       ;; (linum-mode t)
-        )
-      (let ((default-directory (file-name-directory (concat (file-name-directory buffer-file-name) "../apps/hasura/")))
-            (logs-command "docker-compose logs -f --no-color")
-            ;; (logs-command "tail -f /var/log/messages")
-            ;;(logs-command "docker-compose logs -f --no-color 2>/dev/null | sed 's:hasura_1  | ::g' | grep '^{' | jq .")
-            )
-        (setq *hasura-process*
-              (start-file-process-shell-command
-               "hasura" *hasura-buffer* logs-command))
-        (set-process-filter *hasura-process* 'comint-output-filter)
-  )
-      )
-    (hasura-logs)
-    ;; unsure how to display
-    ;; (add-to-list 'display-buffer-alist
-    ;;            '("hasura-logs" . ((display-buffer-pop-up-window) .
-    ;;                               ((inhibit-same-window . t)))))
-    ;; (
-    ;; display-buffer (get-buffer "hasura-logs") nil)
-    ;; "docker-compose logs -f| jq .")
-#+END_SRC
-
-#+RESULTS:
-#+begin_src emacs-lisp
-comint-output-filter
-#+end_src
+** TODO Find Children paths for all Types
+Walking through all the fields.... needs to be recursed.
+How do we do that within a database... 
+** TODO Brings next steps
+** TODO these are the tests we should write
+These are the things that are being covered
+fields of all these subresources
+*** Containers
+*** RestartPolicy
+*** NodeSelector
+*** Affinity
+** TODO How do we know that a field is stable?
+Do V1 types have V1 properties?
+** TODO How do we map a field to a Feature?
+TopologySpreadContraints has zero fields:
+not in 1.15 guide.... it's beta?
+Check channel
+** TODO Walk all fields in Container
+Args
+Command
+Image 
+Pull Policy
+Resources
+Security Context etc
+*** Readyness Probe
+Action
+Discovered via code: TcpSocketAction field -- never covered!
+** TODO Move :tangle to NNN: Purpose heading
+** TODO Fix Vocabulary / Table&Field naming to not be Kubernetes Specific
+Unless it's in a view
 
 * Raw Swaggers Table, and Helper Functions
+  These are jsonb indexed loads of swagger.json from github k8s commits or releases.
+  Eventually these will also be populated on the fly when running within/against a cluster.
 ** 100: Raw Swaggers Table
 *** Create Table
 #+NAME: raw_swaggers
@@ -494,48 +276,6 @@ Using our api_operations view, look into the parameters field in each one.
      name: api_operations_parameters
  #+END_SRC
 
-** 270: api_operations_parameters_material
-*** Create
-Using our api_operations_material view, look into the parameters field in each one.     
-#+NAME: api_operations_parameters_material view
-#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/270_view_api_operations_parameters_material.up.sql
-  CREATE MATERIALIZED VIEW "public"."api_operations_parameters_material" AS 
-    SELECT (param.entry ->> 'name'::text) AS name,
-           (param.entry ->> 'in'::text) AS "in",
-           -- for resource:
-           -- if param is body in body, take its $ref from its schema
-           -- otherwise, take its type
-           replace(
-             CASE
-             WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
-              AND ((param.entry -> 'schema'::text) is not null)
-               THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
-             ELSE (param.entry ->> 'type'::text)
-             END, '#/definitions/','') AS resource,
-           (param.entry ->> 'description'::text) AS description,
-           CASE
-           WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
-           ELSE false
-            END AS required,
-           CASE
-           WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
-           ELSE false
-           END AS unique_items,
-           api_operations_material.raw_swagger_id,
-           param.entry as entry,
-           api_operations_material.operation_id
-      FROM api_operations_material
-           , jsonb_array_elements(api_operations_material.parameters) WITH ORDINALITY param(entry, index)
-            WHERE api_operations_material.parameters IS NOT NULL;
-#+END_SRC
-*** Index
-#+NAME: index the api_operations_material
-#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/270_view_api_operations_parameters_material.up.sql
-    CREATE UNIQUE INDEX                                  ON api_operations_parameters_material(raw_swagger_id, operation_id, name);
-    CREATE INDEX api_parameters_materialized_resource    ON api_operations_parameters_material            (resource);
-    CREATE INDEX api_parameters_materialized_entry       ON api_operations_parameters_material            (entry);
-#+END_SRC
-
 ** 180: api_operations_responses view
    Similar to parameters, within each of the paths of the swagger.json, there is a responses field.  We are listing the values within this field.
 *** Create   
@@ -630,6 +370,48 @@ Using our api_operations_material view, look into the parameters field in each o
     CREATE INDEX api_operations_materialized_responses_ops   ON api_operations_material USING GIN  (responses jsonb_ops);
     CREATE INDEX api_operations_materialized_responses_path  ON api_operations_material USING GIN  (responses jsonb_path_ops);
 #+END_SRC
+** 270: api_operations_parameters_material
+*** Create
+Using our api_operations_material view, look into the parameters field in each one.     
+#+NAME: api_operations_parameters_material view
+#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/270_view_api_operations_parameters_material.up.sql
+  CREATE MATERIALIZED VIEW "public"."api_operations_parameters_material" AS 
+    SELECT (param.entry ->> 'name'::text) AS name,
+           (param.entry ->> 'in'::text) AS "in",
+           -- for resource:
+           -- if param is body in body, take its $ref from its schema
+           -- otherwise, take its type
+           replace(
+             CASE
+             WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
+              AND ((param.entry -> 'schema'::text) is not null)
+               THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+             ELSE (param.entry ->> 'type'::text)
+             END, '#/definitions/','') AS resource,
+           (param.entry ->> 'description'::text) AS description,
+           CASE
+           WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
+           ELSE false
+            END AS required,
+           CASE
+           WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
+           ELSE false
+           END AS unique_items,
+           api_operations_material.raw_swagger_id,
+           param.entry as entry,
+           api_operations_material.operation_id
+      FROM api_operations_material
+           , jsonb_array_elements(api_operations_material.parameters) WITH ORDINALITY param(entry, index)
+            WHERE api_operations_material.parameters IS NOT NULL;
+#+END_SRC
+*** Index
+#+NAME: index the api_operations_material
+#+BEGIN_SRC sql-mode :eval no-export :tangle ../apps/hasura/migrations/270_view_api_operations_parameters_material.up.sql
+    CREATE UNIQUE INDEX                                  ON api_operations_parameters_material(raw_swagger_id, operation_id, name);
+    CREATE INDEX api_parameters_materialized_resource    ON api_operations_parameters_material            (resource);
+    CREATE INDEX api_parameters_materialized_entry       ON api_operations_parameters_material            (entry);
+#+END_SRC
+
 * Resource Views
   These are views derived from the 'data->definitions' in our raw_swaggers table
 ** 190: api_resources view
@@ -664,6 +446,7 @@ Using our api_operations_material view, look into the parameters field in each o
  #+END_SRC
 
 ** 200: api_resources_fields view
+
 *** Create
 #+NAME: api_resources_fields view
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/200_view_api_resources_fields.up.sql
@@ -704,58 +487,59 @@ Using our api_operations_material view, look into the parameters field in each o
     name: api_resources_fields
 #+END_SRC
 
-* Over View
+* OpenAPI Over Views
   This combines fields from the majority fo the above views to create one uber view.
-** Create
-#+NAME: over view
-#+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/210_view_over.up.sql
-  CREATE OR REPLACE VIEW "public"."over" AS
-    SELECT
-      op.name as param_name,
-      op.required as param_required,
-      op.description as param_description,
-      o.operation_id,
-      op.resource,
-      r.name as resource_name,
-      r.k8s_group,
-      r.k8s_version,
-      r.k8s_kind,
-      rf.resource_field,
-      rf.param_type,
-      rf.param_kind,
-      rf.description,
-      rf.format,
-      rf.merge_key,
-      rf.patch_strategy
-      FROM 
-          api_operations_parameters op
-          JOIN api_operations o ON (
-            o.raw_swagger_id = op.raw_swagger_id
-            AND
-            o.operation_id = op.operation_id
-          )
-          LEFT JOIN api_resources r ON (
-            op.resource = r.name
-            AND
-            op.raw_swagger_id = r.raw_swagger_id
-            )
-          LEFT JOIN api_resources_fields rf ON (
-            rf.api_resource_name = r.name
-            AND
-            rf.raw_swagger_id = r.raw_swagger_id
-          )
-     ORDER BY op.name;
-#+END_SRC
-** Track
-#+NAME: track over
-#+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/210_view_over.up.yaml
-- type: track_table
-  args:
-    schema: public
-    name: over
-#+END_SRC
+** 210: over view
+*** Create
+ #+NAME: over view
+ #+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/210_view_over.up.sql
+   CREATE OR REPLACE VIEW "public"."over" AS
+     SELECT
+       op.name as param_name,
+       op.required as param_required,
+       op.description as param_description,
+       o.operation_id,
+       op.resource,
+       r.name as resource_name,
+       r.k8s_group,
+       r.k8s_version,
+       r.k8s_kind,
+       rf.resource_field,
+       rf.param_type,
+       rf.param_kind,
+       rf.description,
+       rf.format,
+       rf.merge_key,
+       rf.patch_strategy
+       FROM 
+           api_operations_parameters op
+           JOIN api_operations o ON (
+             o.raw_swagger_id = op.raw_swagger_id
+             AND
+             o.operation_id = op.operation_id
+           )
+           LEFT JOIN api_resources r ON (
+             op.resource = r.name
+             AND
+             op.raw_swagger_id = r.raw_swagger_id
+             )
+           LEFT JOIN api_resources_fields rf ON (
+             rf.api_resource_name = r.name
+             AND
+             rf.raw_swagger_id = r.raw_swagger_id
+           )
+      ORDER BY op.name;
+ #+END_SRC
+*** Track
+ #+NAME: track over
+ #+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/210_view_over.up.yaml
+ - type: track_table
+   args:
+     schema: public
+     name: over
+ #+END_SRC
 * Raw Audit Events Table, and helper functions
-** 220: Raw Audit Events Table 
+** 220: raw_audit_events Table 
 *** Create
 #+NAME: raw_audit_events
 #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/220_table_raw_audit_events.up.sql :results silent
@@ -772,14 +556,6 @@ Using our api_operations_material view, look into the parameters field in each o
     data jsonb NOT NULL
   );
 #+END_SRC
-*** Track
-#+NAME: track raw_audit_events
-#+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/220_table_raw_audit_events.up.yaml
-- type: track_table
-  args:
-    schema: public
-    name: raw_audit_events
-#+END_SRC
 *** Index
 #+NAME: index the raw_audit_events
 #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/220_table_raw_audit_events.up.sql :results silent
@@ -787,6 +563,14 @@ Using our api_operations_material view, look into the parameters field in each o
 -- ALTER TABLE raw_audit_events add primary key using index idx_audit_events_primary;
 CREATE INDEX idx_audit_events_jsonb_ops        ON raw_audit_events USING GIN (data jsonb_ops);
 CREATE INDEX idx_audit_events_jsonb_path_jobs  ON raw_audit_events USING GIN (data jsonb_path_ops);
+#+END_SRC
+*** Track
+#+NAME: track raw_audit_events
+#+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/220_table_raw_audit_events.up.yaml
+- type: track_table
+  args:
+    schema: public
+    name: raw_audit_events
 #+END_SRC
 ** 245: load_audit_events Function
 *** Python Code
@@ -910,7 +694,7 @@ CREATE INDEX idx_audit_events_jsonb_path_jobs  ON raw_audit_events USING GIN (da
   else:
       load_audit_events(bucket,job)
 #+END_SRC
-*** SQL Function Definiton
+*** Create
 #+NAME: load_audit_events.sql
 #+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/migrations/245_function_load_audit_events.up.sql :results silent
   set role dba;
@@ -921,7 +705,7 @@ CREATE INDEX idx_audit_events_jsonb_path_jobs  ON raw_audit_events USING GIN (da
   reset role;
 #+END_SRC
 ** 250: populate_audit_events.up.sql
-*** Actually Load so
+*** Call load_audit_events()
 #+NAME: reload sample audit event
 #+BEGIN_SRC sql-mode :noweb yes :notangle ../apps/hasura/migrations/250_populate_audit_events.up.sql
   select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');
@@ -1084,59 +868,228 @@ group by podspec_field
 order by conf_hits, e2e_hits, other_hits;
 #+END_SRC
 
+* Hasura
+** docker-compose.yml
+#+NAME: hasura docker-compose
+#+BEGIN_SRC yaml :tangle ../apps/hasura/docker-compose.yaml
+  # hasura/docker-compose.yaml
+  version: "3.7"
+
+  services:
+   hasura:
+      #image: hasura/graphql-engine:v1.0.0-beta.3
+      # append '.cli-migrations' to auto run 'hasura migrations apply'
+      container_name: "${USER}-hasura"
+      image: hasura/graphql-engine:v1.0.0-beta.4.cli-migrations
+      restart: always
+      networks:
+        - web
+      environment:
+        # Should try and set database be read only for public
+        #- HASURA_GRAPHQL_DATABASE_URL=postgres://non-priv-user@172.17.0.1:5432/database-name
+        #- HASURA_GRAPHQL_DATABASE_URL=postgres://non-priv-user@172.17.0.1:5432/$OUTER-USER
+        # https://docs.docker.com/compose/compose-file/#variable-substitution
+        # https://docs.docker.com/compose/env-file/
+        - "HASURA_GRAPHQL_DATABASE_URL=postgres://${USER}@172.17.0.1:5432/${USER}"
+        - HASURA_GRAPHQL_ENABLE_CONSOLE=true
+      volumes:
+        - ./migrations:/hasura-migrations
+      expose:
+        - "8080"
+      labels:
+        - "traefik.docker.network=web"
+        - "traefik.enable=true"
+        - "traefik.basic.port=8080"
+        - "traefik.basic.protocol=http"
+        - "traefik.basic.frontend.rule=Host:${USER}-hasura.sharing.io"
+  #volumes:
+  #  migrations:
+  networks:
+    web:
+      external: true
+#+END_SRC
+* Iteration Loop
+** listing tables
+#+BEGIN_SRC sql-mode
+  \conninfo
+  \d+
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+You are connected to database "zz" as user "zz" on host "172.17.0.1" at port "5432".
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
+Did not find any relations.
+#+end_src
+
+** dropping all data
+#+NAME: do not run
+#+BEGIN_SRC sql-mode
+  drop table raw_swaggers cascade;
+  drop table raw_audit_events cascade;
+  drop schema hdb_catalog cascade;
+  drop schema hdb_views cascade;
+#+END_SRC
+
+#+RESULTS: do not run
+#+begin_src sql-mode
+NOTICE:  drop cascades to 8 other objects
+DETAIL:  drop cascades to view api_operations
+drop cascades to view api_operations_parameters
+drop cascades to view api_operations_responses
+drop cascades to materialized view api_operations_material
+drop cascades to materialized view api_operations_parameters_material
+drop cascades to view api_resources
+drop cascades to view api_resources_fields
+drop cascades to view over
+DROP TABLE
+#+end_src
+** Restart Hasura
+   #+NAME: iteration loop
+   #+BEGIN_SRC tmate 
+     #:dir ~/ii/apisnoop_v3/apps/hasura
+     cd ~/ii/apisnoop_v3/apps/hasura
+     echo docker-compose down
+     docker-compose down
+     # drop all data while down
+     echo 'drop table raw_swaggers cascade; drop table raw_audit_events cascade; drop schema hdb_views cascade; drop schema hdb_catalog cascade; drop table zraw_audit_events cascade;' | psql
+     echo docker-compose up
+     docker-compose up -d
+   #+END_SRC
+
+   #+RESULTS: iteration loop
+   #+begin_EXAMPLE
+   #+end_EXAMPLE
+
+** setting up the hasura postgresql-permissions
+   
+Run the following as the postgres user via psql:
+https://docs.hasura.io/1.0/graphql/manual/deployment/postgres-permissions.html
+
+#+NAME: hasura-user
+#+BEGIN_SRC shell :results silent
+echo -n $USER
+#+END_SRC
+
+#+NAME: create database and granting all privs to a user
+#+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/db_setup.sql
+create database <<hasura-user()>>;
+-- create user myuser with encrypted password 'mypass';
+grant all privileges on database <<hasura-user()>> to <<hasura-user()>>;
+create role dba with superuser noinherit;
+grant dba to <<hasura-user()>>;
+\connect <<hasura-user()>>
+-- we write python functions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS plpython3u;
+CREATE EXTENSION IF NOT EXISTS plsh;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE SCHEMA IF NOT EXISTS hdb_catalog;
+CREATE SCHEMA IF NOT EXISTS hdb_views;
+-- make the user an owner of system schemas
+ALTER SCHEMA hdb_catalog OWNER TO <<hasura-user()>>;
+ALTER SCHEMA hdb_views OWNER TO <<hasura-user()>>;
+GRANT SELECT ON ALL TABLES IN SCHEMA information_schema TO <<hasura-user()>>;
+GRANT SELECT ON ALL TABLES IN SCHEMA pg_catalog TO <<hasura-user()>>;
+GRANT USAGE ON SCHEMA public TO <<hasura-user()>>;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO <<hasura-user()>>;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO <<hasura-user()>>;
+GRANT pg_execute_server_program TO <<hasura-user()>>;
+#+END_SRC
+
+#+RESULTS: create database and granting all privs to a user
+#+begin_src sql-mode
+ERROR:  database "zz" already exists
+WARNING:  no privileges were granted for "zz"
+GRANT
+ERROR:  must be superuser to create superusers
+ERROR:  must be superuser to alter superusers
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
+You are now connected to database "zz" as user "zz".
+NOTICE:  extension "uuid-ossp" already exists, skipping
+CREATE EXTENSION
+NOTICE:  extension "plpython3u" already exists, skipping
+CREATE EXTENSION
+ERROR:  permission denied to create extension "plsh"
+HINT:  Must be superuser to create this extension.
+NOTICE:  extension "pgcrypto" already exists, skipping
+CREATE EXTENSION
+NOTICE:  schema "hdb_catalog" already exists, skipping
+CREATE SCHEMA
+NOTICE:  schema "hdb_views" already exists, skipping
+CREATE SCHEMA
+ALTER SCHEMA
+ALTER SCHEMA
+WARNING:  no privileges were granted for "sql_features"
+WARNING:  no privileges were granted for "sql_implementation_info"
+WARNING:  no privileges were granted for "sql_languages"
+WARNING:  no privileges were granted for "sql_packages"
+WARNING:  no privileges were granted for "sql_parts"
+WARNING:  no privileges were granted for "sql_sizing"
+WARNING:  no privileges were granted for "sql_sizing_profiles"
+WARNING:  no privileges were granted for "collations"
+WARNING:  no privileges were granted for "collation_character_set_applicability"
+WARNING:  no privileges were granted for "column_domain_usage"
+WARNING:  no privileges were granted for "constraint_column_usage"
+WARNING:  no privileges were granted for "domains"
+WARNING:  no privileges were granted for "constraint_table_usage"
+WARNING:  no privileges were granted for "domain_constraints"
+WARNING:  no privileges were granted for "role_column_grants"
+WARNING:  no privileges were granted for "enabled_roles"
+WARNING:  no privileges were granted for "referential_constraints"
+WARNING:  no privileges were granted for "parameters"
+WARNING:  no privileges were granted for "routine_privileges"
+WARNING:  no privileges were granted for "role_routine_grants"
+WARNING:  no privileges were granted for "routines"
+WARNING:  no privileges were granted for "schemata"
+WARNING:  no privileges were granted for "table_constraints"
+WARNING:  no privileges were granted for "sequences"
+WARNING:  no privileges were granted for "triggered_update_columns"
+WARNING:  no privileges were granted for "table_privileges"
+WARNING:  no privileges were granted for "role_table_grants"
+WARNING:  no privileges were granted for "triggers"
+WARNING:  no privileges were granted for "tables"
+WARNING:  no privileges were granted for "transforms"
+WARNING:  no privileges were granted for "role_udt_grants"
+WARNING:  no privileges were granted for "udt_privileges"
+WARNING:  no privileges were granted for "role_usage_grants"
+WARNING:  no privileges were granted for "usage_privileges"
+WARNING:  no privileges were granted for "user_defined_types"
+WARNING:  no privileges were granted for "view_column_usage"
+WARNING:  no privileges were granted for "view_routine_usage"
+WARNING:  no privileges were granted for "view_table_usage"
+WARNING:  no privileges were granted for "views"
+WARNING:  no privileges were granted for "data_type_privileges"
+WARNING:  no privileges were granted for "user_mapping_options"
+WARNING:  no privileges were granted for "element_types"
+WARNING:  no privileges were granted for "_pg_foreign_table_columns"
+WARNING:  no privileges were granted for "column_options"
+WARNING:  no privileges were granted for "_pg_foreign_data_wrappers"
+WARNING:  no privileges were granted for "foreign_data_wrapper_options"
+WARNING:  no privileges were granted for "user_mappings"
+WARNING:  no privileges were granted for "foreign_data_wrappers"
+WARNING:  no privileges were granted for "_pg_foreign_servers"
+WARNING:  no privileges were granted for "foreign_server_options"
+WARNING:  no privileges were granted for "foreign_servers"
+WARNING:  no privileges were granted for "_pg_foreign_tables"
+WARNING:  no privileges were granted for "key_column_usage"
+WARNING:  no privileges were granted for 
+#+end_src
+
+#+NAME: as posgres admin, setup hasura user and db
+#+BEGIN_SRC tmate
+#+BEGIN_SRC shell  :var SUDO_ASKPASS="/usr/bin/ssh-askpass" :prologue "export SUDO_ASKPASS"
+# :var DISPLAY=":0.0"
+sudo su - postgres -c psql < ~/ii/apisnoop_v3/apps/hasura/db_setup.sql
+#+END_SRC
+
+#+RESULTS: as posgres admin, setup hasura user and db
+#+begin_EXAMPLE
+#+end_EXAMPLE
+
 
 * FOOTNOTES
-*** event_verb_to_http_method
-
- #+BEGIN_SRC sql-mode :notangle ../apps/hasura/migrations/222_function_verb_to_method.up.sql :results silent
-   CREATE FUNCTION event_verb_to_http_method(verb text) RETURNS text as $$
-   BEGIN
-     CASE
-     WHEN verb = 'get' OR
-          verb = 'list' OR
-          verb = 'proxy'
-     THEN return 'get' ;
-
-     WHEN verb = 'deletecollection' OR
-          verb = 'delete'
-     THEN return 'delete' ;
-
-     WHEN verb = 'watch' OR
-          verb = 'watchlist'
-     THEN return 'watch' ;
-
-     WHEN verb = 'create'
-     THEN return 'post' ;
-
-     WHEN verb = 'update'
-     THEN return 'put' ;
-
-     WHEN verb = 'patch'
-     THEN return 'patch' ;
-
-     ELSE return null ;
-     END CASE;
-   END;
-   $$ LANGUAGE plpgsql;
- #+END_SRC
-
- #+BEGIN_SRC sql-mode
- select * from event_verb_to_http_method('proxy');
- -- select * from event_verb_to_http_method('deletecollection');
- #+END_SRC
-
- #+RESULTS:
- #+begin_src sql-mode
-  event_verb_to_http_method 
- ---------------------------
-  get
- (1 row)
-
- #+end_src
-
-
-* Remove?
-
-## Local Variables:
-## eval: (sql-connect "hasura" (concat "*SQL: postgres:data*"))
-## End:
+# Local Variables:
+# eval: (sql-connect "hasura" (concat "*SQL: postgres:data*"))
+# End:
