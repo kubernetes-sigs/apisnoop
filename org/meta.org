@@ -345,6 +345,7 @@ CREATE INDEX idx_swagger_jsonb_path_ops ON raw_swaggers USING GIN (data jsonb_pa
   -- select * from load_swagger_via_curl('release-1.10');
 #+END_SRC
 * Operation Views
+  These are views derived from the 'data->path' section of our raw_swaggers table.
 ** 150: api_operations view
     This grabs the 'paths' section of our swagger.json, where each path contains operation Id, tags, schemes, etc.
 *** Define regex_from_path function
@@ -636,88 +637,40 @@ Using our api_operations_material view, look into the parameters field in each o
     CREATE INDEX api_operations_materialized_responses_path  ON api_operations_material USING GIN  (responses jsonb_path_ops);
 #+END_SRC
 * Resource Views
-** api_resources view
-#+NAME: api_resources view
-#+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/190_view_api_resources.up.sql
-  CREATE VIEW "public"."api_resources" AS 
-   SELECT 
-      raw_swaggers.id AS raw_swagger_id,
-      d.key AS name,
-      (d.value ->> 'type'::text) AS resource_type,
-      (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
-      (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
-      (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
-      string_agg(btrim((reqstring.value)::text, '"'::text), ', '::text) AS required_params,
-      (d.value ->> 'required'::text) as required_params_text,
-      (d.value -> 'properties'::text) AS properties,
-      d.value
-     FROM raw_swaggers
-       , jsonb_each((raw_swaggers.data -> 'definitions'::text)) d(key, value)
-       , jsonb_array_elements((d.value -> 'required'::text)) reqstring(value)
-     GROUP BY raw_swaggers.id, d.key, d.value;
+  These are views derived from the 'data->definitions' in our raw_swaggers table
+** 190: api_resources view
+*** Create
+ #+NAME: api_resources view
+ #+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/190_view_api_resources.up.sql
+   CREATE VIEW "public"."api_resources" AS 
+    SELECT 
+       raw_swaggers.id AS raw_swagger_id,
+       d.key AS name,
+       (d.value ->> 'type'::text) AS resource_type,
+       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
+       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
+       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
+       string_agg(btrim((reqstring.value)::text, '"'::text), ', '::text) AS required_params,
+       (d.value ->> 'required'::text) as required_params_text,
+       (d.value -> 'properties'::text) AS properties,
+       d.value
+      FROM raw_swaggers
+        , jsonb_each((raw_swaggers.data -> 'definitions'::text)) d(key, value)
+        , jsonb_array_elements((d.value -> 'required'::text)) reqstring(value)
+      GROUP BY raw_swaggers.id, d.key, d.value;
 
-#+END_SRC
+ #+END_SRC
+*** Track
+ #+NAME: track api_resources
+ #+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/190_view_api_resources.up.yaml
+ - type: track_table
+   args:
+     schema: public
+     name: api_resources
+ #+END_SRC
 
-#+RESULTS: api_resources view
-#+begin_src sql-mode
-ERROR:  relation "raw_swaggers" does not exist
-LINE 13:    FROM raw_swaggers
-                 ^
-#+end_src
-
-#+NAME: track api_resources
-#+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/190_view_api_resources.up.yaml
-- type: track_table
-  args:
-    schema: public
-    name: api_resources
-#+END_SRC
-
-** api_resources_fields view
-#+NAME: Older Properties View
-#+BEGIN_SRC sql-mode :eval never-export :notangle ../apps/hasura/migrations/200_view_api_resources_fields.up.sql
-  -- DROP VIEW api_resources_properties;
-  -- DROP MATERIALIZED VIEW api_resources_properties;
-  CREATE VIEW "public"."api_resources_fields" AS 
-    SELECT api_resources.id AS type_id,
-           d.key AS property,
-           CASE
-           WHEN ((d.value ->> 'type'::text) IS NULL) THEN 'subtype'::text
-           ELSE (d.value ->> 'type'::text)
-             END AS param_type,
-           replace(
-             CASE
-             WHEN ((d.value ->> 'type'::text) = 'string'::text) THEN 'string'::text
-             WHEN ((d.value ->> 'type'::text) IS NULL) THEN (d.value ->> '$ref'::text)
-             WHEN ((d.value ->> 'type'::text) = 'array'::text)
-              AND ((d.value -> 'items'::text) ->> 'type'::text) IS NULL
-               THEN ((d.value -> 'items'::text) ->> '$ref'::text)
-             WHEN ((d.value ->> 'type'::text) = 'array'::text)
-              AND ((d.value -> 'items'::text) ->> '$ref'::text) IS NULL
-               THEN ((d.value -> 'items'::text) ->> 'type'::text)
-             ELSE 'integer'::text
-             END, '#/definitions/','') AS param_kind,
-           (d.value ->> 'description'::text) AS description,
-           (d.value ->> 'format'::text) AS format,
-           (d.value ->> 'x-kubernetes-patch-merge-key'::text) AS merge_key,
-           (d.value ->> 'x-kubernetes-patch-strategy'::text) AS patch_strategy,
-           -- CASE
-           --   WHEN d.key is null THEN false
-           --   WHEN (api_resources.required_params ? d.key) THEN true
-           --   ELSE false
-           --     END
-           --   AS required,
-           -- with param type also containing array, we don't need array as a boolean
-           -- CASE
-           -- WHEN ((d.value ->> 'type'::text) = 'array'::text) THEN true
-           -- ELSE false
-           --  END AS "array"
-           d.value
-      FROM (api_resources
-            JOIN LATERAL jsonb_each(api_resources.properties) d(key, value) ON (true))
-     ORDER BY api_resources.id;
-#+END_SRC
-
+** 200: api_resources_fields view
+*** Create
 #+NAME: api_resources_fields view
 #+BEGIN_SRC sql-mode :eval never-export :tangle ../apps/hasura/migrations/200_view_api_resources_fields.up.sql
   CREATE VIEW "public"."api_resources_fields" AS 
@@ -748,7 +701,7 @@ LINE 13:    FROM raw_swaggers
       FROM (api_resources
             JOIN LATERAL jsonb_each(api_resources.properties) d(key, value) ON (true));
 #+END_SRC
-
+*** Track
 #+NAME: track api_resources_fields
 #+BEGIN_SRC yaml :tangle ../apps/hasura/migrations/200_view_api_resources_fields.up.yaml
 - type: track_table
