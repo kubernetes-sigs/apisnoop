@@ -8,10 +8,8 @@ To get to our graphql explorer first clone this repo:
 
 ```shell
 # If you have ssh keys setup with yr gitlab account
-git clone git@gitlab.ii.coop:apisnoop/apisnoop_v3.git
-
-# if you don't have them yet
-git clone https://gitlab.ii.coop/apisnoop/apisnoop_v3.git
+git clone git@github.com:cncf/apisnoop.git
+git checkout v3_rainbow
 ```
 
 from within the repo, start up our src/index.js file
