@@ -1,8 +1,7 @@
 -- Create
--- Using our api_operations_material view, look into the parameters field in each one.     
--- #+NAME: api_operations_parameters_material view
+--  #+NAME: api_operation_parameter view
 
-CREATE MATERIALIZED VIEW "public"."api_operations_parameters_material" AS 
+CREATE OR REPLACE VIEW "public"."api_operation_parameter" AS 
   SELECT (param.entry ->> 'name'::text) AS name,
          (param.entry ->> 'in'::text) AS "in",
          -- for resource:
@@ -24,16 +23,9 @@ CREATE MATERIALIZED VIEW "public"."api_operations_parameters_material" AS
          WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
          ELSE false
          END AS unique_items,
-         api_operations_material.raw_swagger_id,
+         api_operation.raw_swagger_id,
          param.entry as entry,
-         api_operations_material.operation_id
-    FROM api_operations_material
-         , jsonb_array_elements(api_operations_material.parameters) WITH ORDINALITY param(entry, index)
-          WHERE api_operations_material.parameters IS NOT NULL;
-
--- Index
--- #+NAME: index the api_operations_material
-
-CREATE UNIQUE INDEX                                  ON api_operations_parameters_material(raw_swagger_id, operation_id, name);
-CREATE INDEX api_parameters_materialized_resource    ON api_operations_parameters_material            (resource);
-CREATE INDEX api_parameters_materialized_entry       ON api_operations_parameters_material            (entry);
+         api_operation.operation_id
+    FROM api_operation
+         , jsonb_array_elements(api_operation.parameters) WITH ORDINALITY param(entry, index)
+          WHERE api_operation.parameters IS NOT NULL;

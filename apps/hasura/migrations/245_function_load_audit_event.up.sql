@@ -81,15 +81,15 @@ def load_audit_events(bucket,job):
                 subprocess.run(['zcat', logfile], stdout=log, check=True)
             else:
                 subprocess.run(['cat', logfile], stdout=log, check=True)
-    # Load the resulting combined audit.log directly into raw_audit_events
+    # Load the resulting combined audit.log directly into raw_audit_event
     try:
         # for some reason tangling isn't working to reference this SQL block
         sql = Template("""
-CREATE TEMPORARY TABLE raw_audit_events_import (data jsonb not null) ;
-COPY raw_audit_events_import (data)
+CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
+COPY raw_audit_event_import (data)
 FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
 
-INSERT INTO raw_audit_events(bucket, job,
+INSERT INTO raw_audit_event(bucket, job,
                              audit_id, stage,
                              event_verb, request_uri,
                              operation_id,
@@ -99,10 +99,10 @@ SELECT '${bucket}', '${job}',
        (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
        ops.operation_id,
        raw.data 
-  FROM raw_audit_events_import raw
+  FROM raw_audit_event_import raw
          -- FIXME: this join is necesary, but expensive
          -- https://github.com/cncf/apisnoopregexp is an alterative approach
-         LEFT JOIN api_operations_material ops ON
+         LEFT JOIN api_operation_material ops ON
            ops.raw_swagger_id = 1
              AND raw.data ->> 'verb' = ANY(ops.event_verb)
              AND raw.data ->> 'requestURI' ~ ops.regex;

@@ -1,7 +1,7 @@
--- Create   
+-- Create
 --  #+NAME: Responses View
 
-CREATE OR REPLACE VIEW "public"."api_operations_responses" AS 
+CREATE OR REPLACE VIEW "public"."api_operation_response" AS 
   SELECT d.key AS code,
          (d.value ->> 'description'::text) AS description,
          replace(
@@ -12,8 +12,8 @@ CREATE OR REPLACE VIEW "public"."api_operations_responses" AS
              THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
            ELSE NULL::text
            END, '#/definitions/','') AS resource,
-           api_operations.operation_id,
-           api_operations.raw_swagger_id
-    FROM (api_operations
-          JOIN LATERAL jsonb_each(api_operations.responses) d(key, value) ON (true))
+           api_operation.operation_id,
+           api_operation.raw_swagger_id
+    FROM (api_operation
+          JOIN LATERAL jsonb_each(api_operation.responses) d(key, value) ON (true))
    ORDER BY (uuid_generate_v1());

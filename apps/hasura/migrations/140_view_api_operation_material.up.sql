@@ -1,8 +1,32 @@
--- Create
--- #+NAME: api_operations_material
 
-CREATE MATERIALIZED VIEW "public"."api_operations_material" AS 
-  SELECT raw_swaggers.id AS raw_swagger_id,
+
+-- #+NAME: regex_from_path.sql
+
+set role dba;
+CREATE OR REPLACE FUNCTION regex_from_path(path text)
+RETURNS text AS $$
+import re
+if path is None:
+  return None
+K8S_PATH_VARIABLE_PATTERN = re.compile("{(path)}$")
+VARIABLE_PATTERN = re.compile("{([^}]+)}")
+path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
+path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
+if not path_regex.endswith(")") and not path_regex.endswith("?"): 
+    path_regex += "([^/]*)"
+if path_regex.endswith("proxy"): 
+    path_regex += "/?$"
+else:
+    path_regex += "$"
+return path_regex
+$$ LANGUAGE plpython3u ;
+reset role;
+
+-- Create
+-- #+NAME: api_operation_material
+
+CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
+  SELECT api_swagger.id AS raw_swagger_id,
          paths.key AS path,
          regex_from_path(paths.key) as regex,
          d.key AS http_method,
@@ -31,30 +55,11 @@ CREATE MATERIALIZED VIEW "public"."api_operations_material" AS
           WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN ARRAY [ 'connect' ]
          ELSE NULL
            END as event_verb
-    FROM raw_swaggers
-    , jsonb_each((raw_swaggers.data -> 'paths'::text)) paths(key, value)
+    FROM api_swagger
+    , jsonb_each((api_swagger.data -> 'paths'::text)) paths(key, value)
     , jsonb_each(paths.value) d(key, value)
     , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
     , jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)
     , jsonb_array_elements((d.value -> 'schemes'::text)) schemestring(value)
-   GROUP BY raw_swaggers.id, paths.key, d.key, d.value, cat_tag.value
+   GROUP BY api_swagger.id, paths.key, d.key, d.value, cat_tag.value
    ORDER BY paths.key;
-
--- Index
--- #+NAME: index the api_operations_material
-
-CREATE INDEX api_operations_materialized_event_verb  ON api_operations_material            (event_verb);
-CREATE INDEX api_operations_materialized_k8s_action  ON api_operations_material            (k8s_action);
-CREATE INDEX api_operations_materialized_k8s_group   ON api_operations_material            (k8s_group);
-CREATE INDEX api_operations_materialized_k8s_version ON api_operations_material            (k8s_version);
-CREATE INDEX api_operations_materialized_k8s_kind    ON api_operations_material            (k8s_kind);
-CREATE INDEX api_operations_materialized_tags        ON api_operations_material            (tags);
-CREATE INDEX api_operations_materialized_schemes     ON api_operations_material            (schemes);
-CREATE INDEX api_operations_materialized_regex_gist  ON api_operations_material USING GIST (regex gist_trgm_ops);
-CREATE INDEX api_operations_materialized_regex_gin   ON api_operations_material USING GIN  (regex gin_trgm_ops);
-CREATE INDEX api_operations_materialized_consumes_ops   ON api_operations_material USING GIN  (consumes jsonb_ops);
-CREATE INDEX api_operations_materialized_consumes_path  ON api_operations_material USING GIN  (consumes jsonb_path_ops);
-CREATE INDEX api_operations_materialized_parameters_ops   ON api_operations_material USING GIN  (parameters jsonb_ops);
-CREATE INDEX api_operations_materialized_parameters_path  ON api_operations_material USING GIN  (parameters jsonb_path_ops);
-CREATE INDEX api_operations_materialized_responses_ops   ON api_operations_material USING GIN  (responses jsonb_ops);
-CREATE INDEX api_operations_materialized_responses_path  ON api_operations_material USING GIN  (responses jsonb_path_ops);
