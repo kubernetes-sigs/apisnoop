@@ -3,7 +3,7 @@
 
 CREATE OR REPLACE VIEW "public"."api_operation_response" AS 
   SELECT api_operation.operation_id as resp_op,
-         d.key AS response_code,
+         d.key AS resp_code,
          (d.value ->> 'description'::text) AS resp_description,
          replace(
            CASE

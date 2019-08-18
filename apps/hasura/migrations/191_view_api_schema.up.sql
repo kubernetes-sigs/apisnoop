@@ -3,7 +3,7 @@
 
 CREATE OR REPLACE VIEW "public"."api_schema" AS 
  SELECT 
-    d.key AS name,
+    d.key AS schema_name,
     (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
     (d.value ->> 'type'::text) AS resource_type,
     (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,

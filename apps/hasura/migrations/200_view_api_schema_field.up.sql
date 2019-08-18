@@ -2,7 +2,7 @@
 -- #+NAME: api_schema_field view
 
 CREATE OR REPLACE VIEW "public"."api_schema_field" AS 
-  SELECT api_schema.name as field_schema,
+  SELECT api_schema.schema_name as field_schema,
          d.key AS field_name,
          replace(
            CASE
