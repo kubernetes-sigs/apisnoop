@@ -169,7 +169,7 @@ CREATE TABLE api_swagger (
     CREATE INDEX api_operation_materialized_responses_ops   ON api_operation_material USING GIN  (responses jsonb_ops);
     CREATE INDEX api_operation_materialized_responses_path  ON api_operation_material USING GIN  (responses jsonb_path_ops);
 #+END_SRC
-** 150: api_operation view
+** 150: api_operation view of material
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/150_view_api_operation.up.sql
   :END:
@@ -180,41 +180,87 @@ CREATE TABLE api_swagger (
   CREATE OR REPLACE VIEW "public"."api_operation" AS 
     SELECT * from api_operation_material;
 #+END_SRC
-** 160: api_operation_parameter view
+** 160: api_operation_parameter_material
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/160_view_api_operation_parameter.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/160_view_api_operation_parameter_material.up.sql
+  :END:
+*** Create
+Using our api_operation_material view, look into the parameters field in each one.     
+#+NAME: api_operation_parameter_material view
+#+BEGIN_SRC sql-mode
+  CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS 
+     -- SELECT api_operation.operation_id as param_op,
+     --        (param.entry ->> 'name'::text) AS param_name,
+     --        CASE
+     --        WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
+     --        ELSE false
+     --         END AS param_required,
+     --        -- for resource:
+     --        -- if param is body in body, take its $ref from its schema
+     --        -- otherwise, take its type
+     --        replace(
+     --          CASE
+     --          WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
+     --           AND ((param.entry -> 'schema'::text) is not null)
+     --            THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+     --          ELSE (param.entry ->> 'type'::text)
+     --          END, '#/definitions/','') AS param_schema,
+     --        (param.entry ->> 'description'::text) AS param_description,
+     --        (param.entry ->> 'in'::text) AS "in",
+     --        CASE
+     --        WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
+     --        ELSE false
+     --        END AS unique_items,
+     --        api_operation.raw_swagger_id
+     --   FROM api_operation
+     --        , jsonb_array_elements(api_operation.parameters) WITH ORDINALITY param(entry, index)
+     --         WHERE api_operation.parameters IS NOT NULL;
+    SELECT api_operation.operation_id param_op,
+           (param.entry ->> 'name'::text) AS param_name,
+           -- for resource:
+           -- if param is body in body, take its $ref from its schema
+           -- otherwise, take its type
+           replace(
+             CASE
+             WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
+              AND ((param.entry -> 'schema'::text) is not null)
+               THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+             ELSE (param.entry ->> 'type'::text)
+             END, '#/definitions/','') AS param_schema,
+           CASE
+           WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
+           ELSE false
+            END AS required,
+           (param.entry ->> 'description'::text) AS param_description,
+           CASE
+           WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
+           ELSE false
+           END AS unique_items,
+           (param.entry ->> 'in'::text) AS "in",
+           api_operation.raw_swagger_id,
+           param.entry as entry
+      FROM api_operation
+           , jsonb_array_elements(api_operation.parameters) WITH ORDINALITY param(entry, index)
+            WHERE api_operation.parameters IS NOT NULL;
+#+END_SRC
+*** Index
+#+NAME: index the api_operation_material
+#+BEGIN_SRC sql-mode
+    CREATE UNIQUE INDEX                                  ON api_operation_parameter_material(raw_swagger_id, operation_id, name);
+    CREATE INDEX api_parameters_materialized_resource    ON api_operation_parameter_material            (resource);
+    CREATE INDEX api_parameters_materialized_entry       ON api_operation_parameter_material            (entry);
+#+END_SRC
+
+** 170: api_operation_parameter view of material
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/170_view_api_operation_parameter.up.sql
   :END:
 Using our api_operation view, look into the parameters field in each one.     
 *** Create
  #+NAME: api_operation_parameter view
  #+BEGIN_SRC sql-mode
    CREATE OR REPLACE VIEW "public"."api_operation_parameter" AS 
-     SELECT api_operation.operation_id,
-            (param.entry ->> 'name'::text) AS name,
-            CASE
-            WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
-            ELSE false
-             END AS required,
-            -- for resource:
-            -- if param is body in body, take its $ref from its schema
-            -- otherwise, take its type
-            replace(
-              CASE
-              WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
-               AND ((param.entry -> 'schema'::text) is not null)
-                THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
-              ELSE (param.entry ->> 'type'::text)
-              END, '#/definitions/','') AS resource,
-            (param.entry ->> 'description'::text) AS description,
-            (param.entry ->> 'in'::text) AS "in",
-            CASE
-            WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
-            ELSE false
-            END AS unique_items,
-            api_operation.raw_swagger_id
-       FROM api_operation
-            , jsonb_array_elements(api_operation.parameters) WITH ORDINALITY param(entry, index)
-             WHERE api_operation.parameters IS NOT NULL;
+     SELECT * from api_operation_parameter_material;
  #+END_SRC
 
 ** 180: api_operation_response view
@@ -226,9 +272,9 @@ Using our api_operation view, look into the parameters field in each one.
  #+NAME: Responses View
  #+BEGIN_SRC sql-mode 
    CREATE OR REPLACE VIEW "public"."api_operation_response" AS 
-     SELECT api_operation.operation_id,
-            d.key AS code,
-            (d.value ->> 'description'::text) AS description,
+     SELECT api_operation.operation_id as resp_op,
+            d.key AS resp_code,
+            (d.value ->> 'description'::text) AS resp_description,
             replace(
               CASE
               WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> 'type'::text) IS NOT NULL))
@@ -236,58 +282,13 @@ Using our api_operation view, look into the parameters field in each one.
               WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
                 THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
               ELSE NULL::text
-              END, '#/definitions/','') AS resource,
+              END, '#/definitions/','') AS resp_schema,
               api_operation.raw_swagger_id
        FROM (api_operation
              JOIN LATERAL jsonb_each(api_operation.responses) d(key, value) ON (true))
       ORDER BY (uuid_generate_v1());
  #+END_SRC
-** 190: api_operation_parameter_material
-  :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/190_view_api_operation_parameter_material.up.sql
-  :END:
-*** Create
-Using our api_operation_material view, look into the parameters field in each one.     
-#+NAME: api_operation_parameter_material view
-#+BEGIN_SRC sql-mode
-  CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS 
-    SELECT api_operation_material.operation_id,
-           (param.entry ->> 'name'::text) AS name,
-           -- for resource:
-           -- if param is body in body, take its $ref from its schema
-           -- otherwise, take its type
-           replace(
-             CASE
-             WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
-              AND ((param.entry -> 'schema'::text) is not null)
-               THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
-             ELSE (param.entry ->> 'type'::text)
-             END, '#/definitions/','') AS resource,
-           CASE
-           WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
-           ELSE false
-            END AS required,
-           (param.entry ->> 'description'::text) AS description,
-           CASE
-           WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
-           ELSE false
-           END AS unique_items,
-           (param.entry ->> 'in'::text) AS "in",
-           api_operation_material.raw_swagger_id,
-           param.entry as entry
-      FROM api_operation_material
-           , jsonb_array_elements(api_operation_material.parameters) WITH ORDINALITY param(entry, index)
-            WHERE api_operation_material.parameters IS NOT NULL;
-#+END_SRC
-*** Index
-#+NAME: index the api_operation_material
-#+BEGIN_SRC sql-mode
-    CREATE UNIQUE INDEX                                  ON api_operation_parameter_material(raw_swagger_id, operation_id, name);
-    CREATE INDEX api_parameters_materialized_resource    ON api_operation_parameter_material            (resource);
-    CREATE INDEX api_parameters_materialized_entry       ON api_operation_parameter_material            (entry);
-#+END_SRC
-
-* Resource Views
+* Schema Views
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
   :END:
@@ -299,15 +300,15 @@ Using our api_operation_material view, look into the parameters field in each on
 *** Create
  #+NAME: api_schema view
  #+BEGIN_SRC sql-mode 
-   CREATE VIEW "public"."api_schema" AS 
+   CREATE OR REPLACE VIEW "public"."api_schema" AS 
     SELECT 
-       d.key AS name,
-       (d.value ->> 'type'::text) AS resource_type,
-       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
-       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
+       d.key AS schema_name,
        (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
-       string_agg(btrim((reqstring.value)::text, '"'::text), ', '::text) AS required_params,
-       (d.value ->> 'required'::text) as required_params_text,
+       (d.value ->> 'type'::text) AS resource_type,
+       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
+       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
+       string_agg(btrim((reqstring.value)::text, '"'::text), ', '::text) AS required_fields,
+       (d.value ->> 'required'::text) as required_fields_text,
        (d.value -> 'properties'::text) AS properties,
        api_swagger.id AS raw_swagger_id,
        d.value
@@ -325,8 +326,8 @@ Using our api_operation_material view, look into the parameters field in each on
 #+NAME: api_schema_field view
 #+BEGIN_SRC sql-mode 
   CREATE OR REPLACE VIEW "public"."api_schema_field" AS 
-    SELECT api_schema.name as api_resource_name,
-           d.key AS resource_field,
+    SELECT api_schema.name as field_schema,
+           d.key AS field_name,
            replace(
              CASE
              WHEN d.value->>'type' = 'string' THEN 'string'
@@ -339,6 +340,10 @@ Using our api_operation_material view, look into the parameters field in each on
                THEN d.value->'items'->>'type'
              ELSE 'integer'::text
              END, '#/definitions/','') AS field_kind,
+           CASE
+           WHEN d.value->>'type' IS NULL THEN 'subtype'
+           ELSE d.value->>'type'
+             END AS field_type,
            d.value->>'description' AS description,
            CASE
            WHEN (   d.value->>'description' ilike '%This field is alpha-level%'
@@ -367,10 +372,6 @@ Using our api_operation_material view, look into the parameters field in each on
                  ) THEN true
            ELSE false
              END AS feature_gated,
-           CASE
-           WHEN d.value->>'type' IS NULL THEN 'subtype'
-           ELSE d.value->>'type'
-             END AS param_type,
            d.value->>'format' AS format,
            d.value->>'x-kubernetes-patch-merge-key' AS merge_key,
            d.value->>'x-kubernetes-patch-strategy' AS patch_strategy,
@@ -386,7 +387,7 @@ Using our api_operation_material view, look into the parameters field in each on
   This combines fields from the majority fo the above views to create one uber view.
 ** 210: over view
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/210_view_over.up.sql
+  :header-args:sql-mode+: :notangle ../apps/hasura/migrations/210_view_over.up.sql
   :END:
 *** Create
  #+NAME: over view
@@ -750,12 +751,12 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
 #+NAME: view podspec_field_summary
 #+BEGIN_SRC sql-mode
   create view podspec_field_summary as
-  select distinct resource_field as podspec_field,
+  select distinct field_name as podspec_field,
                   0 as other_hits,
                   0 as e2e_hits,
                   0 as conf_hits
     from api_schema_field
-   where api_resource_name like '%PodSpec%'
+   where field_schema like '%PodSpec%'
    UNION
   select
     podspec_field,
@@ -793,7 +794,13 @@ select distinct podspec_field,
       sum(other_hits) as other_hits,
       sum(e2e_hits) as e2e_hits,
       sum(conf_hits) as conf_hits
+      -- f.release,
+      -- f.deprecated,
+      -- f.feature_gated,
 from podspec_field_summary
+-- from podspec_field_summary s, api_schema_field f
+-- where s.podspec_field = f.resource_field
+-- and f.api_resource_name like '%PodSpec%
 group by podspec_field
 order by conf_hits, e2e_hits, other_hits;
 #+END_SRC
@@ -858,7 +865,7 @@ order by conf_hits, e2e_hits, other_hits;
 
 *** over
  #+NAME: track over
- #+BEGIN_SRC yaml
+ #+BEGIN_SRC yaml :tangle no
  - type: track_table
    args:
      schema: public

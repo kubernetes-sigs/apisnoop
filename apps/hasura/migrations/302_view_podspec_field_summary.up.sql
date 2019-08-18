@@ -5,12 +5,12 @@
 -- #+NAME: view podspec_field_summary
 
 create view podspec_field_summary as
-select distinct resource_field as podspec_field,
+select distinct field_name as podspec_field,
                 0 as other_hits,
                 0 as e2e_hits,
                 0 as conf_hits
   from api_schema_field
- where api_resource_name like '%PodSpec%'
+ where field_schema like '%PodSpec%'
  UNION
 select
   podspec_field,
