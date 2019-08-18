@@ -43,7 +43,7 @@ CREATE TABLE api_swagger (
   :END:
 
 #+NAME: load_swagger_via_curl.py
-#+BEGIN_SRC python :eval never :exports none
+#+BEGIN_SRC python :eval never :exports code
   # should probably sanitize branch_or_tag
   try:
       from string import Template
@@ -69,21 +69,6 @@ CREATE TABLE api_swagger (
   reset role;
 #+END_SRC
 
-** 130: Populate Swaggers Up
-  :PROPERTIES:
-  :header-args:sql-mode+: :results silent
-  :END:
-#+NAME: reload swaggers for particluar releases
-#+BEGIN_SRC sql-mode
-  delete from api_swagger;
-  select * from load_swagger_via_curl('master');
-  -- select * from load_swagger_via_curl('release-1.15');
-  -- select * from load_swagger_via_curl('release-1.14');
-  -- select * from load_swagger_via_curl('release-1.13');
-  -- select * from load_swagger_via_curl('release-1.12');
-  -- select * from load_swagger_via_curl('release-1.11');
-  -- select * from load_swagger_via_curl('release-1.10');
-#+END_SRC
 * Operation Views
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
@@ -127,23 +112,10 @@ CREATE TABLE api_swagger (
 #+NAME: api_operation_material
 #+BEGIN_SRC sql-mode 
   CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
-    SELECT api_swagger.id AS raw_swagger_id,
-           paths.key AS path,
-           regex_from_path(paths.key) as regex,
-           d.key AS http_method,
+    SELECT (d.value ->> 'operationId'::text) AS operation_id,
            (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
-           (d.value ->> 'operationId'::text) AS operation_id,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-           (d.value ->> 'description'::text) AS description,
-           (d.value -> 'consumes'::text)::jsonb AS consumes,
-           (d.value -> 'responses'::text)::jsonb AS responses,
-           (d.value -> 'parameters'::text)::jsonb AS parameters,
-           (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
-           split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
-           string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
-           string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
+           d.key AS http_method,
            CASE
             WHEN (d.value ->> 'x-kubernetes-action'::text) = 'get' THEN ARRAY ['get']
             WHEN (d.value ->> 'x-kubernetes-action'::text) =  'list' THEN ARRAY [ 'list' ]
@@ -155,7 +127,20 @@ CREATE TABLE api_swagger (
             WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch' THEN ARRAY [ 'patch' ]
             WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN ARRAY [ 'connect' ]
            ELSE NULL
-             END as event_verb
+             END as event_verb,
+           paths.key AS path,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+           (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
+           (d.value ->> 'description'::text) AS description,
+           (d.value -> 'consumes'::text)::jsonb AS consumes,
+           (d.value -> 'responses'::text)::jsonb AS responses,
+           (d.value -> 'parameters'::text)::jsonb AS parameters,
+           split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+           string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
+           string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
+           regex_from_path(paths.key) as regex,
+           api_swagger.id AS raw_swagger_id
       FROM api_swagger
       , jsonb_each((api_swagger.data -> 'paths'::text)) paths(key, value)
       , jsonb_each(paths.value) d(key, value)
@@ -204,8 +189,12 @@ Using our api_operation view, look into the parameters field in each one.
  #+NAME: api_operation_parameter view
  #+BEGIN_SRC sql-mode
    CREATE OR REPLACE VIEW "public"."api_operation_parameter" AS 
-     SELECT (param.entry ->> 'name'::text) AS name,
-            (param.entry ->> 'in'::text) AS "in",
+     SELECT api_operation.operation_id,
+            (param.entry ->> 'name'::text) AS name,
+            CASE
+            WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
+            ELSE false
+             END AS required,
             -- for resource:
             -- if param is body in body, take its $ref from its schema
             -- otherwise, take its type
@@ -217,17 +206,12 @@ Using our api_operation view, look into the parameters field in each one.
               ELSE (param.entry ->> 'type'::text)
               END, '#/definitions/','') AS resource,
             (param.entry ->> 'description'::text) AS description,
-            CASE
-            WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
-            ELSE false
-             END AS required,
+            (param.entry ->> 'in'::text) AS "in",
             CASE
             WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
             ELSE false
             END AS unique_items,
-            api_operation.raw_swagger_id,
-            param.entry as entry,
-            api_operation.operation_id
+            api_operation.raw_swagger_id
        FROM api_operation
             , jsonb_array_elements(api_operation.parameters) WITH ORDINALITY param(entry, index)
              WHERE api_operation.parameters IS NOT NULL;
@@ -242,7 +226,8 @@ Using our api_operation view, look into the parameters field in each one.
  #+NAME: Responses View
  #+BEGIN_SRC sql-mode 
    CREATE OR REPLACE VIEW "public"."api_operation_response" AS 
-     SELECT d.key AS code,
+     SELECT api_operation.operation_id,
+            d.key AS code,
             (d.value ->> 'description'::text) AS description,
             replace(
               CASE
@@ -252,23 +237,22 @@ Using our api_operation view, look into the parameters field in each one.
                 THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
               ELSE NULL::text
               END, '#/definitions/','') AS resource,
-              api_operation.operation_id,
               api_operation.raw_swagger_id
        FROM (api_operation
              JOIN LATERAL jsonb_each(api_operation.responses) d(key, value) ON (true))
       ORDER BY (uuid_generate_v1());
  #+END_SRC
-** 270: api_operation_parameter_material
+** 190: api_operation_parameter_material
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/270_view_api_operation_parameter_material.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/190_view_api_operation_parameter_material.up.sql
   :END:
 *** Create
 Using our api_operation_material view, look into the parameters field in each one.     
 #+NAME: api_operation_parameter_material view
 #+BEGIN_SRC sql-mode
   CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS 
-    SELECT (param.entry ->> 'name'::text) AS name,
-           (param.entry ->> 'in'::text) AS "in",
+    SELECT api_operation_material.operation_id,
+           (param.entry ->> 'name'::text) AS name,
            -- for resource:
            -- if param is body in body, take its $ref from its schema
            -- otherwise, take its type
@@ -279,18 +263,18 @@ Using our api_operation_material view, look into the parameters field in each on
                THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
              ELSE (param.entry ->> 'type'::text)
              END, '#/definitions/','') AS resource,
-           (param.entry ->> 'description'::text) AS description,
            CASE
            WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
            ELSE false
             END AS required,
+           (param.entry ->> 'description'::text) AS description,
            CASE
            WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
            ELSE false
            END AS unique_items,
+           (param.entry ->> 'in'::text) AS "in",
            api_operation_material.raw_swagger_id,
-           param.entry as entry,
-           api_operation_material.operation_id
+           param.entry as entry
       FROM api_operation_material
            , jsonb_array_elements(api_operation_material.parameters) WITH ORDINALITY param(entry, index)
             WHERE api_operation_material.parameters IS NOT NULL;
@@ -308,16 +292,15 @@ Using our api_operation_material view, look into the parameters field in each on
   :header-args:sql-mode+: :results silent
   :END:
   These are views derived from the 'data->definitions' in our api_swagger table
-** 190: api_schema view
+** 191: api_schema view
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/190_view_api_schema.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/191_view_api_schema.up.sql
   :END:
 *** Create
  #+NAME: api_schema view
  #+BEGIN_SRC sql-mode 
    CREATE VIEW "public"."api_schema" AS 
     SELECT 
-       api_swagger.id AS raw_swagger_id,
        d.key AS name,
        (d.value ->> 'type'::text) AS resource_type,
        (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
@@ -326,6 +309,7 @@ Using our api_operation_material view, look into the parameters field in each on
        string_agg(btrim((reqstring.value)::text, '"'::text), ', '::text) AS required_params,
        (d.value ->> 'required'::text) as required_params_text,
        (d.value -> 'properties'::text) AS properties,
+       api_swagger.id AS raw_swagger_id,
        d.value
       FROM api_swagger
         , jsonb_each((api_swagger.data -> 'definitions'::text)) d(key, value)
@@ -342,12 +326,7 @@ Using our api_operation_material view, look into the parameters field in each on
 #+BEGIN_SRC sql-mode 
   CREATE VIEW "public"."api_schema_field" AS 
     SELECT api_schema.name as api_resource_name,
-           api_schema.raw_swagger_id,
            d.key AS resource_field,
-           CASE
-           WHEN ((d.value ->> 'type'::text) IS NULL) THEN 'subtype'::text
-           ELSE (d.value ->> 'type'::text)
-             END AS param_type,
            replace(
              CASE
              WHEN ((d.value ->> 'type'::text) = 'string'::text) THEN 'string'::text
@@ -359,11 +338,16 @@ Using our api_operation_material view, look into the parameters field in each on
               AND ((d.value -> 'items'::text) ->> '$ref'::text) IS NULL
                THEN ((d.value -> 'items'::text) ->> 'type'::text)
              ELSE 'integer'::text
-             END, '#/definitions/','') AS param_kind,
+             END, '#/definitions/','') AS field_kind,
            (d.value ->> 'description'::text) AS description,
+           CASE
+           WHEN ((d.value ->> 'type'::text) IS NULL) THEN 'subtype'::text
+           ELSE (d.value ->> 'type'::text)
+             END AS param_type,
            (d.value ->> 'format'::text) AS format,
            (d.value ->> 'x-kubernetes-patch-merge-key'::text) AS merge_key,
            (d.value ->> 'x-kubernetes-patch-strategy'::text) AS patch_strategy,
+           api_schema.raw_swagger_id,
            d.value
       FROM (api_schema
             JOIN LATERAL jsonb_each(api_schema.properties) d(key, value) ON (true));
@@ -393,7 +377,7 @@ Using our api_operation_material view, look into the parameters field in each on
        r.k8s_kind,
        rf.resource_field,
        rf.param_type,
-       rf.param_kind,
+       rf.field_kind,
        rf.description,
        rf.format,
        rf.merge_key,
@@ -417,6 +401,29 @@ Using our api_operation_material view, look into the parameters field in each on
            )
       ORDER BY op.name;
  #+END_SRC
+* Loading Swagger Data
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/199_load_and_populate_swaggers.up.sql
+  :END:
+
+** 199: Populate Swaggers Up
+  :PROPERTIES:
+  :header-args:sql-mode+: :results silent
+  :END:
+#+NAME: reload swaggers for particluar releases
+#+BEGIN_SRC sql-mode
+  delete from api_swagger;
+  select * from load_swagger_via_curl('master');
+  REFRESH MATERIALIZED VIEW api_operation_material;
+  -- HINT:  Create a unique index with no WHERE clause on one or more columns of the materialized view^
+  REFRESH MATERIALIZED VIEW CONCURRENTLY api_operation_parameter_material;
+  -- select * from load_swagger_via_curl('release-1.15');
+  -- select * from load_swagger_via_curl('release-1.14');
+  -- select * from load_swagger_via_curl('release-1.13');
+  -- select * from load_swagger_via_curl('release-1.12');
+  -- select * from load_swagger_via_curl('release-1.11');
+  -- select * from load_swagger_via_curl('release-1.10');
+#+END_SRC
 * Raw Audit Events Table, and helper functions
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
@@ -544,20 +551,20 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   INSERT INTO raw_audit_event(bucket, job,
                                audit_id, stage,
                                event_verb, request_uri,
-                               operation_id,
+                               -- operation_id,
                                data)
   SELECT '${bucket}', '${job}',
          (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
          (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
-         ops.operation_id,
+         -- ops.operation_id,
          raw.data 
     FROM raw_audit_event_import raw
            -- FIXME: this join is necesary, but expensive
            -- https://github.com/cncf/apisnoopregexp is an alterative approach
            LEFT JOIN api_operation_material ops ON
-             ops.raw_swagger_id = 1
-               AND raw.data ->> 'verb' = ANY(ops.event_verb)
-               AND raw.data ->> 'requestURI' ~ ops.regex;
+           --  ops.raw_swagger_id = 1
+           --    AND raw.data ->> 'verb' = ANY(ops.event_verb)
+           --    AND raw.data ->> 'requestURI' ~ ops.regex;
           """).substitute(
               audit_logfile = combined_log_file,
               bucket = bucket,
@@ -858,7 +865,7 @@ order by conf_hits, e2e_hits, other_hits;
       #image: hasura/graphql-engine:v1.0.0-beta.3
       # append '.cli-migrations' to auto run 'hasura migrations apply'
       container_name: "${USER}-hasura"
-      image: hasura/graphql-engine:v1.0.0-beta.4.cli-migrations
+      image: hasura/graphql-engine:v1.0.0-beta.4 #.cli-migrations
       restart: always
       networks:
         - web
@@ -886,33 +893,8 @@ order by conf_hits, e2e_hits, other_hits;
     web:
       external: true
 #+END_SRC
+
 * FOOTNOTES
-** regex matcher
-*** apisnoopregex
-#+BEGIN_SRC  shell
-  cd ~hh/ii/apisnoopregexp
-  make rmatch ; CONN="host=172.17.0.1 user=$USER dbname=$USER password=''" ./rmatch
-#+END_SRC
-
-*** TODO bulk updater in sqlpseudo code
-#+BEGIN_SRC sql-mode
-  -- find all api_operation.regex
-  select distinct regex from api_operation;
-  -- find all audit_event.request_uri
-  select distinct request_uri from raw_audit_event where operation_id is null;
-  -- find all event_verbs for each audit_event.request_uri
-  select distinct event_verb from raw_audit_event where operation_id is null and request_uri = $1;
-  -- find the operation_id by searching the api_aperations just once per verb/uri combo
-  -- update the entire set of uri+verb to the right operation at once
-  update raw_audit_event set operation_id = $1 where request_uri = $2 and event_verb = $3;
-#+END_SRC
-*** TODO on injection
-#+BEGIN_SRC sql-mode
-  -- look up url+verb => operation in url_verb_operation table
-  -- query once to retrieve
-  -- update url_verb_operation table
-#+END_SRC
-
 ** Iteration Loop
 *** listing tables
  #+BEGIN_SRC sql-mode
@@ -924,6 +906,28 @@ order by conf_hits, e2e_hits, other_hits;
  #+begin_src sql-mode
  You are connected to database "hh" as user "hh" on host "172.17.0.1" at port "5432".
  SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
+                                           List of relations
+    Schema   |               Name               |       Type        | Owner |    Size    | Description 
+ ------------+----------------------------------+-------------------+-------+------------+-------------
+  pg_temp_16 | url_to_path                      | table             | hh    | 8776 kB    | 
+  public     | api_operation                    | view              | hh    | 0 bytes    | 
+  public     | api_operation_material           | materialized view | hh    | 1728 kB    | 
+  public     | api_operation_parameter          | view              | hh    | 0 bytes    | 
+  public     | api_operation_parameter_material | materialized view | hh    | 8192 bytes | 
+  public     | api_operation_response           | view              | hh    | 0 bytes    | 
+  public     | api_schema                       | view              | hh    | 0 bytes    | 
+  public     | api_schema_field                 | view              | hh    | 0 bytes    | 
+  public     | api_swagger                      | table             | hh    | 1800 kB    | 
+  public     | api_swagger_id_seq               | sequence          | hh    | 8192 bytes | 
+  public     | audit_event                      | view              | hh    | 0 bytes    | 
+  public     | over                             | view              | hh    | 0 bytes    | 
+  public     | podspec_field_coverage           | view              | hh    | 0 bytes    | 
+  public     | podspec_field_coverage_material  | materialized view | hh    | 8192 bytes | 
+  public     | podspec_field_summary            | view              | hh    | 0 bytes    | 
+  public     | raw_audit_event                  | table             | hh    | 528 MB     | 
+  public     | verb_url_op                      | table             | hh    | 24 MB      | 
+ (17 rows)
+
  #+end_src
 
 *** dropping all data
@@ -957,13 +961,10 @@ order by conf_hits, e2e_hits, other_hits;
       SOCKETFILE=$(ls /tmp/emacs$(id -u)/server* | head -1)
       docker-compose down -t 0 \
        && docker-compose rm \
-       && echo 'drop table api_swagger cascade; \
-                drop table raw_audit_event cascade; \
-                drop schema hdb_views cascade; \
-                drop schema hdb_catalog cascade;' | psql \
-       &&  rm migrations/* \
+       && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
+       && rm migrations/* \
        && emacsclient -s $SOCKETFILE -e "(org-babel-tangle-file \"~/ii/apisnoop_v3/org/meta.org\")" \
-       && docker-compose up
+       && docker-compose up -d
        # cd ~hh/ii/apisnoopregexp
        # make rmatch ; CONN="host=172.17.0.1 user=$USER dbname=$USER password=''" ./rmatch
     #+END_SRC

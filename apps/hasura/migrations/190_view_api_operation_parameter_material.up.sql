@@ -3,8 +3,8 @@
 -- #+NAME: api_operation_parameter_material view
 
 CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS 
-  SELECT (param.entry ->> 'name'::text) AS name,
-         (param.entry ->> 'in'::text) AS "in",
+  SELECT api_operation_material.operation_id,
+         (param.entry ->> 'name'::text) AS name,
          -- for resource:
          -- if param is body in body, take its $ref from its schema
          -- otherwise, take its type
@@ -24,9 +24,9 @@ CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS
          WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
          ELSE false
          END AS unique_items,
+         (param.entry ->> 'in'::text) AS "in",
          api_operation_material.raw_swagger_id,
-         param.entry as entry,
-         api_operation_material.operation_id
+         param.entry as entry
     FROM api_operation_material
          , jsonb_array_elements(api_operation_material.parameters) WITH ORDINALITY param(entry, index)
           WHERE api_operation_material.parameters IS NOT NULL;

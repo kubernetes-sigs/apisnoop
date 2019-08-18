@@ -26,23 +26,10 @@ reset role;
 -- #+NAME: api_operation_material
 
 CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
-  SELECT api_swagger.id AS raw_swagger_id,
-         paths.key AS path,
-         regex_from_path(paths.key) as regex,
-         d.key AS http_method,
-         (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
-         (d.value ->> 'operationId'::text) AS operation_id,
-         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-         (d.value ->> 'description'::text) AS description,
-         (d.value -> 'consumes'::text)::jsonb AS consumes,
-         (d.value -> 'responses'::text)::jsonb AS responses,
-         (d.value -> 'parameters'::text)::jsonb AS parameters,
+  SELECT (d.value ->> 'operationId'::text) AS operation_id,
          (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
-         split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
-         string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
-         string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
+         (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+         d.key AS http_method,
          CASE
           WHEN (d.value ->> 'x-kubernetes-action'::text) = 'get' THEN ARRAY ['get']
           WHEN (d.value ->> 'x-kubernetes-action'::text) =  'list' THEN ARRAY [ 'list' ]
@@ -54,7 +41,20 @@ CREATE MATERIALIZED VIEW "public"."api_operation_material" AS
           WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch' THEN ARRAY [ 'patch' ]
           WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN ARRAY [ 'connect' ]
          ELSE NULL
-           END as event_verb
+           END as event_verb,
+         paths.key AS path,
+         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+         (d.value ->> 'description'::text) AS description,
+         (d.value -> 'consumes'::text)::jsonb AS consumes,
+         (d.value -> 'responses'::text)::jsonb AS responses,
+         (d.value -> 'parameters'::text)::jsonb AS parameters,
+         split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+         string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
+         string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
+         regex_from_path(paths.key) as regex,
+         api_swagger.id AS raw_swagger_id
     FROM api_swagger
     , jsonb_each((api_swagger.data -> 'paths'::text)) paths(key, value)
     , jsonb_each(paths.value) d(key, value)

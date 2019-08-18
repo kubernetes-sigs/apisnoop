@@ -14,7 +14,7 @@ CREATE OR REPLACE VIEW "public"."over" AS
     r.k8s_kind,
     rf.resource_field,
     rf.param_type,
-    rf.param_kind,
+    rf.field_kind,
     rf.description,
     rf.format,
     rf.merge_key,

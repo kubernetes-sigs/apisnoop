@@ -1,0 +1,118 @@
+
+* regex matcher
+** apisnoopregex
+#+BEGIN_SRC  shell
+  cd ~hh/ii/apisnoopregexp
+  make rmatch ; CONN="host=172.17.0.1 user=$USER dbname=$USER password=''" ./rmatch
+#+END_SRC
+** bulk updater
+#+NAME: psudocode
+#+BEGIN_SRC sql-mode
+  -- find all api_operation.regex
+  select distinct regex from api_operation;
+  -- find all audit_event.request_uri
+  select distinct request_uri from raw_audit_event where operation_id is null;
+  -- find all event_verbs for each audit_event.request_uri
+  select distinct event_verb from raw_audit_event where operation_id is null and request_uri = $1;
+  -- find the operation_id by searching the api_operations just once per verb/uri combo
+  -- update the entire set of uri+verb to the right operation at once
+  update raw_audit_event set operation_id = $1
+    where request_uri = $2 and event_verb = $3;
+#+END_SRC
+*** verb_url_op table
+#+NAME: verb_url_op table
+#+BEGIN_SRC sql-mode
+        CREATE UNLOGGED TABLE verb_url_op (verb text, url text, operation text);
+        CREATE INDEX verb_url_op_verb      ON verb_url_op (verb);
+        CREATE INDEX verb_url_op_url_gist  ON verb_url_op USING GIST (url gist_trgm_ops);
+        CREATE INDEX verb_url_op_url_gin   ON verb_url_op USING GIN  (url  gin_trgm_ops);
+        insert into verb_url_op(verb, url) select distinct event_verb, request_uri from raw_audit_event;
+#+END_SRC
+*** verb_url_op update function
+It takes ~30 seconds
+#+NAME: update_event_verb_url_op()
+#+BEGIN_SRC sql-mode
+  CREATE OR REPLACE FUNCTION update_verb_url_op() RETURNS text AS $$
+  DECLARE
+    api_method text;
+    op record;
+  BEGIN
+    FOR api_method in select distinct http_method as api_method
+      from api_operation ORDER BY api_method
+    LOOP
+      FOR op in
+        select distinct operation_id as id,
+        regex,
+        k8s_action,
+        api_method as method,
+        char_length(regex) as regex_length
+        from api_operation
+        where http_method = api_method
+        order by regex_length desc, id
+      LOOP
+        RAISE NOTICE '% - % - %', op.method, op.id, op.regex;
+        update verb_url_op set operation = op.id
+         where url ~ op.regex
+               and (api_method = op.k8s_action
+               or op.method = CASE
+               WHEN verb = 'get' OR verb = 'list' OR verb = 'proxy' THEN 'get'
+               WHEN verb = 'deletecollection' OR verb = 'delete' THEN 'delete'
+               WHEN verb = 'watch' OR verb = 'watchlist' THEN 'watch'
+               WHEN verb = 'create' THEN 'post'
+               WHEN verb = 'update' THEN 'put'
+               WHEN verb = 'patch' THEN 'patch'
+               ELSE null);
+      END LOOP;
+    END LOOP;
+    return 'Success';
+  END;
+  $$ LANGUAGE plpgsql ;
+#+END_SRC
+*** update_raw_audit_event()
+This takes..... forever
+#+NAME: update_raw_audit_event()
+#+BEGIN_SRC sql-mode :results silent
+  CREATE OR REPLACE FUNCTION update_raw_audit_event() RETURNS text AS $$
+  DECLARE
+    map record;
+  BEGIN
+    FOR map in select verb, url, operation
+      from verb_url_op order by operation
+    LOOP
+      RAISE NOTICE '% - % - %', map.operation, map.verb, map.url;
+      update raw_audit_event set operation_id = map.operation
+       where request_uri = map.url and event_verb = map.verb;
+    END LOOP;
+    return 'Success';
+  END;
+  $$ LANGUAGE plpgsql ;
+#+END_SRC
+
+*** verb_url_op oddities that don't seem to match
+#+NAME: verb + urls that don't seem to match
+#+BEGIN_SRC sql-mode
+select distinct verb, url from verb_url_op where
+operation is null
+and verb not like 'watch' 
+and url not like '%exec%'
+and url not like '%attach%' 
+and url not like '%portforward%' 
+and url not like '%snapshot%' 
+and url not like '%proxy%' 
+and url not like '%wardle%' 
+and url not like '%kope%' 
+and url not like '%example.com%'
+and url not like '%crd-test%' 
+and url not like '%crd-publish-openapi-test%' 
+order by verb, url;
+#+END_SRC
+
+** TODO insert trigger
+
+Not great for bulk data, but necessary if we want a realtime dashboard / something live in a cluster
+
+#+BEGIN_SRC sql-mode
+  -- look up url+verb => operation in url_verb_operation table
+  -- query once to retrieve
+  -- update url_verb_operation table
+#+END_SRC

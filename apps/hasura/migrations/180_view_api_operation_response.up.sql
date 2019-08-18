@@ -2,7 +2,8 @@
 --  #+NAME: Responses View
 
 CREATE OR REPLACE VIEW "public"."api_operation_response" AS 
-  SELECT d.key AS code,
+  SELECT api_operation.operation_id,
+         d.key AS code,
          (d.value ->> 'description'::text) AS description,
          replace(
            CASE
@@ -12,7 +13,6 @@ CREATE OR REPLACE VIEW "public"."api_operation_response" AS
              THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
            ELSE NULL::text
            END, '#/definitions/','') AS resource,
-           api_operation.operation_id,
            api_operation.raw_swagger_id
     FROM (api_operation
           JOIN LATERAL jsonb_each(api_operation.responses) d(key, value) ON (true))
