@@ -324,29 +324,56 @@ Using our api_operation_material view, look into the parameters field in each on
 *** Create
 #+NAME: api_schema_field view
 #+BEGIN_SRC sql-mode 
-  CREATE VIEW "public"."api_schema_field" AS 
+  CREATE OR REPLACE VIEW "public"."api_schema_field" AS 
     SELECT api_schema.name as api_resource_name,
            d.key AS resource_field,
            replace(
              CASE
-             WHEN ((d.value ->> 'type'::text) = 'string'::text) THEN 'string'::text
-             WHEN ((d.value ->> 'type'::text) IS NULL) THEN (d.value ->> '$ref'::text)
-             WHEN ((d.value ->> 'type'::text) = 'array'::text)
-              AND ((d.value -> 'items'::text) ->> 'type'::text) IS NULL
-               THEN ((d.value -> 'items'::text) ->> '$ref'::text)
-             WHEN ((d.value ->> 'type'::text) = 'array'::text)
-              AND ((d.value -> 'items'::text) ->> '$ref'::text) IS NULL
-               THEN ((d.value -> 'items'::text) ->> 'type'::text)
+             WHEN d.value->>'type' = 'string' THEN 'string'
+             WHEN d.value->>'type' IS NULL THEN d.value->>'$ref'
+             WHEN d.value->>'type' = 'array'
+              AND d.value->'items'->> 'type' IS NULL
+               THEN d.value->'items'->>'$ref'
+             WHEN d.value->>'type' = 'array'
+              AND d.value->'items'->>'$ref' IS NULL
+               THEN d.value->'items'->>'type'
              ELSE 'integer'::text
              END, '#/definitions/','') AS field_kind,
-           (d.value ->> 'description'::text) AS description,
+           d.value->>'description' AS description,
            CASE
-           WHEN ((d.value ->> 'type'::text) IS NULL) THEN 'subtype'::text
-           ELSE (d.value ->> 'type'::text)
+           WHEN (   d.value->>'description' ilike '%This field is alpha-level%'
+                 or d.value->>'description' ilike '%This is an alpha field%'
+                 or d.value->>'description' ilike '%This is an alpha feature%') THEN 'alpha'
+           WHEN (   d.value->>'description' ilike '%This field is beta-level%'
+                 or d.value->>'description' ilike '%This field is beta%'
+                 or d.value->>'description' ilike '%This is a beta feature%'
+                 or d.value->>'description' ilike '%This is an beta feature%'
+                 or d.value->>'description' ilike '%This is an beta field%') THEN 'beta'
+           ELSE 'ga'
+             END AS release,
+           CASE
+           WHEN  d.value->>'description' ilike '%deprecated%' THEN true
+            ELSE false
+            END AS deprecated,
+           CASE
+           WHEN ( d.value->>'description' ilike '%requires the % feature gate to be enabled%'
+                 or d.value->>'description' ilike '%depends on the % feature gate being enabled%'
+                 or d.value->>'description' ilike '%requires the % feature flag to be enabled%'
+                 or d.value->>'description' ilike '%honored if the API server enables the % feature gate%'
+                 or d.value->>'description' ilike '%honored by servers that enable the % feature%'
+                 or d.value->>'description' ilike '%requires enabling % feature gate%'
+                 or d.value->>'description' ilike '%honored by clusters that enables the % feature%'
+                 or d.value->>'description' ilike '%only if the % feature gate is enabled%'
+                 ) THEN true
+           ELSE false
+             END AS feature_gated,
+           CASE
+           WHEN d.value->>'type' IS NULL THEN 'subtype'
+           ELSE d.value->>'type'
              END AS param_type,
-           (d.value ->> 'format'::text) AS format,
-           (d.value ->> 'x-kubernetes-patch-merge-key'::text) AS merge_key,
-           (d.value ->> 'x-kubernetes-patch-strategy'::text) AS patch_strategy,
+           d.value->>'format' AS format,
+           d.value->>'x-kubernetes-patch-merge-key' AS merge_key,
+           d.value->>'x-kubernetes-patch-strategy' AS patch_strategy,
            api_schema.raw_swagger_id,
            d.value
       FROM (api_schema
@@ -558,10 +585,10 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
          (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
          -- ops.operation_id,
          raw.data 
-    FROM raw_audit_event_import raw
+    FROM raw_audit_event_import raw;
            -- FIXME: this join is necesary, but expensive
            -- https://github.com/cncf/apisnoopregexp is an alterative approach
-           LEFT JOIN api_operation_material ops ON
+           -- LEFT JOIN api_operation_material ops ON
            --  ops.raw_swagger_id = 1
            --    AND raw.data ->> 'verb' = ANY(ops.event_verb)
            --    AND raw.data ->> 'requestURI' ~ ops.regex;
@@ -959,14 +986,19 @@ order by conf_hits, e2e_hits, other_hits;
       echo docker down, drop sql, rm migrations
       # For tangling via cli:
       SOCKETFILE=$(ls /tmp/emacs$(id -u)/server* | head -1)
-      docker-compose down -t 0 \
+      cd ~/ii/apisnoop_v3/apps/$USER-hasura \
+       && docker-compose down -t 0 \
        && docker-compose rm \
        && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
        && rm migrations/* \
        && emacsclient -s $SOCKETFILE -e "(org-babel-tangle-file \"~/ii/apisnoop_v3/org/meta.org\")" \
-       && docker-compose up -d
-       # cd ~hh/ii/apisnoopregexp
-       # make rmatch ; CONN="host=172.17.0.1 user=$USER dbname=$USER password=''" ./rmatch
+       && docker-compose up -d \
+       && sleep 2 \
+       && hasura migrate apply --log-level DEBUG \
+       && cd ~hh/ii/apisnoopregexp \
+       && make rmatch \
+       && CONN="host=172.17.0.1 user=$USER dbname=$USER password=''" ./rmatch
+       # select count(*) from raw_audit_event where operation_id is null; \watch 2
     #+END_SRC
 
     #+RESULTS: iteration loop

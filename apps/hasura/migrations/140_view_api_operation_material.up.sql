@@ -27,8 +27,8 @@ reset role;
 
 CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
   SELECT (d.value ->> 'operationId'::text) AS operation_id,
-         (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
          (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
          d.key AS http_method,
          CASE
           WHEN (d.value ->> 'x-kubernetes-action'::text) = 'get' THEN ARRAY ['get']
@@ -45,7 +45,7 @@ CREATE MATERIALIZED VIEW "public"."api_operation_material" AS
          paths.key AS path,
          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+         (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
          (d.value ->> 'description'::text) AS description,
          (d.value -> 'consumes'::text)::jsonb AS consumes,
          (d.value -> 'responses'::text)::jsonb AS responses,

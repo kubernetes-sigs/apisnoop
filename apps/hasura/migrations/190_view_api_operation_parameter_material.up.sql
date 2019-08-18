@@ -15,11 +15,11 @@ CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS
              THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
            ELSE (param.entry ->> 'type'::text)
            END, '#/definitions/','') AS resource,
-         (param.entry ->> 'description'::text) AS description,
          CASE
          WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
          ELSE false
           END AS required,
+         (param.entry ->> 'description'::text) AS description,
          CASE
          WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
          ELSE false

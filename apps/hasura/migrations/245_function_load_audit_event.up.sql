@@ -99,10 +99,10 @@ SELECT '${bucket}', '${job}',
        (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
        -- ops.operation_id,
        raw.data 
-  FROM raw_audit_event_import raw
+  FROM raw_audit_event_import raw;
          -- FIXME: this join is necesary, but expensive
          -- https://github.com/cncf/apisnoopregexp is an alterative approach
-         LEFT JOIN api_operation_material ops ON
+         -- LEFT JOIN api_operation_material ops ON
          --  ops.raw_swagger_id = 1
          --    AND raw.data ->> 'verb' = ANY(ops.event_verb)
          --    AND raw.data ->> 'requestURI' ~ ops.regex;
