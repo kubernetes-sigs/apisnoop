@@ -675,6 +675,48 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
                raw.data as data
         FROM raw_audit_event raw;
     #+END_SRC
+* Field Coverage
+  :PROPERTIES:
+  :header-args:sql-mode+: :results silent
+  :END:
+** 400: kind_field_path recursive view
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/400_view_kind_field_path.up.sql
+  :END:
+
+#+NAME: Recursive kind_field_path view
+#+BEGIN_SRC sql-mode
+  drop view kind_field_path;
+  create or replace recursive view kind_field_path(
+    kind,
+    field_path,
+    field_kind,
+    field_type,
+    sub_kind
+  ) AS
+   SELECT DISTINCT
+   sf.field_schema AS kind,
+   sf.field_name AS field_path, -- this becomes a path
+   sf.field_kind AS field_kind,
+   sf.field_type AS field_type,
+   sf.field_schema AS sub_kind -- this is the kind at this level
+   from api_schema_field sf
+   UNION
+   SELECT
+    kfp.kind AS kind,
+    ( kfp.field_path || '.' || f.field_name ) AS field_path,
+    f.field_kind AS field_kind,
+    f.field_type AS field_type,
+    CASE
+    WHEN f.field_kind = 'string' OR f.field_kind = 'integer' THEN f.field_schema
+    ELSE f.field_kind
+     END as sub_kind
+    FROM api_schema_field f
+    INNER JOIN kind_field_path kfp ON
+    f.field_schema = kfp.field_kind
+    AND f.field_kind not like 'io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.%.JSONSchemaProps';
+    ;
+#+END_SRC
 * PodSpec Field Coverage
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
