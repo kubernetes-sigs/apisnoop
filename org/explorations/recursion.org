@@ -1,7 +1,7 @@
 #+TITLE: Finding the path all your children took
 
 * What we want
-
+  
 FooObjectContainingPodSpecSchema.fieldX.fieldY.fieldZ => PodSpec
 BarObjectContainingPodSpecSchema.fieldA.fieldB => PodSpec
 
@@ -703,26 +703,38 @@ api_resource_name -> resource_field -> param_kind
 ** Layout
 #+NAME: api_resources_fields layout
 #+BEGIN_SRC sql-mode :eval never-export
-\d api_resources_fields;
+\d api_schema_field;
 #+END_SRC
 
 #+RESULTS: api_resources_fields layout
 #+begin_src sql-mode
-              View "public.api_resources_fields"
-      Column       |  Type   | Collation | Nullable | Default 
--------------------+---------+-----------+----------+---------
- api_resource_name | text    |           |          | 
- raw_swagger_id    | integer |           |          | 
- resource_field    | text    |           |          | 
- param_type        | text    |           |          | 
- param_kind        | text    |           |          | 
- description       | text    |           |          | 
- format            | text    |           |          | 
- merge_key         | text    |           |          | 
- patch_strategy    | text    |           |          | 
- value             | jsonb   |           |          | 
+              View "public.api_schema_field"
+     Column     |  Type   | Collation | Nullable | Default 
+----------------+---------+-----------+----------+---------
+ field_schema   | text    | PARENT          |          | 
+ field_name     | text    | CHILD NAME          |          | 
+ field_kind     | text    | CHILD TYPE          |          | 
+ field_type     | text    |    array       |          | 
+ description    | text    |           |          | 
+ release        | text    |           |          | 
+ deprecated     | boolean |           |          | 
+ feature_gated  | boolean |           |          | 
+ format         | text    |           |          | 
+ merge_key      | text    |           |          | 
+ patch_strategy | text    |           |          | 
+ raw_swagger_id | integer |           |          | 
+ value          | jsonb   |           |          | 
 
 #+end_src
+
+starting with parant X
+Keep track of the full path name of each child (spec.pod.X)
+Keep track of the type of each child (int,string,io.k8s*)
+
+OP->parameter.body->schema_name(parent)->fields(named child_schemas)
+OP BODY(schema) field_path field_schema
+OPX, PodSpec, spec
+
 ** Advanced WITH queries
 https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-SELECT
 #+BEGIN_SRC sql-mode
@@ -2718,7 +2730,6 @@ select api_resource_name, resource_field, param_kind from api_resources_fields
 \d+ api_operations_material
 
 #+END_SRC
-H* foo
 
 #+RESULTS:
 #+begin_src sql-mode
@@ -2800,6 +2811,7 @@ View definition:
 
 #+end_s
 * Zach's Understanding
+** first
 - What is the question we are answering, in as few of words as possible? "What are the unused fields?"
   - the q we tried to answer was 'what are the unused podspec fields?'
   - field | used?
@@ -2811,25 +2823,205 @@ View definition:
 - OP.body.fieldB -> text
 
   -t we can't get this without knowin
- | op_id | path                          | schema    | hit_per_audit_entry |
- |-------+-------------------------------+-----------+---------------------|
- | Foo   | {'spec'}                      | PodSpec   |                   1 |
- | Foo   | {'spec','container'}          | Container |                   1 |
- | Foo   | {'spec','container','ip'}     | text      |                   1 |
- | Foo   | {'spec','container','port'}   | int       |                   1 |
- | Foo   | {'spec','container','othera'} | PodOther  |                   1 |
- | Foo   | {'spec','container','otherb'} | PodOther  |                   1 |
- | Foo   | {'a','b','d'}                 | int       |                     |
- | Foo   |                               |           |                     |
- | Foo   |                               |           |                     |
- | Foo   |                               |           |                     |
- | Foo   |                               |           |                     |
- | Foo   |                               |           |                     |
+# Op Path to int/text Value (on the wire)
+ | ( op_id | op_body)     | path( | int/text | hit_per_audit_entry |
+ |---------+--------------+-------+--------------+---------------------|
+ | FooOp   | ParentSchema | a     | int          |                   1 |
+ | FooOp   | ParentSchema | b     | int          |                   1 |
+ | FooOp   | ParentSchema | d     | int          |                   1 |
+ | FooOp   | ParentSchema | c/a   | int          |                   1 |
+ | FooOp   | ParentSchema | c/b   | int          |                   1 |
+ | FooOp   | ParentSchema | c/c/b | int          |                   1 |
+
+# Op Path To Schema 
+ | ( op_id | op_body)     | path( | i schema     | hit_per_audit_entry |
+ | FooOp   | ParentSchema | c/    | Child1Schema |                   1 |
+ | FooOp   | ParentSchema | e/    | Child1Schema |                   1 |
+ | FooOp   | ParentSchema | c/c/  | Child2Schema |                   1 |
 
 select * from audit_events where event.parameter.request_object.spec.container.ip where schema = PodSpec;
 
 select sum(hit) from audit_events_schema_summary where schema = PodSpec;
  
+** Second
+  if we have a op_id with the param 'Container', which is a schema.  So we wanna look at its children.
+  path= {Container}
+  Schema(Container), path=field1 
+* Exploring Recursion
+  
+  My, perhaps naive, assumption around the path is that a Schema will have many fields, some of which are sub-types that are _also_ schemas.  These schemas will then have many fields, including some that are schemas, etc.
+
+Another description is we want to go from left to right, and so if we have a left column of field_schema, and a right column of field_name...then to go from left to right would be to make field_name the new field_schema, and see which fields and field_names are returned.
+
+However, I am not successful in doing this.
+
+For example, I'll look at the first 10 results of our api_schema_field view
+#+NAME: initial query  
+#+BEGIN_SRC sql-mode
+select field_schema, field_kind from api_schema_field limit 10;
+#+END_SRC
+
+#+RESULTS: initial query
+#+begin_src sql-mode
+                  field_schema                   |                     field_kind                      
+-------------------------------------------------+-----------------------------------------------------
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | io.k8s.api.policy.v1beta1.FSGroupStrategyOptions
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | integer
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | integer
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | io.k8s.api.policy.v1beta1.SELinuxStrategyOptions
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | string
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | io.k8s.api.policy.v1beta1.HostPortRange
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | io.k8s.api.policy.v1beta1.RunAsUserStrategyOptions
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | integer
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | io.k8s.api.policy.v1beta1.RunAsGroupStrategyOptions
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | integer
+(10 rows)
+#+end_src
+
+The top result shows a field_kind of =io.k8s.api.policy.v1beta1.FSGroupStrategyOptions=.  This is a subtype, whose value includes a =$ref= of =#/definition/io.k8s.api.policy.v1beta1.FSGroupStrategyOptions=
+
+This makes me think that I could look in the same view for those whose field_schema included the term FSGroup.
+
+This returns 0 results though.
+
+#+NAME: FSGroup as a Schema
+#+BEGIN_SRC sql-mode
+select field_schema, field_kind from api_schema_field where field_schema ilike '%fsgroup%';
+#+END_SRC
+
+#+RESULTS: FSGroup as a Schema
+#+begin_src sql-mode
+ field_schema | field_kind 
+--------------+------------
+(0 rows)
+
+#+end_src
+
+In this example, I can refernece the k8s docs and see that the term does relate to a schema of some sort.
+
+Here is our initial PodSecurityPolicy Spec in the k8s api reference docs:
+https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.10/#podsecuritypolicy-v1beta1-policy
+If you scroll down to its fields, you'll see fsgroup and below the field's name is a link to its own schema definition here:
+https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.10/#fsgroupstrategyoptions-v1beta1-extensions
+
+This then contains two fields, neither of which are subtypes.
+
+If I can follow this path in the docs, i'd think i could follow it in the raw source.  But I am either:
+- using an edge case example without realizing it.
+- misunderstanding the connection between the docs/schemas + fields/our work.
+- using views that have missing values (perhaps through a badly formed join).
+
+This is important because if I can find the connection to move a right column to a left column, then I can do a recursive view in postgres...where we just make a recursive union where one schema's field_kind is another field_kind's schema, similar to the manager to employee logic of this tutorial:
+http://www.postgresqltutorial.com/postgresql-recursive-view/
+
+I can try another selection, running the query but excluding fsgroup
+
+#+NAME: fields other than fsgroup
+#+BEGIN_SRC sql-mode
+select field_schema, field_name, field_kind from api_schema_field where field_name NOT ILIKE '%fsgroup%' limit 10;
+#+END_SRC
+
+#+RESULTS: fields other than fsgroup
+#+begin_src sql-mode
+                  field_schema                   |  field_name  |                      field_kind                       
+-------------------------------------------------+--------------+-------------------------------------------------------
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | hostIPC      | integer
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | hostPID      | integer
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | seLinux      | io.k8s.api.policy.v1beta1.SELinuxStrategyOptions
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | volumes      | string
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | hostPorts    | io.k8s.api.policy.v1beta1.HostPortRange
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | runAsUser    | io.k8s.api.policy.v1beta1.RunAsUserStrategyOptions
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | privileged   | integer
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | runAsGroup   | io.k8s.api.policy.v1beta1.RunAsGroupStrategyOptions
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | hostNetwork  | integer
+ io.k8s.api.policy.v1beta1.PodSecurityPolicySpec | runtimeClass | io.k8s.api.policy.v1beta1.RuntimeClassStrategyOptions
+(10 rows)
+#+end_src
+
+From this, we have our new hostPorts name...which makes me wanna find schemas that contain hostPorts
+
+#+NAME: schemas with hostports
+#+BEGIN_SRC sql-mode
+select field_schema, field_kind 
+from api_schema_field 
+where field_schema = 'io.k8s.api.policy.v1beta1.HostPortRange'; 
+#+END_SRC
+
+#+RESULTS: schemas with hostports
+#+begin_src sql-mode
+              field_schema               | field_kind 
+-----------------------------------------+------------
+ io.k8s.api.policy.v1beta1.HostPortRange | integer
+ io.k8s.api.policy.v1beta1.HostPortRange | integer
+(2 rows)
+
+#+end_src
+
+Success! /but what does it mean?/
+
+#+NAME: Query from Tutorial
+#+BEGIN_SRC sql-mode
+  WITH RECURSIVE reporting_line AS (
+     SELECT
+        employee_id,
+        full_name AS subordinates
+     FROM
+        employees
+     WHERE
+        manager_id IS NULL
+     UNION ALL
+        SELECT
+           e.employee_id,
+           (
+              rl.subordinates || ' > ' || e.full_name
+           ) AS subordinates
+        FROM
+           employees e
+        INNER JOIN reporting_line rl ON e.manager_id = rl.employee_id
+  ) SELECT
+     employee_id,
+     subordinates
+  FROM
+     reporting_line
+  ORDER BY
+     employee_id; 
+#+END_SRC
+
+This isn't right, but it's a start to make sure it's a properly formed query.
+So we don't get any errors on this, but it just hangs forever.
+
+My logic is to do a recursive view, starting with all records whose field_kind contains 'io'.  
+Then we do a union with all records whose schema = this subtype, generating a full_path tree from it.
+It's largely the same logic as the working example above, but wiht more values.  
+
+I let the query run for about 5 minutes before stopping.  This should not take _that_ long I don't think, so there must be some circle here I'm not seeing.  I think the recursive view requires a non-recursive start or clear break, as it must be in a loop.  I'd expect it to return a null value if my logic was wrong, or 0 results, but not to hang.
+
+#+NAME: Beginning of our query
+#+BEGIN_SRC sql-mode
+  WITH RECURSIVE schema_paths AS (
+    SELECT field_name, field_schema, field_kind as full_path
+      FROM api_schema_field
+     WHERE field_type = 'subtype'
+     UNION ALL
+    SELECT
+      asf.field_name,
+      asf.field_kind,
+      asf.field_schema,
+      (
+        sp.full_path || ' > ' || asf.field_kind
+      ) AS full_path
+      FROM api_schema_field asf
+             INNER JOIN schema_paths sp on asf.field_schema = sp.field_kind
+  ) SELECT
+      field_name,
+      full_path
+      FROM schema_paths
+     ORDER BY
+       field_name
+     LIMIT 50;
+#+END_SRC
+
+
 * FOOTNOTES
 # Local Variables:
 # eval: (sql-connect "hasura" (concat "*SQL: postgres:data*"))
