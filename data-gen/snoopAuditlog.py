@@ -231,7 +231,7 @@ def main():
   minor = semver.split('.')[1]
 
   # Pulling in minor from artifacts/metadata.json
-  if minor == '16':
+  if minor == '17':
     branch_or_tag = metadata["revision"].split("+")[1]
   else:
     branch_or_tag = "release-" + major + "." + minor
