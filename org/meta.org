@@ -683,40 +683,96 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/400_view_kind_field_path.up.sql
   :END:
-
+*** kind_field_path_recursion
 #+NAME: Recursive kind_field_path view
 #+BEGIN_SRC sql-mode
-  drop view kind_field_path;
-  create or replace recursive view kind_field_path(
+  create or replace recursive view kind_field_path_recursion(
     kind,
     field_path,
     field_kind,
     field_type,
-    sub_kind
+    sub_kind,
+    release,
+    deprecated,
+    gated
   ) AS
    SELECT DISTINCT
    sf.field_schema AS kind,
    sf.field_name AS field_path, -- this becomes a path
    sf.field_kind AS field_kind,
    sf.field_type AS field_type,
-   sf.field_schema AS sub_kind -- this is the kind at this level
+   sf.field_schema AS sub_kind, -- this is the kind at this level
+   sf.release AS release,
+   sf.deprecated AS deprecated, 
+   sf.feature_gated AS feature_gated
    from api_schema_field sf
    UNION
    SELECT
-    kfp.kind AS kind,
-    ( kfp.field_path || '.' || f.field_name ) AS field_path,
+    kfpr.kind AS kind,
+    ( kfpr.field_path || '.' || f.field_name ) AS field_path,
     f.field_kind AS field_kind,
     f.field_type AS field_type,
     CASE
     WHEN f.field_kind = 'string' OR f.field_kind = 'integer' THEN f.field_schema
     ELSE f.field_kind
-     END as sub_kind
+     END as sub_kind,
+    f.release AS release,
+    f.deprecated AS deprecated,
+    f.feature_gated AS feature_gated
     FROM api_schema_field f
-    INNER JOIN kind_field_path kfp ON
-    f.field_schema = kfp.field_kind
+    INNER JOIN kind_field_path_recursion kfpr ON
+    f.field_schema = kfpr.field_kind
     AND f.field_kind not like 'io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.%.JSONSchemaProps';
-    ;
+  ;
 #+END_SRC
+
+*** kind_field_path_material
+#+NAME: kind_field_path material
+#+BEGIN_SRC sql-mode
+   create materialized view kind_field_path_material AS
+   select
+     kind,
+     field_path AS field_path,
+     -- (text2ltree(field_path)) AS field_path, -- results in errors for now
+     field_kind AS field_kind,
+     field_type,
+     sub_kind,
+     release,
+     deprecated,
+     gated
+    from kind_field_path_recursion;
+  -- drop materialized view kind_field_path_material cascade;
+#+END_SRC
+*** kind_field_path_material indexes
+#+NAME: kind_field_path_material indexs
+#+BEGIN_SRC sql-mode
+CREATE INDEX kfpm_kind_idx       ON kind_field_path_material (kind);
+CREATE INDEX kfpm_field_path_idx ON kind_field_path_material (field_path);
+CREATE INDEX kfpm_field_type_idx ON kind_field_type_material (field_type);
+CREATE INDEX kfpm_sub_kind_idx   ON kind_field_path_material (sub_kind);
+-- GIST requires ltree
+-- CREATE INDEX kfpm_kind_idx       ON kind_field_path_material USING GIST (kind);
+-- CREATE INDEX kfpm_field_path_idx ON kind_field_path_material USING GIST (field_path);
+-- CREATE INDEX kfpm_field_type_idx ON kind_field_type_material USING GIST (field_type);
+-- CREATE INDEX kfpm_sub_kind_idx   ON kind_field_path_material USING GIST (sub_kind);
+#+END_SRC
+
+*** kind_field_path view
+#+NAME: kind_field_path view
+#+BEGIN_SRC sql-mode
+  create or replace view kind_field_path AS
+  select
+    kind,
+    field_path,
+    field_kind,
+    field_type,
+    sub_kind,
+    release,
+    deprecated,
+    gated
+   from kind_field_path_material where field_kind not like 'io%';
+#+END_SRC
+
 * PodSpec Field Coverage
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
