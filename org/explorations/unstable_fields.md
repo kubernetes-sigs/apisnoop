@@ -4,9 +4,9 @@
 
 # calculating fields<a id="sec-1"></a>
 
--   **required:** checks field exist in required section of schema
--   **deprecated:** description containing 'deprecated' cases insensitive
--   **release:** a very specific description search : alpha, beta, or ga
+-   **required:** <span class="underline">boolean</span> : checks field exist in required section of schema
+-   **deprecated:** <span class="underline">boolean</span> : description containing 'deprecated' cases insensitive
+-   **release:** <span class="underline">alpha, beta, or ga</span> : a very specific description search :
     
     See <https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version>
     
@@ -23,7 +23,7 @@
     ELSE 'ga'
     END AS release,
     ```
--   **feature gated:** a very specific description search : boolean
+-   **feature gated:** <span class="underline">boolean</span> : a very specific description search
     
     ```sql-mode
     CASE
