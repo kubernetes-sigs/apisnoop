@@ -3,7 +3,7 @@
   - [deprecated => description containing 'deprecated' cases insensitive](#sec-1-2)
   - [release => a very specific description search => alpha, beta, or ga](#sec-1-3)
   - [feature<sub>gated</sub> => a very specific description search => boolean](#sec-1-4)
-- [alpha/beta, deprecated and feature<sub>gated</sub> fields](#sec-2)
+- [alpha/beta, deprecated and feature gated fields](#sec-2)
 
 
 # calculating fields<a id="sec-1"></a>
@@ -47,11 +47,91 @@ ELSE false
              END AS feature_gated,
 ```
 
-# alpha/beta, deprecated and feature<sub>gated</sub> fields<a id="sec-2"></a>
+# alpha/beta, deprecated and feature gated fields<a id="sec-2"></a>
+
+-   Is this list complete?
+-   If not is the way we calculate them above incorrect?
+-   With this list, should we try to add metadata to the openapi spec itself?
 
 ```sql-mode
 select  release as rel, required as req, deprecated as depr, feature_gated as feat, field_schema, field_name, field_kind
 from api_schema_field
 where release = 'alpha' or release = 'beta' or deprecated or feature_gated
 order by release, depr, feat, length(field_schema), field_schema, field_name;
+```
+
+```sql-mode
+  rel  | req | depr | feat |                                         field_schema                                          |          field_name           |                                          field_kind                                          
+-------|-----|------|------|-----------------------------------------------------------------------------------------------|-------------------------------|----------------------------------------------------------------------------------------------
+ alpha | f   | f    | f    | io.k8s.api.storage.v1.VolumeAttachmentSource                                                  | inlineVolumeSpec              | io.k8s.api.core.v1.PersistentVolumeSpec
+ alpha | f   | f    | f    | io.k8s.api.storage.v1beta1.VolumeAttachmentSource                                             | inlineVolumeSpec              | io.k8s.api.core.v1.PersistentVolumeSpec
+ alpha | f   | f    | f    | io.k8s.api.storage.v1alpha1.VolumeAttachmentSource                                            | inlineVolumeSpec              | io.k8s.api.core.v1.PersistentVolumeSpec
+ alpha | f   | f    | t    | io.k8s.api.core.v1.PodSpec                                                                    | ephemeralContainers           | io.k8s.api.core.v1.EphemeralContainer
+ alpha | f   | f    | t    | io.k8s.api.core.v1.PodSpec                                                                    | overhead                      | integer
+ alpha | f   | f    | t    | io.k8s.api.core.v1.PodSpec                                                                    | preemptionPolicy              | string
+ alpha | f   | f    | t    | io.k8s.api.core.v1.PodSpec                                                                    | topologySpreadConstraints     | io.k8s.api.core.v1.TopologySpreadConstraint
+ alpha | f   | f    | t    | io.k8s.api.batch.v1.JobSpec                                                                   | ttlSecondsAfterFinished       | integer
+ alpha | f   | f    | t    | io.k8s.api.core.v1.PodStatus                                                                  | ephemeralContainerStatuses    | io.k8s.api.core.v1.ContainerStatus
+ alpha | f   | f    | t    | io.k8s.api.node.v1beta1.RuntimeClass                                                          | overhead                      | io.k8s.api.node.v1beta1.Overhead
+ alpha | f   | f    | t    | io.k8s.api.scheduling.v1.PriorityClass                                                        | preemptionPolicy              | string
+ alpha | f   | f    | t    | io.k8s.api.node.v1alpha1.RuntimeClassSpec                                                     | overhead                      | io.k8s.api.node.v1alpha1.Overhead
+ alpha | f   | f    | t    | io.k8s.api.scheduling.v1beta1.PriorityClass                                                   | preemptionPolicy              | string
+ alpha | f   | f    | t    | io.k8s.api.core.v1.CSIPersistentVolumeSource                                                  | controllerExpandSecretRef     | io.k8s.api.core.v1.SecretReference
+ alpha | f   | f    | t    | io.k8s.api.scheduling.v1alpha1.PriorityClass                                                  | preemptionPolicy              | string
+ alpha | f   | f    | t    | io.k8s.api.policy.v1beta1.PodSecurityPolicySpec                                               | allowedCSIDrivers             | io.k8s.api.policy.v1beta1.AllowedCSIDriver
+ alpha | f   | f    | t    | io.k8s.api.core.v1.WindowsSecurityContextOptions                                              | gmsaCredentialSpec            | string
+ alpha | f   | f    | t    | io.k8s.api.core.v1.WindowsSecurityContextOptions                                              | gmsaCredentialSpecName        | string
+ alpha | f   | f    | t    | io.k8s.api.core.v1.WindowsSecurityContextOptions                                              | runAsUserName                 | string
+ alpha | f   | f    | t    | io.k8s.apimachinery.pkg.apis.meta.v1.APIResource                                              | storageVersionHash            | string
+ alpha | f   | f    | t    | io.k8s.api.extensions.v1beta1.PodSecurityPolicySpec                                           | allowedCSIDrivers             | io.k8s.api.extensions.v1beta1.AllowedCSIDriver
+ alpha | f   | f    | t    | io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceConversion        | webhookClientConfig           | io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.WebhookClientConfig
+ alpha | f   | f    | t    | io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionVersion | additionalPrinterColumns      | io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceColumnDefinition
+ alpha | f   | f    | t    | io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionVersion | schema                        | io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceValidation
+ alpha | f   | f    | t    | io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionVersion | subresources                  | io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceSubresources
+ beta  | f   | f    | f    | io.k8s.api.core.v1.PodSpec                                                                    | runtimeClassName              | string
+ beta  | f   | f    | f    | io.k8s.api.core.v1.PodSpec                                                                    | shareProcessNamespace         | integer
+ beta  | f   | f    | f    | io.k8s.api.core.v1.Container                                                                  | volumeDevices                 | io.k8s.api.core.v1.VolumeDevice
+ beta  | f   | f    | f    | io.k8s.api.core.v1.VolumeMount                                                                | mountPropagation              | string
+ beta  | f   | f    | f    | io.k8s.api.core.v1.VolumeMount                                                                | subPathExpr                   | string
+ beta  | f   | f    | f    | io.k8s.api.core.v1.EphemeralContainer                                                         | volumeDevices                 | io.k8s.api.core.v1.VolumeDevice
+ beta  | f   | f    | f    | io.k8s.api.core.v1.PersistentVolumeSpec                                                       | volumeMode                    | string
+ beta  | f   | f    | f    | io.k8s.api.networking.v1.NetworkPolicySpec                                                    | egress                        | io.k8s.api.networking.v1.NetworkPolicyEgressRule
+ beta  | f   | f    | f    | io.k8s.api.networking.v1.NetworkPolicySpec                                                    | policyTypes                   | string
+ beta  | f   | f    | f    | io.k8s.api.core.v1.PersistentVolumeClaimSpec                                                  | volumeMode                    | string
+ beta  | f   | f    | f    | io.k8s.api.extensions.v1beta1.NetworkPolicySpec                                               | egress                        | io.k8s.api.extensions.v1beta1.NetworkPolicyEgressRule
+ beta  | f   | f    | f    | io.k8s.api.extensions.v1beta1.NetworkPolicySpec                                               | policyTypes                   | string
+ ga    | f   | f    | t    | io.k8s.api.core.v1.SecurityContext                                                            | procMount                     | string
+ ga    | f   | f    | t    | io.k8s.api.storage.v1.StorageClass                                                            | allowedTopologies             | io.k8s.api.core.v1.TopologySelectorTerm
+ ga    | f   | f    | t    | io.k8s.api.storage.v1.StorageClass                                                            | volumeBindingMode             | string
+ ga    | f   | f    | t    | io.k8s.api.storage.v1beta1.StorageClass                                                       | allowedTopologies             | io.k8s.api.core.v1.TopologySelectorTerm
+ ga    | f   | f    | t    | io.k8s.api.storage.v1beta1.StorageClass                                                       | volumeBindingMode             | string
+ ga    | f   | f    | t    | io.k8s.api.core.v1.PersistentVolumeClaimSpec                                                  | dataSource                    | io.k8s.api.core.v1.TypedLocalObjectReference
+ ga    | f   | f    | t    | io.k8s.api.policy.v1beta1.PodSecurityPolicySpec                                               | allowedProcMountTypes         | string
+ ga    | f   | f    | t    | io.k8s.api.policy.v1beta1.PodSecurityPolicySpec                                               | runAsGroup                    | io.k8s.api.policy.v1beta1.RunAsGroupStrategyOptions
+ ga    | f   | f    | t    | io.k8s.api.policy.v1beta1.PodSecurityPolicySpec                                               | runtimeClass                  | io.k8s.api.policy.v1beta1.RuntimeClassStrategyOptions
+ ga    | f   | f    | t    | io.k8s.api.extensions.v1beta1.PodSecurityPolicySpec                                           | allowedProcMountTypes         | string
+ ga    | f   | f    | t    | io.k8s.api.extensions.v1beta1.PodSecurityPolicySpec                                           | runAsGroup                    | io.k8s.api.extensions.v1beta1.RunAsGroupStrategyOptions
+ ga    | f   | f    | t    | io.k8s.api.extensions.v1beta1.PodSecurityPolicySpec                                           | runtimeClass                  | io.k8s.api.extensions.v1beta1.RuntimeClassStrategyOptions
+ ga    | f   | t    | f    | io.k8s.api.core.v1.Volume                                                                     | gitRepo                       | io.k8s.api.core.v1.GitRepoVolumeSource
+ ga    | f   | t    | f    | io.k8s.api.core.v1.PodSpec                                                                    | serviceAccount                | string
+ ga    | f   | t    | f    | io.k8s.api.core.v1.NodeSpec                                                                   | externalID                    | string
+ ga    | f   | t    | f    | io.k8s.api.core.v1.NodeStatus                                                                 | phase                         | string
+ ga    | f   | t    | f    | io.k8s.api.core.v1.EventSeries                                                                | state                         | string
+ ga    | f   | t    | f    | io.k8s.api.events.v1beta1.Event                                                               | deprecatedCount               | integer
+ ga    | f   | t    | f    | io.k8s.api.events.v1beta1.Event                                                               | deprecatedFirstTimestamp      | io.k8s.apimachinery.pkg.apis.meta.v1.Time
+ ga    | f   | t    | f    | io.k8s.api.events.v1beta1.Event                                                               | deprecatedLastTimestamp       | io.k8s.apimachinery.pkg.apis.meta.v1.Time
+ ga    | f   | t    | f    | io.k8s.api.events.v1beta1.Event                                                               | deprecatedSource              | io.k8s.api.core.v1.EventSource
+ ga    | t   | t    | f    | io.k8s.api.events.v1beta1.EventSeries                                                         | state                         | string
+ ga    | f   | t    | f    | io.k8s.api.apps.v1beta1.DeploymentSpec                                                        | rollbackTo                    | io.k8s.api.apps.v1beta1.RollbackConfig
+ ga    | f   | t    | f    | io.k8s.api.core.v1.FlockerVolumeSource                                                        | datasetName                   | string
+ ga    | f   | t    | f    | io.k8s.api.core.v1.PersistentVolumeSpec                                                       | persistentVolumeReclaimPolicy | string
+ ga    | f   | t    | f    | io.k8s.api.extensions.v1beta1.DaemonSetSpec                                                   | templateGeneration            | integer
+ ga    | f   | t    | f    | io.k8s.api.extensions.v1beta1.DeploymentSpec                                                  | rollbackTo                    | io.k8s.api.extensions.v1beta1.RollbackConfig
+ ga    | f   | t    | f    | io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta                                                 | selfLink                      | string
+ ga    | f   | t    | f    | io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta                                               | selfLink                      | string
+ ga    | f   | t    | f    | io.k8s.apimachinery.pkg.apis.meta.v1.DeleteOptions                                            | orphanDependents              | integer
+ ga    | f   | t    | f    | io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceDefinitionSpec         | preserveUnknownFields         | integer
+ ga    | f   | t    | f    | io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionSpec    | version                       | string
+(69 rows)
+
 ```
