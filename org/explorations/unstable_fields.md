@@ -47,10 +47,23 @@
 -   With this list, should we try to add metadata to the openapi spec itself?
 
 ```sql-mode
-select  release as rel, required as req, deprecated as depr, feature_gated as feat, field_schema, field_name, field_kind
-from api_schema_field
-where release = 'alpha' or release = 'beta' or deprecated or feature_gated
-order by release, depr, feat, length(field_schema), field_schema, field_name;
+select
+  release as rel,
+  required as req,
+  deprecated as depr,
+  feature_gated as feat,
+  field_schema,
+  field_name,
+  field_kind
+  from api_schema_field
+ where
+ release = 'alpha'
+ or release = 'beta'
+ or deprecated
+ or feature_gated
+ order by release, depr, feat,
+          length(field_schema),
+          field_schema, field_name;
 ```
 
 ```sql-mode
