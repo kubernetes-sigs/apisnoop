@@ -6,7 +6,9 @@
 
 -   **required:** checks field exist in required section of schema
 -   **deprecated:** description containing 'deprecated' cases insensitive
--   **release :: a very specific description search:** alpha, beta, or ga See <https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version>
+-   **release:** a very specific description search : alpha, beta, or ga
+    
+    See <https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version>
     
     ```sql-mode
     CASE
@@ -21,7 +23,7 @@
     ELSE 'ga'
     END AS release,
     ```
--   **feature<sub>gated</sub> :: a very specific description search:** boolean
+-   **feature gated:** a very specific description search : boolean
     
     ```sql-mode
     CASE
