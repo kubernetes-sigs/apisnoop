@@ -425,6 +425,29 @@
      ;; This was designed for dir-locals... can we reach in?
      ;; (switch-to-buffer (get-buffer buffer-file-name))
      ;; (spacemacs/toggle-maximize-buffer)
+     ;; set up publishing
+     (require 'ox-publish)
+     (setq org-publish-project-alist
+           '(
+             ("org-reports"
+              :base-directory "~/ii/apisnoop_v3/org/reports/"
+              :base-extension "org"
+              :publishing-directory "~/ii/apisnoop_v3/www/"
+              :recursive t
+              :publishing-function org-html-publish-to-html
+              :headline-levels 4 ; Just the default for this project.
+              :auto-preamble t
+              )
+             ("org-static"
+              :base-directory "~/ii/apisnoop_v3/org/reports/"
+              :base-extension "css\\|js\\|png\\|jpg\\|gif\\|pdf\\|mp3\\|ogg\\|swf"
+              :publishing-directory "~/ii/apisnoop_v3/www/"
+              :recursive t
+              :publishing-function org-publish-attachment
+              )
+             ("reports" :components ("org-reports" "org-static"))
+             ))
+
      )
    )
   )
