@@ -1,4 +1,4 @@
-- [OpenAPI Schema Object Field/Properties](#sec-1)
+- [Suggested OpenAPI Schema Object Field/Property updates](#sec-1)
   - [Release status](#sec-1-1)
   - [Feature Gated](#sec-1-2)
   - [Required](#sec-1-3)
@@ -12,23 +12,31 @@
   - [606 required fields](#sec-5-2)
 
 
-# OpenAPI Schema Object Field/Properties<a id="sec-1"></a>
+# Suggested OpenAPI Schema Object Field/Property updates<a id="sec-1"></a>
+
+In our work to measure and increase the tested surface area of Kubernetes, we required knowing the more information about each field.
+
+This led to us calculating a few fields that would probably be better served by inclusion in our OpenAPI schema.
 
 ## Release status<a id="sec-1-1"></a>
 
 This could probably be applied to operations and parameters as well.
 
-APISnoop generates \`api-schema-field.release\` by searching for for 8 variations of alpha/beta within the description to set this as 'alpha', 'beta', or 'ga'. This would likely better be set as as string via \`x-k8s-release-status\` or similar.
+APISnoop generates \`api-schema-field.release\` by searching for for 8 variations of alpha/beta within the description to set this as 'alpha', 'beta', or 'ga'.
+
+This would likely better be set as as string via \`x-k8s-field-release\` or similar.
 
 ## Feature Gated<a id="sec-1-2"></a>
 
-APISnoop generates \`api-schema-field.feature-gated\` by searching for 8 variation of 'feature gate' to set a boolean. This would likely better be set as as string via \`x-k8s-feature-gate\` or similar.
+APISnoop generates \`api-schema-field.feature-gated\` by searching for 8 variation of 'feature gate' to set a boolean. This would likely better be set as as string via \`x-k8s-field-feature-gate\` or similar.
 
 This could probably be applied to operations and parameters as well.
 
 ## Required<a id="sec-1-3"></a>
 
-APISnoop currently generated \`api<sub>schema</sub><sub>field.required</sub>\` by looking for \`api<sub>schema</sub><sub>field.name</sub>\` in the \`api<sub>schema.required</sub>\` array. Both V2 and V3 have a \`required\` field which may be a bit more clear.
+APISnoop currently generated \`api<sub>schema</sub><sub>field.required</sub>\` by looking for \`api<sub>schema</sub><sub>field.name</sub>\` in the \`api<sub>schema.required</sub>\` array.
+
+Both V2 and V3 have a \`required\` field which may be a bit more clear.
 
 Would it be better to store this directly in the object itself?
 
@@ -39,9 +47,9 @@ Would it be better to store this directly in the object itself?
 
 Note the distinction in deprecated field/property VS object/schema.
 
-In v3 we can use deprecated, but should we look into generating \`x-k8s-deprecated: true\` until then?
+In v3 we can use deprecated, but should we look into generating \`x-k8s-field-deprecated: true\` until then?
 
--   **[OpenAPIv2.schemaObject.parameterObject](https://swagger.io/specification/v2/#parameterObject).<sup>x</sup>-k8s-deprecated:** boolean - specifies that this parameter is deprecated
+-   **[OpenAPIv2.schemaObject.parameterObject](https://swagger.io/specification/v2/#parameterObject).<sup>x</sup>-k8s-field-deprecated:** boolean - specifies that this parameter is deprecated
 -   **[OpenAPIv3.schemaObject.parameterObject](https://swagger.io/specification/#parameterObject).deprecated:** boolean : Specifies that a parameter is deprecated and SHOULD be transitioned out of usage. Default value is false.
 
 ## Mutable<a id="sec-1-5"></a>
