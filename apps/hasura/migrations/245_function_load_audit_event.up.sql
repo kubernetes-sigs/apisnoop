@@ -4,7 +4,6 @@
 set role dba;
 CREATE OR REPLACE FUNCTION load_audit_events(bucket text, job text)
 RETURNS text AS $$
-#:tangle ../apps/hasura/migrations/245_function_load_audit_events.up.sql :results silent
 #!/usr/bin/env python3
 from urllib.request import urlopen, urlretrieve
 import os
@@ -35,15 +34,15 @@ def download_url_to_path(url, local_path):
 # wget was used because the files can get to several halfa gig
 downloads = {}
 def load_audit_events(bucket,job):
-    bucket_url = f'https://storage.googleapis.com/kubernetes-jenkins/logs/{bucket}/{job}/'
-    artifacts_url = f'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/{bucket}/{job}/artifacts'
+    bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
+    artifacts_url = 'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/' + bucket + '/' +  job + '/' + 'artifacts'
     job_metadata_files = [
         'finished.json',
         'artifacts/metadata.json',
         'artifacts/junit_01.xml',
         'build-log.txt'
     ]
-    download_path = mkdtemp( dir='/tmp', prefix=f'apisnoop-{bucket}-{job}' ) + '/'
+    download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
     combined_log_file = download_path + 'audit.log'
 
     # meta data to download
