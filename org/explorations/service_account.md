@@ -13,6 +13,23 @@ where podspec_field = 'serviceAccount'
 and test like '%Conformance%';
 ```
 
+```sql-mode
+                                                      test                                                       
+-----------------------------------------------------------------------------------------------------------------
+  [k8s.io] Pods should allow activeDeadlineSeconds to be updated [NodeConformance] [Conformance]
+  [k8s.io] Pods should be updated [NodeConformance] [Conformance]
+  [sig-apps] ReplicaSet should adopt matching pods on creation and release no longer matching pods [Conformance]
+  [sig-apps] ReplicationController should release no longer matching pods [Conformance]
+  [sig-auth] ServiceAccounts should allow opting out of API token automount  [Conformance]
+  [sig-auth] ServiceAccounts should mount an API token into pods  [Conformance]
+  [sig-storage] Downward API volume should update annotations on modification [NodeConformance] [Conformance]
+  [sig-storage] Downward API volume should update labels on modification [NodeConformance] [Conformance]
+  [sig-storage] Projected downwardAPI should update annotations on modification [NodeConformance] [Conformance]
+  [sig-storage] Projected downwardAPI should update labels on modification [NodeConformance] [Conformance]
+(10 rows)
+
+```
+
 # 18 Audit Log Entries for Conformance Test operations specifically hitting PodSpec.serviceAccount<a id="sec-2"></a>
 
 We wanted to see exactly which conformance test + operations were specifically trying to set PodSpec.serviceAccount
@@ -48,4 +65,29 @@ and (request_object->'spec'->'template'->'spec'->'serviceAccount' is not null
 or request_object->'template'->'spec'->'serviceAccount' is not null
 or request_object->'spec'->'serviceAccount' is not null)
 order by operation_id;
+```
+
+```sql-mode
+        operation_id        |                                                      test                                                       | service_account | service_account_name 
+----------------------------|-----------------------------------------------------------------------------------------------------------------|-----------------|----------------------
+ createCoreV1NamespacedPod  |  [sig-auth] ServiceAccounts should allow opting out of API token automount  [Conformance]                       | "default"       | "default"
+ createCoreV1NamespacedPod  |  [sig-auth] ServiceAccounts should mount an API token into pods  [Conformance]                                  | "mount-test"    | "mount-test"
+ createCoreV1NamespacedPod  |  [sig-auth] ServiceAccounts should allow opting out of API token automount  [Conformance]                       | "default"       | "default"
+ createCoreV1NamespacedPod  |  [sig-auth] ServiceAccounts should allow opting out of API token automount  [Conformance]                       | "default"       | "default"
+ createCoreV1NamespacedPod  |  [sig-auth] ServiceAccounts should allow opting out of API token automount  [Conformance]                       | "mount"         | "mount"
+ createCoreV1NamespacedPod  |  [sig-auth] ServiceAccounts should allow opting out of API token automount  [Conformance]                       | "mount"         | "mount"
+ createCoreV1NamespacedPod  |  [sig-auth] ServiceAccounts should allow opting out of API token automount  [Conformance]                       | "nomount"       | "nomount"
+ createCoreV1NamespacedPod  |  [sig-auth] ServiceAccounts should allow opting out of API token automount  [Conformance]                       | "nomount"       | "nomount"
+ createCoreV1NamespacedPod  |  [sig-auth] ServiceAccounts should allow opting out of API token automount  [Conformance]                       | "mount"         | "mount"
+ createCoreV1NamespacedPod  |  [sig-auth] ServiceAccounts should allow opting out of API token automount  [Conformance]                       | "nomount"       | "nomount"
+ replaceCoreV1NamespacedPod |  [sig-apps] ReplicaSet should adopt matching pods on creation and release no longer matching pods [Conformance] | "default"       | "default"
+ replaceCoreV1NamespacedPod |  [k8s.io] Pods should be updated [NodeConformance] [Conformance]                                                | "default"       | "default"
+ replaceCoreV1NamespacedPod |  [sig-storage] Downward API volume should update annotations on modification [NodeConformance] [Conformance]    | "default"       | "default"
+ replaceCoreV1NamespacedPod |  [sig-apps] ReplicationController should release no longer matching pods [Conformance]                          | "default"       | "default"
+ replaceCoreV1NamespacedPod |  [sig-storage] Downward API volume should update labels on modification [NodeConformance] [Conformance]         | "default"       | "default"
+ replaceCoreV1NamespacedPod |  [k8s.io] Pods should allow activeDeadlineSeconds to be updated [NodeConformance] [Conformance]                 | "default"       | "default"
+ replaceCoreV1NamespacedPod |  [sig-storage] Projected downwardAPI should update annotations on modification [NodeConformance] [Conformance]  | "default"       | "default"
+ replaceCoreV1NamespacedPod |  [sig-storage] Projected downwardAPI should update labels on modification [NodeConformance] [Conformance]       | "default"       | "default"
+(18 rows)
+
 ```
