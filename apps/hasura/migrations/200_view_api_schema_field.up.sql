@@ -22,6 +22,10 @@ CREATE OR REPLACE VIEW "public"."api_schema_field" AS
            END AS field_type,
          d.value->>'description' AS description,
          CASE
+         WHEN d.key = ANY(api_schema.required_fields) THEN true
+         ELSE false
+           END AS required,
+         CASE
          WHEN (   d.value->>'description' ilike '%This field is alpha-level%'
                or d.value->>'description' ilike '%This is an alpha field%'
                or d.value->>'description' ilike '%This is an alpha feature%') THEN 'alpha'

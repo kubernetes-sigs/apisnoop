@@ -307,12 +307,7 @@ Using our api_operation view, look into the parameters field in each one.
        (d.value ->> 'type'::text) AS resource_type,
        (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
        (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
-       -- string_agg(btrim((reqstring.value)::text, '"'::text), ', '::text) AS required_fields,
-       -- jsonb_array_elements(api_schema.required_fields_text::jsonb))
-       -- jsonb_array_elements(d.value -> 'required') as required_fields,
        ARRAY(SELECT jsonb_array_elements_text(d.value -> 'required')) as required_fields,
-       -- (d.value -> 'required') as required_fields,
-       (d.value ->> 'required'::text) as required_fields_text,
        (d.value -> 'properties'::text) AS properties,
        api_swagger.id AS raw_swagger_id,
        d.value
@@ -350,8 +345,6 @@ Using our api_operation view, look into the parameters field in each one.
              END AS field_type,
            d.value->>'description' AS description,
            CASE
-           --    AND raw.data ->> 'verb' = ANY(ops.event_verb)
-           -- WHEN d.key ? api_schema.required_fields THEN true
            WHEN d.key = ANY(api_schema.required_fields) THEN true
            ELSE false
              END AS required,
@@ -762,7 +755,7 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
 #+BEGIN_SRC sql-mode
 CREATE INDEX kfpm_kind_idx       ON kind_field_path_material (kind);
 CREATE INDEX kfpm_field_path_idx ON kind_field_path_material (field_path);
-CREATE INDEX kfpm_field_type_idx ON kind_field_type_material (field_type);
+CREATE INDEX kfpm_field_type_idx ON kind_field_path_material (field_type);
 CREATE INDEX kfpm_sub_kind_idx   ON kind_field_path_material (sub_kind);
 -- GIST requires ltree
 -- CREATE INDEX kfpm_kind_idx       ON kind_field_path_material USING GIST (kind);
@@ -1127,7 +1120,7 @@ echo endpoint: https://$USER-hasura.sharing.io
        && docker-compose down -t 0 \
        && docker-compose rm \
        && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
-       && rm migrations/* \
+       && rm -f migrations/* \
        && emacsclient -s $SOCKETFILE -e "(org-babel-tangle-file \"~/ii/apisnoop_v3/org/meta.org\")" \
        && docker-compose up -d \
        && sleep 2 \
@@ -1166,6 +1159,7 @@ echo endpoint: https://$USER-hasura.sharing.io
  CREATE EXTENSION IF NOT EXISTS plsh;
  CREATE EXTENSION IF NOT EXISTS pgcrypto;
  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+ CREATE EXTENSION IF NOT EXISTS ltree;
  CREATE SCHEMA IF NOT EXISTS hdb_catalog;
  CREATE SCHEMA IF NOT EXISTS hdb_views;
  -- make the user an owner of system schemas
