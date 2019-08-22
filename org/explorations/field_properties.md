@@ -8,8 +8,6 @@
 - [69 gated, deprecated, or non-ga fields](#sec-3)
 - [12 NonDeprecated GA fields behind FeatureGates](#sec-4)
 - [606 required of 2797 total fields](#sec-5)
-  - [2797 total field](#sec-5-1)
-  - [606 required fields](#sec-5-2)
 
 
 # Suggested OpenAPI Schema Object Field/Property updates<a id="sec-1"></a>
@@ -263,8 +261,6 @@ select
 
 This should be the full inclusive list.
 
-## 2797 total field<a id="sec-5-1"></a>
-
 ```sql-mode
 select count(*) from api_schema_field;
 ```
@@ -276,8 +272,6 @@ select count(*) from api_schema_field;
 (1 row)
 
 ```
-
-## 606 required fields<a id="sec-5-2"></a>
 
 ```sql-mode
 select
