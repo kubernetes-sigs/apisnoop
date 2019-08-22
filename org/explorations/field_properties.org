@@ -1,0 +1,115 @@
+#+TITLE: Required Fields
+* OpenAPI Schema Objects
+** V2
+- schemaObject.[[https://swagger.io/specification/v2/#parameterObject][parameterObject]].^x- :: 
+- schemaObject.[[https://swagger.io/specification/v2/#parameterObject][parameterObject]].^x-k8s-deprecated :: boolean - specifies that a parametr 
+** Release status of Fields/Properties
+
+
+APISnoop generates `api_schema_field.release` by searching for the following 8 matches to set a boolean.
+This would likely better be set as as string via `x-k8s-feature-gate` or similar.
+
+This could probably be applied to operations and parameters as well.
+
+#+NAME: feature gated query matcher
+#+BEGIN_SRC sql-mode
+CASE
+WHEN (   description ilike '%This field is alpha-level%'
+      or description ilike '%This is an alpha field%'
+      or description ilike '%This is an alpha feature%') THEN 'alpha'
+WHEN (   description ilike '%This field is beta-level%'
+      or description ilike '%This field is beta%'
+      or description ilike '%This is a beta feature%'
+      or description ilike '%This is an beta feature%'
+      or description ilike '%This is an beta field%') THEN 'beta'
+ELSE 'ga'
+END AS release,
+#+END_SRC
+
+** Feature Gated Fields/Properties
+
+Finding Feature Gated Fields was a bit of a pain, there were 8 possible combinations that seem to conculsively match them all.
+We currently store this
+
+APISnoop generates `api_schema_field.feature_gated` by searching for the following 8 matches to set a boolean.
+This would likely better be set as as string via `x-k8s-feature-gate` or similar.
+
+This could probably be applied to operations and parameters as well.
+
+#+NAME: feature gated query matcher
+#+BEGIN_SRC sql-mode
+CASE
+WHEN (   description ilike '%requires the % feature gate to be enabled%'
+      or description ilike '%depends on the % feature gate being enabled%'
+      or description ilike '%requires the % feature flag to be enabled%'
+      or description ilike '%honored if the API server enables the % feature gate%'
+      or description ilike '%honored by servers that enable the % feature%'
+      or description ilike '%requires enabling % feature gate%'
+      or description ilike '%honored by clusters that enables the % feature%'
+      or description ilike '%only if the % feature gate is enabled%'
+) THEN true
+ELSE false
+             END AS feature_gated,
+#+END_SRC
+
+** Deprecated Objects/Schemas
+   
+APISnoop calculates `api_schema.deprecated` by simply case insensitively searching `api_schema.description` 'deprecated':
+
+#+NAME: any mention of deprecated gives us this flag
+#+BEGIN_SRC sql-mode
+  SELECT (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
+    FROM api_swagger, jsonb_each((api_swagger.data -> 'paths'::text)) paths(key, value)
+#+END_SRC
+
+In v3 we can use deprecated, but can we look into generating `x-k8s-deprecated: true` until then?
+
+- [[https://swagger.io/specification/v2/#schemaObject][OpenAPIv2.schemaObject]].object.^x-k8r-deprecated :: boolean specifies that this schema is deprecated...
+- [[https://swagger.io/specification/v2/#schemaObject][OpenAPIv3.schemaObject]].deprecated ::	boolean Specifies that a schema is deprecated and SHOULD
+     be transitioned out of usage. Default value is false.
+
+** Deprecated Fields/Properties
+
+Note the distinction in deprecated field/property VS object/schema above.
+
+#+NAME: any mention of deprecation gives us this flag
+#+BEGIN_SRC sql-mode
+  SELECT WHEN  d.value->>'description' ilike '%deprecated%' THEN true
+           ELSE false
+           END AS deprecated,
+      FROM (api_schema
+            JOIN LATERAL jsonb_each(api_schema.properties) d(key, value) ON (true));
+#+END_SRC
+
+In v3 we can use deprecated, but can we look into generating `x-k8s-deprecated: true` until then?
+
+- [[https://swagger.io/specification/v2/#parameterObject][OpenAPIv2.schemaObject.parameterObject]].^x-k8s-deprecated :: boolean - specifies that this parameter is deprecated
+- [[https://swagger.io/specification/#parameterObject][OpenAPIv3.schemaObject.parameterObject]].deprecated :: boolean : Specifies that a parameter is
+     deprecated and SHOULD be transitioned out of usage. Default value is false.
+
+** Required Fields/Properties
+   
+APISnoop currently generated `api_schema_field.required` by looking for
+`api_schema_field.name` in the `api_schema.required` array. Both V2 and V3 have
+a `required` field which may be a bit more clear.
+
+#+BEGIN_SRC sql-mode
+  -- within our api_schema pulling from each .definition
+  ARRAY(SELECT jsonb_array_elements_text(d.value -> 'required')) as required_fields
+  -- within our api_schema_field checking for the field name in the array above
+  WHEN d.key = ANY(api_schema.required_fields) THEN true
+    ELSE false
+    END AS required,
+#+END_SRC
+
+Would it be better to store this directly in the object itself?
+
+- [[https://swagger.io/specification/v2/#parameterObject][OpenAPIv2.schemaObject.parameterObject]].required :: boolean :
+- [[https://swagger.io/specification/#parameterObject][OpenAPIv3.schemaObject.parameterObject]].required :: boolean :
+
+** Mutable Fields/Properties
+These look like they should only apply to fields, but either way we don't currently have method to enumerate immutable fields.
+- [[https://swagger.io/specification/v2/#schemaObject][OpenAPIv2.schemaObject]].readOnly :: boolean
+- [[https://swagger.io/specification/v2/#schemaObject][OpenAPIv3.schemaObject]].readOnly :: boolean
+- [[https://swagger.io/specification/v2/#schemaObject][OpenAPIv3.schemaObject]].writeOnly :: boolean
+
