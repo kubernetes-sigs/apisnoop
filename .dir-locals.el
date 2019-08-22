@@ -437,6 +437,10 @@
               :publishing-function org-html-publish-to-html
               :headline-levels 4 ; Just the default for this project.
               :auto-preamble t
+              :auto-sitemap t                ; Generate sitemap.org automagically...
+              :sitemap-filename "sitemap.org"  ; ... call it sitemap.org (it's the default)...
+              :sitemap-title "Sitemap"         ; ... with title 'Sitemap'.
+
               )
              ("org-static"
               :base-directory "~/ii/apisnoop_v3/org/reports/"
