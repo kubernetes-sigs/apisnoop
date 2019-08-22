@@ -1,30 +1,32 @@
-- [OpenAPI Schema Objects](#sec-1)
-  - [Release status of Fields/Properties](#sec-1-1)
-  - [Feature Gated Fields/Properties](#sec-1-2)
-  - [Required Fields/Properties](#sec-1-3)
-  - [Deprecated Fields/Properties](#sec-1-4)
-  - [Mutable Fields/Properties](#sec-1-5)
+- [OpenAPI Schema Object Field/Properties](#sec-1)
+  - [Release status](#sec-1-1)
+  - [Feature Gated](#sec-1-2)
+  - [Required](#sec-1-3)
+  - [Deprecated](#sec-1-4)
+  - [Mutable](#sec-1-5)
 - [Manual Field Calculation](#sec-2)
-- [All gated, deprecated, or non-ga fields](#sec-3)
-- [NonDeprecated GA fields behind FeatureGates](#sec-4)
-- [All required fields](#sec-5)
+- [69 gated, deprecated, or non-ga fields](#sec-3)
+- [12 NonDeprecated GA fields behind FeatureGates](#sec-4)
+- [606 required of 2797 total fields](#sec-5)
+  - [2797 total field](#sec-5-1)
+  - [606 required fields](#sec-5-2)
 
 
-# OpenAPI Schema Objects<a id="sec-1"></a>
+# OpenAPI Schema Object Field/Properties<a id="sec-1"></a>
 
-## Release status of Fields/Properties<a id="sec-1-1"></a>
+## Release status<a id="sec-1-1"></a>
 
 This could probably be applied to operations and parameters as well.
 
 APISnoop generates \`api-schema-field.release\` by searching for for 8 variations of alpha/beta within the description to set this as 'alpha', 'beta', or 'ga'. This would likely better be set as as string via \`x-k8s-release-status\` or similar.
 
-## Feature Gated Fields/Properties<a id="sec-1-2"></a>
+## Feature Gated<a id="sec-1-2"></a>
 
 APISnoop generates \`api-schema-field.feature-gated\` by searching for 8 variation of 'feature gate' to set a boolean. This would likely better be set as as string via \`x-k8s-feature-gate\` or similar.
 
 This could probably be applied to operations and parameters as well.
 
-## Required Fields/Properties<a id="sec-1-3"></a>
+## Required<a id="sec-1-3"></a>
 
 APISnoop currently generated \`api<sub>schema</sub><sub>field.required</sub>\` by looking for \`api<sub>schema</sub><sub>field.name</sub>\` in the \`api<sub>schema.required</sub>\` array. Both V2 and V3 have a \`required\` field which may be a bit more clear.
 
@@ -33,16 +35,16 @@ Would it be better to store this directly in the object itself?
 -   **[OpenAPIv2.schemaObject.parameterObject](https://swagger.io/specification/v2/#parameterObject).required:** boolean :
 -   **[OpenAPIv3.schemaObject.parameterObject](https://swagger.io/specification/#parameterObject).required:** boolean :
 
-## Deprecated Fields/Properties<a id="sec-1-4"></a>
+## Deprecated<a id="sec-1-4"></a>
 
-Note the distinction in deprecated field/property VS object/schema above.
+Note the distinction in deprecated field/property VS object/schema.
 
-In v3 we can use deprecated, but can we look into generating \`x-k8s-deprecated: true\` until then?
+In v3 we can use deprecated, but should we look into generating \`x-k8s-deprecated: true\` until then?
 
 -   **[OpenAPIv2.schemaObject.parameterObject](https://swagger.io/specification/v2/#parameterObject).<sup>x</sup>-k8s-deprecated:** boolean - specifies that this parameter is deprecated
 -   **[OpenAPIv3.schemaObject.parameterObject](https://swagger.io/specification/#parameterObject).deprecated:** boolean : Specifies that a parameter is deprecated and SHOULD be transitioned out of usage. Default value is false.
 
-## Mutable Fields/Properties<a id="sec-1-5"></a>
+## Mutable<a id="sec-1-5"></a>
 
 These look like they should only apply to fields, but either way we don't currently have method to enumerate immutable fields.
 
@@ -68,7 +70,7 @@ ELSE 'ga'
 END AS release,
 ```
 
--   **feature<sub>gated</sub>:** boolean - via a very specific description search
+-   **feature-gated:** boolean - via a very specific description search
 
 ```sql-mode
 CASE
@@ -106,7 +108,7 @@ ELSE false
 END AS deprecated,
 ```
 
-# All gated, deprecated, or non-ga fields<a id="sec-3"></a>
+# 69 gated, deprecated, or non-ga fields<a id="sec-3"></a>
 
 This should be the full inclusive list.
 
@@ -206,7 +208,7 @@ select
 
 ```
 
-# NonDeprecated GA fields behind FeatureGates<a id="sec-4"></a>
+# 12 NonDeprecated GA fields behind FeatureGates<a id="sec-4"></a>
 
 This should be the full inclusive list.
 
@@ -249,9 +251,25 @@ select
 
 ```
 
-# All required fields<a id="sec-5"></a>
+# 606 required of 2797 total fields<a id="sec-5"></a>
 
 This should be the full inclusive list.
+
+## 2797 total field<a id="sec-5-1"></a>
+
+```sql-mode
+select count(*) from api_schema_field;
+```
+
+```sql-mode
+ count 
+-------
+  2797
+(1 row)
+
+```
+
+## 606 required fields<a id="sec-5-2"></a>
 
 ```sql-mode
 select
