@@ -603,7 +603,12 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
           with open(download_path + 'load.sql', 'w') as sqlfile:
             sqlfile.write(sql)
           rv = plpy.execute(sql)
-          rv = plpy.execute("select * from audit_event_op_update()")
+          #plpy.commit()
+          # this calls external binary, not part of transaction 8(
+          #rv = plpy.execute("select * from audit_event_op_update();")
+          #plpy.commit()
+          #rv = plpy.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY podspec_field_coverage_material;")
+          #plpy.commit()
           return "it worked"
       except plpy.SPIError:
           return "something went wrong with plpy"
@@ -614,6 +619,9 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   else:
       load_audit_events(bucket,job)
 #+END_SRC
+
+#+RESULTS: load_audit_events.py
+
 *** Create
 #+NAME: load_audit_events.sql
 #+BEGIN_SRC sql-mode :noweb yes
@@ -649,19 +657,19 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
 
 ** 900: populate_audit_events.up.sql
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/900_populate_audit_events.up.sql
+  :header-args:sql-mode+: :notangle ../apps/hasura/migrations/900_populate_audit_events.up.sql
   :END:
 *** Call load_audit_events()
 
 #+NAME: reload sample audit event
 #+BEGIN_SRC sql-mode :noweb yes
-  select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');
+  -- select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');
   -- select * from audit_event_op_update();
 #+END_SRC
 
 ** 901: update_audit_events.up.sql
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/901_update_audit_events.up.sql
+  :header-args:sql-mode+: :notangle ../apps/hasura/migrations/901_update_audit_events.up.sql
   :END:
 *** Call load_audit_events()
 
@@ -1230,7 +1238,7 @@ echo endpoint: https://$USER-hasura.sharing.io
       #image: hasura/graphql-engine:v1.0.0-beta.3
       # append '.cli-migrations' to auto run 'hasura migrations apply'
       container_name: "${USER}-hasura"
-      image: hasura/graphql-engine:v1.0.0-beta.5 #.cli-migrations
+      image: hasura/graphql-engine:v1.0.0-beta.5.cli-migrations
       restart: always
       networks:
         - web
@@ -1365,9 +1373,14 @@ I think I end up being confused on this as we are combining proxy management of 
        && rm -f migrations/* \
        && emacsclient -s $SOCKETFILE -e "(org-babel-tangle-file \"~/ii/apisnoop_v3/org/meta.org\")" \
        && docker-compose build \
-       && docker-compose up -d #\
-       #&& sleep 2 \
-       #&& hasura migrate apply --log-level DEBUG \
+       && docker-compose up #\
+       #&& echo "select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');" \
+       #| psql \
+       #&& echo "select * from audit_event_op_update();" \
+       #| psql
+       # && sleep 2 \
+       # && hasura migrate apply \
+       # --log-level DEBUG \
        #&& make rmatch \
        #&&  ./rmatch
        # psql -h 127.0.0.1 -p $(id -u)1 --user apisnoop

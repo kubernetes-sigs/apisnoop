@@ -113,7 +113,12 @@ SELECT '${bucket}', '${job}',
         with open(download_path + 'load.sql', 'w') as sqlfile:
           sqlfile.write(sql)
         rv = plpy.execute(sql)
-        rv = plpy.execute("select * from audit_event_op_update()")
+        #plpy.commit()
+        # this calls external binary, not part of transaction 8(
+        #rv = plpy.execute("select * from audit_event_op_update();")
+        #plpy.commit()
+        #rv = plpy.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY podspec_field_coverage_material;")
+        #plpy.commit()
         return "it worked"
     except plpy.SPIError:
         return "something went wrong with plpy"
