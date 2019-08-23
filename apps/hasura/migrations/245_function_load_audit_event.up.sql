@@ -113,6 +113,7 @@ SELECT '${bucket}', '${job}',
         with open(download_path + 'load.sql', 'w') as sqlfile:
           sqlfile.write(sql)
         rv = plpy.execute(sql)
+        rv = plpy.execute("select * from audit_event_op_update()")
         return "it worked"
     except plpy.SPIError:
         return "something went wrong with plpy"
