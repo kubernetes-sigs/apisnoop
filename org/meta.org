@@ -1,6 +1,6 @@
+#+INCLUDE: "config.org"
 #+NAME: META
 #+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | TADA(d)
-#+INCLUDE: "config.org"
 #+TITLE: APIsnoop
 #+AUTHOR: ii team
 #+DATE: 15 August 2019
@@ -90,7 +90,7 @@ CREATE TABLE api_swagger (
   path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
   path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
   if not path_regex.endswith(")") and not path_regex.endswith("?"):
-      path_regex += "([^/]*)"
+    path_regex += "([^/]*)"
   if path_regex.endswith("proxy"):
       path_regex += "/?$"
   else:
@@ -1115,8 +1115,8 @@ echo endpoint: https://$USER-hasura.sharing.io
         # runs *sql and executable *sh and sources non-executable *sh
         - ./initdb:/docker-entrypoint-initdb.d
         - ./migrations:/migrations
-      # ports:
-      #  - "54321:5432"
+       ports:
+        - "$POSTGRES_PORT:5432"
       # Expose ports without publishing them to the host machine
       # - they’ll only be accessible to linked services.
       expose:
@@ -1179,6 +1179,27 @@ echo endpoint: https://$USER-hasura.sharing.io
       external: true
 #+END_SRC
 
+* Diary
+** August
+*** 23
+    We went through a slew of debugging and restarts today, ending with us having a new docker container that holds everything needed to start api rainbow...but still not working successfully yet.  The next ask was to create a port based ona  user id and then have tmate access the container through this port via emacs.  Research on how to do this, and what it exactly means, eluded me, and so I thought the next best thing was to recap what we are trying to do to make sure I understand it.
+
+    So far, we've been running api rainbow from the same sharing.io machine.  This machine has postgres running on it, with different users and db already set up.  We had containerized our hasura front end so that you could continually bring down and back up the graphql backend.  However, this required creating a folder named as $USER + '-hasura', and to create a symlink from our standard hasura folder.
+
+    These things make it hard for people outside of ii to be able to run apisnoop rainbow, which we want them to do.  It also makes our whole setup fragile--since it requires sharing.io to always be running in pristine condition.  If osmething happened to the postgres instance, it'd be hard to replicate our work.
+
+and so, we will make a docker container for _everything_.  Now, the only thing that's required for anyone to work on apisnoop rainbow is the git repo and docker, and they'd run a =docker-compose up= and have their own backend populated with raw_swaggers and audit_events. 
+
+To be able to do this, though, we'll need to check and adjust some of the assumptions built into the code now:
+- that the person will have access to sharing.io, as it's set as a default endpoint.
+- that the person will know how to enter into postgres to run our go command
+- That the person will know the location of our sources, in case they want to update which audit events and raw swaggers are loaded.
+- That the person will understand postgres and how to start up a server and db once postgres is started.
+
+  I think The ideal container will have it so someone can enter in a bucket and job in a sources.yaml in the root of apisnoop.  Then, they can run =docker-compose up= and it will start up everything needed at localhost:XXXX (with the port number being able to be passed as a flag).  This would start up postgres, pgadmin, and hasura.  The audit_events for the given bucket/job would load, as would the swaggers based on the version given in the metadata of the bucket.  All our views would load and be properly indexed.  The assigning of this port to some public url (like we do with sharing.io) should not be a part of the docker, as I imagine a decent amount of users would be running it local only.   However, the assigning of a port for the container, so someone can easily pop a shell into it, woudl be built in.  I think we'd also want the org-file integration tightly buitl, as it's a good thing to encourage.
+
+I think I end up being confused on this as we are combining proxy management of sharing.io with docker with emacs and i'm not sure where one starts and stops.  Or, I'm not sure how much of what I enjoy about what we're doing (working within an org file and doublechecking with a url) is due to set ups in our sharing.io box that'd be hard to replicate.  I am keen to reduce the docker file further so there are no traces of local environments, and see how to host that on sharing.io without being dependent on any program in sharing.io 
+
 * FOOTNOTES
 ** Iteration Loop
 *** listing tables
@@ -1233,7 +1254,7 @@ echo endpoint: https://$USER-hasura.sharing.io
  #+end_src
 *** Restart Hasura
     #+NAME: iteration loop
-    #+BEGIN_SRC tmate 
+    #+BEGIN_SRC tmate
       #:dir ~/ii/apisnoop_v3/apps/hasura
       
       
@@ -1244,18 +1265,20 @@ echo endpoint: https://$USER-hasura.sharing.io
       echo docker down, drop sql, rm migrations
       # For tangling via cli:
       SOCKETFILE=$(ls /tmp/emacs$(id -u)/server* | head -1)
+      # && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
       cd ~/ii/apisnoop_v3/apps/$USER-hasura \
        && docker-compose down -t 0 \
        && docker-compose rm \
-       && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
        && rm -f migrations/* \
        && emacsclient -s $SOCKETFILE -e "(org-babel-tangle-file \"~/ii/apisnoop_v3/org/meta.org\")" \
+       && docker-compose build \
        && docker-compose up -d \
        && sleep 2 \
-       && hasura migrate apply --log-level DEBUG \
-       && cd ~hh/ii/apisnoopregexp \
-       && make rmatch \
-       && CONN="host=172.17.0.1 user=$USER dbname=$USER password=''" ./rmatch
+       && hasura migrate apply --log-level DEBUG
+       # \
+       # && cd ~hh/ii/apisnoopregexp \
+       # && make rmatch \
+       # && CONN="host=172.17.0.1 user=$USER dbname=$USER password=''" ./rmatch
        # select count(*) from raw_audit_event where operation_id is null; \watch 2
     #+END_SRC
 
