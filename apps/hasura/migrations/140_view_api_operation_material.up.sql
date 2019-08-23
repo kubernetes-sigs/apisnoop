@@ -13,7 +13,7 @@ VARIABLE_PATTERN = re.compile("{([^}]+)}")
 path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
 path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
 if not path_regex.endswith(")") and not path_regex.endswith("?"):
-    path_regex += "([^/]*)"
+  path_regex += "([^/]*)"
 if path_regex.endswith("proxy"):
     path_regex += "/?$"
 else:

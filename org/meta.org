@@ -1254,7 +1254,7 @@ To be able to do this, though, we'll need to check and adjust some of the assump
 - That the person will know the location of our sources, in case they want to update which audit events and raw swaggers are loaded.
 - That the person will understand postgres and how to start up a server and db once postgres is started.
 
-  I think The ideal container will have it so someone can enter in a bucket and job in a sources.yaml in the root of apisnoop.  Then, they can run =docker-compose up= and it will start up everything needed at localhost:XXXX (with the port number being able to be passed as a flag).  This would start up postgres, pgadmin, and hasura.  The audit_events for the given bucket/job would load, as would the swaggers based on the version given in the metadata of the bucket.  All our views would load and be properly indexed.  The assigning of this port to some public url (like we do with sharing.io) should not be a part of the docker, as I imagine a decent amount of users would be running it local only.   However, the assigning of a port for the container, so someone can easily pop a shell into it, woudl be built in.  I think we'd also want the org-file integration tightly buitl, as it's a good thing to encourage.
+  I think The ideal container will have it so someone can enter in a bucket and job in a sources.yaml in the root of apisnoop.  Then, they can run =docker-compose up= and it will start up everything needed at localhost:XXXX (with the port number being able to be passed as a flag).  This would start up postgres, pgadmin, and hasura.  The audit_events for the given bucket/job would load, as would the swaggers based on the version given in the metadata of the bucket.  All our views would load and be properly indexed.  The assigning of this port to some public url (like we do with sharing.io) should not be a part of the docker, as I imagine a decent amount of users would be running it local only.   However, the assigning of a port for the container, so someone can easily pop a shell into it, would be built in.  I think we'd also want the org-file integration tightly built, as it's a good thing to encourage.
 
 I think I end up being confused on this as we are combining proxy management of sharing.io with docker with emacs and i'm not sure where one starts and stops.  Or, I'm not sure how much of what I enjoy about what we're doing (working within an org file and doublechecking with a url) is due to set ups in our sharing.io box that'd be hard to replicate.  I am keen to reduce the docker file further so there are no traces of local environments, and see how to host that on sharing.io without being dependent on any program in sharing.io 
 
@@ -1321,18 +1321,36 @@ I think I end up being confused on this as we are combining proxy management of 
       echo create a $USER-hasura dir and link back to ../hasura/*
       mkdir -p $USER-hasura && cd $USER-hasura && ln -sf ../hasura/* .
       echo docker down, drop sql, rm migrations
+      # psql client settings
+      export PGHOST=localhost
+      # UID based PGPORT used to expose per user postgresql ports on same box
+      export PGPORT=$(id -u)1 # our users numeric ID + 1, must be less than map tcp port 65535
+      export PGDATABASE=apisnoop
+      export PGUSER=apisnoop
+      export PGPASS=s3cr3tsauc3
+      # https://wiki.postgresql.org/wiki/Pgpass
+      export PGPASSFILE=~/.pgpass
+      # export PGPASSFILE=${PWD}/pgpassfile
+      echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
+      chmod 0600 $PGPASSFILE
+      # cncf/apisnoopregexp rmatch CONN string
+      export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE password=$PGPASS sslmode=disable client_encoding=UTF8"
       # For tangling via cli:
-      SOCKETFILE=$(ls /tmp/emacs$(id -u)/server* | head -1)
+      export SOCKETFILE=$(ls /tmp/emacs$(id -u)/server* | head -1)
       # && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
       cd ~/ii/apisnoop_v3/apps/$USER-hasura \
        && docker-compose down -t 0 \
        && docker-compose rm \
+       && docker volume rm -f $USER-hasura_migrations \
        && rm -f migrations/* \
        && emacsclient -s $SOCKETFILE -e "(org-babel-tangle-file \"~/ii/apisnoop_v3/org/meta.org\")" \
        && docker-compose build \
-       && docker-compose up -d \
-       && sleep 2 \
-       && hasura migrate apply --log-level DEBUG
+       && docker-compose up -d #\
+       #&& sleep 2 \
+       #&& hasura migrate apply --log-level DEBUG \
+       #&& make rmatch \
+       #&&  ./rmatch
+       # psql -h 127.0.0.1 -p $(id -u)1 --user apisnoop
        # \
        # && cd ~hh/ii/apisnoopregexp \
        # && make rmatch \
@@ -1473,6 +1491,10 @@ I think I end up being confused on this as we are combining proxy management of 
  #+end_EXAMPLE
 
 ** Local Variables
+   - Note taken on [2019-08-23 Fri 17:06]
  # Local Variables:
  # noeval: (sql-connect "hasura" (concat "*SQL: postgres:data*"))
+ # noeval: (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+ # noeval: (sql-connect "apisnoop" (concat "*SQL: apisnoop:postgres*"))
  # End:
+ 
