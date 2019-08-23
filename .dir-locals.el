@@ -45,12 +45,15 @@
 
      (set (make-local-variable 'sql-connection-alist)
           (list
-           (list 'hasura
+           (list 'apisnoop
             (list 'sql-product '(quote postgres))
-            (list 'sql-user user-login-name)
-            (list 'sql-database user-login-name)
-            (list 'sql-port 5432)
-            (list 'sql-server "172.17.0.1")
+            ;; (list 'sql-user user-login-name)
+            (list 'sql-user "apisnoop")
+            ;;(list 'sql-database user-login-name)
+            (list 'sql-database "apisnoop")
+            (list 'sql-port (+ (* (user-uid) 10) 1))
+            ;; (list 'sql-port (concat (number-to-string (user-uid)) "1"))
+            (list 'sql-server "localhost")
             ;; (list 'sql-server "172.17.0.1")
             )))
      (set (make-local-variable 'org-file-properties)
