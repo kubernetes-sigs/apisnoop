@@ -1059,7 +1059,7 @@ echo endpoint: https://$USER-hasura.sharing.io
 *** init-apisnoop-db.sh
 
  #+NAME: init apisnoop db
- #+BEGIN_SRC sql-mode :tangle ../apps/hasura/initdb/apisnoop_db.sql
+ #+BEGIN_SRC sql-mode :tangle ../apps/postgres/initdb/apisnoop_db.sql
    -- ERROR:  database "apisnoop" already exists
    -- create database apisnoop;
    -- create user myuser with encrypted password 'mypass';
@@ -1139,7 +1139,8 @@ echo endpoint: https://$USER-hasura.sharing.io
 
 *** servers.json
 # python setup.py --dump-servers /tmp/server.json --user apisnoop@cncf.io
-#+BEGIN_SRC json :tangle ../apps/hasura/pgadmin/servers.json
+#+NAME: pgadmin default servers config
+#+BEGIN_SRC json :tangle ../apps/pgadmin/servers.json
   {
       "Servers": {
           "1": {
@@ -1160,13 +1161,13 @@ echo endpoint: https://$USER-hasura.sharing.io
           }
       }
   }
-#+END_SRC w wm
+#+END_SRC
 
  
 ** docker-compose.yml
 
 #+NAME: hasura docker-compose
-#+BEGIN_SRC yaml :tangle ../apps/hasura/docker-compose.yaml
+#+BEGIN_SRC yaml :tangle ../apps/docker-compose.yaml
   # hasura/docker-compose.yaml
   version: "3.7"
 
@@ -1175,35 +1176,37 @@ echo endpoint: https://$USER-hasura.sharing.io
       # image: postgres:11.5 # debian-slim / alternative: postgres:11.5-alpine
       # we need our image to include plpython3u
       build:
-        dockerfile: ../postgres/Dockerfile
+        dockerfile: postgres/Dockerfile
         context: .
       container_name: "${USER}-postgres"
-      shm_size: '64GB' # we currently use big boxes
       restart: always
-      networks:
-        - db
+      shm_size: '64GB' # we currently use big boxes
       environment:
-        - POSTGRES_USER=apisnoop
-        - POSTGRES_PASSWORD=s3cr3tsauc3
+        # These are postgres server setup options
+        - POSTGRES_DB=${PGDATABASE}
+        - POSTGRES_USER=${PGUSER}
+        - POSTGRES_PASSWORD=${PGPASS}
+        - PGDATA=/dev/shm/pgdata
         # - POSTGRES_PASSWORD_FILE="/run/secrets/postgres-passwd" # k8s secret style
-        - POSTGRES_DB=apisnoop
         # - POSTGRES_INITDB_ARGS=""
         # - POSTGRES_INITDB_WALDIR=""
         # - PGDATA="/var/lib/postgresql/data/"
-        - PGDATA=/dev/shm/pgdata
-        # psql client defaults
-        - PGDATABASE=apisnoop
-        - PGUSER=apisnoop
+        # These are psql client defaults
+        - PGDATABASE=${PGDATABASE}
+        - PGUSER=${PGUSER}
       volumes:
         # runs *sql and executable *sh and sources non-executable *sh
-        - ./initdb:/docker-entrypoint-initdb.d
-        - ./migrations:/migrations
-      ports:
-        - "$PGPORT:5432"
+        - ./postgres/initdb:/docker-entrypoint-initdb.d
+        # mainly mounted for debugging
+        - ./hasura/migrations:/migrations
+      ports: # exposed to docker host
+        - "${PGPORT}:5432"
       # Expose ports without publishing them to the host machine
       # - they’ll only be accessible to linked services.
-      expose:
+      expose: # exposed to other containers
         - "5432"
+      networks: # separate from web due to traefik routing on sharing.io
+        - db
     pgadmin:
       container_name: "${USER}-pgadmin"
       image: dpage/pgadmin4:4.12
@@ -1213,7 +1216,7 @@ echo endpoint: https://$USER-hasura.sharing.io
         - web
       environment:
         - PGADMIN_DEFAULT_EMAIL=apisnoop@cncf.io
-        - PGADMIN_DEFAULT_PASSWORD=iiapisnoop!!
+        - PGADMIN_DEFAULT_PASSWORD=${PGPASS}
         # python setup.py --dump-servers /tmp/servers.json --user apisnoop@cncf.io
         - PGADMIN_SERVER_JSON_FILE=/apisnoop/servers.json
         - PGADMIN_CONFIG_APP_NAME=APISnoopQL
@@ -1226,6 +1229,8 @@ echo endpoint: https://$USER-hasura.sharing.io
         - PGADMIN_CONFIG_SESSION_EXPIRATION_TIME=7
       volumes:
        - ./pgadmin:/apisnoop
+      ports: # exposed to docker host
+        - "${PGADMIN_PORT}:80"
       expose:
         - "80"
       labels:
@@ -1244,11 +1249,12 @@ echo endpoint: https://$USER-hasura.sharing.io
         - web
         - db
       environment:
-        # - "HASURA_GRAPHQL_DATABASE_URL=postgres://${USER}@172.17.0.1:5432/${USER}"
-        - "HASURA_GRAPHQL_DATABASE_URL=postgres://apisnoop:s3cr3tsauc3@postgres:5432/apisnoop"
+        - HASURA_GRAPHQL_DATABASE_URL=postgres://${PGUSER}:${PGPASS}@postgres:5432/${PGDATABASE}
         - HASURA_GRAPHQL_ENABLE_CONSOLE=true
       volumes:
-        - ./migrations:/hasura-migrations
+        - ./hasura/migrations:/hasura-migrations
+      ports: # exposed to docker host
+        - "${HASURA_PORT}:8080"
       expose:
         - "8080"
       labels:
@@ -1321,6 +1327,24 @@ I think I end up being confused on this as we are combining proxy management of 
  (17 rows)
 
  #+end_src
+
+*** .env
+#+BEGIN_SRC shell :tangle ~/ii/apisnoop_v3/apps/.env
+  PGADMIN_PORT=9001
+  HASURA_PORT=9000
+  # UID based PGPORT used to expose per user postgresql ports on same box
+  PGPORT=54321
+  PGHOST=localhost
+  PGUSER=apisnoop
+  PGPASS=s3cr3tsauc3
+  PGDATABASE=apisnoop
+  # PGPASSFILE=~/ii/apisnoop_v3/apps/pgpass
+  # echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
+  # chmod 0600 $PGPASSFILE
+  # export PGPASSFILE=${PWD}/pgpassfile
+  # cncf/apisnoopregexp rmatch CONN string
+  CONN="host=127.0.0.1 port=54321 user=apisnoop dbname=apisnoop password=s3cr3tsauc3 sslmode=disable client_encoding=UTF8"
+#+END_SRC
 
 *** dropping all data
  #+NAME: do not run
@@ -1406,7 +1430,7 @@ I think I end up being confused on this as we are combining proxy management of 
  #+END_SRC
 
  #+NAME: create database and granting all privs to a user
- #+BEGIN_SRC sql-mode :noweb yes :tangle ../apps/hasura/db_setup.sql
+ #+BEGIN_SRC sql-mode :noweb yes :notangle ../apps/hasura/db_setup.sql
  create database <<hasura-user()>>;
  -- create user myuser with encrypted password 'mypass';
  grant all privileges on database <<hasura-user()>> to <<hasura-user()>>;

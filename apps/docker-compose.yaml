@@ -10,35 +10,37 @@ services:
     # image: postgres:11.5 # debian-slim / alternative: postgres:11.5-alpine
     # we need our image to include plpython3u
     build:
-      dockerfile: ../postgres/Dockerfile
+      dockerfile: postgres/Dockerfile
       context: .
     container_name: "${USER}-postgres"
-    shm_size: '64GB' # we currently use big boxes
     restart: always
-    networks:
-      - db
+    shm_size: '64GB' # we currently use big boxes
     environment:
-      - POSTGRES_USER=apisnoop
-      - POSTGRES_PASSWORD=s3cr3tsauc3
+      # These are postgres server setup options
+      - POSTGRES_DB=${PGDATABASE}
+      - POSTGRES_USER=${PGUSER}
+      - POSTGRES_PASSWORD=${PGPASS}
+      - PGDATA=/dev/shm/pgdata
       # - POSTGRES_PASSWORD_FILE="/run/secrets/postgres-passwd" # k8s secret style
-      - POSTGRES_DB=apisnoop
       # - POSTGRES_INITDB_ARGS=""
       # - POSTGRES_INITDB_WALDIR=""
       # - PGDATA="/var/lib/postgresql/data/"
-      - PGDATA=/dev/shm/pgdata
-      # psql client defaults
-      - PGDATABASE=apisnoop
-      - PGUSER=apisnoop
+      # These are psql client defaults
+      - PGDATABASE=${PGDATABASE}
+      - PGUSER=${PGUSER}
     volumes:
       # runs *sql and executable *sh and sources non-executable *sh
-      - ./initdb:/docker-entrypoint-initdb.d
-      - ./migrations:/migrations
-    ports:
-      - "$PGPORT:5432"
+      - ./postgres/initdb:/docker-entrypoint-initdb.d
+      # mainly mounted for debugging
+      - ./hasura/migrations:/migrations
+    ports: # exposed to docker host
+      - "${PGPORT}:5432"
     # Expose ports without publishing them to the host machine
     # - they’ll only be accessible to linked services.
-    expose:
+    expose: # exposed to other containers
       - "5432"
+    networks: # separate from web due to traefik routing on sharing.io
+      - db
   pgadmin:
     container_name: "${USER}-pgadmin"
     image: dpage/pgadmin4:4.12
@@ -48,7 +50,7 @@ services:
       - web
     environment:
       - PGADMIN_DEFAULT_EMAIL=apisnoop@cncf.io
-      - PGADMIN_DEFAULT_PASSWORD=iiapisnoop!!
+      - PGADMIN_DEFAULT_PASSWORD=${PGPASS}
       # python setup.py --dump-servers /tmp/servers.json --user apisnoop@cncf.io
       - PGADMIN_SERVER_JSON_FILE=/apisnoop/servers.json
       - PGADMIN_CONFIG_APP_NAME=APISnoopQL
@@ -61,6 +63,8 @@ services:
       - PGADMIN_CONFIG_SESSION_EXPIRATION_TIME=7
     volumes:
      - ./pgadmin:/apisnoop
+    ports: # exposed to docker host
+      - "${PGADMIN_PORT}:80"
     expose:
       - "80"
     labels:
@@ -79,11 +83,12 @@ services:
       - web
       - db
     environment:
-      # - "HASURA_GRAPHQL_DATABASE_URL=postgres://${USER}@172.17.0.1:5432/${USER}"
-      - "HASURA_GRAPHQL_DATABASE_URL=postgres://apisnoop:s3cr3tsauc3@postgres:5432/apisnoop"
+      - HASURA_GRAPHQL_DATABASE_URL=postgres://${PGUSER}:${PGPASS}@postgres:5432/${PGDATABASE}
       - HASURA_GRAPHQL_ENABLE_CONSOLE=true
     volumes:
-      - ./migrations:/hasura-migrations
+      - ./hasura/migrations:/hasura-migrations
+    ports: # exposed to docker host
+      - "${HASURA_PORT}:8080"
     expose:
       - "8080"
     labels:
