@@ -15,7 +15,7 @@ git checkout v3_rainbow
 Then within the app folder:
 
 ```shell
-cd app
+cd apps
 docker-compose up
 ```
 
