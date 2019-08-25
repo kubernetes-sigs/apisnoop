@@ -663,9 +663,41 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
 
 #+NAME: reload sample audit event
 #+BEGIN_SRC sql-mode :noweb yes
-  -- select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');
-  -- select * from audit_event_op_update();
+  select * from load_audit_eventsi('ci-kubernetes-e2e-gci-gce','1134962072287711234');
 #+END_SRC
+*** interactive update  of operation ids
+#+NAME: update event operation_id sample audit event
+#+BEGIN_SRC tmate :session sql:update_opid1 :exports none
+  cd ~/ii/apisnoop_v3/apps
+  . .loadenv
+  psql
+  select * from audit_event_op_update()\;
+  REFRESH MATERIALIZED VIEW CONCURRENTLY podspec_field_coverage_material;
+#+END_SRC
+*** follow htop to see CPU usage
+#+NAME: update event operation_id sample audit event
+#+BEGIN_SRC tmate :session sql:htop1 :exports none
+  htop
+#+END_SRC
+
+*** see how far we have to go
+#+NAME: every 10 seconsd count the number of events with no operation_id
+#+BEGIN_SRC tmate :session sql:op_count1 :exports none
+  cd ~/ii/apisnoop_v3/apps
+  . .loadenv
+  psql
+  select count(*) from raw_audit_event where operation_id is null; \watch 10
+#+END_SRC
+
+#+BEGIN_SRC sql-mode :results code :results append
+  REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+REFRESH MATERIALIZED VIEW
+#+end_src
+
 
 ** 901: update_audit_events.up.sql
   :PROPERTIES:
@@ -1409,23 +1441,18 @@ I think I end up being confused on this as we are combining proxy management of 
       echo create a $USER-hasura dir and link back to ../hasura/*
       mkdir -p $USER-hasura && cd $USER-hasura && ln -sf ../hasura/* .
       echo docker down, drop sql, rm migrations
+           . .loadenv
       # psql client settings
-      export PGHOST=localhost
-      # UID based PGPORT used to expose per user postgresql ports on same box
-      export PGPORT=$(id -u)1 # our users numeric ID + 1, must be less than map tcp port 65535
-      export PGDATABASE=apisnoop
-      export PGUSER=apisnoop
-      export PGPASS=s3cr3tsauc3
       # https://wiki.postgresql.org/wiki/Pgpass
-      export PGPASSFILE=~/.pgpass
       # export PGPASSFILE=${PWD}/pgpassfile
+      export PGPASSFILE=~/.pgpass
       echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
       chmod 0600 $PGPASSFILE
       # cncf/apisnoopregexp rmatch CONN string
       export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE password=$PGPASS sslmode=disable client_encoding=UTF8"
+      # && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
       # For tangling via cli:
       export SOCKETFILE=$(ls /tmp/emacs$(id -u)/server* | head -1)
-      # && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
       cd ~/ii/apisnoop_v3/apps/$USER-hasura \
        && docker-compose down -t 0 \
        && docker-compose rm \
