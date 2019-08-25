@@ -16,6 +16,7 @@ Then within the app folder:
 
 ```shell
 cd apps
+. .loadenv
 docker-compose up
 ```
 

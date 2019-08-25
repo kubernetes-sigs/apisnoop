@@ -59,6 +59,7 @@ CREATE TABLE api_swagger (
       return "something went wrong"
 #+END_SRC
 
+
 #+NAME: load_swagger_via_curl.sql
 #+BEGIN_SRC sql-mode :noweb yes
   set role dba;
@@ -661,18 +662,32 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   :END:
 *** Call load_audit_events()
 
-#+NAME: reload sample audit event
-#+BEGIN_SRC sql-mode :noweb yes
-  select * from load_audit_eventsi('ci-kubernetes-e2e-gci-gce','1134962072287711234');
+#+NAME: reload sample audit event 
+#+BEGIN_SRC sql-mode :noweb yes :results append :output both
+  select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');
 #+END_SRC
-*** interactive update  of operation ids
+
+#+RESULTS: reload sample audit event
+#+begin_src sql-mode
+ load_audit_events 
+-------------------
+ 
+(1 row)
+
+#+end_src
+
+** 901: update_audit_events.up.sql
+  :PROPERTIES:
+  :header-args:sql-mode+: :notangle ../apps/hasura/migrations/901_update_audit_events.up.sql
+  :END:
+*** Call load_audit_events() interactively
 #+NAME: update event operation_id sample audit event
 #+BEGIN_SRC tmate :session sql:update_opid1 :exports none
   cd ~/ii/apisnoop_v3/apps
   . .loadenv
   psql
   select * from audit_event_op_update()\;
-  REFRESH MATERIALIZED VIEW CONCURRENTLY podspec_field_coverage_material;
+  REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
 #+END_SRC
 *** follow htop to see CPU usage
 #+NAME: update event operation_id sample audit event
@@ -689,28 +704,7 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   select count(*) from raw_audit_event where operation_id is null; \watch 10
 #+END_SRC
 
-#+BEGIN_SRC sql-mode :results code :results append
-  REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-REFRESH MATERIALIZED VIEW
-#+end_src
-
-
-** 901: update_audit_events.up.sql
-  :PROPERTIES:
-  :header-args:sql-mode+: :notangle ../apps/hasura/migrations/901_update_audit_events.up.sql
-  :END:
-*** Call load_audit_events()
-
-#+NAME: reload sample audit event
-#+BEGIN_SRC sql-mode :noweb yes
-  select * from audit_event_op_update();
-#+END_SRC
-
-* Audit Events View
+  * Audit Events View
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
   :END:
@@ -1244,7 +1238,7 @@ echo endpoint: https://$USER-hasura.sharing.io
       # image: postgres:11.5 # debian-slim / alternative: postgres:11.5-alpine
       # we need our image to include plpython3u
       build:
-        dockerfile: postgres/Dockerfile
+        dockerfile: ../apps/postgres/Dockerfile
         context: .
       container_name: "${USER}-postgres"
       restart: always
@@ -1437,27 +1431,20 @@ I think I end up being confused on this as we are combining proxy management of 
       
       
       
-      cd ~/ii/apisnoop_v3/apps
-      echo create a $USER-hasura dir and link back to ../hasura/*
-      mkdir -p $USER-hasura && cd $USER-hasura && ln -sf ../hasura/* .
+      cd ~/ii/apisnoop_v3/
+      echo create a $USER-hasura dir and link back to ../apps/*
+      mkdir -p $USER-apps && cd $USER-apps && ln -sf ../apps/* .
       echo docker down, drop sql, rm migrations
-           . .loadenv
-      # psql client settings
-      # https://wiki.postgresql.org/wiki/Pgpass
-      # export PGPASSFILE=${PWD}/pgpassfile
-      export PGPASSFILE=~/.pgpass
-      echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
-      chmod 0600 $PGPASSFILE
+      . .loadenv
       # cncf/apisnoopregexp rmatch CONN string
-      export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE password=$PGPASS sslmode=disable client_encoding=UTF8"
       # && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
       # For tangling via cli:
       export SOCKETFILE=$(ls /tmp/emacs$(id -u)/server* | head -1)
-      cd ~/ii/apisnoop_v3/apps/$USER-hasura \
+      cd ~/ii/apisnoop_v3/$USER-apps \
        && docker-compose down -t 0 \
        && docker-compose rm \
        && docker volume rm -f $USER-hasura_migrations \
-       && rm -f migrations/* \
+       && rm -f hasura/migrations/* \
        && emacsclient -s $SOCKETFILE -e "(org-babel-tangle-file \"~/ii/apisnoop_v3/org/meta.org\")" \
        && docker-compose build \
        && docker-compose up #\
