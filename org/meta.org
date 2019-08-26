@@ -7,6 +7,7 @@
 #+ARCHIVE: ~/ii/apisnoop_v3/org/archive/meta.archive.org::
 #+PROPERTY: header-args:sql-mode+ :results silent
 
+
 * Purpose
 * Raw Swaggers Table, and Helper Functions
   :PROPERTIES:
@@ -668,6 +669,24 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   :PROPERTIES:
   :header-args:sql-mode+: :notangle ../apps/hasura/migrations/900_populate_audit_events.up.sql
   :END:
+
+We could load audit_events directly from test-grid via bucket and job.
+However they do NOT include the OperationID.
+It's computationally expensive... nearly 30 minutes on a 56 Xeon core box with 300+ gigs of ram.
+
+Might be good to instead save our processed audit_events via
+
+#+BEGIN_SRC shell :eval never
+pg_dump --host=$PGHOST --port=$PGPORT --username=$PGUSER --dbname=$PGDATABASE --table=raw_audit_event
+ > $BUCKET.$JOB.sql 
+#+END_SRC
+
+Which we could easily load via:
+
+#+BEGIN_SRC shell :eval never
+psql < /tmp/ci-kubernetes-e2e-gci-gce.1165794879855398916.sql
+#+END_SRC
+
 *** Call load_audit_events()
 
 #+NAME: reload sample audit event 
@@ -711,13 +730,6 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   psql
   select count(*) from raw_audit_event where operation_id is null; \watch 10
 #+END_SRC
-
-*** dump data for restore
-
-#+BEGIN_SRC tmate
-pg_dump --host=$PGHOST --port=$PGPORT --username=$PGUSER --dbname=$PGDATABASE --table=raw_audit_event > $BUCKET.$JOB.sql 
-#+END_SRC
-
 
 * Audit Events View
   :PROPERTIES:
@@ -1240,7 +1252,6 @@ echo endpoint: https://$USER-hasura.sharing.io
   }
 #+END_SRC
 
- 
 ** docker-compose.yml
 
 #+NAME: hasura docker-compose
@@ -1416,12 +1427,34 @@ I think I end up being confused on this as we are combining proxy management of 
   PGUSER=apisnoop
   PGPASS=s3cr3tsauc3
   PGDATABASE=apisnoop
-  # PGPASSFILE=~/ii/apisnoop_v3/apps/pgpass
-  # echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
-  # chmod 0600 $PGPASSFILE
-  # export PGPASSFILE=${PWD}/pgpassfile
-  # cncf/apisnoopregexp rmatch CONN string
   CONN="host=127.0.0.1 port=54321 user=apisnoop dbname=apisnoop password=s3cr3tsauc3 sslmode=disable client_encoding=UTF8"
+#+END_SRC
+
+#+NAME: .loadenv
+#+BEGIN_SRC shell :tangle ../apps/.loadenv
+# If we are on sharing.io, use UID based *_PORTs
+if [ $(hostname) = "sharing.io" ]
+then
+    echo Overwriting .env based on \*-${USER}.sharing.io
+(
+    # UID based *_PORT used to expose per user postgresql,hasura, and pgadmin ports on same box
+    echo HASURA_PORT=$(id -u)0
+    echo PGPORT=$(id -u)1
+    echo PGADMIN_PORT=$(id -u)2
+    echo PGHOST=localhost
+    echo PGDATABASE=apisnoop
+    echo PGUSER=apisnoop
+    echo PGPASS=s3cr3tsauc3
+    echo PGPASSFILE=$PWD/pgpass
+    # echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PWD/pgpass
+) > .env
+fi
+
+export $(grep -v '^#' .env | xargs -d '\n')
+PGPASSFILE=$(pwd)/pgpass
+echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
+chmod 600 $PGPASSFILE
+export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE password=$PGPASS sslmode=disable client_encoding=UTF8"
 #+END_SRC
 
 *** dropping all data
@@ -1446,17 +1479,20 @@ I think I end up being confused on this as we are combining proxy management of 
       
       
       
-      cd ~/ii/apisnoop_v3/
-      echo create a $USER-apps dir and link back to ../apps/*
-      mkdir -p $USER-apps && cd $USER-apps && ln -sf ../apps/* .
-      ls ../apps/.*env | xargs -n 1 -I X ln -sf X .
+      # cd ~/ii/apisnoop_v3/
+      #echo create a $USER-apps dir and link back to ../apps/*
+      #mkdir -p $USER-apps && cd $USER-apps && ln -sf ../apps/* .
+      #ls ../apps/.*env | xargs -n 1 -I X ln -sf X .
+      cd ~/ii/apisnoop_v3/apps
       echo docker down, drop sql, rm migrations
       . .loadenv
+      cp pgpass ~/.pgpass
       # cncf/apisnoopregexp rmatch CONN string
       # && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
       # For tangling via cli:
       export SOCKETFILE=$(ls /tmp/emacs$(id -u)/server* | head -1)
-      cd ~/ii/apisnoop_v3/$USER-apps \
+      # cd ~/ii/apisnoop_v3/$USER-apps \
+      cd ~/ii/apisnoop_v3/apps \
        && docker-compose down -t 0 \
        && docker-compose rm \
        && docker volume rm -f $USER-hasura_migrations \
@@ -1615,13 +1651,21 @@ I think I end up being confused on this as we are combining proxy management of 
 
 ** Local Variables
    - Note taken on [2019-08-23 Fri 17:06]
+** connect to db
+#+BEGIN_SRC emacs-lisp
+  (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+#+END_SRC
+
+#+RESULTS:
+#+begin_src emacs-lisp
+#<buffer *SQL: postgres:data*>
+#+end_src
+
  # Local Variables:
  # noeval: (sql-connect "hasura" (concat "*SQL: postgres:data*"))
  # noeval: (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
  # noeval: (sql-connect "apisnoop" (concat "*SQL: apisnoop:postgres*"))
  # End:
- 
- 
  
  
  
