@@ -26,10 +26,24 @@ reset role;
 -- #+NAME: api_operation_material
 
 CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
-  SELECT (d.value ->> 'operationId'::text) AS operation_id,
-         (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+  SELECT
+         (d.value ->> 'operationId'::text) AS operation_id,
+         CASE
+         WHEN paths.key ~~ '%alpha%' THEN 'alpha'
+         WHEN paths.key ~~ '%beta%' THEN 'beta'
+         ELSE 'stable'
+         END AS level,
+         split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+         CASE
+         WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
+         ELSE false
+         END AS deprecated,
+         (d.value ->> 'description'::text) AS description,
          d.key AS http_method,
+         (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
          CASE
           WHEN (d.value ->> 'x-kubernetes-action'::text) = 'get' THEN ARRAY ['get']
           WHEN (d.value ->> 'x-kubernetes-action'::text) =  'list' THEN ARRAY [ 'list' ]
@@ -43,14 +57,9 @@ CREATE MATERIALIZED VIEW "public"."api_operation_material" AS
          ELSE NULL
            END as event_verb,
          paths.key AS path,
-         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-         ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-         (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
-         (d.value ->> 'description'::text) AS description,
          (d.value -> 'consumes'::text)::jsonb AS consumes,
          (d.value -> 'responses'::text)::jsonb AS responses,
          (d.value -> 'parameters'::text)::jsonb AS parameters,
-         split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
          string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
          string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
          regex_from_path(paths.key) as regex,

@@ -41,7 +41,7 @@ CREATE TABLE api_swagger (
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/120_function_load_swagger_via_curl.up.sql
   :END:
-
+  
 #+NAME: load_swagger_via_curl.py
 #+BEGIN_SRC python :eval never :exports code
   # should probably sanitize branch_or_tag
@@ -58,7 +58,6 @@ CREATE TABLE api_swagger (
   except:
       return "something went wrong"
 #+END_SRC
-
 
 #+NAME: load_swagger_via_curl.sql
 #+BEGIN_SRC sql-mode :noweb yes
@@ -113,10 +112,24 @@ CREATE TABLE api_swagger (
 #+NAME: api_operation_material
 #+BEGIN_SRC sql-mode 
   CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
-    SELECT (d.value ->> 'operationId'::text) AS operation_id,
-           (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+    SELECT
+           (d.value ->> 'operationId'::text) AS operation_id,
+           CASE
+           WHEN paths.key ~~ '%alpha%' THEN 'alpha'
+           WHEN paths.key ~~ '%beta%' THEN 'beta'
+           ELSE 'stable'
+           END AS level,
+           split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
            ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+           CASE
+           WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
+           ELSE false
+           END AS deprecated,
+           (d.value ->> 'description'::text) AS description,
            d.key AS http_method,
+           (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
            CASE
             WHEN (d.value ->> 'x-kubernetes-action'::text) = 'get' THEN ARRAY ['get']
             WHEN (d.value ->> 'x-kubernetes-action'::text) =  'list' THEN ARRAY [ 'list' ]
@@ -130,14 +143,9 @@ CREATE TABLE api_swagger (
            ELSE NULL
              END as event_verb,
            paths.key AS path,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-           (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) AS deprecated,
-           (d.value ->> 'description'::text) AS description,
            (d.value -> 'consumes'::text)::jsonb AS consumes,
            (d.value -> 'responses'::text)::jsonb AS responses,
            (d.value -> 'parameters'::text)::jsonb AS parameters,
-           split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
            string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
            string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
            regex_from_path(paths.key) as regex,
@@ -664,7 +672,7 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
 
 #+NAME: reload sample audit event 
 #+BEGIN_SRC sql-mode :noweb yes :results append :output both
-  select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');
+  select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1165794879855398916');
 #+END_SRC
 
 #+RESULTS: reload sample audit event
@@ -704,7 +712,14 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   select count(*) from raw_audit_event where operation_id is null; \watch 10
 #+END_SRC
 
-  * Audit Events View
+*** dump data for restore
+
+#+BEGIN_SRC tmate
+pg_dump --host=$PGHOST --port=$PGPORT --username=$PGUSER --dbname=$PGDATABASE --table=raw_audit_event > $BUCKET.$JOB.sql 
+#+END_SRC
+
+
+* Audit Events View
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
   :END:
