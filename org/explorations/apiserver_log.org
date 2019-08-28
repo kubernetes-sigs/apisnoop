@@ -1,0 +1,304 @@
+#+TITLE: Using APIServer logs to find per audit_entry operation_id
+* TLDR
+  
+
+  There was a hope that the apiserver log entries could provide us with a way to
+  quickly match an audit_entry to it's operation id without needing to perform
+  300k+ regex matches using [[https://github.com/cncf/apisnoopregexp/blob/master/cmd/rmatch/rmatch.go][cncf/apisnoopregexp/rmatch.go]] .
+
+  However the apiserver logs do not include an audit_id, which limits our
+  ability to precisely match.
+
+  Fuzzy matching on timestamp might help locate the entry, but in the end the
+  only additional data it provides is the openapi path verb.
+** apisnoop defintion of api_operation from swagger.json
+
+  The audit `event_verb` isn't one to one with the openapi `http_method` or
+  `x-kubernetes-action` verb.
+  
+  Our worked around is a very slow, but and could use some speedups and
+  verification.
+
+  It's basically a one to many mapping that doesn't seem to have any collisions.
+
+  Unique string used to identify the operation. The id MUST be unique among all
+  operations described in the API. Tools and libraries MAY use the operationId
+  to uniquely identify an operation, therefore, it is recommended to follow
+  common programming naming conventions.
+
+  - path :: https://swagger.io/specification/v2/#pathsObject includes https://swagger.io/specification/v2/#pathTemplating
+  - http_method :: one of get, put ,post, delete, options, head, patch or parameters - see  https://swagger.io/specification/v2/#pathItemObject
+  - operation_id :: unique operation id https://swagger.io/specification/v2/#operationObject
+
+  #+NAME: relevant sql for api_operation material view
+  #+BEGIN_SRC sql-mode
+    -- pulls directly from swagger.json
+    CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
+      SELECT
+       -- other fields, our focus is on api_operation k8s_action and event_verb
+      paths.key AS path, -- the openapi path
+      d.key AS http_method, -- the openapi http method
+      -- our attempt to map to the audit_event_verb
+      (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+      CASE
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'get' THEN ARRAY ['get']
+      WHEN (d.value ->> 'x-kubernetes-action'::text) =  'list' THEN ARRAY [ 'list' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'proxy' THEN ARRAY [ 'proxy' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'deletecollection' THEN ARRAY [ 'deletecollection' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'watch' THEN ARRAY [ 'watch' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'post' THEN ARRAY [ 'post', 'create' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) =  'put' THEN ARRAY [ 'put', 'update' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch' THEN ARRAY [ 'patch' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN ARRAY [ 'connect' ]
+      ELSE NULL
+               END as event_verb,
+      FROM api_swagger
+      , jsonb_each((api_swagger.data -> 'paths'::text)) paths(key, value)
+      , jsonb_each(paths.value) d(key, value)
+  #+END_SRC
+
+** apisnoop definition of audit_event lacking api_operation id
+   APISnoop generates test and conformance coverage of the kubernetes api.
+
+   We compare audit logs to the OpenAPI spec.
+
+   Specifically match each `audit.k8s.io/v1` event to a `swagger/operationId`
+
+   This currently takes around 30 minutes utilizing 56 Xeon Cores to process 300k+ audit events using [[https://github.com/cncf/apisnoopregexp/blob/master/cmd/rmatch/rmatch.go#L51-L78][cncf/apisnoopregexp]] 
+
+   Ideally the `audit.k8s.io/v2` will include a high level field mapping to the `swagger.io/operationId`.
+
+   But until then we could create a PR for apiserver using
+   `audit.k8s.io/v1/annotations` to include `swagger.io/operationId` or similar.
+
+   #+BEGIN_SRC json
+     {
+       "kind": "Event",
+       "apiVersion": "audit.k8s.io/v1",
+       "level": "Request",
+       "auditID": "6dfb7495-7cae-44d7-a341-b71676ce2a11",
+       "stage": "ResponseComplete",
+       "requestURI": "/api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master",
+       "verb": "get",
+       "userAgent": "kubelet/v1.17.0 (linux/amd64) kubernetes/bdfc8f6",
+       "annotations": {
+         "swagger.io/specification/v2/operationObject/operationId": "readCoreV1NamespacedPod"
+       }
+     }
+   #+END_SRC
+
+
+*** audit/v1 verb
+
+   [[https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/apis/audit/v1/types.go#L85:L87][k8s.io/apiserver/pkg/apis/audit/v1/types.go#verb]] 
+
+   #+NAME: apiserver audit/v1 verb
+   #+BEGIN_SRC go
+     // Verb is the kubernetes verb associated with the request.
+     // For non-resource requests, this is the lower-cased HTTP method.
+     Verb string `json:"verb" protobuf:"bytes,5,opt,name=verb"` 
+   #+END_SRC
+
+*** audit/v1 annotations
+
+   [[https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/apis/audit/v1/types.go#L129:L135][k8s.io/apiserver/pkg/apis/audit/v1/types.go#annotations]] 
+
+   #+NAME: apiserver audit/v1 annotations
+   #+BEGIN_SRC go
+     // Annotations is an unstructured key value map stored with an audit event that may be set by
+     // plugins invoked in the request serving chain, including authentication, authorization and
+     // admission plugins. Note that these annotations are for the audit event, and do not correspond
+     // to the metadata.annotations of the submitted object. Keys should uniquely identify the informing
+     // component to avoid name collisions (e.g. podsecuritypolicy.admission.k8s.io/policy). Values
+     // should be short. Annotations are included in the Metadata level.
+     // +optional
+     Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,15,rep,name=annotations"`
+   #+END_SRC
+*** sql we use to retrieve the event verb
+
+  #+NAME: relevant sql for audit_events
+  #+BEGIN_SRC sql-mode
+    CREATE OR REPLACE VIEW "public"."audit_event" AS
+    SELECT (raw.data ->> 'auditID') as audit_id,
+                 raw.operation_id, -- this field is crucial and not available in the audit_entry logs
+                 raw.data ->> 'verb' as event_verb,
+                 raw.data ->> 'requestURI' as request_uri,
+                 -- Always "Event"
+      FROM raw_audit_event raw;
+  #+END_SRC
+
+** first audit event
+
+#+NAME: first audit_entry from apiserver-audit.log
+#+BEGIN_SRC shell :wrap "SRC json"
+BUCKET=ci-kubernetes-e2e-gci-gce
+JOB=1166724892536606720
+JOB_MASTER_ARTIFACTS=https://storage.googleapis.com/kubernetes-jenkins/logs/$BUCKET/$JOB/artifacts/bootstrap-e2e-master
+# grab the first audit entry
+curl $JOB_MASTER_ARTIFACTS/kube-apiserver-audit.log-20190828-1567004705.gz | zcat | head -1 | jq .
+#+END_SRC
+
+#+RESULTS: first audit_entry from apiserver-audit.log
+#+begin_SRC json
+{
+  "kind": "Event",
+  "apiVersion": "audit.k8s.io/v1",
+  "level": "Request",
+  "auditID": "6dfb7495-7cae-44d7-a341-b71676ce2a11",
+  "stage": "ResponseComplete",
+  "requestURI": "/api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master",
+  "verb": "get",
+  "user": {
+    "username": "kubelet",
+    "groups": [
+      "system:nodes",
+      "system:authenticated"
+    ]
+  },
+  "sourceIPs": [
+    "35.199.181.20"
+  ],
+  "userAgent": "kubelet/v1.17.0 (linux/amd64) kubernetes/bdfc8f6",
+  "objectRef": {
+    "resource": "pods",
+    "namespace": "kube-system",
+    "name": "kube-controller-manager-bootstrap-e2e-master",
+    "apiVersion": "v1"
+  },
+  "responseStatus": {
+    "metadata": {},
+    "status": "Failure",
+    "reason": "Forbidden",
+    "code": 403
+  },
+  "requestReceivedTimestamp": "2019-08-28T14:55:57.145668Z",
+  "stageTimestamp": "2019-08-28T14:55:57.145880Z",
+  "annotations": {
+    "authorization.k8s.io/decision": "forbid",
+    "authorization.k8s.io/reason": ""
+  }
+}
+#+end_SRC
+
+** matching apiserver log entry
+
+#+NAME: matching apiserver log entry
+#+BEGIN_SRC shell :wrap "SRC json"
+BUCKET=ci-kubernetes-e2e-gci-gce
+JOB=1166724892536606720
+JOB_MASTER_ARTIFACTS=https://storage.googleapis.com/kubernetes-jenkins/logs/$BUCKET/$JOB/artifacts/bootstrap-e2e-master
+# grab the matching apiserver log entry
+curl $JOB_MASTER_ARTIFACTS/kube-apiserver.log | grep '/api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master' | head -10
+#+END_SRC
+
+#+RESULTS: matching apiserver log entry
+#+begin_SRC json
+I0828 14:55:57.145739       1 authorization.go:73] Forbidden: "/api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master", Reason: ""
+I0828 14:55:57.146315       1 httplog.go:90] GET /api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master: (1.172823ms) 403 [kubelet/v1.17.0 (linux/amd64) kubernetes/bdfc8f6 35.199.181.20:51066]
+I0828 14:55:57.260863       1 authorization.go:73] Forbidden: "/api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master", Reason: ""
+I0828 14:55:57.260974       1 httplog.go:90] GET /api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master: (557.148µs) 403 [kubelet/v1.17.0 (linux/amd64) kubernetes/bdfc8f6 35.199.181.20:51066]
+I0828 14:57:09.708110       1 httplog.go:90] GET /api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master: (4.436382ms) 200 [kubelet/v1.17.0 (linux/amd64) kubernetes/bdfc8f6 35.199.181.20:51066]
+I0828 14:57:09.722675       1 httplog.go:90] PATCH /api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master/status: (7.491037ms) 200 [kubelet/v1.17.0 (linux/amd64) kubernetes/bdfc8f6 35.199.181.20:51066]
+I0828 14:57:43.324850       1 httplog.go:90] GET /api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master:10252/proxy/metrics: (34.106162ms) 200 [e2e.test/v1.17.0 (linux/amd64) kubernetes/bdfc8f6 -- [sig-storage] In-tree Volumes [Driver: gluster] [Testpattern: Inline-volume (default fs)] volumes should allow exec of files on the volume 35.192.131.229:44196]
+I0828 14:57:44.429973       1 httplog.go:90] GET /api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master:10252/proxy/metrics: (84.276748ms) 200 [e2e.test/v1.17.0 (linux/amd64) kubernetes/bdfc8f6 -- [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Dynamic PV (filesystem volmode)] volumeMode should not mount / map unused volumes in a pod 35.192.131.229:44200]
+I0828 14:57:45.696805       1 httplog.go:90] GET /api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master:10252/proxy/metrics: (21.723187ms) 200 [e2e.test/v1.17.0 (linux/amd64) kubernetes/bdfc8f6 -- [sig-storage] In-tree Volumes [Driver: gcepd] [Testpattern: Dynamic PV (filesystem volmode)] volumeMode should not mount / map unused volumes in a pod 35.192.131.229:44200]
+I0828 14:57:45.782410       1 httplog.go:90] GET /api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master:10252/proxy/metrics: (32.076995ms) 200 [e2e.test/v1.17.0 (linux/amd64) kubernetes/bdfc8f6 -- [sig-storage] In-tree Volumes [Driver: local][LocalVolumeType: dir-bindmounted] [Testpattern: Pre-provisioned PV (default fs)] subPath should support readOnly directory specified in the volumeMount 35.192.131.229:44184]
+#+end_SRC
+
+* Inspections some audit logs
+
+** Choosing todays logs
+
+- https://k8s-testgrid.appspot.com/sig-release-master-blocking
+- https://k8s-testgrid.appspot.com/sig-release-master-blocking#gce-cos-master-default
+- https://prow.k8s.io/job-history/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce
+- https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1166724892536606720
+- https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1166724892536606720/
+- https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1166724892536606720/artifacts/bootstrap-e2e-master/
+- https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1166724892536606720/artifacts/bootstrap-e2e-master/kube-apiserver.log
+- https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1166724892536606720/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log
+** retrive logs locally for jq and grepping
+#+NAME: retrieve kube-apiserver.log
+#+BEGIN_SRC shell :results silent
+wget https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1166724892536606720/artifacts/bootstrap-e2e-master/kube-apiserver.log
+#+END_SRC
+
+#+NAME: retriev some of the audit-log
+#+BEGIN_SRC shell :results silent
+wget https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1166724892536606720/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log
+wget https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1166724892536606720/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log-20190828-1567005305.gz
+wget https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1166724892536606720/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log-20190828-1567004705.gzyy
+#+END_SRC
+
+
+
+
+
+
+#+NAME: grab the first audit entry
+#+BEGIN_SRC shell :wrap "SRC json"
+zcat kube-apiserver-audit.log-20190828-1567004705.gz | head -1 | jq .
+# head -1 kube-apiserver-audit.log | jq .
+#+END_SRC
+
+#+RESULTS: grab the first audit entry
+#+begin_SRC json
+{
+  "kind": "Event",
+  "apiVersion": "audit.k8s.io/v1",
+  "level": "Request",
+  "auditID": "6dfb7495-7cae-44d7-a341-b71676ce2a11",
+  "stage": "ResponseComplete",
+  "requestURI": "/api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master",
+  "verb": "get",
+  "user": {
+    "username": "kubelet",
+    "groups": [
+      "system:nodes",
+      "system:authenticated"
+    ]
+  },
+  "sourceIPs": [
+    "35.199.181.20"
+  ],
+  "userAgent": "kubelet/v1.17.0 (linux/amd64) kubernetes/bdfc8f6",
+  "objectRef": {
+    "resource": "pods",
+    "namespace": "kube-system",
+    "name": "kube-controller-manager-bootstrap-e2e-master",
+    "apiVersion": "v1"
+  },
+  "responseStatus": {
+    "metadata": {},
+    "status": "Failure",
+    "reason": "Forbidden",
+    "code": 403
+  },
+  "requestReceivedTimestamp": "2019-08-28T14:55:57.145668Z",
+  "stageTimestamp": "2019-08-28T14:55:57.145880Z",
+  "annotations": {
+    "authorization.k8s.io/decision": "forbid",
+    "authorization.k8s.io/reason": ""
+  }
+}
+#+end_SRC
+
+#+NAME: locate that audit entry in the apiserver log
+#+BEGIN_SRC bash
+    (
+    grep '/api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master' kube-apiserver.log | head -2
+    #grep '/api/v1/namespaces/provisioning-6344/pods/pod-subpath-test-local-preprovisionedpv-rxm2' kube-apiserver.log
+    ) 2>&1
+    :
+#+END_SRC
+
+#+RESULTS: locate that audit entry in the apiserver log
+#+begin_EXAMPLE
+I0828 14:55:57.145739       1 authorization.go:73] Forbidden: "/api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master", Reason: ""
+I0828 14:55:57.146315       1 httplog.go:90] GET /api/v1/namespaces/kube-system/pods/kube-controller-manager-bootstrap-e2e-master: (1.172823ms) 403 [kubelet/v1.17.0 (linux/amd64) kubernetes/bdfc8f6 35.199.181.20:51066]
+#+end_EXAMPLE
+
+#+RESULTS:
+#+begin_EXAMPLE
+#+end_EXAMPLE
+
