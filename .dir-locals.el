@@ -430,6 +430,7 @@
      ;; (spacemacs/toggle-maximize-buffer)
      ;; set up publishing
      (require 'ox-publish)
+     (require 'org-checklist)
      (setq org-publish-project-alist
            '(
              ("org-reports"
