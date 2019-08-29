@@ -1302,8 +1302,14 @@ echo endpoint: https://$USER-hasura.sharing.io
    GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO apisnoop;
    GRANT pg_execute_server_program TO apisnoop;
  #+END_SRC
+*** Dockerfile
+#+NAME: apisnoop hasura dockerfile
+#+BEGIN_SRC dockerfile :tangle ../apps/hasura/Dockerfile
+  FROM hasura/graphql-engine:v1.0.0-beta.5.cli-migrations
+  MAINTAINER Hippie Hacker <hh@ii.coop>
+  COPY ./migrations /hasura-migrations
+#+END_SRC
 ** pgadmin
-
 *** Dockerfile
 #+BEGIN_SRC dockerfile :tangle ../apps/postgres/Dockerfile
   FROM postgres:11.5
@@ -1343,6 +1349,7 @@ echo endpoint: https://$USER-hasura.sharing.io
     && cd ~/go/src/github.com/ii/apisnoopregexp \
     && make install \
     && cp ~/go/bin/rmatch /usr/local/bin
+  COPY ./initdb /docker-entrypoint-initdb.d
  # RUN sed -i -e"s/^#logging_collector = off.*$/logging_collector = on/" /var/lib/postgresql/data/postgresql.conf
 
 #+END_SRC
@@ -1378,18 +1385,22 @@ echo endpoint: https://$USER-hasura.sharing.io
 #+NAME: hasura docker-compose
 #+BEGIN_SRC yaml :tangle ../apps/docker-compose.yaml
   # hasura/docker-compose.yaml
-  version: "3.7"
+  # Kompose Note: We don’t support anything 3.4 and above at the moment
+  version: "3"
 
   services:
     postgres:
       # image: postgres:11.5 # debian-slim / alternative: postgres:11.5-alpine
       # we need our image to include plpython3u
-      build:
-        dockerfile: postgres/Dockerfile
-        context: .
+      image: "raiinbow/postgres:${USER}"
+      build: "./postgres"
+        # dockerfile: postgres/Dockerfile
+        # context: .
       container_name: "${USER}-postgres"
       restart: always
       shm_size: '64GB' # we currently use big boxes
+      #cap_add: # capabilities
+      #  - ALL
       environment:
         # These are postgres server setup options
         - POSTGRES_DB=${PGDATABASE}
@@ -1403,11 +1414,11 @@ echo endpoint: https://$USER-hasura.sharing.io
         # These are psql client defaults
         - PGDATABASE=${PGDATABASE}
         - PGUSER=${PGUSER}
-      volumes:
+      #volumes:
         # runs *sql and executable *sh and sources non-executable *sh
-        - ./postgres/initdb:/docker-entrypoint-initdb.d:Z
+        # - ./postgres/initdb:/docker-entrypoint-initdb.d:Z
         # mainly mounted for debugging
-        - ./hasura/migrations:/migrations:Z
+        #- ./hasura/migrations:/migrations:Z
       ports: # exposed to docker host
         - "${PGPORT}:5432"
       # Expose ports without publishing them to the host machine
@@ -1416,44 +1427,27 @@ echo endpoint: https://$USER-hasura.sharing.io
         - "5432"
       networks: # separate from web due to traefik routing on sharing.io
         - db
-    pgadmin:
-      container_name: "${USER}-pgadmin"
-      image: dpage/pgadmin4:4.12
-      restart: always
-      networks:
-        - db
-        - web
-      environment:
-        - PGADMIN_DEFAULT_EMAIL=apisnoop@cncf.io
-        - PGADMIN_DEFAULT_PASSWORD=${PGPASS}
-        # python setup.py --dump-servers /tmp/servers.json --user apisnoop@cncf.io
-        - PGADMIN_SERVER_JSON_FILE=/apisnoop/servers.json
-        - PGADMIN_CONFIG_APP_NAME=APISnoopQL
-        - PGADMIN_CONFIG_APP_COPYRIGHT="Copyright (C) 2019, The Cloud Native Compute Foundation"
-        - PGADMIN_CONFIG_LOGIN_BANNER="Welcome to APISnoopQL!"
-        - PGADMIN_CONFIG_ALLOW_SAVE_PASSWORD=True
-        - PGADMIN_CONFIG_MAX_QUERY_HIST_STORED=1234
-        - PGADMIN_CONFIG_SESSION_COOKIE_NAME=apisnoop_session
-        - PGADMIN_CONFIG_UPGRADE_CHECK_ENABLED=False
-        - PGADMIN_CONFIG_SESSION_EXPIRATION_TIME=7
-      volumes:
-       - ./pgadmin:/apisnoop:Z
-      ports: # exposed to docker host
-        - "${PGADMIN_PORT}:80"
-      expose:
-        - "80"
       labels:
-        - "traefik.docker.network=web"
-        - "traefik.enable=true"
-        - "traefik.basic.port=80"
-        - "traefik.basic.protocol=http"
-        - "traefik.basic.frontend.rule=Host:${USER}-pgadmin.sharing.io"
+        kompose.controller.type: deployment # or daemonset or replicationcontroller
+        kompose.service.type: loadbalancer # nodeport / clusterip / loadbalancer / headless
+        kompose.service.expose: "${USER}-*.apisnoop.io" # true / hostname
+        # Maybe see if kompose can work with let's encrypt
+        #- "kompose.service.expose.tls-secret="
+        # kompose.volume.size: 1Gi
+        traefik.enable: true
+        traefik.basic.port: 8080
+        traefik.basic.protocol: http
+        traefik.basic.frontend.rule: "Host:${USER}-hasura.sharing.io"
     hasura:
-      #image: hasura/graphql-engine:v1.0.0-beta.3
-      # append '.cli-migrations' to auto run 'hasura migrations apply'
-      container_name: "${USER}-hasura"
       #image: hasura/graphql-engine:v1.0.0-beta.5
-      image: hasura/graphql-engine:v1.0.0-beta.5.cli-migrations
+      #image: hasura/graphql-engine:v1.0.0-beta.5.cli-migrations
+      image: "raiinbow/hasura:${USER}"
+      build: "./hasura"
+      # build:
+      #   dockerfile: hasura/Dockerfile
+      #   context: .
+      #   image: "raiinbow/hasura:${USER}"
+      container_name: "${USER}-hasura"
       restart: always
       networks:
         - web
@@ -1461,8 +1455,8 @@ echo endpoint: https://$USER-hasura.sharing.io
       environment:
         - HASURA_GRAPHQL_DATABASE_URL=postgres://${PGUSER}:${PGPASS}@postgres:5432/${PGDATABASE}
         - HASURA_GRAPHQL_ENABLE_CONSOLE=true
-      volumes:
-        - ./hasura/migrations:/hasura-migrations:Z
+      # volumes:
+      #   - ./hasura/migrations:/hasura-migrations:Z
       ports: # exposed to docker host
         - "${HASURA_PORT}:8080"
       expose:
@@ -1473,6 +1467,38 @@ echo endpoint: https://$USER-hasura.sharing.io
         - "traefik.basic.port=8080"
         - "traefik.basic.protocol=http"
         - "traefik.basic.frontend.rule=Host:${USER}-hasura.sharing.io"
+    # pgadmin:
+    #   container_name: "${USER}-pgadmin"
+    #   image: dpage/pgadmin4:4.12
+    #   restart: always
+    #   networks:
+    #     - db
+    #     - web
+    #   environment:
+    #     - PGADMIN_DEFAULT_EMAIL=apisnoop@cncf.io
+    #     - PGADMIN_DEFAULT_PASSWORD=${PGPASS}
+    #     # python setup.py --dump-servers /tmp/servers.json --user apisnoop@cncf.io
+    #     - PGADMIN_SERVER_JSON_FILE=/apisnoop/servers.json
+    #     - PGADMIN_CONFIG_APP_NAME=APISnoopQL
+    #     - PGADMIN_CONFIG_APP_COPYRIGHT="Copyright (C) 2019, The Cloud Native Compute Foundation"
+    #     - PGADMIN_CONFIG_LOGIN_BANNER="Welcome to APISnoopQL!"
+    #     - PGADMIN_CONFIG_ALLOW_SAVE_PASSWORD=True
+    #     - PGADMIN_CONFIG_MAX_QUERY_HIST_STORED=1234
+    #     - PGADMIN_CONFIG_SESSION_COOKIE_NAME=apisnoop_session
+    #     - PGADMIN_CONFIG_UPGRADE_CHECK_ENABLED=False
+    #     - PGADMIN_CONFIG_SESSION_EXPIRATION_TIME=7
+    #   volumes:
+    #    - ./pgadmin:/apisnoop:Z
+    #   ports: # exposed to docker host
+    #     - "${PGADMIN_PORT}:80"
+    #   expose:
+    #     - "80"
+    #   labels:
+    #     - "traefik.docker.network=web"
+    #     - "traefik.enable=true"
+    #     - "traefik.basic.port=80"
+    #     - "traefik.basic.protocol=http"
+    #     - "traefik.basic.frontend.rule=Host:${USER}-pgadmin.sharing.io"
   #volumes:
   #  migrations:
   networks:

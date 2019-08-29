@@ -35,4 +35,5 @@ FROM postgres:11.5
    && cd ~/go/src/github.com/ii/apisnoopregexp \
    && make install \
    && cp ~/go/bin/rmatch /usr/local/bin
+ COPY ./initdb /docker-entrypoint-initdb.d
 # RUN sed -i -e"s/^#logging_collector = off.*$/logging_collector = on/" /var/lib/postgresql/data/postgresql.conf
