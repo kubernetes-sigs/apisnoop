@@ -1,0 +1,1017 @@
+#+TITLE: getting apisnoop running on kubernetes
+#+PROPERTY: header-args:shell :results output code verbatim replace
+#+PROPERTY: header-args:shell+ :dir (concat (file-name-directory buffer-file-name) "../../apps")
+#+PROPERTY: header-args:shell+ :prologue "export PS1= ; . .loadenv\nexec 2>&1\n"
+#+PROPERTY: header-args:shell+ :epilogue ":\n"
+#+PROPERTY: header-args:shell+ :wrap "EXAMPLE :noeval t"
+#+NOPROPERTY: header-args:tmate+ :prologue (concat "cd " org-file-dir "\n")
+
+* kompose
+** install
+#+NAME: install kompose
+#+BEGIN_SRC shell
+export KOMPOSE_VERSION=v1.18.0
+export KOMPOSE_PATH=$HOME/go/bin/kompose
+curl -L https://github.com/kubernetes/kompose/releases/download/${KOMPOSE_VERSION}/kompose-linux-amd64 \
+  -o $KOMPOSE_PATH
+chmod +x $KOMPOSE_PATH
+kompose version
+#+END_SRC
+
+#+RESULTS: install kompose
+#+begin_EXAMPLE
+1.18.0 (06a2e56)
+#+end_EXAMPLE
+
+** convert
+
+Let's see what our converted resources look like:
+
+#+NAME: convert
+#+BEGIN_SRC shell :dir ../../apps/
+(
+kompose convert
+) 2>&1
+:
+#+END_SRC
+
+#+RESULTS: convert
+#+begin_EXAMPLE
+[36mINFO[0m Kubernetes file "hasura-service.yaml" created 
+[36mINFO[0m Kubernetes file "postgres-service.yaml" created 
+[36mINFO[0m Kubernetes file "hasura-deployment.yaml" created 
+[36mINFO[0m Kubernetes file "postgres-deployment.yaml" created 
+#+end_EXAMPLE
+* kompose commands
+  :PROPERTIES:
+  :header-args:shell+: :dir (concat (file-name-directory buffer-file-name) "../../apps")
+  :header-args:shell+: :prologue ". .loadenv\nexec 2>&1\n"
+  :header-args:shell+: :epilogue ":\n"
+  :header-args:tmate+: :prologue (concat "cd " (file-name-directory buffer-file-name) "../../apps\n. .loadenv\n")
+  :END:
+
+#+NAME: kompose up
+#+BEGIN_SRC tmate
+  emacsclient -s apisnoop -e "(org-babel-tangle-file \"../org/meta.org\")"
+  . .loadenv
+  kompose down -v --namespace=${APISNOOP_NAMESPACE} || true
+  kubectl delete namespace ${APISNOOP_NAMESPACE} || true
+  kubectl create namespace ${APISNOOP_NAMESPACE}
+  docker rmi -f raiinbow/postgres:$TAG
+  docker rmi -f raiinbow/hasura:$TAG
+  kompose up \
+    --build local \
+    --volumes emptyDir \
+    --namespace ${APISNOOP_NAMESPACE}
+#+END_SRC
+
+** get services
+#+BEGIN_SRC shell
+  kubectl get services
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+NAME       TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
+hasura     ClusterIP   10.0.5.239   <none>        8080/TCP   51s
+postgres   ClusterIP   10.0.5.62    <none>        5432/TCP   51s
+#+end_EXAMPLE
+** get pods
+#+BEGIN_SRC shell
+  kubectl get pods
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+NAME                        READY   STATUS    RESTARTS   AGE
+hasura-6787bb79d4-7l78d     1/1     Running   1          57s
+postgres-5d4d96f78c-dqzlk   1/1     Running   0          57s
+#+end_EXAMPLE
+** describe hasura pod
+#+NAME: hasura pod
+#+BEGIN_SRC shell :wrap "SRC yaml"
+  HASURA_POD=$(
+    kubectl get pod --selector=io.kompose.service=hasura -o name\
+      | sed s:pod/::
+  )
+  HASURA_PORT=$(
+    kubectl get pods ${HASURA_POD} \
+      --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}'
+  )
+  kubectl describe pod/$HASURA_POD
+#+END_SRC
+
+#+RESULTS: hasura pod
+#+begin_SRC yaml
+Name:           hasura-6787bb79d4-7l78d
+Namespace:      apisnoop-hh
+Priority:       0
+Node:           gke-single-node-cluster-pool-1-d1215c21-qcs0/10.152.15.204
+Start Time:     Fri, 30 Aug 2019 17:25:36 +0000
+Labels:         io.kompose.service=hasura
+                pod-template-hash=6787bb79d4
+Annotations:    <none>
+Status:         Running
+IP:             10.16.0.72
+Controlled By:  ReplicaSet/hasura-6787bb79d4
+Containers:
+  hh-hasura:
+    Container ID:   docker://dbedbaa31031ffeb6120e05be62ff38865d4a27a8568666905e929f5222801a8
+    Image:          raiinbow/hasura:2019-08-31-05-25
+    Image ID:       docker-pullable://raiinbow/hasura@sha256:29860094977cdda060da5ffd134703751a41c5fcfcdab9add3a83e7c39b1abd3
+    Port:           8080/TCP
+    Host Port:      0/TCP
+    State:          Running
+      Started:      Fri, 30 Aug 2019 17:26:12 +0000
+    Last State:     Terminated
+      Reason:       Error
+      Exit Code:    1
+      Started:      Fri, 30 Aug 2019 17:25:41 +0000
+      Finished:     Fri, 30 Aug 2019 17:26:11 +0000
+    Ready:          True
+    Restart Count:  1
+    Environment:
+      HASURA_GRAPHQL_DATABASE_URL:    postgres://apisnoop:s3cr3tsauc3@postgres:5432/apisnoop
+      HASURA_GRAPHQL_ENABLE_CONSOLE:  true
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from default-token-cxpgm (ro)
+Conditions:
+  Type              Status
+  Initialized       True 
+  Ready             True 
+  ContainersReady   True 
+  PodScheduled      True 
+Volumes:
+  default-token-cxpgm:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  default-token-cxpgm
+    Optional:    false
+QoS Class:       BestEffort
+Node-Selectors:  <none>
+Tolerations:     node.kubernetes.io/not-ready:NoExecute for 300s
+                 node.kubernetes.io/unreachable:NoExecute for 300s
+Events:
+  Type    Reason     Age                 From                                                   Message
+  ----    ------     ----                ----                                                   -------
+  Normal  Scheduled  2m7s                default-scheduler                                      Successfully assigned apisnoop-hh/hasura-6787bb79d4-7l78d to gke-single-node-cluster-pool-1-d1215c21-qcs0
+  Normal  Pulling    2m6s                kubelet, gke-single-node-cluster-pool-1-d1215c21-qcs0  pulling image "raiinbow/hasura:2019-08-31-05-25"
+  Normal  Pulled     2m2s                kubelet, gke-single-node-cluster-pool-1-d1215c21-qcs0  Successfully pulled image "raiinbow/hasura:2019-08-31-05-25"
+  Normal  Created    91s (x2 over 2m2s)  kubelet, gke-single-node-cluster-pool-1-d1215c21-qcs0  Created container
+  Normal  Started    91s (x2 over 2m2s)  kubelet, gke-single-node-cluster-pool-1-d1215c21-qcs0  Started container
+  Normal  Pulled     91s                 kubelet, gke-single-node-cluster-pool-1-d1215c21-qcs0  Container image "raiinbow/hasura:2019-08-31-05-25" already present on machine
+#+end_SRC
+
+** describe postgres pod
+#+NAME: postgres pod
+#+BEGIN_SRC shell :wrap "SRC yaml"
+  POSTGRES_POD=$(
+    kubectl get pod --selector=io.kompose.service=postgres -o name \
+      | sed s:pod/::
+  )
+  POSTGRES_PORT=$(
+    kubectl get pod ${POSTGRES_POD} \
+      --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}'
+  )
+  kubectl describe pod/$POSTGRES_POD
+#+END_SRC
+
+#+RESULTS: postgres pod
+#+begin_SRC yaml
+Name:           postgres-5d4d96f78c-dqzlk
+Namespace:      apisnoop-hh
+Priority:       0
+Node:           gke-single-node-cluster-pool-1-d1215c21-qcs0/10.152.15.204
+Start Time:     Fri, 30 Aug 2019 17:25:36 +0000
+Labels:         io.kompose.service=postgres
+                pod-template-hash=5d4d96f78c
+Annotations:    <none>
+Status:         Running
+IP:             10.16.0.73
+Controlled By:  ReplicaSet/postgres-5d4d96f78c
+Containers:
+  hh-postgres:
+    Container ID:   docker://be52bf3146f56933d33beea244f1bd0e060e7656d1e1fdee97f92650561b6dc9
+    Image:          raiinbow/postgres:2019-08-31-05-25
+    Image ID:       docker-pullable://raiinbow/postgres@sha256:83ceadc5bee2fc899a2464bcb7c0c666fb1d8a3003a2defd457f7d4de1c6b930
+    Port:           5432/TCP
+    Host Port:      0/TCP
+    State:          Running
+      Started:      Fri, 30 Aug 2019 17:25:44 +0000
+    Ready:          True
+    Restart Count:  0
+    Environment:
+      PGDATABASE:         apisnoop
+      PGUSER:             apisnoop
+      POSTGRES_DB:        apisnoop
+      POSTGRES_PASSWORD:  s3cr3tsauc3
+      POSTGRES_USER:      apisnoop
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from default-token-cxpgm (ro)
+Conditions:
+  Type              Status
+  Initialized       True 
+  Ready             True 
+  ContainersReady   True 
+  PodScheduled      True 
+Volumes:
+  default-token-cxpgm:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  default-token-cxpgm
+    Optional:    false
+QoS Class:       BestEffort
+Node-Selectors:  <none>
+Tolerations:     node.kubernetes.io/not-ready:NoExecute for 300s
+                 node.kubernetes.io/unreachable:NoExecute for 300s
+Events:
+  Type    Reason     Age    From                                                   Message
+  ----    ------     ----   ----                                                   -------
+  Normal  Scheduled  3m30s  default-scheduler                                      Successfully assigned apisnoop-hh/postgres-5d4d96f78c-dqzlk to gke-single-node-cluster-pool-1-d1215c21-qcs0
+  Normal  Pulling    3m29s  kubelet, gke-single-node-cluster-pool-1-d1215c21-qcs0  pulling image "raiinbow/postgres:2019-08-31-05-25"
+  Normal  Pulled     3m22s  kubelet, gke-single-node-cluster-pool-1-d1215c21-qcs0  Successfully pulled image "raiinbow/postgres:2019-08-31-05-25"
+  Normal  Created    3m22s  kubelet, gke-single-node-cluster-pool-1-d1215c21-qcs0  Created container
+  Normal  Started    3m22s  kubelet, gke-single-node-cluster-pool-1-d1215c21-qcs0  Started container
+#+end_SRC
+
+* load logs and forward via , b s (org-babel-execute-subtree)
+  :PROPERTIES:
+  :header-args:shell+: :dir (concat (file-name-directory buffer-file-name) "../../apps")
+  :header-args:shell+: :prologue ". .loadenv\nexec 2>&1\n"
+  :header-args:shell+: :epilogue ":\n"
+  :header-args:tmate+: :prologue (concat "cd " (file-name-directory buffer-file-name) "../../apps\n. .loadenv\n")
+  :END:
+** hasura logs
+
+#+BEGIN_SRC tmate :session foo:hasura_logs
+  HASURA_POD=$(\
+    kubectl get pod --selector=io.kompose.service=hasura -o name \
+    | sed s:pod/::)
+  kubectl logs $HASURA_POD -f
+#+END_SRC
+
+** postgres logs
+
+#+BEGIN_SRC tmate :session foo:postgres_logs
+  POSTGRES_POD=$(\
+    kubectl get pod --selector=io.kompose.service=postgres -o name \
+    | sed s:pod/::)
+  kubectl logs $POSTGRES_POD -f
+#+END_SRC
+
+** postgres port forward
+
+  #+BEGIN_SRC tmate :session foo:postgres_portforward
+    export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.gcreds.json
+    export K8S_NAMESPACE="apisnoop-$USER"
+    kubectl config set-context $(kubectl config current-context) --namespace=${K8S_NAMESPACE} 2>&1 > /dev/null
+    POSTGRES_POD=$(kubectl get pod --selector=io.kompose.service=postgres -o name | sed s:pod/::)
+    POSTGRES_PORT=$(kubectl get pod ${POSTGRES_POD} --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+    kubectl port-forward $POSTGRES_POD $(id -u)1:$POSTGRES_PORT
+  #+END_SRC
+* connect org to postgress
+** (re)connect
+  #+NAME: ReConnect org to postgres
+  #+BEGIN_SRC emacs-lisp :results silent
+    (if (get-buffer "*SQL: postgres:data*")
+        (with-current-buffer "*SQL: postgres:data*"
+          (kill-buffer)))
+    (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+  #+END_SRC
+** test org to psql connection
+  #+BEGIN_SRC sql-mode  
+  select 1;
+  #+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+ ?column? 
+----------
+        1
+(1 row)
+
+#+end_src
+
+* apisnoop traefik
+  :PROPERTIES:
+  :header-args:shell+: :dir (concat (file-name-directory buffer-file-name) "../../apps")
+  :header-args:shell+: :prologue ". .loadenv"
+  :header-args:tmate+: :prologue (concat "cd " (file-name-directory buffer-file-name) "../../apps\n. .loadenv\n")
+  :noheader-args:shell+: :prologue "export PS1=\#\ \n. .loadenv"
+  :noheader-args:shell+: :epilogue ":\n"
+  :noheader-args:shell+: :prologue ". .loadenv\n("
+  :noheader-args:shell+: :epilogue ") 2>&1\n:\n"
+  :END:
+*** apisnoop service list
+#+NAME: apisnoop service list
+#+BEGIN_SRC shell :wrap "SRC yaml"
+kubectl get services --namespace ${APISNOOP_NAMESPACE} 
+#+END_SRC
+
+#+RESULTS: apisnoop service list
+#+begin_SRC yaml
+NAME       TYPE        CLUSTER-IP    EXTERNAL-IP   PORT(S)    AGE
+hasura     ClusterIP   None          <none>        8080/TCP   15m
+postgres   ClusterIP   10.0.14.113   <none>        5432/TCP   15m
+#+end_SRC
+
+*** apisnoop hasura service
+#+NAME: apisnoop hasura service
+#+BEGIN_SRC shell :wrap "SRC yaml"
+kubectl get services --namespace ${APISNOOP_NAMESPACE} hasura -o yaml
+#+END_SRC
+
+#+RESULTS: apisnoop hasura service
+#+begin_SRC yaml
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kompose.cmd: kompose up --build local --volumes emptyDir --namespace apisnoop-hh
+    kompose.controller.type: deployment
+    kompose.service.expose: hh-hasura.apisnoop.io
+    kompose.service.type: headless
+    kompose.version: 1.18.0 (06a2e56)
+    traefik.basic.frontend.rule: Host:hh-hasura.sharing.io
+    traefik.basic.port: "8080"
+    traefik.basic.protocol: http
+    traefik.docker.network: web
+    traefik.enable: "true"
+  creationTimestamp: "2019-08-30T17:39:23Z"
+  labels:
+    io.kompose.service: hasura
+  name: hasura
+  namespace: apisnoop-hh
+  resourceVersion: "799022"
+  selfLink: /api/v1/namespaces/apisnoop-hh/services/hasura
+  uid: 1aa5e98b-cb4d-11e9-9d36-42010a9800d6
+spec:
+  clusterIP: None
+  ports:
+  - name: "8080"
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    io.kompose.service: hasura
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+#+end_SRC
+
+*** apisnoop ingress list
+#+NAME: apisnoop ingress list
+#+BEGIN_SRC shell :wrap "SRC yaml"
+kubectl get ingress --namespace ${APISNOOP_NAMESPACE} 
+#+END_SRC
+
+#+RESULTS: apisnoop ingress list
+#+begin_SRC yaml
+NAME     HOSTS                   ADDRESS         PORTS   AGE
+hasura   hh-hasura.apisnoop.io   35.244.126.62   80      20m
+#+end_SRC
+
+*** apisnoop hasura ingress
+#+NAME: apisnoop hasura ingress
+#+BEGIN_SRC shell :wrap "SRC yaml"
+kubectl get ingress --namespace ${APISNOOP_NAMESPACE} hasura -o yaml
+#+END_SRC
+
+#+RESULTS: apisnoop hasura ingress
+#+begin_SRC yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  creationTimestamp: "2019-08-30T17:39:23Z"
+  generation: 1
+  labels:
+    io.kompose.service: hasura
+  name: hasura
+  namespace: apisnoop-hh
+  resourceVersion: "799135"
+  selfLink: /apis/extensions/v1beta1/namespaces/apisnoop-hh/ingresses/hasura
+  uid: 1af07c6d-cb4d-11e9-9d36-42010a9800d6
+spec:
+  rules:
+  - host: hh-hasura.apisnoop.io
+    http:
+      paths:
+      - backend:
+          serviceName: hasura
+          servicePort: 8080
+status:
+  loadBalancer:
+    ingress:
+    - ip: 35.244.126.62
+#+end_SRC
+
+
+* traefik
+  :PROPERTIES:
+  :header-args:shell+: :dir (concat (file-name-directory buffer-file-name) "../../apps")
+  :header-args:shell+: :prologue ". .loadenv"
+  :header-args:tmate+: :prologue (concat "cd " (file-name-directory buffer-file-name) "../../apps\n. .loadenv\n")
+  :noheader-args:shell+: :prologue "export PS1=\#\ \n. .loadenv"
+  :noheader-args:shell+: :epilogue ":\n"
+  :noheader-args:shell+: :prologue ". .loadenv\n("
+  :noheader-args:shell+: :epilogue ") 2>&1\n:\n"
+  :END:
+** helm values file -  traefik.yaml
+
+#+NAME: dnsimple-auth-token
+#+BEGIN_SRC shell :results silent
+. ~/.traefik_env
+echo -n $DNSIMPLE_AUTH_TOKEN
+#+END_SRC
+
+#+NAME: traefik-admin-password
+#+BEGIN_SRC shell :results silent
+. ~/.traefik_env
+echo -n $TRAEFIK_ADMIN_PASSWORD
+#+END_SRC
+
+
+#+NAME: traefik.yaml helm values
+#+BEGIN_SRC yaml :tangle ../../apps/traefik.yaml :noweb yes
+  # kubernetes.io/ingress.class=traefik
+  # ingressClass = "traefik-internal"
+  # https://docs.traefik.io/configuration/backends/kubernetes/#ingressendpoint
+  dashboard:
+    enabled: true
+    domain: traefik.apisnoop.io
+    auth:
+      basic:
+        admin: "<traefik-admin-password()>"
+  ssl:
+    enabled: true
+    enforced: true
+    permanentRedirect: true
+  # service:
+  #   annotations:
+  #   labels:
+  rbac:
+    enabled: true
+  accessLogs:
+    enabled: true
+    format: json
+    fields:
+      defaultMode: keep
+  kubernetes:
+    namespaces: [] # all namespaces with empty array
+    # namespaces:
+      # - apisnoop
+      # - default
+      # - kube-system
+  acme:
+    enabled: true
+    email: hh@ii.coop
+    staging: false
+    # challengeType: tls-sni-01
+    # challengeType: http-01
+    # Unable to obtain ACME certificate for domains \"hh-hasura.apisnoop.io\"
+    # detected thanks to rule \"Host:hh-hasura.apisnoop.io\" : 
+    # unable to generate a certificate for the domains [hh-hasura.apisnoop.io]:
+    #  acme: Error -> One or more domains had a problem:\n[hh-hasura.apisnoop.io]
+    #  acme: error: 403 :: urn:ietf:params:acme:err or:unauthorized ::
+    #  Invalid response from https://hh-hasura.apisnoop.io/.well-known/acme-challenge/2znqGrOWczcTMbLmN5NVm2OwcpQGT_ViPhEoJOpKQb8
+    #  [35.189.56.228]: 404, ur l: \n
+    challengeType: tls-alpn-01
+    # challengeType: dns-01 # Needed for wildcards
+    resolvers:
+      - 1.1.1.1:53
+      - 8.8.8.8:53
+    persistence:
+      enable: true
+      storageClass: standard
+      accessMode: ReadWriteOnce
+      size: 1Gi
+    # domains:
+    #   enabled: false
+    #   domainsList:
+    #     - main: "*.apisnoop.io"
+    #     - sans:
+    #       - "traefik.apisnoop.io"
+    #       - "hh-apisnoop.apisnoop.io"
+    #       - "zz-apisnoop.apisnoop.io"
+    # dnsProvider:
+    #   # name: dnsimple
+    #   dnsimple:
+    #     DNSIMPLE_OAUTH_TOKEN: "<dnsimple-auth-token()>"
+    #     DNSIMPLE_BASE_URL: "https://api.dnsimple.com/v2/"
+#+END_SRC
+
+** configure and install 
+  #+BEGIN_SRC tmate :session apisnoop:traefik_install
+    helm init
+    helm repo update
+    helm install --values $HOME/ii/apisnoop/apps/traefik.yaml --name ${TRAEFIK_DEPLOYMENT} --namespace ${TRAEFIK_NAMESPACE} stable/traefik
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_EXAMPLE
+  #+end_EXAMPLE
+** helm upgrade in place
+#+NAME: helm upgrade in place
+#+BEGIN_SRC shell
+helm upgrade --values $HOME/ii/apisnoop/apps/traefik.yaml ${TRAEFIK_DEPLOYMENT} stable/traefik
+#+END_SRC
+
+#+RESULTS: helm upgrade in place
+#+begin_EXAMPLE
+Release "ii-traefik" has been upgraded.
+LAST DEPLOYED: Fri Aug 30 18:42:17 2019
+NAMESPACE: kube-system
+STATUS: DEPLOYED
+
+RESOURCES:
+==> v1/ClusterRole
+NAME        AGE
+ii-traefik  13h
+
+==> v1/ClusterRoleBinding
+NAME        AGE
+ii-traefik  13h
+
+==> v1/ConfigMap
+NAME             DATA  AGE
+ii-traefik       1     13h
+ii-traefik-test  1     13h
+
+==> v1/Deployment
+NAME        READY  UP-TO-DATE  AVAILABLE  AGE
+ii-traefik  1/1    1           1          13h
+
+==> v1/PersistentVolumeClaim
+NAME             STATUS  VOLUME                                    CAPACITY  ACCESS MODES  STORAGECLASS  AGE
+ii-traefik-acme  Bound   pvc-08cee985-cae4-11e9-9d36-42010a9800d6  1Gi       RWO           standard      13h
+
+==> v1/Pod(related)
+NAME                         READY  STATUS   RESTARTS  AGE
+ii-traefik-5d67659bc5-ngcxm  1/1    Running  0         34s
+
+==> v1/Secret
+NAME                           TYPE    DATA  AGE
+ii-traefik-default-cert        Opaque  2     13h
+ii-traefik-dnsprovider-config  Opaque  2     13h
+
+==> v1/Service
+NAME                  TYPE          CLUSTER-IP  EXTERNAL-IP    PORT(S)                     AGE
+ii-traefik            LoadBalancer  10.0.4.69   35.189.56.228  80:31199/TCP,443:31755/TCP  13h
+ii-traefik-dashboard  ClusterIP     10.0.1.227  <none>         80/TCP                      13h
+
+==> v1/ServiceAccount
+NAME        SECRETS  AGE
+ii-traefik  1        13h
+
+==> v1beta1/Ingress
+NAME                  HOSTS                ADDRESS  PORTS  AGE
+ii-traefik-dashboard  traefik.apisnoop.io  80       13h
+
+
+NOTES:
+
+1. Get Traefik's load balancer IP/hostname:
+
+     NOTE: It may take a few minutes for this to become available.
+
+     You can watch the status by running:
+
+         $ kubectl get svc ii-traefik --namespace kube-system -w
+
+     Once 'EXTERNAL-IP' is no longer '<pending>':
+
+         $ kubectl describe svc ii-traefik --namespace kube-system | grep Ingress | awk '{print $3}'
+
+2. Configure DNS records corresponding to Kubernetes ingress resources to point to the load balancer IP/hostname found in step 1
+
+#+end_EXAMPLE
+
+** traefik logs
+
+#+BEGIN_SRC tmate :session foo:traefik_logs
+  TRAEFIK_POD=$(
+    kubectl get pod --selector=app=traefik --namespace=${TRAEFIK_NAMESPACE} -o name \
+    | sed s:pod/::)
+  kubectl logs $TRAEFIK_POD --namespace=${TRAEFIK_NAMESPACE} -f | jq .
+#+END_SRC
+
+** wait for ip to set dns for
+*** wait (-w) for traefik service to get an IP via tmate
+  #+NAME: watch traefik get an IP
+  #+BEGIN_SRC tmate :session foo:watch
+    kubectl get svc --namespace=${TRAEFIK_NAMESPACE} ${TRAEFIK_DEPLOYMENT} -w
+  #+END_SRC
+
+*** traefik service
+  #+NAME: get traefik service
+  #+BEGIN_SRC shell
+    kubectl get svc --namespace=${TRAEFIK_NAMESPACE} ${TRAEFIK_DEPLOYMENT}
+  #+END_SRC
+
+  #+RESULTS: get traefik service
+  #+begin_EXAMPLE
+  NAME         TYPE           CLUSTER-IP   EXTERNAL-IP     PORT(S)                      AGE
+  ii-traefik   LoadBalancer   10.0.4.69    35.189.56.228   80:31199/TCP,443:31755/TCP   11h
+  #+end_EXAMPLE
+
+*** traefik inbound ip
+
+  #+NAME: traefik inbound IP
+  #+BEGIN_SRC shell
+  kubectl describe svc --namespace=${TRAEFIK_NAMESPACE} ${TRAEFIK_DEPLOYMENT} | grep Ingress | awk '{print $3}'
+  #+END_SRC
+
+  #+RESULTS: traefik inbound IP
+  #+begin_EXAMPLE
+  35.189.56.228
+  #+end_EXAMPLE
+
+** look at traefik
+*** deployment
+#+NAME: ii-traefik deployment
+#+BEGIN_SRC shell :wrap "SRC yaml"
+kubectl get deployment --namespace ${TRAEFIK_NAMESPACE} ${TRAEFIK_DEPLOYMENT} -o yaml
+#+END_SRC
+
+#+RESULTS: ii-traefik deployment
+#+begin_SRC yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "4"
+  creationTimestamp: "2019-08-30T05:07:16Z"
+  generation: 4
+  labels:
+    app: traefik
+    chart: traefik-1.77.1
+    heritage: Tiller
+    release: ii-traefik
+  name: ii-traefik
+  namespace: kube-system
+  resourceVersion: "647910"
+  selfLink: /apis/extensions/v1beta1/namespaces/kube-system/deployments/ii-traefik
+  uid: 08d82ebc-cae4-11e9-9d36-42010a9800d6
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: traefik
+      release: ii-traefik
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        checksum/config: 1ea5e59bdf9f15878cc4f13a3849d2f25ca9d4d48e8ad2fc9e7fb71e23584be5
+      creationTimestamp: null
+      labels:
+        app: traefik
+        chart: traefik-1.77.1
+        heritage: Tiller
+        release: ii-traefik
+    spec:
+      containers:
+      - args:
+        - --configfile=/config/traefik.toml
+        env:
+        - name: DNSIMPLE_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              key: DNSIMPLE_BASE_URL
+              name: ii-traefik-dnsprovider-config
+        - name: DNSIMPLE_OAUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: DNSIMPLE_OAUTH_TOKEN
+              name: ii-traefik-dnsprovider-config
+        image: traefik:1.7.14
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ping
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 2
+        name: ii-traefik
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        - containerPort: 8880
+          name: httpn
+          protocol: TCP
+        - containerPort: 443
+          name: https
+          protocol: TCP
+        - containerPort: 8080
+          name: dash
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: /ping
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 2
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /config
+          name: config
+        - mountPath: /ssl
+          name: ssl
+        - mountPath: /acme
+          name: acme
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: ii-traefik
+      serviceAccountName: ii-traefik
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: ii-traefik
+        name: config
+      - name: ssl
+        secret:
+          defaultMode: 420
+          secretName: ii-traefik-default-cert
+      - name: acme
+        persistentVolumeClaim:
+          claimName: ii-traefik-acme
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2019-08-30T05:07:48Z"
+    lastUpdateTime: "2019-08-30T05:07:48Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2019-08-30T05:07:16Z"
+    lastUpdateTime: "2019-08-30T05:21:11Z"
+    message: ReplicaSet "ii-traefik-fdcf76955" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 4
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
+#+end_SRC
+
+*** services
+**** traefik service list
+#+NAME: ii-traefik service list
+#+BEGIN_SRC shell
+kubectl get services --namespace ${TRAEFIK_NAMESPACE} | grep traefik
+#+END_SRC
+
+#+RESULTS: ii-traefik service list
+#+begin_EXAMPLE
+ii-traefik             LoadBalancer   10.0.4.69     35.189.56.228   80:31199/TCP,443:31755/TCP   12h
+ii-traefik-dashboard   ClusterIP      10.0.1.227    <none>          80/TCP                       12h
+#+end_EXAMPLE
+
+**** traefik service
+#+NAME: ii-traefik service
+#+BEGIN_SRC shell :wrap "SRC yaml"
+kubectl get services --namespace ${TRAEFIK_NAMESPACE} ${TRAEFIK_DEPLOYMENT} -o yaml
+#+END_SRC
+
+#+RESULTS: ii-traefik service
+#+begin_SRC yaml
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2019-08-30T05:07:16Z"
+  labels:
+    app: traefik
+    chart: traefik-1.77.1
+    heritage: Tiller
+    release: ii-traefik
+  name: ii-traefik
+  namespace: kube-system
+  resourceVersion: "645195"
+  selfLink: /api/v1/namespaces/kube-system/services/ii-traefik
+  uid: 08d6858a-cae4-11e9-9d36-42010a9800d6
+spec:
+  clusterIP: 10.0.4.69
+  externalTrafficPolicy: Cluster
+  ports:
+  - name: http
+    nodePort: 31199
+    port: 80
+    protocol: TCP
+    targetPort: http
+  - name: https
+    nodePort: 31755
+    port: 443
+    protocol: TCP
+    targetPort: https
+  selector:
+    app: traefik
+    release: ii-traefik
+  sessionAffinity: None
+  type: LoadBalancer
+status:
+  loadBalancer:
+    ingress:
+    - ip: 35.189.56.228
+#+end_SRC
+
+**** traefik-dashboard service
+#+NAME: ii-traefik-dashbord service
+#+BEGIN_SRC shell :wrap "SRC yaml"
+kubectl get services --namespace ${TRAEFIK_NAMESPACE} ${TRAEFIK_DEPLOYMENT}-dashboard -o yaml
+#+END_SRC
+
+#+RESULTS: ii-traefik-dashbord service
+#+begin_SRC yaml
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2019-08-30T05:07:16Z"
+  labels:
+    app: traefik
+    chart: traefik-1.77.1
+    heritage: Tiller
+    release: ii-traefik
+  name: ii-traefik-dashboard
+  namespace: kube-system
+  resourceVersion: "644960"
+  selfLink: /api/v1/namespaces/kube-system/services/ii-traefik-dashboard
+  uid: 08d34a95-cae4-11e9-9d36-42010a9800d6
+spec:
+  clusterIP: 10.0.1.227
+  ports:
+  - name: dashboard-http
+    port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: traefik
+    release: ii-traefik
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+#+end_SRC
+
+
+
+*** ingress
+**** traefik ingress list
+#+NAME: traefik ingress list
+#+BEGIN_SRC shell
+kubectl get ingress --namespace ${TRAEFIK_NAMESPACE} | grep traefik
+#+END_SRC
+
+#+RESULTS: traefik ingress list
+#+begin_EXAMPLE
+ii-traefik-dashboard   traefik.apisnoop.io   35.244.126.62   80      12h
+#+end_EXAMPLE
+
+**** traefik-dashboard ingress
+#+NAME: traefik-dashboard ingress
+#+BEGIN_SRC shell :wrap "SRC yaml"
+kubectl get ingress --namespace ${TRAEFIK_NAMESPACE} ${TRAEFIK_DEPLOYMENT}-dashboard -o yaml
+#+END_SRC
+
+#+RESULTS: traefik-dashboard ingress
+#+begin_SRC yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  creationTimestamp: "2019-08-30T05:07:16Z"
+  generation: 1
+  labels:
+    app: traefik
+    chart: traefik-1.77.1
+    heritage: Tiller
+    release: ii-traefik
+  name: ii-traefik-dashboard
+  namespace: kube-system
+  resourceVersion: "645092"
+  selfLink: /apis/extensions/v1beta1/namespaces/kube-system/ingresses/ii-traefik-dashboard
+  uid: 08d9af53-cae4-11e9-9d36-42010a9800d6
+spec:
+  rules:
+  - host: traefik.apisnoop.io
+    http:
+      paths:
+      - backend:
+          serviceName: ii-traefik-dashboard
+          servicePort: dashboard-http
+status:
+  loadBalancer:
+    ingress:
+    - ip: 35.244.126.62
+#+end_SRC
+
+#+BEGIN_SRC shell
+kubectl api-resources -o wide
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+NAME                              SHORTNAMES   APIGROUP                       NAMESPACED   KIND                             VERBS
+bindings                                                                      true         Binding                          [create]
+componentstatuses                 cs                                          false        ComponentStatus                  [get list]
+configmaps                        cm                                          true         ConfigMap                        [create delete deletecollection get list patch update watch]
+endpoints                         ep                                          true         Endpoints                        [create delete deletecollection get list patch update watch]
+events                            ev                                          true         Event                            [create delete deletecollection get list patch update watch]
+limitranges                       limits                                      true         LimitRange                       [create delete deletecollection get list patch update watch]
+namespaces                        ns                                          false        Namespace                        [create delete get list patch update watch]
+nodes                             no                                          false        Node                             [create delete deletecollection get list patch update watch]
+persistentvolumeclaims            pvc                                         true         PersistentVolumeClaim            [create delete deletecollection get list patch update watch]
+persistentvolumes                 pv                                          false        PersistentVolume                 [create delete deletecollection get list patch update watch]
+pods                              po                                          true         Pod                              [create delete deletecollection get list patch update watch]
+podtemplates                                                                  true         PodTemplate                      [create delete deletecollection get list patch update watch]
+replicationcontrollers            rc                                          true         ReplicationController            [create delete deletecollection get list patch update watch]
+resourcequotas                    quota                                       true         ResourceQuota                    [create delete deletecollection get list patch update watch]
+secrets                                                                       true         Secret                           [create delete deletecollection get list patch update watch]
+serviceaccounts                   sa                                          true         ServiceAccount                   [create delete deletecollection get list patch update watch]
+services                          svc                                         true         Service                          [create delete get list patch update watch]
+mutatingwebhookconfigurations                  admissionregistration.k8s.io   false        MutatingWebhookConfiguration     [create delete deletecollection get list patch update watch]
+validatingwebhookconfigurations                admissionregistration.k8s.io   false        ValidatingWebhookConfiguration   [create delete deletecollection get list patch update watch]
+customresourcedefinitions         crd,crds     apiextensions.k8s.io           false        CustomResourceDefinition         [create delete deletecollection get list patch update watch]
+apiservices                                    apiregistration.k8s.io         false        APIService                       [create delete deletecollection get list patch update watch]
+controllerrevisions                            apps                           true         ControllerRevision               [create delete deletecollection get list patch update watch]
+daemonsets                        ds           apps                           true         DaemonSet                        [create delete deletecollection get list patch update watch]
+deployments                       deploy       apps                           true         Deployment                       [create delete deletecollection get list patch update watch]
+replicasets                       rs           apps                           true         ReplicaSet                       [create delete deletecollection get list patch update watch]
+statefulsets                      sts          apps                           true         StatefulSet                      [create delete deletecollection get list patch update watch]
+tokenreviews                                   authentication.k8s.io          false        TokenReview                      [create]
+localsubjectaccessreviews                      authorization.k8s.io           true         LocalSubjectAccessReview         [create]
+selfsubjectaccessreviews                       authorization.k8s.io           false        SelfSubjectAccessReview          [create]
+selfsubjectrulesreviews                        authorization.k8s.io           false        SelfSubjectRulesReview           [create]
+subjectaccessreviews                           authorization.k8s.io           false        SubjectAccessReview              [create]
+horizontalpodautoscalers          hpa          autoscaling                    true         HorizontalPodAutoscaler          [create delete deletecollection get list patch update watch]
+cronjobs                          cj           batch                          true         CronJob                          [create delete deletecollection get list patch update watch]
+jobs                                           batch                          true         Job                              [create delete deletecollection get list patch update watch]
+certificatesigningrequests        csr          certificates.k8s.io            false        CertificateSigningRequest        [create delete deletecollection get list patch update watch]
+backendconfigs                                 cloud.google.com               true         BackendConfig                    [delete deletecollection get list patch create update watch]
+leases                                         coordination.k8s.io            true         Lease                            [create delete deletecollection get list patch update watch]
+daemonsets                        ds           extensions                     true         DaemonSet                        [create delete deletecollection get list patch update watch]
+deployments                       deploy       extensions                     true         Deployment                       [create delete deletecollection get list patch update watch]
+ingresses                         ing          extensions                     true         Ingress                          [create delete deletecollection get list patch update watch]
+networkpolicies                   netpol       extensions                     true         NetworkPolicy                    [create delete deletecollection get list patch update watch]
+podsecuritypolicies               psp          extensions                     false        PodSecurityPolicy                [create delete deletecollection get list patch update watch]
+replicasets                       rs           extensions                     true         ReplicaSet                       [create delete deletecollection get list patch update watch]
+nodes                                          metrics.k8s.io                 false        NodeMetrics                      [get list]
+pods                                           metrics.k8s.io                 true         PodMetrics                       [get list]
+managedcertificates               mcrt         networking.gke.io              true         ManagedCertificate               [delete deletecollection get list patch create update watch]
+networkpolicies                   netpol       networking.k8s.io              true         NetworkPolicy                    [create delete deletecollection get list patch update watch]
+poddisruptionbudgets              pdb          policy                         true         PodDisruptionBudget              [create delete deletecollection get list patch update watch]
+podsecuritypolicies               psp          policy                         false        PodSecurityPolicy                [create delete deletecollection get list patch update watch]
+clusterrolebindings                            rbac.authorization.k8s.io      false        ClusterRoleBinding               [create delete deletecollection get list patch update watch]
+clusterroles                                   rbac.authorization.k8s.io      false        ClusterRole                      [create delete deletecollection get list patch update watch]
+rolebindings                                   rbac.authorization.k8s.io      true         RoleBinding                      [create delete deletecollection get list patch update watch]
+roles                                          rbac.authorization.k8s.io      true         Role                             [create delete deletecollection get list patch update watch]
+scalingpolicies                                scalingpolicy.kope.io          true         ScalingPolicy                    [delete deletecollection get list patch create update watch]
+priorityclasses                   pc           scheduling.k8s.io              false        PriorityClass                    [create delete deletecollection get list patch update watch]
+storageclasses                    sc           storage.k8s.io                 false        StorageClass                     [create delete deletecollection get list patch update watch]
+volumeattachments                              storage.k8s.io                 false        VolumeAttachment                 [create delete deletecollection get list patch update watch]
+#+end_EXAMPLE
+** explores
+#+BEGIN_SRC shell
+kubectl get ingress --all-namespaces
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+NAMESPACE     NAME                   HOSTS                   ADDRESS   PORTS   AGE
+apisnoop-hh   hasura                 hh-hasura.apisnoop.io             80      20s
+kube-system   ii-traefik-dashboard   traefik.apisnoop.io               80      13h
+#+end_EXAMPLE
+
+* FOOTNOTES
+** Local Variables
+
+Force this instance of emacs to use the apisnoop server-name.
+This allows us to tangle from the emacsclient cli.
+
+# Local Variables:
+# eval: (setq server-name "apisnoop")
+# eval: (server-force-delete)
+# eval: (server-start)
+# End:
+ 
+ 
+ 

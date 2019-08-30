@@ -10,7 +10,7 @@ services:
   postgres:
     # image: postgres:11.5 # debian-slim / alternative: postgres:11.5-alpine
     # we need our image to include plpython3u
-    image: "raiinbow/postgres:${USER}"
+    image: "raiinbow/postgres:${TAG}"
     build: "./postgres"
       # dockerfile: postgres/Dockerfile
       # context: .
@@ -24,7 +24,7 @@ services:
       - POSTGRES_DB=${PGDATABASE}
       - POSTGRES_USER=${PGUSER}
       - POSTGRES_PASSWORD=${PGPASS}
-      - PGDATA=/dev/shm/pgdata
+      # - PGDATA=/dev/shm/pgdata
       # - POSTGRES_PASSWORD_FILE="/run/secrets/postgres-passwd" # k8s secret style
       # - POSTGRES_INITDB_ARGS=""
       # - POSTGRES_INITDB_WALDIR=""
@@ -42,24 +42,25 @@ services:
     # Expose ports without publishing them to the host machine
     # - they’ll only be accessible to linked services.
     expose: # exposed to other containers
-      - "5432"
+      - "${PGPORT}"
     networks: # separate from web due to traefik routing on sharing.io
       - db
     labels:
-      kompose.controller.type: deployment # or daemonset or replicationcontroller
-      kompose.service.type: loadbalancer # nodeport / clusterip / loadbalancer / headless
-      kompose.service.expose: "${USER}-*.apisnoop.io" # true / hostname
+      ingress.class: "traefik"
+      kompose.controller.type: "deployment" # or daemonset or replicationcontroller
+      # kompose.service.type: "loadbalancer" # nodeport / clusterip / loadbalancer / headless
+      # kompose.service.expose: true
       # Maybe see if kompose can work with let's encrypt
       #- "kompose.service.expose.tls-secret="
       # kompose.volume.size: 1Gi
-      traefik.enable: true
-      traefik.basic.port: 8080
-      traefik.basic.protocol: http
-      traefik.basic.frontend.rule: "Host:${USER}-hasura.sharing.io"
+      # traefik.enable: "true"
+      # traefik.basic.port: 8080
+      # traefik.basic.protocol: "http"
+      # traefik.basic.frontend.rule: "Host:${USER}-hasura.sharing.io"
   hasura:
     #image: hasura/graphql-engine:v1.0.0-beta.5
     #image: hasura/graphql-engine:v1.0.0-beta.5.cli-migrations
-    image: "raiinbow/hasura:${USER}"
+    image: "raiinbow/hasura:${TAG}"
     build: "./hasura"
     # build:
     #   dockerfile: hasura/Dockerfile
@@ -73,18 +74,29 @@ services:
     environment:
       - HASURA_GRAPHQL_DATABASE_URL=postgres://${PGUSER}:${PGPASS}@postgres:5432/${PGDATABASE}
       - HASURA_GRAPHQL_ENABLE_CONSOLE=true
-    volumes:
-      - ./hasura/migrations:/hasura-migrations:Z
+    # volumes:
+    #   - ./hasura/migrations:/hasura-migrations:Z
     ports: # exposed to docker host
       - "${HASURA_PORT}:8080"
     expose:
       - "8080"
     labels:
-      - "traefik.docker.network=web"
-      - "traefik.enable=true"
-      - "traefik.basic.port=8080"
-      - "traefik.basic.protocol=http"
-      - "traefik.basic.frontend.rule=Host:${USER}-hasura.sharing.io"
+      kompose.controller.type: "deployment" # or daemonset or replicationcontroller
+      kompose.service.type: "headless" # necessary for traefik
+      # kompose.service.type: "clusterip" # nodeport / clusterip / loadbalancer / headless
+      # kompose.service.type: "loadbalancer" # nodeport / clusterip / loadbalancer / headless
+      # kompose.service.type: "nodeport" # nodeport / clusterip / loadbalancer / headless
+      kompose.service.expose: "${USER}-hasura.apisnoop.io" # true / hostname
+      ingress.kubernetes.io/protocol: "http"
+      kubernetes.io/ingress.class: "traefik"
+      # Maybe see if kompose can work with let's encrypt
+      #- "kompose.service.expose.tls-secret="
+      # kompose.volume.size: 1Gi
+      traefik.docker.network: "web"
+      traefik.enable: "true"
+      traefik.basic.port: 8080
+      traefik.basic.protocol: "http"
+      traefik.basic.frontend.rule: "Host:${USER}-hasura.sharing.io"
   # pgadmin:
   #   container_name: "${USER}-pgadmin"
   #   image: dpage/pgadmin4:4.12

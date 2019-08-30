@@ -1145,6 +1145,7 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
   PGADMIN_PORT=9001
   HASURA_PORT=9000
   # UID based PGPORT used to expose per user postgresql ports on same box
+  PG_CONTAINER_PORT=5432
   PGPORT=54321
   PGHOST=localhost
   PGUSER=apisnoop
@@ -1158,11 +1159,17 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
 # If we are on sharing.io, use UID based *_PORTs
 if [ $(hostname) = "sharing.io" ]
 then
-    echo Overwriting .env based on \*-${USER}.sharing.io
+    # Overwriting .env based on \*-${USER}.sharing.io
 (
     # UID based *_PORT used to expose per user postgresql,hasura, and pgadmin ports on same box
-    echo HASURA_PORT=$(id -u)0
-    echo PGPORT=$(id -u)1
+    # echo HASURA_PORT=$(id -u)0
+    # for running in docker-compose, different localhost:port per user id same
+    # echo PGPORT=$(id -u)1
+    # for running in docker-compose, different localhost:port per user id same
+    # echo PG_CONTAINER_PORT=$PGPORT
+    # for running in kompose
+    echo HASURA_PORT=8080
+    echo PGPORT=5432
     echo PGADMIN_PORT=$(id -u)2
     echo PGHOST=localhost
     echo PGDATABASE=apisnoop
@@ -1170,15 +1177,28 @@ then
     echo PGPASS=s3cr3tsauc3
     echo PGPASSFILE=$PWD/pgpass
     echo COMPOSE_PROJECT_NAME=apisnoop_$USER
+    TAG=$(TZ='Pacific/Auckland'; export TZ ; date +%F-%H-%M)
+    echo TAG=$TAG
+    # echo HASURA_IMAGE=raiinbow/hasura:$TAG
+    # echo POSTGRES_IMAGE=raiinbow/postgres:$TAG
     # echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PWD/pgpass
+    echo GOOGLE_APPLICATION_CREDENTIALS=$HOME/.gcreds.json
+    echo GKS_ZONE="australia-southeast1-a"
+    echo GCS_CLUSTER="single-node-cluster"
+    echo APISNOOP_NAMESPACE="apisnoop-$USER"
+    echo TRAEFIK_NAMESPACE="kube-system"
+    echo TRAEFIK_DEPLOYMENT="ii-traefik"
     echo endpoint: https://$USER-hasura.sharing.io > $PWD/hasura/config.yaml
 ) > .env
+    export $(grep -v '^#' .env | xargs -d '\n')
+    gcloud container clusters get-credentials ${GCS_CLUSTER} --zone ${GKS_ZONE} 2> /dev/null || echo cluster gcreds error
+    kubectl config set-context $(kubectl config current-context) --namespace=${APISNOOP_NAMESPACE} 2>&1 > /dev/null
 else
-   cp .env_sample .env
-   cp hasura/config_sample.yaml hasura/config.yaml
+    cp .env_sample .env
+    cp hasura/config_sample.yaml hasura/config.yaml
+    export $(grep -v '^#' .env | xargs -d '\n')
 fi
 
-export $(grep -v '^#' .env | xargs -d '\n')
 PGPASSFILE=$(pwd)/pgpass
 echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
 chmod 600 $PGPASSFILE
@@ -1437,7 +1457,7 @@ endpoint: http://localhost:9000
 ** docker-compose.yml
 
 #+NAME: hasura docker-compose
-#+BEGIN_SRC yaml :tangle ../apps/docker-compose.yaml
+#+BEGIN_SRC yaml :tangle ../apps/docker-compose.yml
   # hasura/docker-compose.yaml
   # Kompose Note: We don’t support anything 3.4 and above at the moment
   version: "3"
@@ -1446,7 +1466,7 @@ endpoint: http://localhost:9000
     postgres:
       # image: postgres:11.5 # debian-slim / alternative: postgres:11.5-alpine
       # we need our image to include plpython3u
-      image: "raiinbow/postgres:${USER}"
+      image: "raiinbow/postgres:${TAG}"
       build: "./postgres"
         # dockerfile: postgres/Dockerfile
         # context: .
@@ -1460,7 +1480,7 @@ endpoint: http://localhost:9000
         - POSTGRES_DB=${PGDATABASE}
         - POSTGRES_USER=${PGUSER}
         - POSTGRES_PASSWORD=${PGPASS}
-        - PGDATA=/dev/shm/pgdata
+        # - PGDATA=/dev/shm/pgdata
         # - POSTGRES_PASSWORD_FILE="/run/secrets/postgres-passwd" # k8s secret style
         # - POSTGRES_INITDB_ARGS=""
         # - POSTGRES_INITDB_WALDIR=""
@@ -1478,24 +1498,25 @@ endpoint: http://localhost:9000
       # Expose ports without publishing them to the host machine
       # - they’ll only be accessible to linked services.
       expose: # exposed to other containers
-        - "5432"
+        - "${PGPORT}"
       networks: # separate from web due to traefik routing on sharing.io
         - db
       labels:
-        kompose.controller.type: deployment # or daemonset or replicationcontroller
-        kompose.service.type: loadbalancer # nodeport / clusterip / loadbalancer / headless
-        kompose.service.expose: "${USER}-*.apisnoop.io" # true / hostname
+        ingress.class: "traefik"
+        kompose.controller.type: "deployment" # or daemonset or replicationcontroller
+        # kompose.service.type: "loadbalancer" # nodeport / clusterip / loadbalancer / headless
+        # kompose.service.expose: true
         # Maybe see if kompose can work with let's encrypt
         #- "kompose.service.expose.tls-secret="
         # kompose.volume.size: 1Gi
-        traefik.enable: true
-        traefik.basic.port: 8080
-        traefik.basic.protocol: http
-        traefik.basic.frontend.rule: "Host:${USER}-hasura.sharing.io"
+        # traefik.enable: "true"
+        # traefik.basic.port: 8080
+        # traefik.basic.protocol: "http"
+        # traefik.basic.frontend.rule: "Host:${USER}-hasura.sharing.io"
     hasura:
       #image: hasura/graphql-engine:v1.0.0-beta.5
       #image: hasura/graphql-engine:v1.0.0-beta.5.cli-migrations
-      image: "raiinbow/hasura:${USER}"
+      image: "raiinbow/hasura:${TAG}"
       build: "./hasura"
       # build:
       #   dockerfile: hasura/Dockerfile
@@ -1509,18 +1530,29 @@ endpoint: http://localhost:9000
       environment:
         - HASURA_GRAPHQL_DATABASE_URL=postgres://${PGUSER}:${PGPASS}@postgres:5432/${PGDATABASE}
         - HASURA_GRAPHQL_ENABLE_CONSOLE=true
-      volumes:
-        - ./hasura/migrations:/hasura-migrations:Z
+      # volumes:
+      #   - ./hasura/migrations:/hasura-migrations:Z
       ports: # exposed to docker host
         - "${HASURA_PORT}:8080"
       expose:
         - "8080"
       labels:
-        - "traefik.docker.network=web"
-        - "traefik.enable=true"
-        - "traefik.basic.port=8080"
-        - "traefik.basic.protocol=http"
-        - "traefik.basic.frontend.rule=Host:${USER}-hasura.sharing.io"
+        kompose.controller.type: "deployment" # or daemonset or replicationcontroller
+        kompose.service.type: "headless" # necessary for traefik
+        # kompose.service.type: "clusterip" # nodeport / clusterip / loadbalancer / headless
+        # kompose.service.type: "loadbalancer" # nodeport / clusterip / loadbalancer / headless
+        # kompose.service.type: "nodeport" # nodeport / clusterip / loadbalancer / headless
+        kompose.service.expose: "${USER}-hasura.apisnoop.io" # true / hostname
+        ingress.kubernetes.io/protocol: "http"
+        kubernetes.io/ingress.class: "traefik"
+        # Maybe see if kompose can work with let's encrypt
+        #- "kompose.service.expose.tls-secret="
+        # kompose.volume.size: 1Gi
+        traefik.docker.network: "web"
+        traefik.enable: "true"
+        traefik.basic.port: 8080
+        traefik.basic.protocol: "http"
+        traefik.basic.frontend.rule: "Host:${USER}-hasura.sharing.io"
     # pgadmin:
     #   container_name: "${USER}-pgadmin"
     #   image: dpage/pgadmin4:4.12
