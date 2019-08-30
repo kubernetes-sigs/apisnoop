@@ -1140,6 +1140,51 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
 #+END_SRC
 
 * Apps
+** .env
+#+BEGIN_SRC shell :tangle ../apps/.env_sample
+  PGADMIN_PORT=9001
+  HASURA_PORT=9000
+  # UID based PGPORT used to expose per user postgresql ports on same box
+  PGPORT=54321
+  PGHOST=localhost
+  PGUSER=apisnoop
+  PGPASS=s3cr3tsauc3
+  PGDATABASE=apisnoop
+  CONN="host=127.0.0.1 port=54321 user=apisnoop dbname=apisnoop password=s3cr3tsauc3 sslmode=disable client_encoding=UTF8"
+#+END_SRC
+** .loadenv
+#+NAME: .loadenv
+#+BEGIN_SRC shell :tangle ../apps/.loadenv
+# If we are on sharing.io, use UID based *_PORTs
+if [ $(hostname) = "sharing.io" ]
+then
+    echo Overwriting .env based on \*-${USER}.sharing.io
+(
+    # UID based *_PORT used to expose per user postgresql,hasura, and pgadmin ports on same box
+    echo HASURA_PORT=$(id -u)0
+    echo PGPORT=$(id -u)1
+    echo PGADMIN_PORT=$(id -u)2
+    echo PGHOST=localhost
+    echo PGDATABASE=apisnoop
+    echo PGUSER=apisnoop
+    echo PGPASS=s3cr3tsauc3
+    echo PGPASSFILE=$PWD/pgpass
+    echo COMPOSE_PROJECT_NAME=apisnoop_$USER
+    # echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PWD/pgpass
+    echo endpoint: https://$USER-hasura.sharing.io > $PWD/hasura/config.yaml
+) > .env
+else
+   cp .env_sample .env
+   cp hasura/config_sample.yaml hasura/config.yaml
+fi
+
+export $(grep -v '^#' .env | xargs -d '\n')
+PGPASSFILE=$(pwd)/pgpass
+echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
+chmod 600 $PGPASSFILE
+export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE password=$PGPASS sslmode=disable client_encoding=UTF8"
+#+END_SRC
+
 ** Hasura
 *** Tracking Tables
     :PROPERTIES:
@@ -1516,320 +1561,16 @@ endpoint: http://localhost:9000
     db:
 #+END_SRC
 
-* Diary
-** August
-*** 23
-    We went through a slew of debugging and restarts today, ending with us having a new docker container that holds everything needed to start api rainbow...but still not working successfully yet.  The next ask was to create a port based on a  user id and then have tmate access the container through this port via emacs.  Research on how to do this, and what it exactly means, eluded me, and so I thought the next best thing was to recap what we are trying to do to make sure I understand it.
-
-    So far, we've been running api rainbow from the same sharing.io machine.  This machine has postgres running on it, with different users and db already set up.  We had containerized our hasura front end so that you could continually bring down and back up the graphql backend.  However, this required creating a folder named as $USER + '-hasura', and to create a symlink from our standard hasura folder.
-
-    These things make it hard for people outside of ii to be able to run apisnoop rainbow, which we want them to do.  It also makes our whole setup fragile--since it requires sharing.io to always be running in pristine condition.  If osmething happened to the postgres instance, it'd be hard to replicate our work.
-
-and so, we will make a docker container for _everything_.  Now, the only thing that's required for anyone to work on apisnoop rainbow is the git repo and docker, and they'd run a =docker-compose up= and have their own backend populated with raw_swaggers and audit_events. 
-
-To be able to do this, though, we'll need to check and adjust some of the assumptions built into the code now:
-- that the person will have access to sharing.io, as it's set as a default endpoint.
-- that the person will know how to enter into postgres to run our go command
-- That the person will know the location of our sources, in case they want to update which audit events and raw swaggers are loaded.
-- That the person will understand postgres and how to start up a server and db once postgres is started.
-
-  I think The ideal container will have it so someone can enter in a bucket and job in a sources.yaml in the root of apisnoop.  Then, they can run =docker-compose up= and it will start up everything needed at localhost:XXXX (with the port number being able to be passed as a flag).  This would start up postgres, pgadmin, and hasura.  The audit_events for the given bucket/job would load, as would the swaggers based on the version given in the metadata of the bucket.  All our views would load and be properly indexed.  The assigning of this port to some public url (like we do with sharing.io) should not be a part of the docker, as I imagine a decent amount of users would be running it local only.   However, the assigning of a port for the container, so someone can easily pop a shell into it, would be built in.  I think we'd also want the org-file integration tightly built, as it's a good thing to encourage.
-
-I think I end up being confused on this as we are combining proxy management of sharing.io with docker with emacs and i'm not sure where one starts and stops.  Or, I'm not sure how much of what I enjoy about what we're doing (working within an org file and doublechecking with a url) is due to set ups in our sharing.io box that'd be hard to replicate.  I am keen to reduce the docker file further so there are no traces of local environments, and see how to host that on sharing.io without being dependent on any program in sharing.io 
-
 * FOOTNOTES
-** Iteration Loop
-*** listing tables
- #+BEGIN_SRC sql-mode
-   \conninfo
-   \d+
- #+END_SRC
-
- #+RESULTS:
- #+begin_src sql-mode
- You are connected to database "hh" as user "hh" on host "172.17.0.1" at port "5432".
- SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
-                                           List of relations
-    Schema   |               Name               |       Type        | Owner |    Size    | Description 
- ------------+----------------------------------+-------------------+-------+------------+-------------
-  pg_temp_16 | url_to_path                      | table             | hh    | 8776 kB    | 
-  public     | api_operation                    | view              | hh    | 0 bytes    | 
-  public     | api_operation_material           | materialized view | hh    | 1728 kB    | 
-  public     | api_operation_parameter          | view              | hh    | 0 bytes    | 
-  public     | api_operation_parameter_material | materialized view | hh    | 8192 bytes | 
-  public     | api_operation_response           | view              | hh    | 0 bytes    | 
-  public     | api_schema                       | view              | hh    | 0 bytes    | 
-  public     | api_schema_field                 | view              | hh    | 0 bytes    | 
-  public     | api_swagger                      | table             | hh    | 1800 kB    | 
-  public     | api_swagger_id_seq               | sequence          | hh    | 8192 bytes | 
-  public     | audit_event                      | view              | hh    | 0 bytes    | 
-  public     | over                             | view              | hh    | 0 bytes    | 
-  public     | podspec_field_coverage           | view              | hh    | 0 bytes    | 
-  public     | podspec_field_coverage_material  | materialized view | hh    | 8192 bytes | 
-  public     | podspec_field_summary            | view              | hh    | 0 bytes    | 
-  public     | raw_audit_event                  | table             | hh    | 528 MB     | 
-  public     | verb_url_op                      | table             | hh    | 24 MB      | 
- (17 rows)
-
- #+end_src
-
-*** .env
-#+BEGIN_SRC shell :tangle ../apps/.env_sample
-  PGADMIN_PORT=9001
-  HASURA_PORT=9000
-  # UID based PGPORT used to expose per user postgresql ports on same box
-  PGPORT=54321
-  PGHOST=localhost
-  PGUSER=apisnoop
-  PGPASS=s3cr3tsauc3
-  PGDATABASE=apisnoop
-  CONN="host=127.0.0.1 port=54321 user=apisnoop dbname=apisnoop password=s3cr3tsauc3 sslmode=disable client_encoding=UTF8"
-#+END_SRC
-
-#+NAME: .loadenv
-#+BEGIN_SRC shell :tangle ../apps/.loadenv
-# If we are on sharing.io, use UID based *_PORTs
-if [ $(hostname) = "sharing.io" ]
-then
-    echo Overwriting .env based on \*-${USER}.sharing.io
-(
-    # UID based *_PORT used to expose per user postgresql,hasura, and pgadmin ports on same box
-    echo HASURA_PORT=$(id -u)0
-    echo PGPORT=$(id -u)1
-    echo PGADMIN_PORT=$(id -u)2
-    echo PGHOST=localhost
-    echo PGDATABASE=apisnoop
-    echo PGUSER=apisnoop
-    echo PGPASS=s3cr3tsauc3
-    echo PGPASSFILE=$PWD/pgpass
-    echo COMPOSE_PROJECT_NAME=apisnoop_$USER
-    # echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PWD/pgpass
-    echo endpoint: https://$USER-hasura.sharing.io > $PWD/hasura/config.yaml
-) > .env
-else
-   cp .env_sample .env
-   cp hasura/config_sample.yaml hasura/config.yaml
-fi
-
-export $(grep -v '^#' .env | xargs -d '\n')
-PGPASSFILE=$(pwd)/pgpass
-echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
-chmod 600 $PGPASSFILE
-export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE password=$PGPASS sslmode=disable client_encoding=UTF8"
-#+END_SRC
-
-*** dropping all data
- #+NAME: do not run
- #+BEGIN_SRC sql-mode
-   drop table api_swagger cascade;
-   drop table raw_audit_event cascade;
-   drop schema hdb_catalog cascade;
-   drop schema hdb_views cascade;
- #+END_SRC
-
- #+RESULTS: do not run
- #+begin_src sql-mode
- ERROR:  table "api_swagger" does not exist
- ERROR:  table "raw_audit_event" does not exist
- ERROR:  schema "hdb_catalog" does not exist
- ERROR:  schema "hdb_views" does not exist
- #+end_src
-*** Restart Hasura
-    #+NAME: iteration loop
-    #+BEGIN_SRC tmate
-      
-      
-      
-      #echo create a $USER-apps dir and link back to ../apps/*
-      #mkdir -p $USER-apps && cd $USER-apps && ln -sf ../apps/* .
-      #ls ../apps/.*env | xargs -n 1 -I X ln -sf X .
-      cd ~/ii/apisnoop/apps
-      echo docker down, drop sql, rm migrations
-      . .loadenv
-      cp pgpass ~/.pgpass
-      # cncf/apisnoopregexp rmatch CONN string
-      # && echo 'drop table api_swagger cascade;  drop table raw_audit_event cascade;  drop schema hdb_views cascade;  drop schema hdb_catalog cascade;' | psql \
-      # For tangling via cli:
-      export SOCKETFILE=$(ls /tmp/emacs$(id -u)/server* | head -1)
-      # cd ~/ii/apisnoop_v3/$USER-apps \
-      cd ~/ii/apisnoop/apps \
-       && docker-compose down -t 0 \
-       && docker-compose rm \
-       && docker volume rm -f $USER-hasura_migrations \
-       && rm -f hasura/migrations/* \
-       && emacsclient -s $SOCKETFILE -e "(org-babel-tangle-file \"~/ii/apisnoop_v3/org/meta.org\")" \
-       && docker-compose build \
-       && docker-compose up #\
-       #&& echo "select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');" \
-       #| psql \
-       #&& echo "select * from audit_event_op_update();" \
-       #| psql
-       # && sleep 2 \
-       # && hasura migrate apply \
-       # --log-level DEBUG \
-       #&& make rmatch \
-       #&&  ./rmatch
-       # psql -h 127.0.0.1 -p $(id -u)1 --user apisnoop
-       # \
-       # && cd ~hh/ii/apisnoopregexp \
-       # && make rmatch \
-       # && CONN="host=172.17.0.1 user=$USER dbname=$USER password=''" ./rmatch
-       # select count(*) from raw_audit_event where operation_id is null; \watch 2
-    #+END_SRC
-
-    #+RESULTS: iteration loop
-    #+begin_EXAMPLE
-    #+end_EXAMPLE
-
-*** setting up the hasura postgresql-permissions
-   
- Run the following as the postgres user via psql:
- https://docs.hasura.io/1.0/graphql/manual/deployment/postgres-permissions.html
-
- #+NAME: hasura-user
- #+BEGIN_SRC shell :eval never-export :results silent
- echo -n $USER
- #+END_SRC
-
- #+NAME: create database and granting all privs to a user
- #+BEGIN_SRC sql-mode :noweb yes :notangle ../apps/hasura/db_setup.sql
- create database <<hasura-user()>>;
- -- create user myuser with encrypted password 'mypass';
- grant all privileges on database <<hasura-user()>> to <<hasura-user()>>;
- create role dba with superuser noinherit;
- grant dba to <<hasura-user()>>;
- \connect <<hasura-user()>>
- -- we write python functions
- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
- CREATE EXTENSION IF NOT EXISTS plpython3u;
- CREATE EXTENSION IF NOT EXISTS plsh;
- CREATE EXTENSION IF NOT EXISTS pgcrypto;
- CREATE EXTENSION IF NOT EXISTS pg_trgm;
- CREATE EXTENSION IF NOT EXISTS ltree;
- CREATE SCHEMA IF NOT EXISTS hdb_catalog;
- CREATE SCHEMA IF NOT EXISTS hdb_views;
- -- make the user an owner of system schemas
- ALTER SCHEMA hdb_catalog OWNER TO <<hasura-user()>>;
- ALTER SCHEMA hdb_views OWNER TO <<hasura-user()>>;
- GRANT SELECT ON ALL TABLES IN SCHEMA information_schema TO <<hasura-user()>>;
- GRANT SELECT ON ALL TABLES IN SCHEMA pg_catalog TO <<hasura-user()>>;
- GRANT USAGE ON SCHEMA public TO <<hasura-user()>>;
- GRANT ALL ON ALL TABLES IN SCHEMA public TO <<hasura-user()>>;
- GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO <<hasura-user()>>;
- GRANT pg_execute_server_program TO <<hasura-user()>>;
- #+END_SRC
-
- #+RESULTS: create database and granting all privs to a user
- #+begin_src sql-mode
- ERROR:  database "zz" already exists
- WARNING:  no privileges were granted for "zz"
- GRANT
- ERROR:  must be superuser to create superusers
- ERROR:  must be superuser to alter superusers
- SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
- You are now connected to database "zz" as user "zz".
- NOTICE:  extension "uuid-ossp" already exists, skipping
- CREATE EXTENSION
- NOTICE:  extension "plpython3u" already exists, skipping
- CREATE EXTENSION
- ERROR:  permission denied to create extension "plsh"
- HINT:  Must be superuser to create this extension.
- NOTICE:  extension "pgcrypto" already exists, skipping
- CREATE EXTENSION
- NOTICE:  schema "hdb_catalog" already exists, skipping
- CREATE SCHEMA
- NOTICE:  schema "hdb_views" already exists, skipping
- CREATE SCHEMA
- ALTER SCHEMA
- ALTER SCHEMA
- WARNING:  no privileges were granted for "sql_features"
- WARNING:  no privileges were granted for "sql_implementation_info"
- WARNING:  no privileges were granted for "sql_languages"
- WARNING:  no privileges were granted for "sql_packages"
- WARNING:  no privileges were granted for "sql_parts"
- WARNING:  no privileges were granted for "sql_sizing"
- WARNING:  no privileges were granted for "sql_sizing_profiles"
- WARNING:  no privileges were granted for "collations"
- WARNING:  no privileges were granted for "collation_character_set_applicability"
- WARNING:  no privileges were granted for "column_domain_usage"
- WARNING:  no privileges were granted for "constraint_column_usage"
- WARNING:  no privileges were granted for "domains"
- WARNING:  no privileges were granted for "constraint_table_usage"
- WARNING:  no privileges were granted for "domain_constraints"
- WARNING:  no privileges were granted for "role_column_grants"
- WARNING:  no privileges were granted for "enabled_roles"
- WARNING:  no privileges were granted for "referential_constraints"
- WARNING:  no privileges were granted for "parameters"
- WARNING:  no privileges were granted for "routine_privileges"
- WARNING:  no privileges were granted for "role_routine_grants"
- WARNING:  no privileges were granted for "routines"
- WARNING:  no privileges were granted for "schemata"
- WARNING:  no privileges were granted for "table_constraints"
- WARNING:  no privileges were granted for "sequences"
- WARNING:  no privileges were granted for "triggered_update_columns"
- WARNING:  no privileges were granted for "table_privileges"
- WARNING:  no privileges were granted for "role_table_grants"
- WARNING:  no privileges were granted for "triggers"
- WARNING:  no privileges were granted for "tables"
- WARNING:  no privileges were granted for "transforms"
- WARNING:  no privileges were granted for "role_udt_grants"
- WARNING:  no privileges were granted for "udt_privileges"
- WARNING:  no privileges were granted for "role_usage_grants"
- WARNING:  no privileges were granted for "usage_privileges"
- WARNING:  no privileges were granted for "user_defined_types"
- WARNING:  no privileges were granted for "view_column_usage"
- WARNING:  no privileges were granted for "view_routine_usage"
- WARNING:  no privileges were granted for "view_table_usage"
- WARNING:  no privileges were granted for "views"
- WARNING:  no privileges were granted for "data_type_privileges"
- WARNING:  no privileges were granted for "user_mapping_options"
- WARNING:  no privileges were granted for "element_types"
- WARNING:  no privileges were granted for "_pg_foreign_table_columns"
- WARNING:  no privileges were granted for "column_options"
- WARNING:  no privileges were granted for "_pg_foreign_data_wrappers"
- WARNING:  no privileges were granted for "foreign_data_wrapper_options"
- WARNING:  no privileges were granted for "user_mappings"
- WARNING:  no privileges were granted for "foreign_data_wrappers"
- WARNING:  no privileges were granted for "_pg_foreign_servers"
- WARNING:  no privileges were granted for "foreign_server_options"
- WARNING:  no privileges were granted for "foreign_servers"
- WARNING:  no privileges were granted for "_pg_foreign_tables"
- WARNING:  no privileges were granted for "key_column_usage"
- WARNING:  no privileges were granted for 
- #+end_src
-
- #+NAME: as posgres admin, setup hasura user and db
- #+BEGIN_SRC tmate :eval never-export
- #+BEGIN_SRC shell  :var SUDO_ASKPASS="/usr/bin/ssh-askpass" :prologue "export SUDO_ASKPASS"
- # :var DISPLAY=":0.0"
- sudo su - postgres -c psql < ~/ii/apisnoop/apps/hasura/db_setup.sql
- #+END_SRC
-
- #+RESULTS: as posgres admin, setup hasura user and db
- #+begin_EXAMPLE
- #+end_EXAMPLE
-
 ** Local Variables
-   - Note taken on [2019-08-23 Fri 17:06]
-** connect to db
-#+BEGIN_SRC emacs-lisp
-  (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
-#+END_SRC
 
-#+BEGIN_SRC sql-mode
-\conninfo
-#+END_SRC
-
-#+RESULTS:
-#+begin_src sql-mode
-You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10061".
-#+end_src
+Force this instance of emacs to use the apisnoop server-name.
+This allows us to tangle from the emacsclient cli.
 
 # Local Variables:
 # eval: (setq server-name "apisnoop")
 # eval: (server-force-delete)
 # eval: (server-start)
-# eval: (concat server-socket-dir "/" server-name)
 # End:
  
  
