@@ -1,6 +1,6 @@
--- 302: PodSpec Field Summary View
+-- 602: PodSpec Field Summary View
 --   :PROPERTIES:
---   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/302_view_podspec_field_summary.up.sql
+--   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/602_view_podspec_field_summary.up.sql
 --   :END:
 -- #+NAME: view podspec_field_summary
 

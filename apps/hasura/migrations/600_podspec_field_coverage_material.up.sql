@@ -1,6 +1,6 @@
--- 300: PodSpec Materialized View
+-- 600: PodSpec Materialized View
 --   :PROPERTIES:
---   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/300_podspec_field_coverage_material.up.sql
+--   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/600_podspec_field_coverage_material.up.sql
 --   :END:
 -- #+NAME: view podspec_field_coverage_material
 

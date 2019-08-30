@@ -3,7 +3,7 @@
 #+DATE: 15 August 2019
 #+INCLUDE: "config.org"
 #+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | TADA(d)
-#+ARCHIVE: ~/ii/apisnoop_v3/org/archive/meta.archive.org::
+#+ARCHIVE: archive/meta.archive.org::
 #+PROPERTY: header-args:sql-mode+ :results silent
 
 
@@ -32,14 +32,26 @@ To ensure you're set up properly, you want to run down this checklist:
     cd ~/ii/apisnoop/apps # docker-compose.yaml is here
     # Retangle / export code from org/documentation usually into ./apps/*
     # the eval: local vars set this emacs instance server-name to apisnoop
+    rm hasura/migrations/* # just in case we move files around
     emacsclient -s apisnoop -e "(org-babel-tangle-file \"../org/meta.org\")"
     # We have a sharing.io check to ensure everyone get's there own PORTS
     . .loadenv
     # Bring down anything you may already have up
-    docker-compose down -t 0
+    docker-compose down -t 0 --remove-orphans
     docker-compose rm -f
+    # Build your containers
+    docker-compose build
     # Bring up your containers
-    docker-compose up
+    docker-compose up --remove-orphans
+  #+END_SRC
+
+- [ ] perform migrations (if not using .cli-migrations hasura image)
+
+  #+NAME: start docker containers
+  #+BEGIN_SRC tmate :noweb eval :session apisnoop:migrations
+    cd ~/ii/apisnoop/apps/hasura
+    hasura migrate apply
+    hasura migrate status
   #+END_SRC
 
 - [ ] Connect to your postgres db from within this file
@@ -78,7 +90,7 @@ To ensure you're set up properly, you want to run down this checklist:
 - [ ] Test that audit events loaded.
   
   Now that we are connected to our db, we can run sql queries, like checking if the loading of cached audit events work.
-  The following query should return a count of =305025=
+  The following query should return a count of =305025=. You may need to run this twice to ensure your reconnected.
   #+NAME: Number of distinct audit events
   #+BEGIN_SRC sql-mode
   select count(distinct audit_id) from audit_event;
@@ -86,9 +98,11 @@ To ensure you're set up properly, you want to run down this checklist:
 
   #+RESULTS: Number of distinct audit events
   #+begin_src sql-mode
-  ERROR:  relation "audit_event" does not exist
-  LINE 1: select count(distinct audit_id) from audit_event;
-                                               ^
+   count  
+  --------
+   305025
+  (1 row)
+
   #+end_src
   
   If this didn't work, check out the longer setup below.
@@ -820,7 +834,7 @@ psql < /tmp/ci-kubernetes-e2e-gci-gce.1165794879855398916.sql
 *** Call load_audit_events() interactively
 #+NAME: update event operation_id sample audit event
 #+BEGIN_SRC tmate :session sql:update_opid1 :exports none
-  cd ~/ii/apisnoop_v3/apps
+  cd ~/ii/apisnoop/apps
   . .loadenv
   psql
   select * from audit_event_op_update()\;
@@ -835,7 +849,7 @@ psql < /tmp/ci-kubernetes-e2e-gci-gce.1165794879855398916.sql
 *** see how far we have to go
 #+NAME: every 10 seconsd count the number of events with no operation_id
 #+BEGIN_SRC tmate :session sql:op_count1 :exports none
-  cd ~/ii/apisnoop_v3/apps
+  cd ~/ii/apisnoop/apps
   . .loadenv
   psql
   select count(*) from raw_audit_event where operation_id is null; \watch 10
@@ -993,9 +1007,9 @@ CREATE INDEX kfpm_sub_kind_idx   ON kind_field_path_material (sub_kind);
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
   :END:
-** 300: PodSpec Materialized View
+** 600: PodSpec Materialized View
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/300_podspec_field_coverage_material.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/600_podspec_field_coverage_material.up.sql
   :END:
 #+NAME: view podspec_field_coverage_material
 #+BEGIN_SRC sql-mode
@@ -1050,17 +1064,17 @@ CREATE INDEX kfpm_sub_kind_idx   ON kind_field_path_material (sub_kind);
      AND audit_event.operation_id !~~ '%beta%'::text
    GROUP BY operation_id, podspec_field, useragent;
 #+END_SRC
-** 301: PodSpec Field Coverage View
+** 601: PodSpec Field Coverage View
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/301_view_podspec_field_coverage.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/601_view_podspec_field_coverage.up.sql
   :END:
 #+NAME: view podspec_field_coverage
 #+BEGIN_SRC sql-mode
 create view podspec_field_coverage as select * from podspec_field_coverage_material;
 #+END_SRC
-** 302: PodSpec Field Summary View
+** 602: PodSpec Field Summary View
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/302_view_podspec_field_summary.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/602_view_podspec_field_summary.up.sql
   :END:
 #+NAME: view podspec_field_summary
 #+BEGIN_SRC sql-mode
@@ -1101,9 +1115,9 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
      and test like '%Conformance%'
    group by podspec_field;
 #+END_SRC
-** 304: PodSpec Field Review View
+** 604: PodSpec Field Review View
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/304_view_podspec_field_report.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/604_view_podspec_field_report.up.sql
   :END:
 #+NAME: podspec_field_hits
 #+BEGIN_SRC sql-mode
@@ -1256,16 +1270,10 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
 
 *** config.yml
 
-#+NAME: hasura docker-compose
-#+BEGIN_SRC shell :file (concat "../apps/" user-login-name "-hasura/config.yaml")
-echo endpoint: https://$USER-hasura.sharing.io
+#+NAME: hasura config sample
+#+BEGIN_SRC text :tangle ../apps/hasura/config_sample.yaml :noweb yes
+endpoint: http://localhost:9000
 #+END_SRC
-
-#+RESULTS: hasura docker-compose
-#+begin_EXAMPLE
-[[file:../apps/zz-hasura/config.yaml]]
-#+end_EXAMPLE
-
 *** init-apisnoop-db.sh
 
  #+NAME: init apisnoop db
@@ -1305,7 +1313,8 @@ echo endpoint: https://$USER-hasura.sharing.io
 *** Dockerfile
 #+NAME: apisnoop hasura dockerfile
 #+BEGIN_SRC dockerfile :tangle ../apps/hasura/Dockerfile
-  FROM hasura/graphql-engine:v1.0.0-beta.5.cli-migrations
+  FROM hasura/graphql-engine:v1.0.0-beta.6.cli-migrations
+  # FROM hasura/graphql-engine:v1.0.0-beta.6
   MAINTAINER Hippie Hacker <hh@ii.coop>
   COPY ./migrations /hasura-migrations
 #+END_SRC
@@ -1455,8 +1464,8 @@ echo endpoint: https://$USER-hasura.sharing.io
       environment:
         - HASURA_GRAPHQL_DATABASE_URL=postgres://${PGUSER}:${PGPASS}@postgres:5432/${PGDATABASE}
         - HASURA_GRAPHQL_ENABLE_CONSOLE=true
-      # volumes:
-      #   - ./hasura/migrations:/hasura-migrations:Z
+      volumes:
+        - ./hasura/migrations:/hasura-migrations:Z
       ports: # exposed to docker host
         - "${HASURA_PORT}:8080"
       expose:
@@ -1565,7 +1574,7 @@ I think I end up being confused on this as we are combining proxy management of 
  #+end_src
 
 *** .env
-#+BEGIN_SRC shell :tangle ~/ii/apisnoop_v3/apps/.env
+#+BEGIN_SRC shell :tangle ../apps/.env_sample
   PGADMIN_PORT=9001
   HASURA_PORT=9000
   # UID based PGPORT used to expose per user postgresql ports on same box
@@ -1595,7 +1604,11 @@ then
     echo PGPASSFILE=$PWD/pgpass
     echo COMPOSE_PROJECT_NAME=apisnoop_$USER
     # echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PWD/pgpass
+    echo endpoint: https://$USER-hasura.sharing.io > $PWD/hasura/config.yaml
 ) > .env
+else
+   cp .env_sample .env
+   cp hasura/config_sample.yaml hasura/config.yaml
 fi
 
 export $(grep -v '^#' .env | xargs -d '\n')
@@ -1627,11 +1640,10 @@ export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE passwor
       
       
       
-      # cd ~/ii/apisnoop_v3/
       #echo create a $USER-apps dir and link back to ../apps/*
       #mkdir -p $USER-apps && cd $USER-apps && ln -sf ../apps/* .
       #ls ../apps/.*env | xargs -n 1 -I X ln -sf X .
-      cd ~/ii/apisnoop_v3/apps
+      cd ~/ii/apisnoop/apps
       echo docker down, drop sql, rm migrations
       . .loadenv
       cp pgpass ~/.pgpass
@@ -1640,7 +1652,7 @@ export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE passwor
       # For tangling via cli:
       export SOCKETFILE=$(ls /tmp/emacs$(id -u)/server* | head -1)
       # cd ~/ii/apisnoop_v3/$USER-apps \
-      cd ~/ii/apisnoop_v3/apps \
+      cd ~/ii/apisnoop/apps \
        && docker-compose down -t 0 \
        && docker-compose rm \
        && docker volume rm -f $USER-hasura_migrations \
@@ -1790,7 +1802,7 @@ export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE passwor
  #+BEGIN_SRC tmate :eval never-export
  #+BEGIN_SRC shell  :var SUDO_ASKPASS="/usr/bin/ssh-askpass" :prologue "export SUDO_ASKPASS"
  # :var DISPLAY=":0.0"
- sudo su - postgres -c psql < ~/ii/apisnoop_v3/apps/hasura/db_setup.sql
+ sudo su - postgres -c psql < ~/ii/apisnoop/apps/hasura/db_setup.sql
  #+END_SRC
 
  #+RESULTS: as posgres admin, setup hasura user and db

@@ -1,6 +1,6 @@
--- 301: PodSpec Field Coverage View
+-- 601: PodSpec Field Coverage View
 --   :PROPERTIES:
---   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/301_view_podspec_field_coverage.up.sql
+--   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/601_view_podspec_field_coverage.up.sql
 --   :END:
 -- #+NAME: view podspec_field_coverage
 
