@@ -1,0 +1,1229 @@
+#+TITLE: Exploring Ticket 45
+* Ticket Description
+  from the ticket page:
+#+BEGIN_QUOTE
+We are currently able to get some basic info into our audit events, like # of operation ID's hit by tests.  However, the results do not match the same number in our current site.
+
+Before we go into more complex summaries, we should understand why the numbers don't match and correct either side so there is agreement.
+#+END_QUOTE
+** Looking at the numbers
+   For this ticket we are comparing the audit events for =ci-kubernetes-gci-gce/1165794879855398916=, as prepared in our old style into an endpoints.json file, and in our new style with a sql query.
+
+   I have downloaded our endpoints.json for this ticket and stored it in =data/=, so we can investigate it as part of this exploration.
+
+   To see how many endpoints in the endpoints.json are hit by tests, we can use =jq=.  here, we will make a list of all endpoints whose testhit value is greater than 0, then get a length of that list...giving us the number of endpoints.
+
+   #+NAME: # Of Tested op_ids in endpoints.json
+   #+BEGIN_SRC shell :dir ../../data/ci-kubernetes-e2e-gci-gce/1165794879855398916
+  jq -c '[ to_entries[]
+          | select (.value.testHits > 0)
+          | [.key, .value.name]
+         ]
+         | length' endpoints.json
+   #+END_SRC
+
+
+   In our database, we can query the count of distinct operation_ids in audit events who have an e2e.test useragent
+
+#+NAME: Count of tested op id's in postgres db
+#+BEGIN_SRC sql-mode
+select count(distinct operation_id) from audit_event where useragent ilike 'e2e.test%';
+#+END_SRC
+
+Comparing between our endpoints.json
+#+RESULTS: # Of Tested op_ids in endpoints.json
+#+begin_EXAMPLE
+226
+#+end_EXAMPLE
+and our postgres db
+#+RESULTS: Count of tested op id's in postgres db
+#+begin_src sql-mode
+ count 
+-------
+   208
+(1 row)
+
+#+end_src
+
+We can see endpoints.json has 18 more operation_ids.  Now, we need to figure out why.
+
+* Possible Reasons For Discrepancy
+** Our previous process has different logic for counting test hits.
+   the testHits in endpoints.json is calculated in our snoopAuditLog.py file, with the relevant portion quoted below.
+   #+NAME: Logic for calculating test hits.
+   #+BEGIN_EXAMPLE python
+  hit_by_e2e = True if event.get(
+      'userAgent', False
+    ) and useragent.startswith(
+      'e2e.test') else False
+
+    if hit_by_e2e:
+      endpoints[operationId]['testHits'] += 1
+      test_name_start = ' -- '
+      if useragent.find(test_name_start) > -1:
+        test_name = useragent.split(test_name_start)[1]
+        useragent = useragent.split(test_name_start)[0]
+   #+END_EXAMPLE
+   So this is saying "if event has userAgent and the useragent starts with e2e.test, then increase testHits by 1."
+   
+   This is the same logic as our sql query:
+   : select count(distinct operation_id) from audit_event where useragent ilike 'e2e.test%';
+   
+   So I don't think this is the case.
+   
+** There are duplicates in endpoints.json
+   Our sql query is counting /distinct/ endpoints.  Perhaps endpoints.json includes 18 duplicates.
+   We can adjust our jq query to account for this, using [[https://stedolan.github.io/jq/manual/#Basicfilters][unique]]
+#+NAME: Count of all unique op_id's in endpoints.json
+#+BEGIN_SRC shell :dir ../../data/ci-kubernetes-e2e-gci-gce/1165794879855398916
+  jq -c '[ to_entries[]
+          | select (.value.testHits > 0)
+          | [.key, .value.name]
+        ]
+        | unique
+        | length' endpoints.json
+#+END_SRC
+
+#+RESULTS: Count of all unique op_id's in endpoints.json
+#+begin_EXAMPLE
+226
+#+end_EXAMPLE
+
+   It's the same number.  So this is not the reason.
+
+** Our audit_event regex function isn't applying to all valid test hits.
+   Our 208 number comes from distinct operation_ids hit by tests.
+   If there are multiple events that have null operation_ids, then they'll only add to the tally once as their all grouped within null.
+   So if the regex isn't assigning op_ids properly, it could be affecting our total number.
+   
+*** Exploring the null hits and their tests
+
+    I'm curious on how many test hits fall within this null op_id.
+   #+NAME: # of events with e2e useragent and null op_id
+   #+BEGIN_SRC sql-mode
+   select count(*) from audit_event where operation_id is null and useragent ilike 'e2e.test%';
+   #+END_SRC
+
+   #+RESULTS: # of events with e2e useragent and null op_id
+   #+begin_src sql-mode
+    count 
+   -------
+     8870
+   (1 row)
+   #+end_src
+   
+   That's a decent number.  i was curious then on _how many_ tests are included in these events.  perhaps it's a small sample, that would provide insight to what's happening.
+   
+#+NAME: Count of tests hitting null operation_ids
+#+BEGIN_SRC sql-mode
+SELECT COUNT(DISTINCT useragent) FROM audit_event WHERE operation_id IS NULL AND useragent ILIKE 'e2e.test%';
+#+END_SRC
+
+#+RESULTS: Count of tests hitting null operation_ids
+#+begin_src sql-mode
+ count 
+-------
+   803
+(1 row)
+
+#+end_src
+
+And how many tests are there overall?
+
+#+NAME: Count of distinct tests
+#+BEGIN_SRC sql-mode
+SELECT COUNT(DISTINCT useragent) FROM audit_event WHERE useragent ILIKE 'e2e.test%';
+#+END_SRC
+
+#+RESULTS: Count of distinct tests
+#+begin_src sql-mode
+ count 
+-------
+   803
+(1 row)
+
+#+end_src
+
+So every test hits an endpoint that has a null operation_id.  This smells weird, like these endpoints are a part of the tests discovery section--included when the test checks whether the cluster is up or something else.  
+
+So next, we can explore more into the properties of these events, and why they weren't caught by our regex matching.
+
+*** Exploring request_uris and object types
+   For these events to occur, the tests have to be hitting /something/, namely a request_uri.  So let's count how many distinct request_uris have no operation_id but are still hit by tests.
+
+#+BEGIN_SRC sql-mode
+  SELECT
+    COUNT(DISTINCT request_uri)
+    FROM audit_event
+   WHERE operation_id IS NULL
+         AND useragent ILIKE 'e2e.test%';
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+ count 
+-------
+  2817
+(1 row)
+
+#+end_src
+
+So there are 8k audit events, but only 2,817 distinct endpoints they're hitting.  That felt like too many records to sift through, so I wanted to find some other grouping to see a pattern.  Object_type seemed like a good start.
+
+
+#+NAME: Distinct object_types for test events with null op_ids 
+#+BEGIN_SRC sql-mode
+  SELECT
+    DISTINCT object_type
+    FROM audit_event
+   WHERE operation_id IS NULL
+         AND useragent ILIKE 'e2e.test%';
+#+END_SRC
+
+#+RESULTS: Distinct object_types for test events with null op_ids
+#+begin_src sql-mode
+              object_type               
+----------------------------------------
+ configmaps
+ cronjobs
+ deployments
+ e2e-test-crd-publish-openapi-2485-crds
+ e2e-test-crd-publish-openapi-2914-crds
+ e2e-test-crd-publish-openapi-348-crds
+ e2e-test-crd-publish-openapi-4868-crds
+ e2e-test-crd-publish-openapi-6225-crds
+ e2e-test-crd-publish-openapi-7531-crds
+ e2e-test-crd-publish-openapi-7573-crds
+ e2e-test-crd-publish-openapi-8885-crds
+ e2e-test-crd-publish-openapi-8933-crds
+ e2e-test-crd-publish-openapi-9162-crds
+ e2e-test-crd-publish-openapi-95-crds
+ e2e-test-crd-webhook-7075-crds
+ e2e-test-crd-webhook-7702-crds
+ e2e-test-kubectl-4618-crds
+ e2e-test-kubectl-4886-crds
+ e2e-test-kubectl-9280-crds
+ e2e-test-resourcequota-6488-crds
+ e2e-test-webhook-6072-crds
+ e2e-test-webhook-6231-crds
+ e2e-test-webhook-7264-crds
+ e2e-test-webhook-9387-crds
+ endpoints
+ flunders
+ foo7p7fkas
+ fool79bcas
+ foozffjzas
+ limitranges
+ noxus
+ pods
+ replicationcontrollers
+ scalingpolicies
+ serviceaccounts
+ volumesnapshots
+ 
+(37 rows)
+
+#+end_src
+
+Ah, so here's a pattern.  There's some obviously made up objects (the foos and the flunders), plus a bunch of e2e-crds.  CRD stands for 'custom resource definition', and they are a way to extend the kubernetes api based on your individual need([[https://kubernetes.io/docs/tasks/access-kubernetes-api/custom-resources/custom-resource-definitions/][Source: kubernetes docs]]).  It doesn't seem like these will not be conformant, or a meaningful thing for k8s to want to test, so we can remove them.  There is also a =noxus= object_type that I can find no reference of in the k8s docs, so I think it might be a misspelling of nexus or another foo word.  We can remove that too.
+
+So then, how many tests hit endpoints that are not CRD's or made up objects?  And How many distinct request_uri's would this be?
+
+#+NAME: count oftest hits for non-made up endpoints
+#+BEGIN_SRC sql-mode
+  SELECT
+    COUNT(DISTINCT useragent) as tests,
+    COUNT(DISTINCT request_uri) as request_uris
+    FROM audit_event
+   WHERE operation_id IS NULL
+     AND useragent ILIKE 'e2e.test%'
+     AND object_type NOT ILIKE '%crd%'
+     AND object_type NOT ILIKE 'foo%'
+     AND object_type != 'flunders'
+     AND object_type != 'noxus';
+#+END_SRC
+
+#+RESULTS: count oftest hits for non-made up endpoints
+#+begin_src sql-mode
+ tests | request_uris 
+-------+--------------
+   802 |         2544
+(1 row)
+
+#+end_src
+
+802 is 1 away from our count of all tests.  In fact, we could do a simple test query to see what that extra test record might be.  All tests have their description as a commented out string.  Let's see if there's any test that doesn't have a comment symbol, implying no test description.
+
+#+BEGIN_SRC sql-mode
+SELECT DISTINCT useragent FROM audit_event WHERE operation_id IS NULL AND useragent ILIKE 'e2e.test%' AND useragent NOT ILIKE '%--%';
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                     useragent                     
+---------------------------------------------------
+ e2e.test/v1.16.0 (linux/amd64) kubernetes/9c807d4
+(1 row)
+
+#+end_src
+
+Yah, so this doesn't seem like a valid test.  Which means all tests hit these request_uris (which is prolly part of some discovery).  So I need to see what these uris actually are. 
+
+I ran a query to list these remaining uri's and see if any pattern emerged.  The pattern was immediate: every one was either a =v1alpha1= namespace, or had =watch\=true= appended at the end.  If we remove those two patterns, the count drops considerably.
+
+#+NAME: Count of events on valid, non-alpha, and non-watch request_uris that are hit by tests
+#+BEGIN_SRC sql-mode
+  SELECT
+   COUNT(*)
+    FROM audit_event
+   WHERE operation_id IS NULL
+     AND useragent ILIKE 'e2e.test%'
+     AND object_type NOT ILIKE '%crd%'
+     AND object_type NOT ILIKE 'foo%'
+     AND object_type != 'flunders'
+     AND object_type != 'noxus'
+     AND request_uri NOT ILIKE '%v1alpha1%'
+     AND request_uri NOT ILIKE '%watch=true';
+#+END_SRC
+
+#+RESULTS: Count of events on valid, non-alpha, and non-watch request_uris that are hit by tests
+#+begin_src sql-mode
+ count 
+-------
+     0
+(1 row)
+
+#+end_src
+
+So there are 8000 events with null operation_ids.  But all of them are either nonsense words, custom resources, part of v1alpha, or deprecated.  They are likely hit by tests as part of discovery, but don't contribute to an accurate metric for coverage.
+
+This furthers my trust in our new methods: the way we assign operation_ids does not miss any valid endpoints, and the logic for calculating the number of endpoints hit by tests is extremely simple and transparent.  
+
+And so, I don't think the discrepancy is in our database, or the regexmatcher used to assign operation id's.
+
+** Our older method didn't assign test hits to the correct operation ids 
+   Perhaps there are operation id's in the old method that shouldn't be assigned test hits.  I needed to understand our older method better, to see what might be going on.
+
+
+   The key starting point is in the beginning of our 'generate_coverage_report' function.  I've commented the important parts.
+   #+NAME: snippet from generate_coverage_report
+   #+BEGIN_SRC python
+def generate_coverage_report(openapi_spec, audit_log):
+  endpoints = generate_endpoints_tree(openapi_spec)
+  tests = {}
+  test_tags = {}
+  test_sequences = {}
+  useragents = {}
+  for event in audit_log:
+    spec_entry = find_openapi_entry(openapi_spec, event) #1
+    if spec_entry is None:
+      continue
+    method = event['method']
+    if method not in spec_entry['methods'].keys():
+      continue # and skip to next event
+    useragent = event.get('userAgent', ' ') 
+    operationId = spec_entry['methods'][method]['operationId'] #2
+    method_op = method + '/' + operationId
+    endpoints[operationId]['hits'] += 1
+
+    test_name = False
+    hit_by_e2e = True if event.get(
+      'userAgent', False
+    ) and useragent.startswith(
+      'e2e.test') else False
+
+    if hit_by_e2e:
+      endpoints[operationId]['testHits'] += 1 #3
+      test_name_start = ' -- '
+      if useragent.find(test_name_start) > -1:
+        test_name = useragent.split(test_name_start)[1]
+        useragent = useragent.split(test_name_start)[0]
+   #+END_SRC
+   
+   So we:
+   1. declare a spec entry using a find_open_api function.  
+   2. Declare the operationId by finding the operationId in our just declared spec_entry
+   3. When we get a valid test, we increase the testHit portion for this opID in our endpoints JSON.
+
+So this means our coverage is dependent on how we find our spec_entry, since we use that to grab the operationID's that fill our coverage report.
+
+If we look at =find_openapi_entry= we get this:
+
+#+NAME: snippet of find_openapi_entry
+#+BEGIN_SRC python
+def find_openapi_entry(openapi_spec, event): #1
+  url = urlparse(event['requestURI']) #2
+  hit_cache = openapi_spec['hit_cache'] #3
+  prefix_cache = openapi_spec['prefix_cache'] 
+  # 1) Cached seen before results
+  if url.path in hit_cache:
+    return hit_cache[url.path] #4
+  # 2) Indexed by prefix patterns to cut down search time
+  for prefix in prefix_cache:
+    if prefix is not None and url.path.startswith(prefix):
+      # print prefix, url.path
+      paths = prefix_cache[prefix]
+      break
+  else:
+    paths = prefix_cache[None]
+
+  for regex in paths:
+    if re.match(regex, url.path):
+      hit_cache[url.path] = openapi_spec['paths'][regex]
+      return openapi_spec['paths'][regex] #5
+    elif re.search(regex, event['requestURI']):
+      print("Incomplete match", regex, event['requestURI'])
+  # import ipdb; ipdb.set_trace(context=60)
+  # cache failures too
+  hit_cache[url.path] = None
+  return None
+#+END_SRC
+
+1.) We pass an audit event as an argument to this function.  This is the same event we use to populate our audit_events table.
+2.) We declare a url variable, which is the request_uri of this audit event.
+2.) We declare hit_cache and prefix_cache, which are the values of the respective keys in a thing called =openapi_spec=
+3.) We check if the request_uri exists as a key in our hit_cache and if so, return the value of that key as our open_api_entry
+4.) If not, We find where the beginning of our uri matches one of the prefixes in our prefix_cache, and grab all the paths within this prefix.
+5.) The paths will be a set of regexes, with each one mapping to an opID.  So we try to match the regex one by one to our request_uri and when we get a hit, we add it to our hit_cache and return it as our open_api_entry.
+
+So, we are still using request_uri's but mapping them to caches we'd set up.  We have this =prefix_cache= which holds all the possible entries organized by regex matches, and it is this which is used to build up our hit_cache.  So the way we grab an operationID is based on a successful mapping to this cache, based on a regex.
+
+the =openapi_spec= which contains this =prefix_cache= is built up in our lib/parser.py.  The relevant code for this is:
+
+#+NAME: snippet from parsers.py
+#+BEGIN_SRC python
+  # crazy caching using prefixes
+  bits = path.strip("/").split("/", 2)
+  if bits[0] in ["apis", "api"] and len(bits) > 1:
+      openapi_spec['prefix_cache']["/" + "/".join(bits[0:2])][path_regex] = path_data
+  else:
+      openapi_spec['prefix_cache'][None][path_regex] = path_data
+      # print path, path_regex, re.match(path_regex, path.rstrip('/')) is not None
+#+END_SRC
+
+So we build up our cache using a method we've commented as being 'crazy', and based on another regex match.  
+
+If there is a point here where the crazy method was too loose in how it built up it's regex matches, then it could mean an event's uri matches up incorrectly to an operationID in the openapi_spec.  The majority of thie parsers code was commited in November 2018 (but may have been written earlier and then copied into this repo).  The openapi spec, and kubernetes usage in it, may have changed since then which would make this method even more fragile.
+
+In short, the way we processed audit logs before started with the assumption that we grabbed the right operationID in the openAPI spec based on aan audit_event's request_uri, and the method of matching that may not be the most trustworthy.  To be honest, I don't fully understand the method myself and so my interpretation might be way off, but the comments in the code seem to imply we didn't fully trust it when it was written.
+
+I think this might be the heart of the discrepancy.
+
+* My theory on the discrepancy
+  Put simply, I think our older method had opaque methods for matching an operation_id to an audit event, which could allow for incorrect mapping.  Our processing required a regex match at the start, and if it was not precise enough, it could allow for bogus audit events to increase the test hits for valid operation id's.  The methods used for this regex match, and our comments around them, implied that they may not be as precise as we'd need.
+  
+* Next Steps
+At this point, if we wanted to make sure our numbers matched in the old and new methods, I think we'd want to make sure we are 100% confident in our =lib/parser.py=, making any adjustments necessary to the code, and then compare the numbers.  
+
+Otherwise, our new methods follow a logic that's simpler to track, and the events with test hits but no operation_id's are all bogus or deprecated request_uris, likely hit by tests during discovery.  I feel more confident in the numbers generated in our db, and think they are closer to the true coverage.
+* Footnotes
+** exploration into the 202 and 226 operation_ids
+   There isn't any pattern immediately clear here.  Another approach is to compare the two sets of op ids and see where they differ.
+
+   #+NAME: Distinct op_ids from postgres db
+   #+BEGIN_SRC sql-mode 
+   select distinct operation_id from audit_event where useragent ilike 'e2e.test%' order by operation_id;
+   #+END_SRC
+
+   
+   #+NAME: op_id's in endpoints.json
+#+BEGIN_SRC shell :dir ../../data/ci-kubernetes-e2e-gci-gce/1165794879855398916
+     jq -c '[ to_entries[]
+             | select (.value.testHits > 0)
+             | .key
+           ]
+           | unique
+           | sort 
+           | .[]' endpoints.json
+#+END_SRC
+
+I'll do this manually at first, running two sections in two org panes, and comparing side by side, then investigate immediate diffs i see.
+#+RESULTS: Distinct op_ids from postgres db
+#+begin_src sql-mode
+                             operation_id                           
+  ------------------------------------------------------------------
+   connectCoreV1GetNamespacedPodProxy
+   connectCoreV1GetNamespacedPodProxyWithPath
+   connectCoreV1GetNamespacedServiceProxy
+   connectCoreV1GetNamespacedServiceProxyWithPath
+   connectCoreV1GetNodeProxyWithPath
+   connectCoreV1PostNamespacedServiceProxyWithPath
+   createAdmissionregistrationV1beta1MutatingWebhookConfiguration
+   createAdmissionregistrationV1beta1ValidatingWebhookConfiguration
+   createApiextensionsV1beta1CustomResourceDefinition
+   createApiregistrationV1beta1APIService
+   createAppsV1NamespacedDaemonSet
+   createAppsV1NamespacedDeployment
+   createAppsV1NamespacedReplicaSet
+   createAppsV1NamespacedStatefulSet
+   createAuthenticationV1TokenReview
+   createAuthorizationV1beta1SubjectAccessReview
+   createAuthorizationV1SelfSubjectAccessReview
+   createAutoscalingV1NamespacedHorizontalPodAutoscaler
+   createBatchV1beta1NamespacedCronJob
+   createBatchV1NamespacedJob
+   createCertificatesV1beta1CertificateSigningRequest
+   createCoreV1Namespace
+   createCoreV1NamespacedConfigMap
+   createCoreV1NamespacedEndpoints
+   createCoreV1NamespacedLimitRange
+   createCoreV1NamespacedPersistentVolumeClaim
+   createCoreV1NamespacedPod
+   createCoreV1NamespacedPodEviction
+   createCoreV1NamespacedPodTemplate
+   createCoreV1NamespacedReplicationController
+   createCoreV1NamespacedResourceQuota
+   createCoreV1NamespacedSecret
+   createCoreV1NamespacedService
+   createCoreV1NamespacedServiceAccount
+   createCoreV1PersistentVolume
+   createExtensionsV1beta1NamespacedDeploymentRollback
+   createNodeV1beta1RuntimeClass
+   createPolicyV1beta1NamespacedPodDisruptionBudget
+   createPolicyV1beta1PodSecurityPolicy
+   createRbacAuthorizationV1beta1ClusterRole
+   createRbacAuthorizationV1beta1ClusterRoleBinding
+   createRbacAuthorizationV1beta1NamespacedRole
+   createRbacAuthorizationV1beta1NamespacedRoleBinding
+   createRbacAuthorizationV1ClusterRole
+   createRbacAuthorizationV1ClusterRoleBinding
+   createRbacAuthorizationV1NamespacedRole
+   createRbacAuthorizationV1NamespacedRoleBinding
+   createSchedulingV1PriorityClass
+   createStorageV1StorageClass
+   deleteAdmissionregistrationV1beta1MutatingWebhookConfiguration
+   deleteAdmissionregistrationV1beta1ValidatingWebhookConfiguration
+   deleteApiextensionsV1beta1CustomResourceDefinition
+   deleteApiregistrationV1beta1APIService
+   deleteAppsV1NamespacedDaemonSet
+   deleteAppsV1NamespacedDeployment
+   deleteAppsV1NamespacedReplicaSet
+   deleteAppsV1NamespacedStatefulSet
+   deleteAutoscalingV1NamespacedHorizontalPodAutoscaler
+   deleteBatchV1beta1NamespacedCronJob
+   deleteBatchV1NamespacedJob
+   deleteCertificatesV1beta1CertificateSigningRequest
+   deleteCoreV1Namespace
+   deleteCoreV1NamespacedConfigMap
+   deleteCoreV1NamespacedEndpoints
+   deleteCoreV1NamespacedLimitRange
+   deleteCoreV1NamespacedPersistentVolumeClaim
+   deleteCoreV1NamespacedPod
+   deleteCoreV1NamespacedReplicationController
+   deleteCoreV1NamespacedResourceQuota
+   deleteCoreV1NamespacedSecret
+   deleteCoreV1NamespacedService
+   deleteCoreV1NamespacedServiceAccount
+   deleteCoreV1PersistentVolume
+   deleteNodeV1beta1RuntimeClass
+   deletePolicyV1beta1PodSecurityPolicy
+   deleteRbacAuthorizationV1beta1ClusterRole
+   deleteRbacAuthorizationV1beta1ClusterRoleBinding
+   deleteRbacAuthorizationV1beta1NamespacedRoleBinding
+   deleteRbacAuthorizationV1ClusterRole
+   deleteRbacAuthorizationV1ClusterRoleBinding
+   deleteRbacAuthorizationV1NamespacedRole
+   deleteRbacAuthorizationV1NamespacedRoleBinding
+   deleteSchedulingV1PriorityClass
+   deleteStorageV1beta1CSIDriver
+   deleteStorageV1StorageClass
+   getAdmissionregistrationV1APIResources
+   getApiextensionsV1APIResources
+   getApiregistrationV1APIResources
+   getAppsV1APIResources
+   getAuthenticationV1APIResources
+   getAuthorizationV1APIResources
+   getAutoscalingV1APIResources
+   getAutoscalingV2beta1APIResources
+   getAutoscalingV2beta2APIResources
+   getBatchV1APIResources
+   getBatchV2alpha1APIResources
+   getCertificatesV1beta1APIResources
+   getCoordinationV1APIResources
+   getCoreAPIVersions
+   getCoreV1APIResources
+   getEventsV1beta1APIResources
+   getExtensionsV1beta1APIResources
+   getNetworkingV1APIResources
+   getNodeV1beta1APIResources
+   getPolicyV1beta1APIResources
+   getRbacAuthorizationV1APIResources
+   getSchedulingV1APIResources
+   getSettingsV1alpha1APIResources
+   getStorageV1APIResources
+   listAdmissionregistrationV1beta1ValidatingWebhookConfiguration
+   listAppsV1NamespacedControllerRevision
+   listAppsV1NamespacedDaemonSet
+   listAppsV1NamespacedDeployment
+   listAppsV1NamespacedReplicaSet
+   listAppsV1NamespacedStatefulSet
+   listAutoscalingV1NamespacedHorizontalPodAutoscaler
+   listBatchV1beta1NamespacedCronJob
+   listBatchV1NamespacedJob
+   listBatchV2alpha1NamespacedCronJob
+   listCoordinationV1NamespacedLease
+   listCoreV1Namespace
+   listCoreV1NamespacedConfigMap
+   listCoreV1NamespacedEndpoints
+   listCoreV1NamespacedLimitRange
+   listCoreV1NamespacedPersistentVolumeClaim
+   listCoreV1NamespacedPod
+   listCoreV1NamespacedPodTemplate
+   listCoreV1NamespacedReplicationController
+   listCoreV1NamespacedResourceQuota
+   listCoreV1NamespacedSecret
+   listCoreV1NamespacedService
+   listCoreV1NamespacedServiceAccount
+   listCoreV1Node
+   listCoreV1PersistentVolume
+   listCoreV1PodForAllNamespaces
+   listEventsV1beta1NamespacedEvent
+   listExtensionsV1beta1NamespacedDaemonSet
+   listExtensionsV1beta1NamespacedDeployment
+   listExtensionsV1beta1NamespacedIngress
+   listExtensionsV1beta1NamespacedNetworkPolicy
+   listExtensionsV1beta1NamespacedReplicaSet
+   listNetworkingV1beta1NamespacedIngress
+   listNetworkingV1NamespacedNetworkPolicy
+   listPolicyV1beta1NamespacedPodDisruptionBudget
+   listPolicyV1beta1PodSecurityPolicy
+   listRbacAuthorizationV1beta1ClusterRole
+   listRbacAuthorizationV1NamespacedRole
+   listRbacAuthorizationV1NamespacedRoleBinding
+   listSettingsV1alpha1NamespacedPodPreset
+   listStorageV1StorageClass
+   logFileHandler
+   logFileListHandler
+   patchApiextensionsV1beta1CustomResourceDefinition
+   patchCoreV1NamespacedConfigMap
+   patchCoreV1NamespacedPod
+   patchCoreV1NamespacedPodStatus
+   patchCoreV1Node
+   readApiextensionsV1beta1CustomResourceDefinition
+   readApiregistrationV1beta1APIService
+   readAppsV1NamespacedDeployment
+   readAppsV1NamespacedReplicaSet
+   readAppsV1NamespacedStatefulSet
+   readAppsV1NamespacedStatefulSetScale
+   readBatchV1beta1NamespacedCronJob
+   readBatchV1NamespacedJob
+   readCertificatesV1beta1CertificateSigningRequest
+   readCoordinationV1beta1NamespacedLease
+   readCoreV1Namespace
+   readCoreV1NamespacedConfigMap
+   readCoreV1NamespacedEndpoints
+   readCoreV1NamespacedLimitRange
+   readCoreV1NamespacedPersistentVolumeClaim
+   readCoreV1NamespacedPod
+   readCoreV1NamespacedPodLog
+   readCoreV1NamespacedReplicationController
+   readCoreV1NamespacedReplicationControllerScale
+   readCoreV1NamespacedResourceQuota
+   readCoreV1NamespacedSecret
+   readCoreV1NamespacedService
+   readCoreV1NamespacedServiceAccount
+   readCoreV1Node
+   readCoreV1PersistentVolume
+   readNodeV1beta1RuntimeClass
+   readPolicyV1beta1NamespacedPodDisruptionBudget
+   readPolicyV1beta1PodSecurityPolicy
+   readStorageV1beta1CSIDriver
+   readStorageV1beta1VolumeAttachment
+   readStorageV1StorageClass
+   replaceApiextensionsV1beta1CustomResourceDefinition
+   replaceAppsV1NamespacedDeployment
+   replaceAppsV1NamespacedReplicaSet
+   replaceAppsV1NamespacedStatefulSet
+   replaceAppsV1NamespacedStatefulSetScale
+   replaceCertificatesV1beta1CertificateSigningRequestApproval
+   replaceCoreV1Namespace
+   replaceCoreV1NamespacedConfigMap
+   replaceCoreV1NamespacedLimitRange
+   replaceCoreV1NamespacedPersistentVolumeClaim
+   replaceCoreV1NamespacedPod
+   replaceCoreV1NamespacedReplicationController
+   replaceCoreV1NamespacedReplicationControllerScale
+   replaceCoreV1NamespacedResourceQuota
+   replaceCoreV1NamespacedSecret
+   replaceCoreV1NamespacedService
+   replaceCoreV1NamespacedServiceAccount
+   replaceCoreV1Node
+   replaceCoreV1NodeStatus
+   replacePolicyV1beta1NamespacedPodDisruptionBudget
+ 
+  (209 rows)
+
+#+end_src
+#+RESULTS: op_id's in endpoints.json
+#+begin_EXAMPLE
+"connectCoreV1GetNamespacedPodProxy"
+"connectCoreV1GetNamespacedPodProxyWithPath"
+"connectCoreV1GetNamespacedServiceProxy"
+"connectCoreV1GetNamespacedServiceProxyWithPath"
+"connectCoreV1GetNodeProxyWithPath"
+"createAdmissionregistrationV1MutatingWebhookConfiguration"
+"createAdmissionregistrationV1ValidatingWebhookConfiguration"
+"createApiextensionsV1CustomResourceDefinition"
+"createApiregistrationV1APIService"
+"createAppsV1NamespacedDaemonSet"
+"createAppsV1NamespacedDeployment"
+"createAppsV1NamespacedReplicaSet"
+"createAppsV1NamespacedStatefulSet"
+"createAuthenticationV1TokenReview"
+"createAuthorizationV1SelfSubjectAccessReview"
+"createAuthorizationV1SubjectAccessReview"
+"createBatchV1NamespacedJob"
+"createBatchV1beta1NamespacedCronJob"
+"createCertificatesV1beta1CertificateSigningRequest"
+"createCoordinationV1NamespacedLease"
+"createCoreV1Namespace"
+"createCoreV1NamespacedConfigMap"
+"createCoreV1NamespacedEndpoints"
+"createCoreV1NamespacedLimitRange"
+"createCoreV1NamespacedPersistentVolumeClaim"
+"createCoreV1NamespacedPod"
+"createCoreV1NamespacedPodEviction"
+"createCoreV1NamespacedPodTemplate"
+"createCoreV1NamespacedReplicationController"
+"createCoreV1NamespacedResourceQuota"
+"createCoreV1NamespacedSecret"
+"createCoreV1NamespacedService"
+"createCoreV1NamespacedServiceAccount"
+"createCoreV1PersistentVolume"
+"createNodeV1beta1RuntimeClass"
+"createPolicyV1beta1NamespacedPodDisruptionBudget"
+"createPolicyV1beta1PodSecurityPolicy"
+"createRbacAuthorizationV1ClusterRole"
+"createRbacAuthorizationV1ClusterRoleBinding"
+"createRbacAuthorizationV1NamespacedRole"
+"createRbacAuthorizationV1NamespacedRoleBinding"
+"createSchedulingV1PriorityClass"
+"createStorageV1StorageClass"
+"deleteAdmissionregistrationV1CollectionMutatingWebhookConfiguration"
+"deleteAdmissionregistrationV1CollectionValidatingWebhookConfiguration"
+"deleteAdmissionregistrationV1MutatingWebhookConfiguration"
+"deleteAdmissionregistrationV1ValidatingWebhookConfiguration"
+"deleteApiextensionsV1beta1CollectionCustomResourceDefinition"
+"deleteApiextensionsV1beta1CustomResourceDefinition"
+"deleteApiregistrationV1APIService"
+"deleteAppsV1NamespacedDaemonSet"
+"deleteAppsV1NamespacedDeployment"
+"deleteAppsV1NamespacedReplicaSet"
+"deleteAppsV1NamespacedStatefulSet"
+"deleteBatchV1NamespacedJob"
+"deleteBatchV1beta1NamespacedCronJob"
+"deleteCertificatesV1beta1CertificateSigningRequest"
+"deleteCoordinationV1CollectionNamespacedLease"
+"deleteCoordinationV1NamespacedLease"
+"deleteCoreV1Namespace"
+"deleteCoreV1NamespacedConfigMap"
+"deleteCoreV1NamespacedEndpoints"
+"deleteCoreV1NamespacedLimitRange"
+"deleteCoreV1NamespacedPersistentVolumeClaim"
+"deleteCoreV1NamespacedPod"
+"deleteCoreV1NamespacedReplicationController"
+"deleteCoreV1NamespacedResourceQuota"
+"deleteCoreV1NamespacedSecret"
+"deleteCoreV1NamespacedService"
+"deleteCoreV1NamespacedServiceAccount"
+"deleteCoreV1PersistentVolume"
+"deleteNodeV1beta1RuntimeClass"
+"deletePolicyV1beta1PodSecurityPolicy"
+"deleteRbacAuthorizationV1ClusterRole"
+"deleteRbacAuthorizationV1ClusterRoleBinding"
+"deleteRbacAuthorizationV1NamespacedRole"
+"deleteRbacAuthorizationV1NamespacedRoleBinding"
+"deleteSchedulingV1PriorityClass"
+"deleteStorageV1StorageClass"
+"deleteStorageV1beta1CSIDriver"
+"getAPIVersions"
+"getAdmissionregistrationV1APIResources"
+"getAdmissionregistrationV1beta1APIResources"
+"getApiextensionsV1APIResources"
+"getApiextensionsV1beta1APIResources"
+"getApiregistrationV1APIResources"
+"getApiregistrationV1beta1APIResources"
+"getAppsV1APIResources"
+"getAuthenticationV1APIResources"
+"getAuthenticationV1beta1APIResources"
+"getAuthorizationV1APIResources"
+"getAuthorizationV1beta1APIResources"
+"getAutoscalingV1APIResources"
+"getAutoscalingV2beta1APIResources"
+"getAutoscalingV2beta2APIResources"
+"getBatchV1APIResources"
+"getBatchV1beta1APIResources"
+"getBatchV2alpha1APIResources"
+"getCertificatesV1beta1APIResources"
+"getCoordinationV1APIResources"
+"getCoordinationV1beta1APIResources"
+"getCoreAPIVersions"
+"getCoreV1APIResources"
+"getEventsV1beta1APIResources"
+"getExtensionsV1beta1APIResources"
+"getNetworkingV1APIResources"
+"getNetworkingV1beta1APIResources"
+"getNodeV1beta1APIResources"
+"getPolicyV1beta1APIResources"
+"getRbacAuthorizationV1APIResources"
+"getRbacAuthorizationV1beta1APIResources"
+"getSchedulingV1APIResources"
+"getSchedulingV1alpha1APIResources"
+"getSchedulingV1beta1APIResources"
+"getSettingsV1alpha1APIResources"
+"getStorageV1APIResources"
+"getStorageV1beta1APIResources"
+"listAdmissionregistrationV1MutatingWebhookConfiguration"
+"listAdmissionregistrationV1ValidatingWebhookConfiguration"
+"listApiextensionsV1CustomResourceDefinition"
+"listApiextensionsV1beta1CustomResourceDefinition"
+"listAppsV1NamespacedControllerRevision"
+"listAppsV1NamespacedDaemonSet"
+"listAppsV1NamespacedDeployment"
+"listAppsV1NamespacedReplicaSet"
+"listAppsV1NamespacedStatefulSet"
+"listAutoscalingV1NamespacedHorizontalPodAutoscaler"
+"listBatchV1NamespacedJob"
+"listBatchV1beta1NamespacedCronJob"
+"listBatchV2alpha1NamespacedCronJob"
+"listCoordinationV1NamespacedLease"
+"listCoreV1Namespace"
+"listCoreV1NamespacedConfigMap"
+"listCoreV1NamespacedEndpoints"
+"listCoreV1NamespacedLimitRange"
+"listCoreV1NamespacedPersistentVolumeClaim"
+"listCoreV1NamespacedPod"
+"listCoreV1NamespacedPodTemplate"
+"listCoreV1NamespacedReplicationController"
+"listCoreV1NamespacedResourceQuota"
+"listCoreV1NamespacedSecret"
+"listCoreV1NamespacedService"
+"listCoreV1NamespacedServiceAccount"
+"listCoreV1Node"
+"listCoreV1PersistentVolume"
+"listCoreV1PodForAllNamespaces"
+"listEventsV1beta1NamespacedEvent"
+"listExtensionsV1beta1NamespacedIngress"
+"listNetworkingV1NamespacedNetworkPolicy"
+"listNetworkingV1beta1NamespacedIngress"
+"listPolicyV1beta1NamespacedPodDisruptionBudget"
+"listPolicyV1beta1PodSecurityPolicy"
+"listRbacAuthorizationV1ClusterRole"
+"listRbacAuthorizationV1NamespacedRole"
+"listRbacAuthorizationV1NamespacedRoleBinding"
+"listSettingsV1alpha1NamespacedPodPreset"
+"listStorageV1StorageClass"
+"logFileListHandler"
+"patchAdmissionregistrationV1MutatingWebhookConfiguration"
+"patchAdmissionregistrationV1ValidatingWebhookConfiguration"
+"patchApiextensionsV1CustomResourceDefinition"
+"patchApiextensionsV1CustomResourceDefinitionStatus"
+"patchCoordinationV1NamespacedLease"
+"patchCoreV1NamespacedConfigMap"
+"patchCoreV1NamespacedPod"
+"patchCoreV1NamespacedPodStatus"
+"patchCoreV1Node"
+"readAdmissionregistrationV1MutatingWebhookConfiguration"
+"readAdmissionregistrationV1ValidatingWebhookConfiguration"
+"readApiextensionsV1CustomResourceDefinition"
+"readApiextensionsV1CustomResourceDefinitionStatus"
+"readApiextensionsV1beta1CustomResourceDefinition"
+"readApiregistrationV1APIService"
+"readAppsV1NamespacedDeployment"
+"readAppsV1NamespacedReplicaSet"
+"readAppsV1NamespacedStatefulSet"
+"readAppsV1NamespacedStatefulSetScale"
+"readBatchV1NamespacedJob"
+"readBatchV1beta1NamespacedCronJob"
+"readCertificatesV1beta1CertificateSigningRequest"
+"readCoordinationV1NamespacedLease"
+"readCoreV1Namespace"
+"readCoreV1NamespacedConfigMap"
+"readCoreV1NamespacedEndpoints"
+"readCoreV1NamespacedLimitRange"
+"readCoreV1NamespacedPersistentVolumeClaim"
+"readCoreV1NamespacedPod"
+"readCoreV1NamespacedPodLog"
+"readCoreV1NamespacedReplicationController"
+"readCoreV1NamespacedReplicationControllerScale"
+"readCoreV1NamespacedResourceQuota"
+"readCoreV1NamespacedSecret"
+"readCoreV1NamespacedService"
+"readCoreV1NamespacedServiceAccount"
+"readCoreV1Node"
+"readCoreV1PersistentVolume"
+"readNodeV1beta1RuntimeClass"
+"readPolicyV1beta1NamespacedPodDisruptionBudget"
+"readPolicyV1beta1PodSecurityPolicy"
+"readStorageV1StorageClass"
+"readStorageV1beta1CSIDriver"
+"readStorageV1beta1VolumeAttachment"
+"replaceAdmissionregistrationV1MutatingWebhookConfiguration"
+"replaceAdmissionregistrationV1ValidatingWebhookConfiguration"
+"replaceApiextensionsV1CustomResourceDefinition"
+"replaceApiextensionsV1CustomResourceDefinitionStatus"
+"replaceAppsV1NamespacedDeployment"
+"replaceAppsV1NamespacedReplicaSet"
+"replaceAppsV1NamespacedStatefulSet"
+"replaceAppsV1NamespacedStatefulSetScale"
+"replaceCertificatesV1beta1CertificateSigningRequestApproval"
+"replaceCoordinationV1NamespacedLease"
+"replaceCoreV1Namespace"
+"replaceCoreV1NamespacedConfigMap"
+"replaceCoreV1NamespacedLimitRange"
+"replaceCoreV1NamespacedPersistentVolumeClaim"
+"replaceCoreV1NamespacedPod"
+"replaceCoreV1NamespacedReplicationController"
+"replaceCoreV1NamespacedReplicationControllerScale"
+"replaceCoreV1NamespacedResourceQuota"
+"replaceCoreV1NamespacedSecret"
+"replaceCoreV1NamespacedService"
+"replaceCoreV1NamespacedServiceAccount"
+"replaceCoreV1Node"
+"replaceCoreV1NodeStatus"
+"replacePolicyV1beta1NamespacedPodDisruptionBudget"
+#+end_EXAMPLE
+
+I went ahead and edited both of these outputs into their own text file, so we could do a diff.  they are located in =data/op_ids_ep.txt= and =data/op_ids_db.txt=
+
+unfortunately, i can't get the results to show here. 
+#+BEGIN_SRC shell :dir ../../data
+  diff -c op_ids_db.txt op_ids_ep.txt
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+#+end_EXAMPLE
+
+*** "createCoordinationV1NamespacedLease" in ep.json but not db
+    This is the first one I noticed, as it is in ep.json but not the db...so may be one of the extras.
+   
+    Let's check to see if this op_id exists at all in the db.
+    
+    #+NAME: Presence of createCoordinationV1NamespacedLease
+    #+BEGIN_SRC sql-mode
+    select distinct operation_id from audit_event where operation_id ilike '%createcoordinationv1namespacedlease%';
+    #+END_SRC
+
+    #+RESULTS: Presence of createCoordinationV1NamespacedLease
+    #+begin_src sql-mode
+     operation_id 
+    --------------
+    (0 rows)
+
+    #+end_src
+   
+    0 results for the exact match, so let's just look for namedspacelease
+   
+    #+NAME: Presence of NamespacedLease
+    #+BEGIN_SRC sql-mode
+    select distinct operation_id from audit_event where operation_id ilike '%namespacedlease%';
+    #+END_SRC
+
+    #+RESULTS: Presence of NamespacedLease
+    #+begin_src sql-mode
+                     operation_id                  
+    -----------------------------------------------
+     createCoordinationV1beta1NamespacedLease
+     deleteCoordinationV1CollectionNamespacedLease
+     listCoordinationV1NamespacedLease
+     readCoordinationV1beta1NamespacedLease
+     replaceCoordinationV1beta1NamespacedLease
+    (5 rows)
+
+    #+end_src
+   
+    so createCoordinationNamespacedLease is in the db, but with the v1Beta added.  let's see its useragents
+    
+    #+NAME: useragents for createCoordinationV1beta1NamespacedLease
+    #+BEGIN_SRC sql-mode
+      SELECT
+        operation_id, useragent
+        FROM audit_event
+       WHERE operation_id ILIKE '%createCoordinationV1beta1NamespacedLease%';
+    #+END_SRC
+
+   
+   #+RESULTS: useragents for createCoordinationV1beta1NamespacedLease
+   #+begin_src sql-mode
+                  operation_id               |                    useragent                     
+   ------------------------------------------+--------------------------------------------------
+    createCoordinationV1beta1NamespacedLease | kubelet/v1.16.0 (linux/amd64) kubernetes/9c807d4
+    createCoordinationV1beta1NamespacedLease | kubelet/v1.16.0 (linux/amd64) kubernetes/9c807d4
+    createCoordinationV1beta1NamespacedLease | kubelet/v1.16.0 (linux/amd64) kubernetes/9c807d4
+    createCoordinationV1beta1NamespacedLease | kubelet/v1.16.0 (linux/amd64) kubernetes/9c807d4
+    createCoordinationV1beta1NamespacedLease | kubelet/v1.16.0 (linux/amd64) kubernetes/9c807d4
+   (5 rows)
+
+   #+end_src
+  
+   So this feels strange to me.  In the above query, I am not asking for distinct operation_ids...so in our 300k events, this op_id shows up only 5 times?  
+  
+   Going further, we can see if any of the namedspaceLeases above are tested
+   #+NAME: list namedspaced leases with test hits
+   #+BEGIN_SRC sql-mode
+     SELECT
+       DISTINCT operation_id
+       FROM
+           audit_event
+      WHERE
+        operation_id ILIKE '%namespacedlease%'
+        AND useragent ILIKE 'e2e.test%';
+   #+END_SRC
+
+   #+RESULTS: list namedspaced leases with test hits
+   #+begin_src sql-mode
+                 operation_id              
+   ----------------------------------------
+    listCoordinationV1NamespacedLease
+    readCoordinationV1beta1NamespacedLease
+   (2 rows)
+
+   #+end_src
+
+   There's two and both are in the list of 208 events.
+  
+   perhaps the other namedspace lease events have null operation_ids.  We can see if there's another way to identify them as belonging together.  like object_type.
+  
+   #+NAME: object_type for namedspaceLease 
+   #+BEGIN_SRC sql-mode
+     SELECT DISTINCT object_type, operation_id FROM audit_event WHERE operation_id ILIKE '%namespacedlease%';
+   #+END_SRC
+
+   #+RESULTS: object_type for namedspaceLease
+   #+begin_src sql-mode
+    object_type |                 operation_id                  
+   -------------+-----------------------------------------------
+    leases      | createCoordinationV1beta1NamespacedLease
+    leases      | deleteCoordinationV1CollectionNamespacedLease
+    leases      | listCoordinationV1NamespacedLease
+    leases      | readCoordinationV1beta1NamespacedLease
+    leases      | replaceCoordinationV1beta1NamespacedLease
+   (5 rows)
+
+   #+end_src
+
+   All of them are of the leases object_type, which makes sense.  Who else has that type?
+   #+NAME: all operation_ids of object_type leases
+   #+BEGIN_SRC sql-mode
+   select distinct object_type, operation_id from audit_event where object_type = 'leases';
+   #+END_SRC
+
+   #+RESULTS: all operation_ids of object_type leases
+   #+begin_src sql-mode
+    object_type |                 operation_id                  
+   -------------+-----------------------------------------------
+    leases      | createCoordinationV1beta1NamespacedLease
+    leases      | deleteCoordinationV1CollectionNamespacedLease
+    leases      | listCoordinationV1beta1LeaseForAllNamespaces
+    leases      | listCoordinationV1LeaseForAllNamespaces
+    leases      | listCoordinationV1NamespacedLease
+    leases      | readCoordinationV1beta1NamespacedLease
+    leases      | replaceCoordinationV1beta1NamespacedLease
+    leases      | 
+   (8 rows)
+
+   #+end_src
+  
+   So the last row shows there are some leases events with a null op_id.  Are these hit by tests?  If so, this might point to the regex matcher not working fully, and so createCoordination is marked in our former process, but coming through as null in our new one.
+  
+   #+BEGIN_SRC sql-mode
+   select request_uri from audit_event where operation_id is null and useragent ilike 'e2e.test%' limit 50;
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_src sql-mode
+                                                   request_uri                                                 
+   ------------------------------------------------------------------------------------------------------------
+    /apis/coordination.k8s.io/v1beta1/leases?resourceVersion=13752&timeout=6m26s&timeoutSeconds=386&watch=true
+    /apis/coordination.k8s.io/v1beta1/leases?resourceVersion=1&timeout=8m43s&timeoutSeconds=523&watch=true
+    /apis/coordination.k8s.io/v1beta1/leases?resourceVersion=24845&timeout=5m27s&timeoutSeconds=327&watch=true
+    /apis/coordination.k8s.io/v1beta1/leases?resourceVersion=33137&timeout=9m23s&timeoutSeconds=563&watch=true
+    /apis/coordination.k8s.io/v1/leases?resourceVersion=12699&timeout=9m0s&timeoutSeconds=540&watch=true
+    /apis/coordination.k8s.io/v1/leases?resourceVersion=1&timeout=8m0s&timeoutSeconds=480&watch=true
+    /apis/coordination.k8s.io/v1/leases?resourceVersion=28056&timeout=6m45s&timeoutSeconds=405&watch=true
+    /apis/coordination.k8s.io/v1/leases?resourceVersion=36505&timeout=9m55s&timeoutSeconds=595&watch=true
+   (8 rows)
+
+   #+end_src
+
+   #+NAME: all operation_ids of object_type leases that are hit by tests
+   #+BEGIN_SRC sql-mode
+   select distinct object_type, operation_id from audit_event where object_type = 'leases' and useragent ilike 'e2e.test%';
+   #+END_SRC
+
+   #+RESULTS: all operation_ids of object_type leases that are hit by tests
+   #+begin_src sql-mode
+    object_type |              operation_id              
+   -------------+----------------------------------------
+    leases      | listCoordinationV1NamespacedLease
+    leases      | readCoordinationV1beta1NamespacedLease
+   (2 rows)
+
+   #+end_src
+  
+   Hmm, so none of the null leases are hit by a useragent...which means the above idea doesn't fully check out.
+  
+   Out of curiosity, how often is createCoordinationNamespacedLease hit by tests according to endpoints.json?
+   #+NAME: # of testhits for createCoordinationV1NamespacedLease
+   #+BEGIN_SRC shell :dir ../../data/ci-kubernetes-e2e-gci-gce/1165794879855398916
+     cat endpoints.json | jq .createCoordinationV1NamespacedLease
+   #+END_SRC
+
+   #+RESULTS: # of testhits for createCoordinationV1NamespacedLease
+   #+begin_EXAMPLE
+   {
+     "category": "coordination",
+     "kind": "Lease",
+     "group": "coordination.k8s.io",
+     "description": "create a Lease",
+     "conformanceHits": 0,
+     "level": "stable",
+     "isDeprecated": false,
+     "hits": 7,
+     "testHits": 2,
+     "version": "v1",
+     "path": "/apis/coordination.k8s.io/v1/namespaces/{namespace}/leases"
+   }
+   #+end_EXAMPLE
+
+   Twice...and it's hit 7 times overall.  So 5 of the hits are not tests...and in our db we are showing it hit 5 times, just never by tests.  So the numbers are sooo close, and the discrepancy is specifically in the test hits.  
+  
+   Do the numbers match up for list and read?
+    #+NAME: # of testhis for listCoordinationV1NamespacedLease from db
+    #+BEGIN_SRC sql-mode
+      SELECT 
+        distinct operation_id,
+        COUNT(*) as total_hits,
+        COUNT(*) FILTER (WHERE useragent ilike 'e2e.test%') as test_hits
+        from audit_event where operation_id = 'listCoordinationV1NamespacedLease'
+        GROUP BY operation_id;
+    #+END_SRC
+
+    #+RESULTS: # of testhis for listCoordinationV1NamespacedLease from db
+    #+begin_src sql-mode
+               operation_id            | total_hits | test_hits 
+    -----------------------------------+------------+-----------
+     listCoordinationV1NamespacedLease |       1866 |       804
+    (1 row)
+
+    #+end_src
+
+    #+NAME: # of testhits for listCoordinationV1NamespacedLease from endpoints.json
+    #+BEGIN_SRC shell :dir ../../data/ci-kubernetes-e2e-gci-gce/1165794879855398916
+      cat endpoints.json | jq .listCoordinationV1NamespacedLease
+    #+END_SRC
+
+    #+RESULTS: # of testhits for listCoordinationV1NamespacedLease
+    #+begin_EXAMPLE
+    {
+      "category": "coordination",
+      "kind": "Lease",
+      "group": "coordination.k8s.io",
+      "description": "list or watch objects of kind Lease",
+      "conformanceHits": 228,
+      "level": "stable",
+      "hasWatch": true,
+      "isDeprecated": false,
+      "hits": 1971,
+      "testHits": 824,
+      "version": "v1",
+      "path": "/apis/coordination.k8s.io/v1/namespaces/{namespace}/leases"
+    }
+    #+end_EXAMPLE
+    
+    List is also close, but showing 105 more hits, and 20 more test hits.
+
+     
+    #+NAME: # of testhis for readCoordinationV1beta1NamespacedLease from db
+    #+BEGIN_SRC sql-mode
+      SELECT 
+        distinct operation_id,
+        COUNT(*) as total_hits,
+        COUNT(*) FILTER (WHERE useragent ilike 'e2e.test%') as test_hits
+        from audit_event where operation_id = 'readCoordinationV1beta1NamespacedLease'
+        GROUP BY operation_id;
+    #+END_SRC
+
+    #+RESULTS: # of testhis for readCoordinationV1beta1NamespacedLease from db
+    #+begin_src sql-mode
+                  operation_id              | total_hits | test_hits 
+    ----------------------------------------+------------+-----------
+     readCoordinationV1beta1NamespacedLease |        842 |         2
+    (1 row)
+
+    #+end_src
+
+    
+    #+NAME: # of testhits for readCoordinationV1beta1NamespacedLease from endpoints.json
+    #+BEGIN_SRC shell :dir ../../data/ci-kubernetes-e2e-gci-gce/1165794879855398916
+      cat endpoints.json | jq .readCoordinationV1beta1NamespacedLease
+    #+END_SRC
+
+    #+RESULTS: # of testhits for readCoordinationV1beta1NamespacedLease from endpoints.json
+    #+begin_EXAMPLE
+    {
+      "category": "coordination",
+      "kind": "Lease",
+      "group": "coordination.k8s.io",
+      "description": "read the specified Lease",
+      "conformanceHits": 0,
+      "level": "beta",
+      "isDeprecated": false,
+      "hits": 0,
+      "testHits": 0,
+      "version": "v1beta1",
+      "path": "/apis/coordination.k8s.io/v1beta1/namespaces/{namespace}/leases/{name}"
+    }
+    #+end_EXAMPLE
+    
+    0 hits for this...what if we remove the beta?
+   
+    #+NAME: # of testhits for readCoordinationV1NamespacedLease from endpoints.json
+    #+BEGIN_SRC shell :dir ../../data/ci-kubernetes-e2e-gci-gce/1165794879855398916
+      cat endpoints.json | jq .readCoordinationV1NamespacedLease
+    #+END_SRC
+
+    #+RESULTS: # of testhits for readCoordinationV1NamespacedLease from endpoints.json
+    #+begin_EXAMPLE
+    {
+      "category": "coordination",
+      "kind": "Lease",
+      "group": "coordination.k8s.io",
+      "description": "read the specified Lease",
+      "conformanceHits": 0,
+      "level": "stable",
+      "isDeprecated": false,
+      "hits": 16,
+      "testHits": 6,
+      "version": "v1",
+      "path": "/apis/coordination.k8s.io/v1/namespaces/{namespace}/leases/{name}"
+    }
+    #+end_EXAMPLE
+    
+    16 hits, 6 test hits, compleeeeetely different from what's showing in sql.  
+    What is equally strange is why I got results at all for =readCoordinationV1beta1NamespacedLease=.  This would mean we have the beta and stable version of the same endpoint in our apisnoop, and that we are showing 0 coverage for the beta one.   This feels misleading: the coverage is 0 because it was moved outta beta.  And yet, in our most recent audit events, this is still in beta?
+    
+    I feel I need to revisit how we picked operation_id's in the old method, and see if there's a gap in our logic.
+** Connecting to our db
+   If it's all the way down, it's best to connect by following steps in meta.org 
+   If it's up, you can connect with this script:
+#+NAME: Connect org to postgres
+#+BEGIN_SRC emacs-lisp
+  (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+#+END_SRC
+
+#+RESULTS: Connect org to postgres
+#+begin_src emacs-lisp
+#<buffer *SQL: postgres:data*>
+#+end_src
+  
+  then test the connection
+#+BEGIN_SRC sql-mode
+\conninfo
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10061".
+#+end_src
