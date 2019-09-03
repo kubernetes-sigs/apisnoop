@@ -1145,7 +1145,6 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
   PGADMIN_PORT=9001
   HASURA_PORT=9000
   # UID based PGPORT used to expose per user postgresql ports on same box
-  PG_CONTAINER_PORT=5432
   PGPORT=54321
   PGHOST=localhost
   PGUSER=apisnoop
@@ -1156,53 +1155,62 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
 ** .loadenv
 #+NAME: .loadenv
 #+BEGIN_SRC shell :tangle ../apps/.loadenv
-# If we are on sharing.io, use UID based *_PORTs
-if [ $(hostname) = "sharing.io" ]
-then
-    # Overwriting .env based on \*-${USER}.sharing.io
-(
-    # UID based *_PORT used to expose per user postgresql,hasura, and pgadmin ports on same box
-    # echo HASURA_PORT=$(id -u)0
-    # for running in docker-compose, different localhost:port per user id same
-    # echo PGPORT=$(id -u)1
-    # for running in docker-compose, different localhost:port per user id same
-    # echo PG_CONTAINER_PORT=$PGPORT
-    # for running in kompose
-    echo HASURA_PORT=8080
-    echo PGPORT=5432
-    echo PGADMIN_PORT=$(id -u)2
-    echo PGHOST=localhost
-    echo PGDATABASE=apisnoop
-    echo PGUSER=apisnoop
-    echo PGPASS=s3cr3tsauc3
-    echo PGPASSFILE=$PWD/pgpass
-    echo COMPOSE_PROJECT_NAME=apisnoop_$USER
-    TAG=$(TZ='Pacific/Auckland'; export TZ ; date +%F-%H-%M)
-    echo TAG=$TAG
-    # echo HASURA_IMAGE=raiinbow/hasura:$TAG
-    # echo POSTGRES_IMAGE=raiinbow/postgres:$TAG
-    # echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PWD/pgpass
-    echo GOOGLE_APPLICATION_CREDENTIALS=$HOME/.gcreds.json
-    echo GKS_ZONE="australia-southeast1-a"
-    echo GCS_CLUSTER="single-node-cluster"
-    echo APISNOOP_NAMESPACE="apisnoop-$USER"
-    echo TRAEFIK_NAMESPACE="kube-system"
-    echo TRAEFIK_DEPLOYMENT="ii-traefik"
-    echo endpoint: https://$USER-hasura.sharing.io > $PWD/hasura/config.yaml
-) > .env
-    export $(grep -v '^#' .env | xargs -d '\n')
-    gcloud container clusters get-credentials ${GCS_CLUSTER} --zone ${GKS_ZONE} 2> /dev/null || echo cluster gcreds error
-    kubectl config set-context $(kubectl config current-context) --namespace=${APISNOOP_NAMESPACE} 2>&1 > /dev/null
-else
-    cp .env_sample .env
-    cp hasura/config_sample.yaml hasura/config.yaml
-    export $(grep -v '^#' .env | xargs -d '\n')
-fi
+  # If we are on sharing.io, use UID based *_PORTs
+  if [ $(hostname) = "sharing.io" ]
+  then
+      # Overwriting .env based on \*-${USER}.sharing.io
+      echo Using sharing.io setup 1>&2
+  (
+      # UID based *_PORT used to expose per user postgresql,hasura, and pgadmin ports on same box
+      if [ "$KOMPOSE" = "true" ]
+      then
+              echo Using kompose https://$USER-hasura.apisnoop.io 1>&2
+              echo PGPORT=5432
+              echo HASURA_PORT=8080
+              echo endpoint: https://$USER-hasura.apisnoop.io > $PWD/hasura/config.yaml
+      else
+              echo Using docker-compose https://$USER-hasura.sharing.io 1>&2
+              echo PGPORT=$(id -u)1
+              echo HASURA_PORT=$(id -u)0
+              echo endpoint: https://$USER-hasura.sharing.io > $PWD/hasura/config.yaml
+      fi
 
-PGPASSFILE=$(pwd)/pgpass
-echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
-chmod 600 $PGPASSFILE
-export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE password=$PGPASS sslmode=disable client_encoding=UTF8"
+      # for running in docker-compose, different localhost:port per user id same
+      # for running in docker-compose, different localhost:port per user id same
+      # echo PG_CONTAINER_PORT=$PGPORT
+      # for running in kompose
+      echo PGADMIN_PORT=$(id -u)2
+      echo PGHOST=localhost
+      echo PGDATABASE=apisnoop
+      echo PGUSER=apisnoop
+      echo PGPASS=s3cr3tsauc3
+      echo PGPASSFILE=$PWD/pgpass
+      echo COMPOSE_PROJECT_NAME=apisnoop_$USER
+      TAG=$(TZ='Pacific/Auckland'; export TZ ; date +%F-%H-%M)
+      echo TAG=$TAG
+      # echo HASURA_IMAGE=raiinbow/hasura:$TAG
+      # echo POSTGRES_IMAGE=raiinbow/postgres:$TAG
+      # echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PWD/pgpass
+      echo GOOGLE_APPLICATION_CREDENTIALS=$HOME/.gcreds.json
+      echo GKS_ZONE="australia-southeast1-a"
+      echo GCS_CLUSTER="single-node-cluster"
+      echo APISNOOP_NAMESPACE="apisnoop-$USER"
+      echo TRAEFIK_NAMESPACE="kube-system"
+      echo TRAEFIK_DEPLOYMENT="ii-traefik"
+  ) > .env
+      export $(grep -v '^#' .env | xargs -d '\n')
+      gcloud container clusters get-credentials ${GCS_CLUSTER} --zone ${GKS_ZONE} 2> /dev/null || echo cluster gcreds error
+      kubectl config set-context $(kubectl config current-context) --namespace=${APISNOOP_NAMESPACE} 2>&1 > /dev/null
+  else
+      cp .env_sample .env
+      cp hasura/config_sample.yaml hasura/config.yaml
+      export $(grep -v '^#' .env | xargs -d '\n')
+  fi
+
+  PGPASSFILE=$(pwd)/pgpass
+  echo $PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$PGPASS > $PGPASSFILE
+  chmod 600 $PGPASSFILE
+  export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE password=$PGPASS sslmode=disable client_encoding=UTF8"
 #+END_SRC
 
 ** Hasura
@@ -1339,6 +1347,15 @@ export CONN="host=127.0.0.1 port=$PGPORT user=$PGUSER dbname=$PGDATABASE passwor
 #+BEGIN_SRC text :tangle ../apps/hasura/config_sample.yaml :noweb yes
 endpoint: http://localhost:9000
 #+END_SRC
+*** Dockerfile
+#+NAME: apisnoop hasura dockerfile
+#+BEGIN_SRC dockerfile :tangle ../apps/hasura/Dockerfile
+  FROM hasura/graphql-engine:v1.0.0-beta.6.cli-migrations
+  # FROM hasura/graphql-engine:v1.0.0-beta.6
+  MAINTAINER Hippie Hacker <hh@ii.coop>
+  COPY ./migrations /hasura-migrations
+#+END_SRC
+** Postgres
 *** init-apisnoop-db.sh
 
  #+NAME: init apisnoop db
@@ -1375,15 +1392,6 @@ endpoint: http://localhost:9000
    GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO apisnoop;
    GRANT pg_execute_server_program TO apisnoop;
  #+END_SRC
-*** Dockerfile
-#+NAME: apisnoop hasura dockerfile
-#+BEGIN_SRC dockerfile :tangle ../apps/hasura/Dockerfile
-  FROM hasura/graphql-engine:v1.0.0-beta.6.cli-migrations
-  # FROM hasura/graphql-engine:v1.0.0-beta.6
-  MAINTAINER Hippie Hacker <hh@ii.coop>
-  COPY ./migrations /hasura-migrations
-#+END_SRC
-** pgadmin
 *** Dockerfile
 #+BEGIN_SRC dockerfile :tangle ../apps/postgres/Dockerfile
   FROM postgres:11.5
@@ -1424,10 +1432,13 @@ endpoint: http://localhost:9000
     && make install \
     && cp ~/go/bin/rmatch /usr/local/bin
   COPY ./initdb /docker-entrypoint-initdb.d
+  HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 \
+    CMD pg_isready -U apisnoop || exit 1
  # RUN sed -i -e"s/^#logging_collector = off.*$/logging_collector = on/" /var/lib/postgresql/data/postgresql.conf
 
 #+END_SRC
 
+** pgadmin
 *** servers.json
 # python setup.py --dump-servers /tmp/server.json --user apisnoop@cncf.io
 #+NAME: pgadmin default servers config
@@ -1461,7 +1472,6 @@ endpoint: http://localhost:9000
   # hasura/docker-compose.yaml
   # Kompose Note: We don’t support anything 3.4 and above at the moment
   version: "3"
-
   services:
     postgres:
       # image: postgres:11.5 # debian-slim / alternative: postgres:11.5-alpine
@@ -1493,6 +1503,11 @@ endpoint: http://localhost:9000
         # - ./postgres/initdb:/docker-entrypoint-initdb.d:Z
         # mainly mounted for debugging
         #- ./hasura/migrations:/migrations:Z
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U $PGUSER"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
       ports: # exposed to docker host
         - "${PGPORT}:5432"
       # Expose ports without publishing them to the host machine
@@ -1532,6 +1547,8 @@ endpoint: http://localhost:9000
         - HASURA_GRAPHQL_ENABLE_CONSOLE=true
       # volumes:
       #   - ./hasura/migrations:/hasura-migrations:Z
+      depends_on:
+        - postgres
       ports: # exposed to docker host
         - "${HASURA_PORT}:8080"
       expose:
@@ -1593,7 +1610,7 @@ endpoint: http://localhost:9000
     db:
 #+END_SRC
 
-* FOOTNOTES
+* Footnotes
 ** Local Variables
 
 Force this instance of emacs to use the apisnoop server-name.
