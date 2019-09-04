@@ -1,0 +1,224 @@
+#+TITLE: SQLite Raiinbows
+#+AUTHOR: ii team
+#+DATE: 5 September 2019
+#+INCLUDE: "config.org"
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | TADA(d)
+#+ARCHIVE: archive/sqlite.archive.org::
+#+PROPERTY: header-args:sql-mode+ :results silent :product sqlite :session raiinbow
+
+* Purpose
+
+Port PostgreSQL / Hasura setup to SQLite.
+
+* Welcome, ii dev!
+  :PROPERTIES:
+  :header-args:sql-mode+: :results silent
+  :header-args:sql-mode+: :product sqlite
+  :header-args:sql-mode+: :session raiinbow
+  :header-args:sqlite+: :db (concat (file-name-directory buffer-file-name) "../apps/sqlite/raiinbow.db")
+  :header-args:sqlite+: :colnames yes
+  :header-args:sqlite+: :results table replace
+  :END:
+
+If you're reading this org file, from within spacemacs, and expecting to do your work from within an org-file...then welcome, fellow ii dev (or honorary ii dev)!
+
+To ensure you're set up properly, you want to run down this checklist:
+** TADA [0%] Ready to Work!
+    :PROPERTIES:
+    :RESET_CHECK_BOXES: t
+    :LOGGING: nil
+    :END:
+- [ ] Ensure you are reading this, and working, from within a tmate session on sharing.io.
+  how do to do this is outside scope of this org, but ensure you've ssh'ed into sharing.io, and started a tmate session.
+
+- [ ] Start up dev environment with the ii env variables
+  : open a new tmate pane (ctrl+b c) or run `, ,` within the block to run the following:
+
+  #+NAME: start docker containers
+  #+BEGIN_SRC tmate :noweb eval :session apisnoop:docker
+    # These  sequences are to allow you to use this as an iteration loop
+    
+    
+    
+    cd ~/ii/apisnoop/apps # docker-compose.yaml is here
+    # Retangle / export code from org/documentation usually into ./apps/*
+    # the eval: local vars set this emacs instance server-name to apisnoop
+    emacsclient -s apisnoop -e "(org-babel-tangle-file \"../org/sqlite.org\")"
+    # We have a sharing.io check to ensure everyone get's there own PORTS
+    . .loadenv
+  #+END_SRC
+
+- [ ] Open to your sqlite db from within this file using sqlite3
+  You'll want execute this code block by moving your cursor within and typing =,,=
+  
+  #+NAME: Connect org to postgres
+  #+BEGIN_SRC emacs-lisp :results silent
+    (sql-connect "raiinbow" (concat "*SQL: sqlite:raiinbow*"))
+  #+END_SRC
+
+- [ ] Test your connection works
+  You can run this sql block, and it see a message in your minbuffer like:
+  : You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10041".
+
+  #+NAME: Test Connection
+  #+BEGIN_SRC sqlite :results code verbatim
+    .databases
+    -- PRAGMA compile_options; -- FTS5 and JSON1 are default in sqlite3.9
+    -- .dbinfo main
+    -- .fullschema
+    -- .tables
+    -- select count(*) from api_swagger;
+  #+END_SRC
+
+  #+RESULTS: Test Connection
+  #+begin_src sqlite
+  main: /zfs/home/hh/ii/apisnoop/org/raiinbow.db
+  #+end_src
+
+
+- [ ] perform migrations (if not using .cli-migrations hasura image)
+
+  #+NAME: start docker containers
+  #+BEGIN_SRC tmate :noweb eval :session apisnoop:migrations
+    cd ~/ii/apisnoop/apps/hasura
+    hasura migrate apply
+    hasura migrate status
+  #+END_SRC
+
+
+- [ ] Load cached audit events
+  It is highly likely that a teammate has already run through a db setup, and loaded, named, and indexed their audit events. You can use their cached sql for your own db, speeding up the setup time considerably. 
+
+  To do this, you want to:
+  #+NAME: start docker containers
+  #+BEGIN_SRC tmate :session apisnoop:load_events
+    cd ~/ii/apisnoop/apps
+    . .loadenv
+    sqlite3 raiinbow.sqlite < /tmp/ci-kubernetes-e2e-gci-gce.1165794879855398916.sql
+  #+END_SRC
+ 
+  This will load audit events from bucket =ci-kubernetes-e2e-gci-gce= and job =1165794879855398916=
+  If you want to use another bucket/job, check out the longer setup checklist later on.
+
+  The process should take around 30 seconds.  It may throw errors about tables or indexes already existing, but otherwise finish successfully.  
+
+- [ ] Test that audit events loaded.
+  
+  Now that we are connected to our db, we can run sql queries, like checking if the loading of cached audit events work.
+  The following query should return a count of =305025=. You may need to run this twice to ensure your reconnected.
+  #+NAME: Number of distinct audit events
+  #+BEGIN_SRC sql-mode
+  select count(distinct audit_id) from audit_event;
+  #+END_SRC
+
+  #+RESULTS: Number of distinct audit events
+  #+begin_src sql-mode
+   count  
+  --------
+   305025
+  (1 row)
+
+  #+end_src
+  
+  If this didn't work, check out the longer setup below.
+  
+- [ ] Start up a psql interpreter with the ii env variables
+  It's useful to have psql up to run queries directly in the interpreter.
+  : open a new tmate pane (ctrl+b c), or navigate to one used to load cached audit event
+
+  #+NAME: start docker containers
+  #+BEGIN_SRC tmate :noweb eval :session apisnoop:sqlite3
+    cd ~/ii/apisnoop/apps # docker-compose.yaml is here
+    . .loadenv
+    sqlite3 $SQLITE_DB
+    .databases
+    .tables
+    .dbinfo main
+    .fullschema
+  #+END_SRC
+
+- [ ] Test your  hasura endpoint is up
+  If all is working right, you should be able to visit =$YOURUSERNAME-hasura.sharing.io=
+  You will see many views and all should have data.
+  
+- [ ] If cached sql not available, load audit events.
+  We have a long process as [[*901: update_audit_events.up.sql][part 901: update_audit_events.up.sql]].  You can click enter on that link and then execute each code block within this heading in order.  This process will take about a half hour.
+
+- [ ] Get a drink of water and mark this todo as DONE
+  You're all set up and ready to go, but hydration is important!  Get a drink of water, stretch, and recharge before you crush it today!  
+  Also, =gh gh gh= to go back to the top then =,TTd= to mark this task as DONE!
+
+
+* Raw Swaggers Table, and Helper Functions
+  :PROPERTIES:
+  :header-args:sql-mode+: :results silent
+  :header-args:sql-mode+: :product sqlite
+  :header-args:sql-mode+: :session raiinbow
+  :header-args:sqlite+: :db (concat (file-name-directory buffer-file-name) "../apps/sqlite/raiinbow.db")
+  :header-args:sqlite+: :colnames yes
+  :header-args:sqlite+: :results table silent
+  :END:
+  These are jsonb indexed loads of swagger.json from github k8s commits or releases.
+  Eventually these will also be populated on the fly when running within/against a cluster.
+** 100: API Swagger Table
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/sqlite/100_table_api_swagger.up.sql
+  :END:
+*** Create Table
+#+NAME: api_swagger
+#+BEGIN_SRC sqlite
+CREATE TABLE api_swagger (
+    -- id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+    -- version text NOT NULL,
+    -- definition_id text NOT NULL,
+    data jsonb NOT NULL
+);
+#+END_SRC
+
+
+*** Index Table
+#+NAME: general index the raw_swagger
+#+BEGIN_SRC sqlite
+  CREATE INDEX idx_swagger_jsonb_ops ON api_swagger
+    USING GIN (data jsonb_ops);
+  CREATE INDEX idx_swagger_jsonb_path_ops ON api_swagger
+    USING GIN (data jsonb_path_ops);
+#+END_SRC
+** 120: Function for load swagger via curl
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/120_function_load_swagger_via_curl.up.sql
+  :END:
+  
+#+NAME: load_swagger_via_curl.py
+#+BEGIN_SRC python :eval never :exports code
+  # should probably sanitize branch_or_tag
+  try:
+      from string import Template
+      sql = Template("copy api_swagger (data) FROM PROGRAM '$curl' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');").substitute(
+      curl =  ''.join([
+          'curl https://raw.githubusercontent.com/kubernetes/kubernetes/',
+          branch_or_tag,
+          '/api/openapi-spec/swagger.json | jq -c .'])
+      )
+      rv = plpy.execute(sql)
+      return "it worked"
+  except:
+      return "something went wrong"
+#+END_SRC
+
+#+NAME: load_swagger_via_curl.sql
+#+BEGIN_SRC sql-mode :noweb yes
+  set role dba;
+  CREATE OR REPLACE FUNCTION load_swagger_via_curl(branch_or_tag text)
+  RETURNS text AS $$
+  <<load_swagger_via_curl.py>>
+  $$ LANGUAGE plpython3u ;
+  reset role;
+#+END_SRC
+
+* Footnotes
+
+# Local Variables:
+# eval: (org-babel-do-load-languages (quote org-babel-load-languages) (quote ((sqlite . t))))
+# End:

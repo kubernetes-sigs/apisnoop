@@ -106,6 +106,17 @@ To ensure you're set up properly, you want to run down this checklist:
   #+end_src
   
   If this didn't work, check out the longer setup below.
+- [ ] Update views based on audit_events
+
+#+NAME: update audit events
+#+BEGIN_SRC sql-mode
+  REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
+#+END_SRC
+
+#+RESULTS: update audit events
+#+begin_src sql-mode
+REFRESH MATERIALIZED VIEW
+#+end_src
   
 - [ ] Start up a psql interpreter with the ii env variables
   It's useful to have psql up to run queries directly in the interpreter.
@@ -1115,7 +1126,47 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
      and test like '%Conformance%'
    group by podspec_field;
 #+END_SRC
-** 604: PodSpec Field Review View
+** 604: PodSpec Field mid Report View
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/604_view_podspec_field_report.up.sql
+  :END:
+#+NAME: podspec_field_hits
+#+BEGIN_SRC sql-mode
+  create or replace view podspec_field_mid_report as
+  select distinct
+    field_name as podspec_field,
+    0 as other_hits,
+    0 as e2e_hits,
+    0 as conf_hits,
+    release,
+    deprecated,
+    feature_gated as gated,
+    required,
+    field_kind,
+    field_type
+    from api_schema_field
+   where field_schema like '%PodSpec%'
+   UNION
+  select distinct podspec_field,
+        sum(other_hits) as other_hits,
+        sum(e2e_hits) as e2e_hits,
+        sum(conf_hits) as conf_hits,
+        kfp.release,
+        kfp.deprecated,
+        kfp.gated,
+        kfp.required,
+        kfp.field_kind,
+        kfp.field_type
+  from podspec_field_summary pfs, kind_field_path kfp
+  where kfp.field_type not like 'io%'
+    and (kfp.kind like '%PodSpec'
+    or kfp.sub_kind like '%PodSpec')
+    and pfs.podspec_field = regexp_replace(kfp.field_path, '.*\.','') 
+  group by podspec_field, kfp.release, kfp.deprecated, kfp.gated, kfp.required, kfp.field_kind, kfp.field_type
+  order by conf_hits, e2e_hits, other_hits;
+#+END_SRC
+
+** 604: PodSpec Field Report View
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/604_view_podspec_field_report.up.sql
   :END:
@@ -1126,16 +1177,14 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
         sum(other_hits) as other_hits,
         sum(e2e_hits) as e2e_hits,
         sum(conf_hits) as conf_hits,
-        kfp.release,
-        kfp.deprecated,
-        kfp.gated,
-        kfp.required
-  from podspec_field_summary pfs, kind_field_path kfp
-  where kfp.field_type not like 'io%'
-    and kfp.kind like '%PodSpec'
-    and kfp.sub_kind like '%PodSpec'
-    and pfs.podspec_field = regexp_replace(kfp.field_path, '.*\.','') 
-  group by podspec_field, kfp.release, kfp.deprecated, kfp.gated, kfp.required
+        release,
+        deprecated,
+        gated,
+        required,
+        field_kind,
+        field_type
+  from podspec_field_mid_report
+  group by podspec_field, release, deprecated, gated, required, field_kind, field_type
   order by conf_hits, e2e_hits, other_hits;
 #+END_SRC
 
@@ -1197,12 +1246,14 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
       echo APISNOOP_NAMESPACE="apisnoop-$USER"
       echo TRAEFIK_NAMESPACE="kube-system"
       echo TRAEFIK_DEPLOYMENT="ii-traefik"
+      echo SQLITE_DB=$PWD/sqlite/raiinbow.db
   ) > .env
       export $(grep -v '^#' .env | xargs -d '\n')
       gcloud container clusters get-credentials ${GCS_CLUSTER} --zone ${GKS_ZONE} 2> /dev/null || echo cluster gcreds error
       kubectl config set-context $(kubectl config current-context) --namespace=${APISNOOP_NAMESPACE} 2>&1 > /dev/null
   else
       cp .env_sample .env
+      echo SQLITE_DB=$PWD/raiinbow.db >> .env
       cp hasura/config_sample.yaml hasura/config.yaml
       export $(grep -v '^#' .env | xargs -d '\n')
   fi
