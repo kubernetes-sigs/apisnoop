@@ -363,726 +363,635 @@ From this refactoring, a hope is that it offers another perspective into the arr
    I am remembering this now from conversation on Friday, that we can perhaps refererece the x-kubernetes sections in the definitions and match direct to that instead.
 
         
+*** Thoghtful Pause
+    It feels a rocky path to construct the definition, instead we can match to the definition using x-kubernetes-kind.  there isn't a super simple way to do it and check it, outside of constructing the definitions themselves and then comparing it to the schema ref's in the swagger.json
+*** Construct View for Swagger Definitions
+    We want to take our swagger row and parse out each definition, plus its x-kubernetes-action
+    #+NAME: New View: Swagger Definitions
+    #+BEGIN_SRC sql-mode
+     CREATE OR REPLACE VIEW "public"."swagger_definition" AS
+      SELECT
+        def.key as definition,
+          def.value as value,
+        swagger.id as swagger_id
+        FROM api_swagger as swagger,
+             jsonb_each((swagger.data ->'definitions')) def(key, value);
+    #+END_SRC
 
-*** Investigating swagger.
-  For example, let's curl down the latest swagger, and find all definitions,  using jq.
-  #+NAME: Curl swagger to data file
-  #+BEGIN_SRC shell
-    curl -L https://raw.githubusercontent.com/kubernetes/kubernetes/release-1.16/api/openapi-spec/swagger.json -o ../../data/swagger_1.16.json
-    tree ../../data
-  #+END_SRC
+    #+RESULTS: New View: Swagger Definitions
+    #+begin_src sql-mode
+    CREATE VIEW
+    #+end_src
+    
+    I want to confirm that these definitions map to a single x-kubernetes-action
+    #+NAME: Distinct Definitions and Distinct x-kubernetes actions
+    #+BEGIN_SRC sql-mode
+      SELECT
+        count(DISTINCT definition) as total_definitions,
+        count(DISTINCT definition) FILTER(WHERE (value ->'x-kubernetes-group-version-kind') IS NULL) as unkinds,
+        count(DISTINCT definition) FILTER(WHERE (value ->'x-kubernetes-group-version-kind') IS NOT NULL) as kinds,
+        count(distinct (value->'x-kubernetes-group-version-kind')) as actions
+          FROM swagger_definition;
+    #+END_SRC
 
-  #+RESULTS:
-  #+begin_EXAMPLE
-  ../../data
-  ├── ci-kubernetes-e2e-gci-gce
-  │   └── 1165794879855398916
-  │       └── endpoints.json
-  ├── op_ids_db.txt
-  ├── op_ids_ep.txt
-  └── swagger_1.16.json
+    #+RESULTS: Distinct Definitions and Distinct x-kubernetes actions
+    #+begin_src sql-mode
+     total_definitions | unkinds | kinds | actions 
+    -------------------+---------+-------+---------
+                   662 |     468 |   194 |     194
+    (1 row)
 
-  2 directories, 4 files
-  #+end_EXAMPLE
-  
-  #+NAME: find definitions
-  #+BEGIN_SRC shell :dir ../../data
-  cat swagger_1.16.json | jq ".definitions | keys"
-  #+END_SRC
+    #+end_src
+    
+    When a definition has 'x-kubernetes-group-version-kind' it is unique.  What are the ones without?
+    
+   #+NAME: Sample of definitions without group-version-kind 
+    #+BEGIN_SRC sql-mode
+     SELECT
+     definition
+       FROM swagger_definition
+      WHERE (value->'x-kubernetes-group-version-kind') IS NULL
+      LIMIT 50;
 
-  #+RESULTS: find definitions
-  #+begin_EXAMPLE
-  [
-    "io.k8s.api.admissionregistration.v1.MutatingWebhook",
-    "io.k8s.api.admissionregistration.v1.MutatingWebhookConfiguration",
-    "io.k8s.api.admissionregistration.v1.MutatingWebhookConfigurationList",
-    "io.k8s.api.admissionregistration.v1.RuleWithOperations",
-    "io.k8s.api.admissionregistration.v1.ServiceReference",
-    "io.k8s.api.admissionregistration.v1.ValidatingWebhook",
-    "io.k8s.api.admissionregistration.v1.ValidatingWebhookConfiguration",
-    "io.k8s.api.admissionregistration.v1.ValidatingWebhookConfigurationList",
-    "io.k8s.api.admissionregistration.v1.WebhookClientConfig",
-    "io.k8s.api.admissionregistration.v1beta1.MutatingWebhook",
-    "io.k8s.api.admissionregistration.v1beta1.MutatingWebhookConfiguration",
-    "io.k8s.api.admissionregistration.v1beta1.MutatingWebhookConfigurationList",
-    "io.k8s.api.admissionregistration.v1beta1.RuleWithOperations",
-    "io.k8s.api.admissionregistration.v1beta1.ServiceReference",
-    "io.k8s.api.admissionregistration.v1beta1.ValidatingWebhook",
-    "io.k8s.api.admissionregistration.v1beta1.ValidatingWebhookConfiguration",
-    "io.k8s.api.admissionregistration.v1beta1.ValidatingWebhookConfigurationList",
-    "io.k8s.api.admissionregistration.v1beta1.WebhookClientConfig",
-    "io.k8s.api.apps.v1.ControllerRevision",
-    "io.k8s.api.apps.v1.ControllerRevisionList",
-    "io.k8s.api.apps.v1.DaemonSet",
-    "io.k8s.api.apps.v1.DaemonSetCondition",
-    "io.k8s.api.apps.v1.DaemonSetList",
-    "io.k8s.api.apps.v1.DaemonSetSpec",
-    "io.k8s.api.apps.v1.DaemonSetStatus",
-    "io.k8s.api.apps.v1.DaemonSetUpdateStrategy",
-    "io.k8s.api.apps.v1.Deployment",
-    "io.k8s.api.apps.v1.DeploymentCondition",
-    "io.k8s.api.apps.v1.DeploymentList",
-    "io.k8s.api.apps.v1.DeploymentSpec",
-    "io.k8s.api.apps.v1.DeploymentStatus",
-    "io.k8s.api.apps.v1.DeploymentStrategy",
-    "io.k8s.api.apps.v1.ReplicaSet",
-    "io.k8s.api.apps.v1.ReplicaSetCondition",
-    "io.k8s.api.apps.v1.ReplicaSetList",
-    "io.k8s.api.apps.v1.ReplicaSetSpec",
-    "io.k8s.api.apps.v1.ReplicaSetStatus",
-    "io.k8s.api.apps.v1.RollingUpdateDaemonSet",
-    "io.k8s.api.apps.v1.RollingUpdateDeployment",
-    "io.k8s.api.apps.v1.RollingUpdateStatefulSetStrategy",
-    "io.k8s.api.apps.v1.StatefulSet",
-    "io.k8s.api.apps.v1.StatefulSetCondition",
-    "io.k8s.api.apps.v1.StatefulSetList",
-    "io.k8s.api.apps.v1.StatefulSetSpec",
-    "io.k8s.api.apps.v1.StatefulSetStatus",
-    "io.k8s.api.apps.v1.StatefulSetUpdateStrategy",
-    "io.k8s.api.apps.v1beta1.ControllerRevision",
-    "io.k8s.api.apps.v1beta1.ControllerRevisionList",
-    "io.k8s.api.apps.v1beta1.Deployment",
-    "io.k8s.api.apps.v1beta1.DeploymentCondition",
-    "io.k8s.api.apps.v1beta1.DeploymentList",
-    "io.k8s.api.apps.v1beta1.DeploymentRollback",
-    "io.k8s.api.apps.v1beta1.DeploymentSpec",
-    "io.k8s.api.apps.v1beta1.DeploymentStatus",
-    "io.k8s.api.apps.v1beta1.DeploymentStrategy",
-    "io.k8s.api.apps.v1beta1.RollbackConfig",
-    "io.k8s.api.apps.v1beta1.RollingUpdateDeployment",
-    "io.k8s.api.apps.v1beta1.RollingUpdateStatefulSetStrategy",
-    "io.k8s.api.apps.v1beta1.Scale",
-    "io.k8s.api.apps.v1beta1.ScaleSpec",
-    "io.k8s.api.apps.v1beta1.ScaleStatus",
-    "io.k8s.api.apps.v1beta1.StatefulSet",
-    "io.k8s.api.apps.v1beta1.StatefulSetCondition",
-    "io.k8s.api.apps.v1beta1.StatefulSetList",
-    "io.k8s.api.apps.v1beta1.StatefulSetSpec",
-    "io.k8s.api.apps.v1beta1.StatefulSetStatus",
-    "io.k8s.api.apps.v1beta1.StatefulSetUpdateStrategy",
-    "io.k8s.api.apps.v1beta2.ControllerRevision",
-    "io.k8s.api.apps.v1beta2.ControllerRevisionList",
-    "io.k8s.api.apps.v1beta2.DaemonSet",
-    "io.k8s.api.apps.v1beta2.DaemonSetCondition",
-    "io.k8s.api.apps.v1beta2.DaemonSetList",
-    "io.k8s.api.apps.v1beta2.DaemonSetSpec",
-    "io.k8s.api.apps.v1beta2.DaemonSetStatus",
-    "io.k8s.api.apps.v1beta2.DaemonSetUpdateStrategy",
-    "io.k8s.api.apps.v1beta2.Deployment",
-    "io.k8s.api.apps.v1beta2.DeploymentCondition",
-    "io.k8s.api.apps.v1beta2.DeploymentList",
-    "io.k8s.api.apps.v1beta2.DeploymentSpec",
-    "io.k8s.api.apps.v1beta2.DeploymentStatus",
-    "io.k8s.api.apps.v1beta2.DeploymentStrategy",
-    "io.k8s.api.apps.v1beta2.ReplicaSet",
-    "io.k8s.api.apps.v1beta2.ReplicaSetCondition",
-    "io.k8s.api.apps.v1beta2.ReplicaSetList",
-    "io.k8s.api.apps.v1beta2.ReplicaSetSpec",
-    "io.k8s.api.apps.v1beta2.ReplicaSetStatus",
-    "io.k8s.api.apps.v1beta2.RollingUpdateDaemonSet",
-    "io.k8s.api.apps.v1beta2.RollingUpdateDeployment",
-    "io.k8s.api.apps.v1beta2.RollingUpdateStatefulSetStrategy",
-    "io.k8s.api.apps.v1beta2.Scale",
-    "io.k8s.api.apps.v1beta2.ScaleSpec",
-    "io.k8s.api.apps.v1beta2.ScaleStatus",
-    "io.k8s.api.apps.v1beta2.StatefulSet",
-    "io.k8s.api.apps.v1beta2.StatefulSetCondition",
-    "io.k8s.api.apps.v1beta2.StatefulSetList",
-    "io.k8s.api.apps.v1beta2.StatefulSetSpec",
-    "io.k8s.api.apps.v1beta2.StatefulSetStatus",
-    "io.k8s.api.apps.v1beta2.StatefulSetUpdateStrategy",
-    "io.k8s.api.auditregistration.v1alpha1.AuditSink",
-    "io.k8s.api.auditregistration.v1alpha1.AuditSinkList",
-    "io.k8s.api.auditregistration.v1alpha1.AuditSinkSpec",
-    "io.k8s.api.auditregistration.v1alpha1.Policy",
-    "io.k8s.api.auditregistration.v1alpha1.ServiceReference",
-    "io.k8s.api.auditregistration.v1alpha1.Webhook",
-    "io.k8s.api.auditregistration.v1alpha1.WebhookClientConfig",
-    "io.k8s.api.auditregistration.v1alpha1.WebhookThrottleConfig",
-    "io.k8s.api.authentication.v1.BoundObjectReference",
-    "io.k8s.api.authentication.v1.TokenRequest",
-    "io.k8s.api.authentication.v1.TokenRequestSpec",
-    "io.k8s.api.authentication.v1.TokenRequestStatus",
-    "io.k8s.api.authentication.v1.TokenReview",
-    "io.k8s.api.authentication.v1.TokenReviewSpec",
-    "io.k8s.api.authentication.v1.TokenReviewStatus",
-    "io.k8s.api.authentication.v1.UserInfo",
-    "io.k8s.api.authentication.v1beta1.TokenReview",
-    "io.k8s.api.authentication.v1beta1.TokenReviewSpec",
-    "io.k8s.api.authentication.v1beta1.TokenReviewStatus",
-    "io.k8s.api.authentication.v1beta1.UserInfo",
-    "io.k8s.api.authorization.v1.LocalSubjectAccessReview",
-    "io.k8s.api.authorization.v1.NonResourceAttributes",
-    "io.k8s.api.authorization.v1.NonResourceRule",
-    "io.k8s.api.authorization.v1.ResourceAttributes",
-    "io.k8s.api.authorization.v1.ResourceRule",
-    "io.k8s.api.authorization.v1.SelfSubjectAccessReview",
-    "io.k8s.api.authorization.v1.SelfSubjectAccessReviewSpec",
-    "io.k8s.api.authorization.v1.SelfSubjectRulesReview",
-    "io.k8s.api.authorization.v1.SelfSubjectRulesReviewSpec",
-    "io.k8s.api.authorization.v1.SubjectAccessReview",
-    "io.k8s.api.authorization.v1.SubjectAccessReviewSpec",
-    "io.k8s.api.authorization.v1.SubjectAccessReviewStatus",
-    "io.k8s.api.authorization.v1.SubjectRulesReviewStatus",
-    "io.k8s.api.authorization.v1beta1.LocalSubjectAccessReview",
-    "io.k8s.api.authorization.v1beta1.NonResourceAttributes",
-    "io.k8s.api.authorization.v1beta1.NonResourceRule",
-    "io.k8s.api.authorization.v1beta1.ResourceAttributes",
-    "io.k8s.api.authorization.v1beta1.ResourceRule",
-    "io.k8s.api.authorization.v1beta1.SelfSubjectAccessReview",
-    "io.k8s.api.authorization.v1beta1.SelfSubjectAccessReviewSpec",
-    "io.k8s.api.authorization.v1beta1.SelfSubjectRulesReview",
-    "io.k8s.api.authorization.v1beta1.SelfSubjectRulesReviewSpec",
-    "io.k8s.api.authorization.v1beta1.SubjectAccessReview",
-    "io.k8s.api.authorization.v1beta1.SubjectAccessReviewSpec",
-    "io.k8s.api.authorization.v1beta1.SubjectAccessReviewStatus",
-    "io.k8s.api.authorization.v1beta1.SubjectRulesReviewStatus",
-    "io.k8s.api.autoscaling.v1.CrossVersionObjectReference",
-    "io.k8s.api.autoscaling.v1.HorizontalPodAutoscaler",
-    "io.k8s.api.autoscaling.v1.HorizontalPodAutoscalerList",
-    "io.k8s.api.autoscaling.v1.HorizontalPodAutoscalerSpec",
-    "io.k8s.api.autoscaling.v1.HorizontalPodAutoscalerStatus",
-    "io.k8s.api.autoscaling.v1.Scale",
-    "io.k8s.api.autoscaling.v1.ScaleSpec",
-    "io.k8s.api.autoscaling.v1.ScaleStatus",
-    "io.k8s.api.autoscaling.v2beta1.CrossVersionObjectReference",
-    "io.k8s.api.autoscaling.v2beta1.ExternalMetricSource",
-    "io.k8s.api.autoscaling.v2beta1.ExternalMetricStatus",
-    "io.k8s.api.autoscaling.v2beta1.HorizontalPodAutoscaler",
-    "io.k8s.api.autoscaling.v2beta1.HorizontalPodAutoscalerCondition",
-    "io.k8s.api.autoscaling.v2beta1.HorizontalPodAutoscalerList",
-    "io.k8s.api.autoscaling.v2beta1.HorizontalPodAutoscalerSpec",
-    "io.k8s.api.autoscaling.v2beta1.HorizontalPodAutoscalerStatus",
-    "io.k8s.api.autoscaling.v2beta1.MetricSpec",
-    "io.k8s.api.autoscaling.v2beta1.MetricStatus",
-    "io.k8s.api.autoscaling.v2beta1.ObjectMetricSource",
-    "io.k8s.api.autoscaling.v2beta1.ObjectMetricStatus",
-    "io.k8s.api.autoscaling.v2beta1.PodsMetricSource",
-    "io.k8s.api.autoscaling.v2beta1.PodsMetricStatus",
-    "io.k8s.api.autoscaling.v2beta1.ResourceMetricSource",
-    "io.k8s.api.autoscaling.v2beta1.ResourceMetricStatus",
-    "io.k8s.api.autoscaling.v2beta2.CrossVersionObjectReference",
-    "io.k8s.api.autoscaling.v2beta2.ExternalMetricSource",
-    "io.k8s.api.autoscaling.v2beta2.ExternalMetricStatus",
-    "io.k8s.api.autoscaling.v2beta2.HorizontalPodAutoscaler",
-    "io.k8s.api.autoscaling.v2beta2.HorizontalPodAutoscalerCondition",
-    "io.k8s.api.autoscaling.v2beta2.HorizontalPodAutoscalerList",
-    "io.k8s.api.autoscaling.v2beta2.HorizontalPodAutoscalerSpec",
-    "io.k8s.api.autoscaling.v2beta2.HorizontalPodAutoscalerStatus",
-    "io.k8s.api.autoscaling.v2beta2.MetricIdentifier",
-    "io.k8s.api.autoscaling.v2beta2.MetricSpec",
-    "io.k8s.api.autoscaling.v2beta2.MetricStatus",
-    "io.k8s.api.autoscaling.v2beta2.MetricTarget",
-    "io.k8s.api.autoscaling.v2beta2.MetricValueStatus",
-    "io.k8s.api.autoscaling.v2beta2.ObjectMetricSource",
-    "io.k8s.api.autoscaling.v2beta2.ObjectMetricStatus",
-    "io.k8s.api.autoscaling.v2beta2.PodsMetricSource",
-    "io.k8s.api.autoscaling.v2beta2.PodsMetricStatus",
-    "io.k8s.api.autoscaling.v2beta2.ResourceMetricSource",
-    "io.k8s.api.autoscaling.v2beta2.ResourceMetricStatus",
-    "io.k8s.api.batch.v1.Job",
-    "io.k8s.api.batch.v1.JobCondition",
-    "io.k8s.api.batch.v1.JobList",
-    "io.k8s.api.batch.v1.JobSpec",
-    "io.k8s.api.batch.v1.JobStatus",
-    "io.k8s.api.batch.v1beta1.CronJob",
-    "io.k8s.api.batch.v1beta1.CronJobList",
-    "io.k8s.api.batch.v1beta1.CronJobSpec",
-    "io.k8s.api.batch.v1beta1.CronJobStatus",
-    "io.k8s.api.batch.v1beta1.JobTemplateSpec",
-    "io.k8s.api.batch.v2alpha1.CronJob",
-    "io.k8s.api.batch.v2alpha1.CronJobList",
-    "io.k8s.api.batch.v2alpha1.CronJobSpec",
-    "io.k8s.api.batch.v2alpha1.CronJobStatus",
-    "io.k8s.api.batch.v2alpha1.JobTemplateSpec",
-    "io.k8s.api.certificates.v1beta1.CertificateSigningRequest",
-    "io.k8s.api.certificates.v1beta1.CertificateSigningRequestCondition",
-    "io.k8s.api.certificates.v1beta1.CertificateSigningRequestList",
-    "io.k8s.api.certificates.v1beta1.CertificateSigningRequestSpec",
-    "io.k8s.api.certificates.v1beta1.CertificateSigningRequestStatus",
-    "io.k8s.api.coordination.v1.Lease",
-    "io.k8s.api.coordination.v1.LeaseList",
-    "io.k8s.api.coordination.v1.LeaseSpec",
-    "io.k8s.api.coordination.v1beta1.Lease",
-    "io.k8s.api.coordination.v1beta1.LeaseList",
-    "io.k8s.api.coordination.v1beta1.LeaseSpec",
-    "io.k8s.api.core.v1.AWSElasticBlockStoreVolumeSource",
-    "io.k8s.api.core.v1.Affinity",
-    "io.k8s.api.core.v1.AttachedVolume",
-    "io.k8s.api.core.v1.AzureDiskVolumeSource",
-    "io.k8s.api.core.v1.AzureFilePersistentVolumeSource",
-    "io.k8s.api.core.v1.AzureFileVolumeSource",
-    "io.k8s.api.core.v1.Binding",
-    "io.k8s.api.core.v1.CSIPersistentVolumeSource",
-    "io.k8s.api.core.v1.CSIVolumeSource",
-    "io.k8s.api.core.v1.Capabilities",
-    "io.k8s.api.core.v1.CephFSPersistentVolumeSource",
-    "io.k8s.api.core.v1.CephFSVolumeSource",
-    "io.k8s.api.core.v1.CinderPersistentVolumeSource",
-    "io.k8s.api.core.v1.CinderVolumeSource",
-    "io.k8s.api.core.v1.ClientIPConfig",
-    "io.k8s.api.core.v1.ComponentCondition",
-    "io.k8s.api.core.v1.ComponentStatus",
-    "io.k8s.api.core.v1.ComponentStatusList",
-    "io.k8s.api.core.v1.ConfigMap",
-    "io.k8s.api.core.v1.ConfigMapEnvSource",
-    "io.k8s.api.core.v1.ConfigMapKeySelector",
-    "io.k8s.api.core.v1.ConfigMapList",
-    "io.k8s.api.core.v1.ConfigMapNodeConfigSource",
-    "io.k8s.api.core.v1.ConfigMapProjection",
-    "io.k8s.api.core.v1.ConfigMapVolumeSource",
-    "io.k8s.api.core.v1.Container",
-    "io.k8s.api.core.v1.ContainerImage",
-    "io.k8s.api.core.v1.ContainerPort",
-    "io.k8s.api.core.v1.ContainerState",
-    "io.k8s.api.core.v1.ContainerStateRunning",
-    "io.k8s.api.core.v1.ContainerStateTerminated",
-    "io.k8s.api.core.v1.ContainerStateWaiting",
-    "io.k8s.api.core.v1.ContainerStatus",
-    "io.k8s.api.core.v1.DaemonEndpoint",
-    "io.k8s.api.core.v1.DownwardAPIProjection",
-    "io.k8s.api.core.v1.DownwardAPIVolumeFile",
-    "io.k8s.api.core.v1.DownwardAPIVolumeSource",
-    "io.k8s.api.core.v1.EmptyDirVolumeSource",
-    "io.k8s.api.core.v1.EndpointAddress",
-    "io.k8s.api.core.v1.EndpointPort",
-    "io.k8s.api.core.v1.EndpointSubset",
-    "io.k8s.api.core.v1.Endpoints",
-    "io.k8s.api.core.v1.EndpointsList",
-    "io.k8s.api.core.v1.EnvFromSource",
-    "io.k8s.api.core.v1.EnvVar",
-    "io.k8s.api.core.v1.EnvVarSource",
-    "io.k8s.api.core.v1.EphemeralContainer",
-    "io.k8s.api.core.v1.Event",
-    "io.k8s.api.core.v1.EventList",
-    "io.k8s.api.core.v1.EventSeries",
-    "io.k8s.api.core.v1.EventSource",
-    "io.k8s.api.core.v1.ExecAction",
-    "io.k8s.api.core.v1.FCVolumeSource",
-    "io.k8s.api.core.v1.FlexPersistentVolumeSource",
-    "io.k8s.api.core.v1.FlexVolumeSource",
-    "io.k8s.api.core.v1.FlockerVolumeSource",
-    "io.k8s.api.core.v1.GCEPersistentDiskVolumeSource",
-    "io.k8s.api.core.v1.GitRepoVolumeSource",
-    "io.k8s.api.core.v1.GlusterfsPersistentVolumeSource",
-    "io.k8s.api.core.v1.GlusterfsVolumeSource",
-    "io.k8s.api.core.v1.HTTPGetAction",
-    "io.k8s.api.core.v1.HTTPHeader",
-    "io.k8s.api.core.v1.Handler",
-    "io.k8s.api.core.v1.HostAlias",
-    "io.k8s.api.core.v1.HostPathVolumeSource",
-    "io.k8s.api.core.v1.ISCSIPersistentVolumeSource",
-    "io.k8s.api.core.v1.ISCSIVolumeSource",
-    "io.k8s.api.core.v1.KeyToPath",
-    "io.k8s.api.core.v1.Lifecycle",
-    "io.k8s.api.core.v1.LimitRange",
-    "io.k8s.api.core.v1.LimitRangeItem",
-    "io.k8s.api.core.v1.LimitRangeList",
-    "io.k8s.api.core.v1.LimitRangeSpec",
-    "io.k8s.api.core.v1.LoadBalancerIngress",
-    "io.k8s.api.core.v1.LoadBalancerStatus",
-    "io.k8s.api.core.v1.LocalObjectReference",
-    "io.k8s.api.core.v1.LocalVolumeSource",
-    "io.k8s.api.core.v1.NFSVolumeSource",
-    "io.k8s.api.core.v1.Namespace",
-    "io.k8s.api.core.v1.NamespaceCondition",
-    "io.k8s.api.core.v1.NamespaceList",
-    "io.k8s.api.core.v1.NamespaceSpec",
-    "io.k8s.api.core.v1.NamespaceStatus",
-    "io.k8s.api.core.v1.Node",
-    "io.k8s.api.core.v1.NodeAddress",
-    "io.k8s.api.core.v1.NodeAffinity",
-    "io.k8s.api.core.v1.NodeCondition",
-    "io.k8s.api.core.v1.NodeConfigSource",
-    "io.k8s.api.core.v1.NodeConfigStatus",
-    "io.k8s.api.core.v1.NodeDaemonEndpoints",
-    "io.k8s.api.core.v1.NodeList",
-    "io.k8s.api.core.v1.NodeSelector",
-    "io.k8s.api.core.v1.NodeSelectorRequirement",
-    "io.k8s.api.core.v1.NodeSelectorTerm",
-    "io.k8s.api.core.v1.NodeSpec",
-    "io.k8s.api.core.v1.NodeStatus",
-    "io.k8s.api.core.v1.NodeSystemInfo",
-    "io.k8s.api.core.v1.ObjectFieldSelector",
-    "io.k8s.api.core.v1.ObjectReference",
-    "io.k8s.api.core.v1.PersistentVolume",
-    "io.k8s.api.core.v1.PersistentVolumeClaim",
-    "io.k8s.api.core.v1.PersistentVolumeClaimCondition",
-    "io.k8s.api.core.v1.PersistentVolumeClaimList",
-    "io.k8s.api.core.v1.PersistentVolumeClaimSpec",
-    "io.k8s.api.core.v1.PersistentVolumeClaimStatus",
-    "io.k8s.api.core.v1.PersistentVolumeClaimVolumeSource",
-    "io.k8s.api.core.v1.PersistentVolumeList",
-    "io.k8s.api.core.v1.PersistentVolumeSpec",
-    "io.k8s.api.core.v1.PersistentVolumeStatus",
-    "io.k8s.api.core.v1.PhotonPersistentDiskVolumeSource",
-    "io.k8s.api.core.v1.Pod",
-    "io.k8s.api.core.v1.PodAffinity",
-    "io.k8s.api.core.v1.PodAffinityTerm",
-    "io.k8s.api.core.v1.PodAntiAffinity",
-    "io.k8s.api.core.v1.PodCondition",
-    "io.k8s.api.core.v1.PodDNSConfig",
-    "io.k8s.api.core.v1.PodDNSConfigOption",
-    "io.k8s.api.core.v1.PodIP",
-    "io.k8s.api.core.v1.PodList",
-    "io.k8s.api.core.v1.PodReadinessGate",
-    "io.k8s.api.core.v1.PodSecurityContext",
-    "io.k8s.api.core.v1.PodSpec",
-    "io.k8s.api.core.v1.PodStatus",
-    "io.k8s.api.core.v1.PodTemplate",
-    "io.k8s.api.core.v1.PodTemplateList",
-    "io.k8s.api.core.v1.PodTemplateSpec",
-    "io.k8s.api.core.v1.PortworxVolumeSource",
-    "io.k8s.api.core.v1.PreferredSchedulingTerm",
-    "io.k8s.api.core.v1.Probe",
-    "io.k8s.api.core.v1.ProjectedVolumeSource",
-    "io.k8s.api.core.v1.QuobyteVolumeSource",
-    "io.k8s.api.core.v1.RBDPersistentVolumeSource",
-    "io.k8s.api.core.v1.RBDVolumeSource",
-    "io.k8s.api.core.v1.ReplicationController",
-    "io.k8s.api.core.v1.ReplicationControllerCondition",
-    "io.k8s.api.core.v1.ReplicationControllerList",
-    "io.k8s.api.core.v1.ReplicationControllerSpec",
-    "io.k8s.api.core.v1.ReplicationControllerStatus",
-    "io.k8s.api.core.v1.ResourceFieldSelector",
-    "io.k8s.api.core.v1.ResourceQuota",
-    "io.k8s.api.core.v1.ResourceQuotaList",
-    "io.k8s.api.core.v1.ResourceQuotaSpec",
-    "io.k8s.api.core.v1.ResourceQuotaStatus",
-    "io.k8s.api.core.v1.ResourceRequirements",
-    "io.k8s.api.core.v1.SELinuxOptions",
-    "io.k8s.api.core.v1.ScaleIOPersistentVolumeSource",
-    "io.k8s.api.core.v1.ScaleIOVolumeSource",
-    "io.k8s.api.core.v1.ScopeSelector",
-    "io.k8s.api.core.v1.ScopedResourceSelectorRequirement",
-    "io.k8s.api.core.v1.Secret",
-    "io.k8s.api.core.v1.SecretEnvSource",
-    "io.k8s.api.core.v1.SecretKeySelector",
-    "io.k8s.api.core.v1.SecretList",
-    "io.k8s.api.core.v1.SecretProjection",
-    "io.k8s.api.core.v1.SecretReference",
-    "io.k8s.api.core.v1.SecretVolumeSource",
-    "io.k8s.api.core.v1.SecurityContext",
-    "io.k8s.api.core.v1.Service",
-    "io.k8s.api.core.v1.ServiceAccount",
-    "io.k8s.api.core.v1.ServiceAccountList",
-    "io.k8s.api.core.v1.ServiceAccountTokenProjection",
-    "io.k8s.api.core.v1.ServiceList",
-    "io.k8s.api.core.v1.ServicePort",
-    "io.k8s.api.core.v1.ServiceSpec",
-    "io.k8s.api.core.v1.ServiceStatus",
-    "io.k8s.api.core.v1.SessionAffinityConfig",
-    "io.k8s.api.core.v1.StorageOSPersistentVolumeSource",
-    "io.k8s.api.core.v1.StorageOSVolumeSource",
-    "io.k8s.api.core.v1.Sysctl",
-    "io.k8s.api.core.v1.TCPSocketAction",
-    "io.k8s.api.core.v1.Taint",
-    "io.k8s.api.core.v1.Toleration",
-    "io.k8s.api.core.v1.TopologySelectorLabelRequirement",
-    "io.k8s.api.core.v1.TopologySelectorTerm",
-    "io.k8s.api.core.v1.TopologySpreadConstraint",
-    "io.k8s.api.core.v1.TypedLocalObjectReference",
-    "io.k8s.api.core.v1.Volume",
-    "io.k8s.api.core.v1.VolumeDevice",
-    "io.k8s.api.core.v1.VolumeMount",
-    "io.k8s.api.core.v1.VolumeNodeAffinity",
-    "io.k8s.api.core.v1.VolumeProjection",
-    "io.k8s.api.core.v1.VsphereVirtualDiskVolumeSource",
-    "io.k8s.api.core.v1.WeightedPodAffinityTerm",
-    "io.k8s.api.core.v1.WindowsSecurityContextOptions",
-    "io.k8s.api.discovery.v1alpha1.Endpoint",
-    "io.k8s.api.discovery.v1alpha1.EndpointConditions",
-    "io.k8s.api.discovery.v1alpha1.EndpointPort",
-    "io.k8s.api.discovery.v1alpha1.EndpointSlice",
-    "io.k8s.api.discovery.v1alpha1.EndpointSliceList",
-    "io.k8s.api.events.v1beta1.Event",
-    "io.k8s.api.events.v1beta1.EventList",
-    "io.k8s.api.events.v1beta1.EventSeries",
-    "io.k8s.api.extensions.v1beta1.AllowedCSIDriver",
-    "io.k8s.api.extensions.v1beta1.AllowedFlexVolume",
-    "io.k8s.api.extensions.v1beta1.AllowedHostPath",
-    "io.k8s.api.extensions.v1beta1.DaemonSet",
-    "io.k8s.api.extensions.v1beta1.DaemonSetCondition",
-    "io.k8s.api.extensions.v1beta1.DaemonSetList",
-    "io.k8s.api.extensions.v1beta1.DaemonSetSpec",
-    "io.k8s.api.extensions.v1beta1.DaemonSetStatus",
-    "io.k8s.api.extensions.v1beta1.DaemonSetUpdateStrategy",
-    "io.k8s.api.extensions.v1beta1.Deployment",
-    "io.k8s.api.extensions.v1beta1.DeploymentCondition",
-    "io.k8s.api.extensions.v1beta1.DeploymentList",
-    "io.k8s.api.extensions.v1beta1.DeploymentRollback",
-    "io.k8s.api.extensions.v1beta1.DeploymentSpec",
-    "io.k8s.api.extensions.v1beta1.DeploymentStatus",
-    "io.k8s.api.extensions.v1beta1.DeploymentStrategy",
-    "io.k8s.api.extensions.v1beta1.FSGroupStrategyOptions",
-    "io.k8s.api.extensions.v1beta1.HTTPIngressPath",
-    "io.k8s.api.extensions.v1beta1.HTTPIngressRuleValue",
-    "io.k8s.api.extensions.v1beta1.HostPortRange",
-    "io.k8s.api.extensions.v1beta1.IDRange",
-    "io.k8s.api.extensions.v1beta1.IPBlock",
-    "io.k8s.api.extensions.v1beta1.Ingress",
-    "io.k8s.api.extensions.v1beta1.IngressBackend",
-    "io.k8s.api.extensions.v1beta1.IngressList",
-    "io.k8s.api.extensions.v1beta1.IngressRule",
-    "io.k8s.api.extensions.v1beta1.IngressSpec",
-    "io.k8s.api.extensions.v1beta1.IngressStatus",
-    "io.k8s.api.extensions.v1beta1.IngressTLS",
-    "io.k8s.api.extensions.v1beta1.NetworkPolicy",
-    "io.k8s.api.extensions.v1beta1.NetworkPolicyEgressRule",
-    "io.k8s.api.extensions.v1beta1.NetworkPolicyIngressRule",
-    "io.k8s.api.extensions.v1beta1.NetworkPolicyList",
-    "io.k8s.api.extensions.v1beta1.NetworkPolicyPeer",
-    "io.k8s.api.extensions.v1beta1.NetworkPolicyPort",
-    "io.k8s.api.extensions.v1beta1.NetworkPolicySpec",
-    "io.k8s.api.extensions.v1beta1.PodSecurityPolicy",
-    "io.k8s.api.extensions.v1beta1.PodSecurityPolicyList",
-    "io.k8s.api.extensions.v1beta1.PodSecurityPolicySpec",
-    "io.k8s.api.extensions.v1beta1.ReplicaSet",
-    "io.k8s.api.extensions.v1beta1.ReplicaSetCondition",
-    "io.k8s.api.extensions.v1beta1.ReplicaSetList",
-    "io.k8s.api.extensions.v1beta1.ReplicaSetSpec",
-    "io.k8s.api.extensions.v1beta1.ReplicaSetStatus",
-    "io.k8s.api.extensions.v1beta1.RollbackConfig",
-    "io.k8s.api.extensions.v1beta1.RollingUpdateDaemonSet",
-    "io.k8s.api.extensions.v1beta1.RollingUpdateDeployment",
-    "io.k8s.api.extensions.v1beta1.RunAsGroupStrategyOptions",
-    "io.k8s.api.extensions.v1beta1.RunAsUserStrategyOptions",
-    "io.k8s.api.extensions.v1beta1.RuntimeClassStrategyOptions",
-    "io.k8s.api.extensions.v1beta1.SELinuxStrategyOptions",
-    "io.k8s.api.extensions.v1beta1.Scale",
-    "io.k8s.api.extensions.v1beta1.ScaleSpec",
-    "io.k8s.api.extensions.v1beta1.ScaleStatus",
-    "io.k8s.api.extensions.v1beta1.SupplementalGroupsStrategyOptions",
-    "io.k8s.api.networking.v1.IPBlock",
-    "io.k8s.api.networking.v1.NetworkPolicy",
-    "io.k8s.api.networking.v1.NetworkPolicyEgressRule",
-    "io.k8s.api.networking.v1.NetworkPolicyIngressRule",
-    "io.k8s.api.networking.v1.NetworkPolicyList",
-    "io.k8s.api.networking.v1.NetworkPolicyPeer",
-    "io.k8s.api.networking.v1.NetworkPolicyPort",
-    "io.k8s.api.networking.v1.NetworkPolicySpec",
-    "io.k8s.api.networking.v1beta1.HTTPIngressPath",
-    "io.k8s.api.networking.v1beta1.HTTPIngressRuleValue",
-    "io.k8s.api.networking.v1beta1.Ingress",
-    "io.k8s.api.networking.v1beta1.IngressBackend",
-    "io.k8s.api.networking.v1beta1.IngressList",
-    "io.k8s.api.networking.v1beta1.IngressRule",
-    "io.k8s.api.networking.v1beta1.IngressSpec",
-    "io.k8s.api.networking.v1beta1.IngressStatus",
-    "io.k8s.api.networking.v1beta1.IngressTLS",
-    "io.k8s.api.node.v1alpha1.Overhead",
-    "io.k8s.api.node.v1alpha1.RuntimeClass",
-    "io.k8s.api.node.v1alpha1.RuntimeClassList",
-    "io.k8s.api.node.v1alpha1.RuntimeClassSpec",
-    "io.k8s.api.node.v1alpha1.Scheduling",
-    "io.k8s.api.node.v1beta1.Overhead",
-    "io.k8s.api.node.v1beta1.RuntimeClass",
-    "io.k8s.api.node.v1beta1.RuntimeClassList",
-    "io.k8s.api.node.v1beta1.Scheduling",
-    "io.k8s.api.policy.v1beta1.AllowedCSIDriver",
-    "io.k8s.api.policy.v1beta1.AllowedFlexVolume",
-    "io.k8s.api.policy.v1beta1.AllowedHostPath",
-    "io.k8s.api.policy.v1beta1.Eviction",
-    "io.k8s.api.policy.v1beta1.FSGroupStrategyOptions",
-    "io.k8s.api.policy.v1beta1.HostPortRange",
-    "io.k8s.api.policy.v1beta1.IDRange",
-    "io.k8s.api.policy.v1beta1.PodDisruptionBudget",
-    "io.k8s.api.policy.v1beta1.PodDisruptionBudgetList",
-    "io.k8s.api.policy.v1beta1.PodDisruptionBudgetSpec",
-    "io.k8s.api.policy.v1beta1.PodDisruptionBudgetStatus",
-    "io.k8s.api.policy.v1beta1.PodSecurityPolicy",
-    "io.k8s.api.policy.v1beta1.PodSecurityPolicyList",
-    "io.k8s.api.policy.v1beta1.PodSecurityPolicySpec",
-    "io.k8s.api.policy.v1beta1.RunAsGroupStrategyOptions",
-    "io.k8s.api.policy.v1beta1.RunAsUserStrategyOptions",
-    "io.k8s.api.policy.v1beta1.RuntimeClassStrategyOptions",
-    "io.k8s.api.policy.v1beta1.SELinuxStrategyOptions",
-    "io.k8s.api.policy.v1beta1.SupplementalGroupsStrategyOptions",
-    "io.k8s.api.rbac.v1.AggregationRule",
-    "io.k8s.api.rbac.v1.ClusterRole",
-    "io.k8s.api.rbac.v1.ClusterRoleBinding",
-    "io.k8s.api.rbac.v1.ClusterRoleBindingList",
-    "io.k8s.api.rbac.v1.ClusterRoleList",
-    "io.k8s.api.rbac.v1.PolicyRule",
-    "io.k8s.api.rbac.v1.Role",
-    "io.k8s.api.rbac.v1.RoleBinding",
-    "io.k8s.api.rbac.v1.RoleBindingList",
-    "io.k8s.api.rbac.v1.RoleList",
-    "io.k8s.api.rbac.v1.RoleRef",
-    "io.k8s.api.rbac.v1.Subject",
-    "io.k8s.api.rbac.v1alpha1.AggregationRule",
-    "io.k8s.api.rbac.v1alpha1.ClusterRole",
-    "io.k8s.api.rbac.v1alpha1.ClusterRoleBinding",
-    "io.k8s.api.rbac.v1alpha1.ClusterRoleBindingList",
-    "io.k8s.api.rbac.v1alpha1.ClusterRoleList",
-    "io.k8s.api.rbac.v1alpha1.PolicyRule",
-    "io.k8s.api.rbac.v1alpha1.Role",
-    "io.k8s.api.rbac.v1alpha1.RoleBinding",
-    "io.k8s.api.rbac.v1alpha1.RoleBindingList",
-    "io.k8s.api.rbac.v1alpha1.RoleList",
-    "io.k8s.api.rbac.v1alpha1.RoleRef",
-    "io.k8s.api.rbac.v1alpha1.Subject",
-    "io.k8s.api.rbac.v1beta1.AggregationRule",
-    "io.k8s.api.rbac.v1beta1.ClusterRole",
-    "io.k8s.api.rbac.v1beta1.ClusterRoleBinding",
-    "io.k8s.api.rbac.v1beta1.ClusterRoleBindingList",
-    "io.k8s.api.rbac.v1beta1.ClusterRoleList",
-    "io.k8s.api.rbac.v1beta1.PolicyRule",
-    "io.k8s.api.rbac.v1beta1.Role",
-    "io.k8s.api.rbac.v1beta1.RoleBinding",
-    "io.k8s.api.rbac.v1beta1.RoleBindingList",
-    "io.k8s.api.rbac.v1beta1.RoleList",
-    "io.k8s.api.rbac.v1beta1.RoleRef",
-    "io.k8s.api.rbac.v1beta1.Subject",
-    "io.k8s.api.scheduling.v1.PriorityClass",
-    "io.k8s.api.scheduling.v1.PriorityClassList",
-    "io.k8s.api.scheduling.v1alpha1.PriorityClass",
-    "io.k8s.api.scheduling.v1alpha1.PriorityClassList",
-    "io.k8s.api.scheduling.v1beta1.PriorityClass",
-    "io.k8s.api.scheduling.v1beta1.PriorityClassList",
-    "io.k8s.api.settings.v1alpha1.PodPreset",
-    "io.k8s.api.settings.v1alpha1.PodPresetList",
-    "io.k8s.api.settings.v1alpha1.PodPresetSpec",
-    "io.k8s.api.storage.v1.StorageClass",
-    "io.k8s.api.storage.v1.StorageClassList",
-    "io.k8s.api.storage.v1.VolumeAttachment",
-    "io.k8s.api.storage.v1.VolumeAttachmentList",
-    "io.k8s.api.storage.v1.VolumeAttachmentSource",
-    "io.k8s.api.storage.v1.VolumeAttachmentSpec",
-    "io.k8s.api.storage.v1.VolumeAttachmentStatus",
-    "io.k8s.api.storage.v1.VolumeError",
-    "io.k8s.api.storage.v1alpha1.VolumeAttachment",
-    "io.k8s.api.storage.v1alpha1.VolumeAttachmentList",
-    "io.k8s.api.storage.v1alpha1.VolumeAttachmentSource",
-    "io.k8s.api.storage.v1alpha1.VolumeAttachmentSpec",
-    "io.k8s.api.storage.v1alpha1.VolumeAttachmentStatus",
-    "io.k8s.api.storage.v1alpha1.VolumeError",
-    "io.k8s.api.storage.v1beta1.CSIDriver",
-    "io.k8s.api.storage.v1beta1.CSIDriverList",
-    "io.k8s.api.storage.v1beta1.CSIDriverSpec",
-    "io.k8s.api.storage.v1beta1.CSINode",
-    "io.k8s.api.storage.v1beta1.CSINodeDriver",
-    "io.k8s.api.storage.v1beta1.CSINodeList",
-    "io.k8s.api.storage.v1beta1.CSINodeSpec",
-    "io.k8s.api.storage.v1beta1.StorageClass",
-    "io.k8s.api.storage.v1beta1.StorageClassList",
-    "io.k8s.api.storage.v1beta1.VolumeAttachment",
-    "io.k8s.api.storage.v1beta1.VolumeAttachmentList",
-    "io.k8s.api.storage.v1beta1.VolumeAttachmentSource",
-    "io.k8s.api.storage.v1beta1.VolumeAttachmentSpec",
-    "io.k8s.api.storage.v1beta1.VolumeAttachmentStatus",
-    "io.k8s.api.storage.v1beta1.VolumeError",
-    "io.k8s.api.storage.v1beta1.VolumeNodeResources",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceColumnDefinition",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceConversion",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceDefinition",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceDefinitionCondition",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceDefinitionList",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceDefinitionNames",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceDefinitionSpec",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceDefinitionStatus",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceDefinitionVersion",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceSubresourceScale",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceSubresourceStatus",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceSubresources",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.CustomResourceValidation",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.ExternalDocumentation",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.JSON",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.JSONSchemaProps",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.JSONSchemaPropsOrArray",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.JSONSchemaPropsOrBool",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.JSONSchemaPropsOrStringArray",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.ServiceReference",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.WebhookClientConfig",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.WebhookConversion",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceColumnDefinition",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceConversion",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinition",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionCondition",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionList",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionNames",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionSpec",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionStatus",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceDefinitionVersion",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceSubresourceScale",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceSubresourceStatus",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceSubresources",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.CustomResourceValidation",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.ExternalDocumentation",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.JSON",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.JSONSchemaProps",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.JSONSchemaPropsOrArray",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.JSONSchemaPropsOrBool",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.JSONSchemaPropsOrStringArray",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.ServiceReference",
-    "io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1beta1.WebhookClientConfig",
-    "io.k8s.apimachinery.pkg.api.resource.Quantity",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.APIGroup",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.APIGroupList",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.APIResource",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.APIResourceList",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.APIVersions",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.DeleteOptions",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.FieldsV1",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.GroupVersionForDiscovery",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.LabelSelector",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.LabelSelectorRequirement",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.ManagedFieldsEntry",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.MicroTime",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.OwnerReference",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.Patch",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.Preconditions",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.ServerAddressByClientCIDR",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.Status",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.StatusCause",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.StatusDetails",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.Time",
-    "io.k8s.apimachinery.pkg.apis.meta.v1.WatchEvent",
-    "io.k8s.apimachinery.pkg.runtime.RawExtension",
-    "io.k8s.apimachinery.pkg.util.intstr.IntOrString",
-    "io.k8s.apimachinery.pkg.version.Info",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIService",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceCondition",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceList",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceSpec",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIServiceStatus",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.ServiceReference",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1beta1.APIService",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1beta1.APIServiceCondition",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1beta1.APIServiceList",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1beta1.APIServiceSpec",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1beta1.APIServiceStatus",
-    "io.k8s.kube-aggregator.pkg.apis.apiregistration.v1beta1.ServiceReference"
-  ]
-  #+end_EXAMPLE
+    #+END_SRC
 
- They have a consistent naming structure. 
+    #+RESULTS: Sample of definitions without group-version-kind
+    #+begin_src sql-mode
+                definition            
+    ----------------------------------
+     io.k8s.api.core.v1.PodIP
+     io.k8s.api.core.v1.Probe
+     io.k8s.api.core.v1.Taint
+     io.k8s.api.core.v1.EnvVar
+     io.k8s.api.core.v1.Sysctl
+     io.k8s.api.core.v1.Volume
+     io.k8s.api.core.v1.Handler
+     io.k8s.api.core.v1.PodSpec
+     io.k8s.api.rbac.v1.RoleRef
+     io.k8s.api.rbac.v1.Subject
+     io.k8s.api.batch.v1.JobSpec
+     io.k8s.api.core.v1.Affinity
+     io.k8s.api.core.v1.NodeSpec
+     io.k8s.api.core.v1.Container
+     io.k8s.api.core.v1.HostAlias
+     io.k8s.api.core.v1.KeyToPath
+     io.k8s.api.core.v1.Lifecycle
+     io.k8s.api.core.v1.PodStatus
+     io.k8s.api.batch.v1.JobStatus
+     io.k8s.api.core.v1.ExecAction
+     io.k8s.api.core.v1.HTTPHeader
+     io.k8s.api.core.v1.NodeStatus
+     io.k8s.api.core.v1.Toleration
+     io.k8s.api.rbac.v1.PolicyRule
+     io.k8s.api.core.v1.EventSeries
+     io.k8s.api.core.v1.EventSource
+     io.k8s.api.core.v1.NodeAddress
+     io.k8s.api.core.v1.PodAffinity
+     io.k8s.api.core.v1.ServicePort
+     io.k8s.api.core.v1.ServiceSpec
+     io.k8s.api.core.v1.VolumeMount
+     io.k8s.api.core.v1.Capabilities
+     io.k8s.api.core.v1.EndpointPort
+     io.k8s.api.core.v1.EnvVarSource
+     io.k8s.api.core.v1.NodeAffinity
+     io.k8s.api.core.v1.NodeSelector
+     io.k8s.api.core.v1.PodCondition
+     io.k8s.api.core.v1.PodDNSConfig
+     io.k8s.api.core.v1.VolumeDevice
+     io.k8s.api.rbac.v1beta1.RoleRef
+     io.k8s.api.rbac.v1beta1.Subject
+     io.k8s.api.apps.v1.DaemonSetSpec
+     io.k8s.api.batch.v1.JobCondition
+     io.k8s.api.core.v1.ContainerPort
+     io.k8s.api.core.v1.EnvFromSource
+     io.k8s.api.core.v1.HTTPGetAction
+     io.k8s.api.core.v1.NamespaceSpec
+     io.k8s.api.core.v1.NodeCondition
+     io.k8s.api.core.v1.ScopeSelector
+     io.k8s.api.core.v1.ServiceStatus
+    (50 rows)
 
+    #+end_src
+    
+    From this sampling, and comparing it to the swagger, it looks like these don't directly connect to an opID, meaning the path's param->body-in->body->$ref won't point to these definitions.  they are used in reference to other definitions, but that's it. 
 
+    We can do a semi-sanity check by counting the number of distinct param_schemas in our api_operation_param view, since this would hold the reference to an event's definition.  I would expect it to be at or below 194.  Higher than that means we have operations whose parameters point to a definition without a group-version-kind.
+    #+NAME: distinct operation_params
+    #+BEGIN_SRC sql-mode
+      SELECT 
+      count( distinct param_schema )
+      FROM api_operation_parameter
+      WHERE NOT (param_schema = ANY('{integer, string, boolean}'));
+    #+END_SRC
 
+    #+RESULTS: distinct operation_params
+    #+begin_src sql-mode
+     count 
+    -------
+       104
+    (1 row)
+
+    #+end_src
+    
+    That looks reasonable.  
+
+*** Conclusion  
+    I think we could reference the definition simply using the objectRef and requestObject in the audit_event, at least enough to explore our field coverage again.
 
 ** TODO Rebuild initial Podspec query to not use operation_id
+   Here we have our original. 
+*** Original PodSpec Materialized View
+ #+NAME: view podspec_field_coverage_material
+ #+BEGIN_SRC sql-mode
+   CREATE MATERIALIZED VIEW "public"."podspec_field_coverage_material" AS 
+   SELECT DISTINCT
+     audit_event.operation_id,
+     jsonb_object_keys(audit_event.request_object -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits,
+     split_part(audit_event.useragent, '--', 2) as test,
+     split_part(audit_event.useragent, '--', 1) as useragent
+     FROM audit_event,
+          LATERAL
+            jsonb_object_keys(audit_event.request_object -> 'spec'::text)
+            event_field(event_field)
+    WHERE (audit_event.request_object ->> 'kind'::text) = 'Pod'::text
+      AND audit_event.operation_id !~~ '%alpha%'::text
+      AND audit_event.operation_id !~~ '%beta%'::text
+    GROUP BY operation_id, podspec_field, useragent
+   UNION
+   SELECT DISTINCT
+     audit_event.operation_id,
+     jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits,
+     split_part(audit_event.useragent, '--', 2) as test,
+     split_part(audit_event.useragent, '--', 1) as useragent
+     FROM audit_event,
+          LATERAL
+            jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text)
+            event_field(event_field)
+    WHERE (audit_event.request_object ->> 'kind'::text) = 'PodTemplate'::text
+      AND audit_event.operation_id !~~ '%alpha%'::text
+      AND audit_event.operation_id !~~ '%beta%'::text
+    GROUP BY operation_id, podspec_field, useragent
+   UNION
+   SELECT DISTINCT
+     audit_event.operation_id,
+     jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits,
+     split_part(audit_event.useragent, '--', 2) as test,
+     split_part(audit_event.useragent, '--', 1) as useragent
+     FROM audit_event,
+          LATERAL
+            jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text)
+            event_field(event_field)
+    WHERE (audit_event.request_object->>'kind' = 'DaemonSet'
+      OR  audit_event.request_object->>'kind' = 'Deployment'
+      OR  audit_event.request_object->>'kind' = 'ReplicationController'
+      OR  audit_event.request_object->>'kind' = 'StatefulSet'
+      OR  audit_event.request_object->>'kind' = 'Job'
+      OR  audit_event.request_object->>'kind' = 'ReplicaSet')
+      AND audit_event.operation_id !~~ '%alpha%'::text
+      AND audit_event.operation_id !~~ '%beta%'::text
+    GROUP BY operation_id, podspec_field, useragent;
+ #+END_SRC
+*** Revised Podspec Materialized View
+    We are using operation_id in two areas, as a column to select and as a part of our WHERE clause.  
+    I don't think we use the column in any of the cascading views. and could likely just remove it.
+    #+BEGIN_SRC sql-mode
+drop materialized view "public"."revised_podspec_field_coverage_material" cascade;
+    #+END_SRC
+
+    #+RESULTS:
+    #+begin_src sql-mode
+    DROP MATERIALIZED VIEW
+    #+end_src
+
+
+ #+NAME: view revised_podspec_field_coverage_material
+ #+BEGIN_SRC sql-mode
+   CREATE MATERIALIZED VIEW "public"."revised_podspec_field_coverage_material" AS 
+   SELECT DISTINCT
+     (audit_event.data -> 'objectRef' ->> 'apiVersion') as version,
+     (audit_event.data->'objectRef'->>'apiGroup') as api_group,
+     (audit_event.data->'requestObject'->>'kind') as kind,
+     jsonb_object_keys(audit_event.request_object -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits,
+     split_part(audit_event.useragent, '--', 2) as test,
+     split_part(audit_event.useragent, '--', 1) as useragent
+     FROM audit_event,
+          LATERAL
+            jsonb_object_keys(audit_event.request_object -> 'spec'::text)
+            event_field(event_field)
+    WHERE (audit_event.request_object ->> 'kind'::text) = 'Pod'::text
+      AND audit_event.operation_id !~~ '%alpha%'::text
+      AND audit_event.operation_id !~~ '%beta%'::text
+    GROUP BY version, api_group, kind, podspec_field, useragent
+   UNION
+   SELECT DISTINCT
+     (audit_event.data -> 'objectRef' ->> 'apiVersion') as version,
+     (audit_event.data->'objectRef'->>'apiGroup') as api_group,
+     (audit_event.data->'requestObject'->>'kind') as kind,
+     jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits,
+     split_part(audit_event.useragent, '--', 2) as test,
+     split_part(audit_event.useragent, '--', 1) as useragent
+     FROM audit_event,
+          LATERAL
+            jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text)
+            event_field(event_field)
+    WHERE (audit_event.request_object ->> 'kind'::text) = 'PodTemplate'::text
+      AND audit_event.operation_id !~~ '%alpha%'::text
+      AND audit_event.operation_id !~~ '%beta%'::text
+    GROUP BY version, api_group, kind, podspec_field, useragent
+   UNION
+   SELECT DISTINCT
+     (audit_event.data -> 'objectRef' ->> 'apiVersion') as version,
+     (audit_event.data->'objectRef'->>'apiGroup') as api_group,
+     (audit_event.data->'requestObject'->>'kind') as kind,
+     jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits,
+     split_part(audit_event.useragent, '--', 2) as test,
+     split_part(audit_event.useragent, '--', 1) as useragent
+     FROM audit_event,
+          LATERAL
+            jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text)
+            event_field(event_field)
+    WHERE (audit_event.request_object->>'kind' = 'DaemonSet'
+      OR  audit_event.request_object->>'kind' = 'Deployment'
+      OR  audit_event.request_object->>'kind' = 'ReplicationController'
+      OR  audit_event.request_object->>'kind' = 'StatefulSet'
+      OR  audit_event.request_object->>'kind' = 'Job'
+      OR  audit_event.request_object->>'kind' = 'ReplicaSet')
+      AND audit_event.operation_id !~~ '%alpha%'::text
+      AND audit_event.operation_id !~~ '%beta%'::text
+    GROUP BY version, api_group, kind, podspec_field, useragent;
+ #+END_SRC
+
+ #+RESULTS: view revised_podspec_field_coverage_material
+ #+begin_src sql-mode
+ SELECT 6362
+ #+end_src
+
+
+ #+BEGIN_SRC sql-mode
+   select
+     (a.data -> 'objectRef' ->> 'apiVersion') as version,
+     (a.data->'objectRef'->>'apiGroup') as api_group,
+     (a.data->'requestObject'->>'kind') as kind 
+     from audit_event as a;
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql-mode
+  version  |                      api_group                      |              kind              
+ ----------+-----------------------------------------------------+--------------------------------
+  v1       | apiregistration.k8s.io                              | APIService
+  v1       | apiregistration.k8s.io                              | DeleteOptions
+  v1       | apiregistration.k8s.io                              | 
+  v1       | apps                                                | ControllerRevision
+  v1       | apps                                                | DaemonSet
+  v1       | apps                                                | DeleteOptions
+  v1       | apps                                                | Deployment
+  v1       | apps                                                | ReplicaSet
+  v1       | apps                                                | StatefulSet
+  v1       | apps                                                | 
+  v1       | authentication.k8s.io                               | 
+  v1       | authorization.k8s.io                                | 
+  v1       | autoscaling                                         | DeleteOptions
+  v1       | autoscaling                                         | HorizontalPodAutoscaler
+  v1       | autoscaling                                         | 
+  v1       | batch                                               | DeleteOptions
+  v1       | batch                                               | Job
+  v1       | batch                                               | 
+  v1       | coordination.k8s.io                                 | DeleteOptions
+  v1       | coordination.k8s.io                                 | 
+  v1       | crd-publish-openapi-test-empty.k8s.io               | 
+  v1       | crd-publish-openapi-test-foo.k8s.io                 | 
+  v1       | discovery-crd-test.k8s.io                           | 
+  v1       | kubectl-crd-test.k8s.io                             | 
+  v1       | networking.k8s.io                                   | DeleteOptions
+  v1       | networking.k8s.io                                   | 
+  v1       | rbac.authorization.k8s.io                           | ClusterRole
+  v1       | rbac.authorization.k8s.io                           | ClusterRoleBinding
+  v1       | rbac.authorization.k8s.io                           | DeleteOptions
+  v1       | rbac.authorization.k8s.io                           | Role
+  v1       | rbac.authorization.k8s.io                           | RoleBinding
+  v1       | rbac.authorization.k8s.io                           | 
+  v1       | resourcequota-crd-test.k8s.io                       | 
+  v1       | scheduling.k8s.io                                   | DeleteOptions
+  v1       | scheduling.k8s.io                                   | PriorityClass
+  v1       | scheduling.k8s.io                                   | 
+  v1       | stable.example.com                                  | 
+  v1       | storage.k8s.io                                      | DeleteOptions
+  v1       | storage.k8s.io                                      | StorageClass
+  v1       | storage.k8s.io                                      | VolumeAttachment
+  v1       | storage.k8s.io                                      | 
+  v1       | webhook-crd-test.k8s.io                             | 
+  v1       | webhook-multiversion-crd-test.k8s.io                | 
+  v1       |                                                     | Binding
+  v1       |                                                     | DeleteOptions
+  v1       |                                                     | Endpoints
+  v1       |                                                     | LimitRange
+  v1       |                                                     | Namespace
+  v1       |                                                     | Node
+  v1       |                                                     | PersistentVolume
+  v1       |                                                     | PersistentVolumeClaim
+  v1       |                                                     | Pod
+  v1       |                                                     | PodTemplate
+  v1       |                                                     | ReplicationController
+  v1       |                                                     | ResourceQuota
+  v1       |                                                     | Service
+  v1       |                                                     | ServiceAccount
+  v1       |                                                     | 
+  v1alpha1 | scalingpolicy.kope.io                               | 
+  v1alpha1 | settings.k8s.io                                     | DeleteOptions
+  v1alpha1 | settings.k8s.io                                     | 
+  v1alpha1 | snapshot.storage.k8s.io                             | 
+  v1alpha1 | wardle.k8s.io                                       | 
+  v1beta1  | admissionregistration.k8s.io                        | MutatingWebhookConfiguration
+  v1beta1  | admissionregistration.k8s.io                        | ValidatingWebhookConfiguration
+  v1beta1  | admissionregistration.k8s.io                        | 
+  v1beta1  | apiextensions.k8s.io                                | CustomResourceDefinition
+  v1beta1  | apiextensions.k8s.io                                | 
+  v1beta1  | apiregistration.k8s.io                              | APIService
+  v1beta1  | apiregistration.k8s.io                              | 
+  v1beta1  | authorization.k8s.io                                | SubjectAccessReview
+  v1beta1  | batch                                               | CronJob
+  v1beta1  | batch                                               | DeleteOptions
+  v1beta1  | batch                                               | 
+  v1beta1  | certificates.k8s.io                                 | CertificateSigningRequest
+  v1beta1  | certificates.k8s.io                                 | 
+  v1beta1  | coordination.k8s.io                                 | 
+  v1beta1  | crd-publish-openapi-test-waldo.k8s.io               | 
+  v1beta1  | events.k8s.io                                       | DeleteOptions
+  v1beta1  | events.k8s.io                                       | 
+  v1beta1  | extensions                                          | DeleteOptions
+  v1beta1  | extensions                                          | Deployment
+  v1beta1  | extensions                                          | DeploymentRollback
+  v1beta1  | extensions                                          | Scale
+  v1beta1  | extensions                                          | 
+  v1beta1  | metrics.k8s.io                                      | 
+  v1beta1  | mygroup.example.com                                 | 
+  v1beta1  | networking.k8s.io                                   | DeleteOptions
+  v1beta1  | networking.k8s.io                                   | 
+  v1beta1  | node.k8s.io                                         | RuntimeClass
+  v1beta1  | node.k8s.io                                         | 
+  v1beta1  | policy                                              | DeleteOptions
+  v1beta1  | policy                                              | PodDisruptionBudget
+  v1beta1  | policy                                              | PodSecurityPolicy
+  v1beta1  | policy                                              | 
+  v1beta1  | rbac.authorization.k8s.io                           | ClusterRole
+  v1beta1  | rbac.authorization.k8s.io                           | ClusterRoleBinding
+  v1beta1  | rbac.authorization.k8s.io                           | DeleteOptions
+  v1beta1  | rbac.authorization.k8s.io                           | Role
+  v1beta1  | rbac.authorization.k8s.io                           | RoleBinding
+  v1beta1  | rbac.authorization.k8s.io                           | 
+  v1beta1  | scheduling.k8s.io                                   | PriorityClass
+  v1beta1  | scheduling.k8s.io                                   | 
+  v1beta1  | storage.k8s.io                                      | CSIDriver
+  v1beta1  | storage.k8s.io                                      | CSINode
+  v1beta1  | storage.k8s.io                                      | VolumeAttachment
+  v1beta1  | storage.k8s.io                                      | 
+  v2       | stable.example.com                                  | 
+  v2       | webhook-multiversion-crd-test.k8s.io                | 
+  v2alpha1 | batch                                               | CronJob
+  v2alpha1 | batch                                               | 
+  v3       | crd-publish-openapi-test-multi-ver.k8s.io           | 
+  v4       | crd-publish-openapi-test-common-group.k8s.io        | 
+  v4       | crd-publish-openapi-test-multi-ver.k8s.io           | 
+  v5       | crd-publish-openapi-test-common-group.k8s.io        | 
+  v5       | crd-publish-openapi-test-multi-to-single-ver.k8s.io | 
+  v6       | crd-publish-openapi-test-common-group.k8s.io        | 
+           |                                                     | 
+ (118 rows)
+
+ #+end_src
+
 ** TODO Move down line of cascading views based on this change
+*** 601: Revised PodSpec Field Coverage View
+
+ #+NAME: view podspec_field_coverage
+ #+BEGIN_SRC sql-mode
+ create view revised_podspec_field_coverage as select * from revised_podspec_field_coverage_material;
+ #+END_SRC
+
+ #+RESULTS: view podspec_field_coverage
+ #+begin_src sql-mode
+ CREATE VIEW
+ #+end_src
+
+ #+BEGIN_SRC sql-mode
+SELECT  (
+        SELECT COUNT(*)
+        FROM   podspec_field_coverage
+        ) AS original_count,
+        (
+        SELECT COUNT(*)
+        FROM   revised_podspec_field_coverage
+        ) AS revised_count;
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql-mode
+  original_count | revised_count 
+ ----------------+---------------
+            6572 |          6572
+ (1 row)
+
+ #+end_src
+
 * Footnotes
+** PodSpec Field Coverage
+   :PROPERTIES:
+   :header-args:sql-mode+: :results silent
+   :END:
+*** 600: PodSpec Materialized View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/600_podspec_field_coverage_material.up.sql
+    :END:
+ #+NAME: view podspec_field_coverage_material
+ #+BEGIN_SRC sql-mode
+   CREATE MATERIALIZED VIEW "public"."podspec_field_coverage_material" AS 
+   SELECT DISTINCT
+     audit_event.operation_id,
+     jsonb_object_keys(audit_event.request_object -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits,
+     split_part(audit_event.useragent, '--', 2) as test,
+     split_part(audit_event.useragent, '--', 1) as useragent
+     FROM audit_event,
+          LATERAL
+            jsonb_object_keys(audit_event.request_object -> 'spec'::text)
+            event_field(event_field)
+    WHERE (audit_event.request_object ->> 'kind'::text) = 'Pod'::text
+      AND audit_event.operation_id !~~ '%alpha%'::text
+      AND audit_event.operation_id !~~ '%beta%'::text
+    GROUP BY operation_id, podspec_field, useragent
+   UNION
+   SELECT DISTINCT
+     audit_event.operation_id,
+     jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits,
+     split_part(audit_event.useragent, '--', 2) as test,
+     split_part(audit_event.useragent, '--', 1) as useragent
+     FROM audit_event,
+          LATERAL
+            jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text)
+            event_field(event_field)
+    WHERE (audit_event.request_object ->> 'kind'::text) = 'PodTemplate'::text
+      AND audit_event.operation_id !~~ '%alpha%'::text
+      AND audit_event.operation_id !~~ '%beta%'::text
+    GROUP BY operation_id, podspec_field, useragent
+   UNION
+   SELECT DISTINCT
+     audit_event.operation_id,
+     jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits,
+     split_part(audit_event.useragent, '--', 2) as test,
+     split_part(audit_event.useragent, '--', 1) as useragent
+     FROM audit_event,
+          LATERAL
+            jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text)
+            event_field(event_field)
+    WHERE (audit_event.request_object->>'kind' = 'DaemonSet'
+      OR  audit_event.request_object->>'kind' = 'Deployment'
+      OR  audit_event.request_object->>'kind' = 'ReplicationController'
+      OR  audit_event.request_object->>'kind' = 'StatefulSet'
+      OR  audit_event.request_object->>'kind' = 'Job'
+      OR  audit_event.request_object->>'kind' = 'ReplicaSet')
+      AND audit_event.operation_id !~~ '%alpha%'::text
+      AND audit_event.operation_id !~~ '%beta%'::text
+    GROUP BY operation_id, podspec_field, useragent;
+ #+END_SRC
+*** 601: PodSpec Field Coverage View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/601_view_podspec_field_coverage.up.sql
+    :END:
+ #+NAME: view podspec_field_coverage
+ #+BEGIN_SRC sql-mode
+ create view podspec_field_coverage as select * from podspec_field_coverage_material;
+ #+END_SRC
+*** 602: PodSpec Field Summary View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/602_view_podspec_field_summary.up.sql
+    :END:
+ #+NAME: view podspec_field_summary
+ #+BEGIN_SRC sql-mode
+   create view podspec_field_summary as
+   select distinct field_name as podspec_field,
+                   0 as other_hits,
+                   0 as e2e_hits,
+                   0 as conf_hits
+     from api_schema_field
+    where field_schema like '%PodSpec%'
+    UNION
+   select
+     podspec_field,
+     sum(hits) as other_hits,
+     0 as e2e_hits,
+     0 as conf_hits
+     from podspec_field_coverage
+    where useragent not like 'e2e.test%'
+    group by podspec_field
+    UNION
+   select
+     podspec_field,
+     0 as other_hits,
+     sum(hits) as e2e_hits,
+     0 as conf_hits
+     from podspec_field_coverage
+    where useragent like 'e2e.test%'
+      and test not like '%Conformance%'
+    group by podspec_field
+    UNION
+   select
+     podspec_field,
+     0 as other_hits,
+     0 as e2e_hits,
+     sum(hits) as conf_hits
+     from podspec_field_coverage
+    where useragent like 'e2e.test%'
+      and test like '%Conformance%'
+    group by podspec_field;
+ #+END_SRC
+*** 604: PodSpec Field mid Report View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/604_view_podspec_field_report.up.sql
+    :END:
+ #+NAME: podspec_field_hits
+ #+BEGIN_SRC sql-mode
+   create or replace view podspec_field_mid_report as
+   select distinct
+     field_name as podspec_field,
+     0 as other_hits,
+     0 as e2e_hits,
+     0 as conf_hits,
+     release,
+     deprecated,
+     feature_gated as gated,
+     required,
+     field_kind,
+     field_type
+     from api_schema_field
+    where field_schema like '%PodSpec%'
+    UNION
+   select distinct podspec_field,
+         sum(other_hits) as other_hits,
+         sum(e2e_hits) as e2e_hits,
+         sum(conf_hits) as conf_hits,
+         kfp.release,
+         kfp.deprecated,
+         kfp.gated,
+         kfp.required,
+         kfp.field_kind,
+         kfp.field_type
+   from podspec_field_summary pfs, kind_field_path kfp
+   where kfp.field_type not like 'io%'
+     and (kfp.kind like '%PodSpec'
+     or kfp.sub_kind like '%PodSpec')
+     and pfs.podspec_field = regexp_replace(kfp.field_path, '.*\.','') 
+   group by podspec_field, kfp.release, kfp.deprecated, kfp.gated, kfp.required, kfp.field_kind, kfp.field_type
+   order by conf_hits, e2e_hits, other_hits;
+ #+END_SRC
+
+*** 604: PodSpec Field Report View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/604_view_podspec_field_report.up.sql
+    :END:
+ #+NAME: podspec_field_hits
+ #+BEGIN_SRC sql-mode
+   create or replace view podspec_field_report as
+   select distinct podspec_field,
+         sum(other_hits) as other_hits,
+         sum(e2e_hits) as e2e_hits,
+         sum(conf_hits) as conf_hits,
+         release,
+         deprecated,
+         gated,
+         required,
+         field_kind,
+         field_type
+   from podspec_field_mid_report
+   group by podspec_field, release, deprecated, gated, required, field_kind, field_type
+   order by conf_hits, e2e_hits, other_hits;
+ #+END_SRC
+
 ** Connect to Database
-   If you already have your db and hasura endpoint up and running:
-- [ ] Connect to your postgres db from within this file
-  You'll want execute this code block by moving your cursor within and typing =,,=
+    If you already have your db and hasura endpoint up and running:
+ - [ ] Connect to your postgres db from within this file
+   You'll want execute this code block by moving your cursor within and typing =,,=
   
-  #+NAME: Connect org to postgres
-  #+BEGIN_SRC emacs-lisp :results silent
-    (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
-  #+END_SRC
+   #+NAME: Connect org to postgres
+   #+BEGIN_SRC emacs-lisp :results silent
+     (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+   #+END_SRC
 
-- [ ] Test your connection works
-  You can run this sql block, and it see a message in your minbuffer like:
-  : You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10041".
+ - [ ] Test your connection works
+   You can run this sql block, and it see a message in your minbuffer like:
+   : You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10041".
 
-  #+NAME: Test Connection
-  #+BEGIN_SRC sql-mode :results silent
-  \conninfo
-  #+END_SRC
+   #+NAME: Test Connection
+   #+BEGIN_SRC sql-mode :results silent
+   \conninfo
+   #+END_SRC
 
-If the db is not running, or hasn't been setup yet, follow the instructions in [[file:~/ii/apisnoop_v3/org/meta.org::*Welcome,%20ii%20dev!][meta.org]]  , then come back and do the steps above.
+ If the db is not running, or hasn't been setup yet, follow the instructions in [[file:~/ii/apisnoop_v3/org/meta.org::*Welcome,%20ii%20dev!][meta.org]]  , then come back and do the steps above.
