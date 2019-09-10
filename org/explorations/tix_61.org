@@ -566,14 +566,13 @@ drop materialized view "public"."revised_podspec_field_coverage_material" cascad
     DROP MATERIALIZED VIEW
     #+end_src
 
-
  #+NAME: view revised_podspec_field_coverage_material
  #+BEGIN_SRC sql-mode
    CREATE MATERIALIZED VIEW "public"."revised_podspec_field_coverage_material" AS 
    SELECT DISTINCT
      (audit_event.data -> 'objectRef' ->> 'apiVersion') as version,
      (audit_event.data->'objectRef'->>'apiGroup') as api_group,
-     (audit_event.data->'requestObject'->>'kind') as kind,
+     (audit_event.data->'requestObject'->>'kind') as kind
      jsonb_object_keys(audit_event.request_object -> 'spec'::text) AS podspec_field,
      count(event_field.event_field) AS hits,
      split_part(audit_event.useragent, '--', 2) as test,
@@ -608,6 +607,7 @@ drop materialized view "public"."revised_podspec_field_coverage_material" cascad
      (audit_event.data -> 'objectRef' ->> 'apiVersion') as version,
      (audit_event.data->'objectRef'->>'apiGroup') as api_group,
      (audit_event.data->'requestObject'->>'kind') as kind,
+     (audit_event.data->'verb') as event_verb,
      jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
      count(event_field.event_field) AS hits,
      split_part(audit_event.useragent, '--', 2) as test,
@@ -631,15 +631,6 @@ drop materialized view "public"."revised_podspec_field_coverage_material" cascad
  #+begin_src sql-mode
  SELECT 6362
  #+end_src
-
-
- #+BEGIN_SRC sql-mode
-   select
-     (a.data -> 'objectRef' ->> 'apiVersion') as version,
-     (a.data->'objectRef'->>'apiGroup') as api_group,
-     (a.data->'requestObject'->>'kind') as kind 
-     from audit_event as a;
- #+END_SRC
 
  #+RESULTS:
  #+begin_src sql-mode
@@ -767,6 +758,102 @@ drop materialized view "public"."revised_podspec_field_coverage_material" cascad
 
  #+end_src
 
+*** Simple View for distinct events
+    We could have distinct events based on operationId or, what feels smarter, a combination of version,group,kind,verb.  I want to see how different the two for distinct entries, and so rather then refactoring the full recursive function, let's start with the simplest building blocks.
+    
+    #+NAME: distinct operation Id's
+    #+BEGIN_SRC sql-mode
+      CREATE or REPLACE VIEW "public"."distinct_events_by_op_id" AS
+        SELECT
+          operation_id
+          FROM
+              audit_event;
+    #+END_SRC
+
+    #+RESULTS: distinct operation Id's
+    #+begin_src sql-mode
+    CREATE VIEW
+    #+end_src
+    
+    #+NAME: distinct v/g/k/vb
+    #+BEGIN_SRC sql-mode
+      CREATE OR REPLACE VIEW "public"."events_by_group_version_kind_verb" AS
+        SELECT
+          (a.data -> 'objectRef'->>'apiVersion') as api_version,
+          CASE
+          WHEN ((a.data -> 'objectRef' ->> 'apiGroup') IS NULL) THEN ''
+          ELSE (a.data -> 'objectRef' ->> 'apiGroup')
+          END as api_group,
+          (a.data->>'verb') as event_verb,
+          (a.data -> 'requestObject'->>'kind') as kind
+          FROM audit_event as a;
+    #+END_SRC
+
+    #+RESULTS: distinct v/g/k/vb
+    #+begin_src sql-mode
+    CREATE VIEW
+    #+end_src
+
+    #+NAME: Record Count
+    #+BEGIN_SRC sql-mode
+      SELECT
+        (
+          SELECT
+            count(*)
+            FROM distinct_events_by_op_id
+        ) as op_id,
+        (
+          SELECT
+            count(*)
+            FROM
+                events_by_group_version_kind_verb
+        ) as gvkv;
+
+    #+END_SRC
+
+    #+RESULTS: Record Count
+    #+begin_src sql-mode
+     op_id  |  gvkv  
+    --------+--------
+     313431 | 313431
+    (1 row)
+
+    #+end_src
+
+    Sweet, so we are getting the exact same amount of records, of course, but it's a nice sanity check.  Now, what about distinct?
+    
+    #+NAME: DISTINCT Record Count
+    #+BEGIN_SRC sql-mode
+      SELECT
+        (
+          SELECT
+            count(DISTINCT operation_ID)
+            FROM distinct_events_by_op_id
+        ) as op_id,
+        (
+          SELECT
+            count(*)
+            FROM
+                (
+                  SELECT
+                    DISTINCT api_version, api_group, event_verb, kind
+                    FROM
+                        events_by_group_version_kind_verb
+                ) as distinct_gvkv
+        ) as gvkv;
+
+    #+END_SRC
+    
+    #+RESULTS: DISTINCT Record Count
+    #+begin_src sql-mode
+     op_id | gvkv 
+    -------+------
+       364 |  275
+    (1 row)
+
+    #+end_src
+    
+
 ** TODO Move down line of cascading views based on this change
 *** 601: Revised PodSpec Field Coverage View
 
@@ -795,7 +882,7 @@ SELECT  (
  #+begin_src sql-mode
   original_count | revised_count 
  ----------------+---------------
-            6572 |          6572
+            6572 |          6362
  (1 row)
 
  #+end_src
