@@ -366,7 +366,7 @@ From this refactoring, a hope is that it offers another perspective into the arr
    I am remembering this now from conversation on Friday, that we can perhaps refererece the x-kubernetes sections in the definitions and match direct to that instead.
 
         
-*** Thoghtful Pause
+*** Thoughtful Pause
     It feels a rocky path to construct the definition, instead we can match to the definition using x-kubernetes-kind.  there isn't a super simple way to do it and check it, outside of constructing the definitions themselves and then comparing it to the schema ref's in the swagger.json
 *** Construct View for Swagger Definitions
     We want to take our swagger row and parse out each definition, plus its x-kubernetes-action
@@ -507,6 +507,7 @@ From this refactoring, a hope is that it offers another perspective into the arr
    Here we have our original to draw from.  It's a comple query, and before we refactor the parts, we should ensure a diff. method  on id would return same # of results on a simpler query.
  #+NAME: view podspec_field_coverage_material
  #+BEGIN_SRC sql-mode
+   --DROP MATERIALIZED VIEW "public"."podspec_field_coverage_material"; 
    CREATE MATERIALIZED VIEW "public"."podspec_field_coverage_material" AS 
    SELECT DISTINCT
      audit_event.operation_id,
@@ -847,10 +848,10 @@ From this refactoring, a hope is that it offers another perspective into the arr
    CLOSED: [2019-09-11 Wed 04:54]
 *** Revised 601: PodSpec Field Coverage View
  #+NAME: view podspec_field_coverage
- #+BEGIN_SRC sql-mode
+ #+BEGIN_SRC sql-mode :results silent
  create view revised_podspec_field_coverage as select * from revised_podspec_field_coverage_material;
  #+END_SRC
- 
+
  #+NAME: podspec_field_coverage: Compare Counts to Original
   #+BEGIN_SRC sql-mode
     SELECT
@@ -1055,6 +1056,241 @@ From this refactoring, a hope is that it offers another perspective into the arr
   (1 row)
 
   #+end_src
+
+
+* Disecting the Revised PodSpec Materialized View
+
+Ensuring we have the hits we are looking for:
+** each sub query
+*** where kind = 'Pod' fieldpath = 'spec'
+
+ #+BEGIN_SRC sql-mode
+   SELECT DISTINCT
+     jsonb_object_keys(request_object -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits
+     FROM events_by_gvkrv,
+          LATERAL
+            jsonb_object_keys(events_by_gvkrv.request_object -> 'spec'::text) event_field(event_field)
+    WHERE kind = 'Pod'
+      AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}')) -- api_version doesn't contain alpha or beta;
+    GROUP BY podspec_field
+    ORDER BY podspec_field;
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql-mode
+          podspec_field         | hits  
+ -------------------------------+-------
+  activeDeadlineSeconds         |    40
+  affinity                      |  1256
+  automountServiceAccountToken  |    96
+  containers                    | 20344
+  dnsConfig                     |    16
+  dnsPolicy                     | 20344
+  enableServiceLinks            | 20344
+  hostAliases                   |     8
+  hostIPC                       |    16
+  hostname                      |  5614
+  hostNetwork                   |  2665
+  hostPID                       |    16
+  imagePullSecrets              |     8
+  initContainers                |  1347
+  nodeName                      |  9086
+  nodeSelector                  |  1604
+  priority                      |  1088
+  priorityClassName             |  1342
+  readinessGates                |     8
+  restartPolicy                 | 20344
+  runtimeClassName              |    36
+  schedulerName                 | 20344
+  securityContext               | 20344
+  serviceAccount                |  7589
+  serviceAccountName            |  7589
+  subdomain                     |  5398
+  terminationGracePeriodSeconds | 20344
+  tolerations                   |  2883
+  volumes                       | 14623
+ (29 rows)
+
+ #+end_src
+
+*** where kind = 'PodTemplate' fieldpath = 'template.spec'
+  
+ PodTemplate is hit, but not much.
+
+ #+BEGIN_SRC sql-mode
+     SELECT DISTINCT
+       jsonb_object_keys(request_object -> 'template' -> 'spec'::text) AS podspec_field,
+       count(event_field.event_field) AS hits
+       FROM events_by_gvkrv,
+            LATERAL
+              jsonb_object_keys(events_by_gvkrv.request_object -> 'template'-> 'spec'::text) event_field(event_field)
+      WHERE kind = 'PodTemplate'
+        AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+      GROUP BY podspec_field
+      ORDER BY podspec_field;
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql-mode
+          podspec_field         | hits 
+ -------------------------------+------
+  containers                    | 4920
+  dnsPolicy                     | 4920
+  restartPolicy                 | 4920
+  schedulerName                 | 4920
+  securityContext               | 4920
+  terminationGracePeriodSeconds | 4920
+ (6 rows)
+
+ #+end_src
+
+*** where kind = 'DaemonSet, Deployment, ReplicationController, StatefulSet, Job,ReplicaSet' fieldpath = 'spec.template.spec'
+  
+ #+BEGIN_SRC sql-mode
+   SELECT DISTINCT
+     -- test,
+     jsonb_object_keys(request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+     count(event_field.event_field) AS hits
+     FROM events_by_gvkrv,
+          LATERAL
+            jsonb_object_keys(events_by_gvkrv.request_object -> 'spec' -> 'template'-> 'spec'::text) event_field(event_field)
+    WHERE kind = ANY('{DaemonSet, Deployment, ReplicationController, StatefulSet, Job,ReplicaSet}')
+      AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+    GROUP BY podspec_field; 
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql-mode
+          podspec_field         | hits  
+ -------------------------------+-------
+  containers                    | 17710
+  dnsPolicy                     | 17710
+  hostNetwork                   |  1637
+  nodeName                      |  3590
+  nodeSelector                  |  2041
+  priorityClassName             |  2421
+  restartPolicy                 | 17710
+  schedulerName                 | 17710
+  securityContext               | 17710
+  serviceAccount                |  5836
+  serviceAccountName            |  5836
+  terminationGracePeriodSeconds | 17710
+  tolerations                   |  2125
+  volumes                       |  8754
+ (14 rows)
+
+ #+end_src
+
+** the entire query
+
+  #+NAME: Count before going all the way down
+  #+BEGIN_SRC sql-mode
+    select distinct podspec_field AS field
+                    , sum(hits) AS hits
+    FROM (
+
+    SELECT DISTINCT
+      jsonb_object_keys(request_object -> 'spec'::text) AS podspec_field,
+      count(event_field.event_field) AS hits
+      FROM events_by_gvkrv,
+           LATERAL
+             jsonb_object_keys(events_by_gvkrv.request_object -> 'spec'::text) event_field(event_field)
+     WHERE kind = 'Pod'
+       AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}')) -- api_version doesn't contain alpha or beta;
+     GROUP BY podspec_field
+          UNION
+    SELECT DISTINCT
+      jsonb_object_keys(request_object -> 'template' -> 'spec'::text) AS podspec_field,
+      count(event_field.event_field) AS hits
+      FROM events_by_gvkrv,
+           LATERAL
+             jsonb_object_keys(events_by_gvkrv.request_object -> 'template'-> 'spec'::text) event_field(event_field)
+     WHERE kind = 'PodTemplate'
+       AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+     GROUP BY podspec_field
+          UNION
+    SELECT DISTINCT
+      jsonb_object_keys(request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+      count(event_field.event_field) AS hits
+      FROM events_by_gvkrv,
+           LATERAL
+             jsonb_object_keys(events_by_gvkrv.request_object -> 'spec' -> 'template'-> 'spec'::text) event_field(event_field)
+     WHERE kind = ANY('{DaemonSet, Deployment, ReplicationController, StatefulSet, Job,ReplicaSet}')
+       AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+     GROUP BY podspec_field
+     ) as x
+     group by podspec_field
+                                                          ;
+ #+END_SRC
+
+ #+RESULTS: Count before going all the way down
+ #+begin_src sql-mode
+              field             | hits  
+ -------------------------------+-------
+  activeDeadlineSeconds         |    40
+  affinity                      |  1256
+  automountServiceAccountToken  |    96
+  containers                    | 42974
+  dnsConfig                     |    16
+  dnsPolicy                     | 42974
+  enableServiceLinks            | 20344
+  hostAliases                   |     8
+  hostIPC                       |    16
+  hostname                      |  5614
+  hostNetwork                   |  4302
+  hostPID                       |    16
+  imagePullSecrets              |     8
+  initContainers                |  1347
+  nodeName                      | 12676
+  nodeSelector                  |  3645
+  priority                      |  1088
+  priorityClassName             |  3763
+  readinessGates                |     8
+  restartPolicy                 | 42974
+  runtimeClassName              |    36
+  schedulerName                 | 42974
+  securityContext               | 42974
+  serviceAccount                | 13425
+  serviceAccountName            | 13425
+  subdomain                     |  5398
+  terminationGracePeriodSeconds | 42974
+  tolerations                   |  5008
+  volumes                       | 23377
+ (29 rows)
+
+ #+end_src
+ 
+ And comparing the two we get the same number of records.
+
+  #+NAME: Comparison of orig and revised podspec
+  #+BEGIN_SRC sql-mode
+    SELECT
+      (
+        SELECT
+          count(*)
+          FROM
+              podspec_field_coverage_material
+      ) AS original_count,
+      (
+        SELECT
+          count(*)
+          FROM
+              revised_podspec_field_coverage_material
+        ) as revised_count;
+
+  #+END_SRC
+
+  #+RESULTS: Comparison of orig and revised podspec
+  #+begin_src sql-mode
+   original_count | revised_count 
+  ----------------+---------------
+             6572 |          6572
+  (1 row)
+
+  #+end_src
+  
+  Success!
 
 * Footnotes
 ** Connect to Database
