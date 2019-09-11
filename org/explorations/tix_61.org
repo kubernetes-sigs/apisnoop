@@ -11,7 +11,10 @@ You can match an event to a swagger definition using a combination of object_ref
 From this refactoring, a hope is that it offers another perspective into the array types, and why they are not counting as event hits.
 #+END_QUOTE
 * Process
-** TODO Confirm mapping event to swagger def using object_ref and request_object
+  :PROPERTIES:
+  :results: export
+  :END:
+** DONE Confirm mapping event to swagger def using object_ref and request_object
    Let's grab the data for a sample audit event that has a request object (make sure you have line navigation turned on =SPC tL=)
   #+NAME: data for event with request_object
   #+BEGIN_SRC sql-mode
@@ -493,14 +496,14 @@ From this refactoring, a hope is that it offers another perspective into the arr
 
     #+end_src
     
-    That looks reasonable.  
+    That looks reasonable for now.  
 
 *** Conclusion  
     I think we could reference the definition simply using the objectRef and requestObject in the audit_event, at least enough to explore our field coverage again.
 
 ** TODO Rebuild initial Podspec query to not use operation_id
-   Here we have our original. 
 *** Original PodSpec Materialized View
+   Here we have our original to draw from.  It's a comple query, and before we refactor the parts, we should ensure a diff. method  on id would return same # of results on a simpler query.
  #+NAME: view podspec_field_coverage_material
  #+BEGIN_SRC sql-mode
    CREATE MATERIALIZED VIEW "public"."podspec_field_coverage_material" AS 
@@ -554,305 +557,195 @@ From this refactoring, a hope is that it offers another perspective into the arr
       AND audit_event.operation_id !~~ '%beta%'::text
     GROUP BY operation_id, podspec_field, useragent;
  #+END_SRC
-*** Revised Podspec Materialized View
-    We are using operation_id in two areas, as a column to select and as a part of our WHERE clause.  
-    I don't think we use the column in any of the cascading views. and could likely just remove it.
-    #+BEGIN_SRC sql-mode
-drop materialized view "public"."revised_podspec_field_coverage_material" cascade;
-    #+END_SRC
-
-    #+RESULTS:
-    #+begin_src sql-mode
-    DROP MATERIALIZED VIEW
-    #+end_src
-
- #+NAME: view revised_podspec_field_coverage_material
- #+BEGIN_SRC sql-mode
-   CREATE MATERIALIZED VIEW "public"."revised_podspec_field_coverage_material" AS 
-   SELECT DISTINCT
-     (audit_event.data -> 'objectRef' ->> 'apiVersion') as version,
-     (audit_event.data->'objectRef'->>'apiGroup') as api_group,
-     (audit_event.data->'requestObject'->>'kind') as kind
-     jsonb_object_keys(audit_event.request_object -> 'spec'::text) AS podspec_field,
-     count(event_field.event_field) AS hits,
-     split_part(audit_event.useragent, '--', 2) as test,
-     split_part(audit_event.useragent, '--', 1) as useragent
-     FROM audit_event,
-          LATERAL
-            jsonb_object_keys(audit_event.request_object -> 'spec'::text)
-            event_field(event_field)
-    WHERE (audit_event.request_object ->> 'kind'::text) = 'Pod'::text
-      AND audit_event.operation_id !~~ '%alpha%'::text
-      AND audit_event.operation_id !~~ '%beta%'::text
-    GROUP BY version, api_group, kind, podspec_field, useragent
-   UNION
-   SELECT DISTINCT
-     (audit_event.data -> 'objectRef' ->> 'apiVersion') as version,
-     (audit_event.data->'objectRef'->>'apiGroup') as api_group,
-     (audit_event.data->'requestObject'->>'kind') as kind,
-     jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text) AS podspec_field,
-     count(event_field.event_field) AS hits,
-     split_part(audit_event.useragent, '--', 2) as test,
-     split_part(audit_event.useragent, '--', 1) as useragent
-     FROM audit_event,
-          LATERAL
-            jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text)
-            event_field(event_field)
-    WHERE (audit_event.request_object ->> 'kind'::text) = 'PodTemplate'::text
-      AND audit_event.operation_id !~~ '%alpha%'::text
-      AND audit_event.operation_id !~~ '%beta%'::text
-    GROUP BY version, api_group, kind, podspec_field, useragent
-   UNION
-   SELECT DISTINCT
-     (audit_event.data -> 'objectRef' ->> 'apiVersion') as version,
-     (audit_event.data->'objectRef'->>'apiGroup') as api_group,
-     (audit_event.data->'requestObject'->>'kind') as kind,
-     (audit_event.data->'verb') as event_verb,
-     jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
-     count(event_field.event_field) AS hits,
-     split_part(audit_event.useragent, '--', 2) as test,
-     split_part(audit_event.useragent, '--', 1) as useragent
-     FROM audit_event,
-          LATERAL
-            jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text)
-            event_field(event_field)
-    WHERE (audit_event.request_object->>'kind' = 'DaemonSet'
-      OR  audit_event.request_object->>'kind' = 'Deployment'
-      OR  audit_event.request_object->>'kind' = 'ReplicationController'
-      OR  audit_event.request_object->>'kind' = 'StatefulSet'
-      OR  audit_event.request_object->>'kind' = 'Job'
-      OR  audit_event.request_object->>'kind' = 'ReplicaSet')
-      AND audit_event.operation_id !~~ '%alpha%'::text
-      AND audit_event.operation_id !~~ '%beta%'::text
-    GROUP BY version, api_group, kind, podspec_field, useragent;
- #+END_SRC
-
- #+RESULTS: view revised_podspec_field_coverage_material
- #+begin_src sql-mode
- SELECT 6362
- #+end_src
-
- #+RESULTS:
- #+begin_src sql-mode
-  version  |                      api_group                      |              kind              
- ----------+-----------------------------------------------------+--------------------------------
-  v1       | apiregistration.k8s.io                              | APIService
-  v1       | apiregistration.k8s.io                              | DeleteOptions
-  v1       | apiregistration.k8s.io                              | 
-  v1       | apps                                                | ControllerRevision
-  v1       | apps                                                | DaemonSet
-  v1       | apps                                                | DeleteOptions
-  v1       | apps                                                | Deployment
-  v1       | apps                                                | ReplicaSet
-  v1       | apps                                                | StatefulSet
-  v1       | apps                                                | 
-  v1       | authentication.k8s.io                               | 
-  v1       | authorization.k8s.io                                | 
-  v1       | autoscaling                                         | DeleteOptions
-  v1       | autoscaling                                         | HorizontalPodAutoscaler
-  v1       | autoscaling                                         | 
-  v1       | batch                                               | DeleteOptions
-  v1       | batch                                               | Job
-  v1       | batch                                               | 
-  v1       | coordination.k8s.io                                 | DeleteOptions
-  v1       | coordination.k8s.io                                 | 
-  v1       | crd-publish-openapi-test-empty.k8s.io               | 
-  v1       | crd-publish-openapi-test-foo.k8s.io                 | 
-  v1       | discovery-crd-test.k8s.io                           | 
-  v1       | kubectl-crd-test.k8s.io                             | 
-  v1       | networking.k8s.io                                   | DeleteOptions
-  v1       | networking.k8s.io                                   | 
-  v1       | rbac.authorization.k8s.io                           | ClusterRole
-  v1       | rbac.authorization.k8s.io                           | ClusterRoleBinding
-  v1       | rbac.authorization.k8s.io                           | DeleteOptions
-  v1       | rbac.authorization.k8s.io                           | Role
-  v1       | rbac.authorization.k8s.io                           | RoleBinding
-  v1       | rbac.authorization.k8s.io                           | 
-  v1       | resourcequota-crd-test.k8s.io                       | 
-  v1       | scheduling.k8s.io                                   | DeleteOptions
-  v1       | scheduling.k8s.io                                   | PriorityClass
-  v1       | scheduling.k8s.io                                   | 
-  v1       | stable.example.com                                  | 
-  v1       | storage.k8s.io                                      | DeleteOptions
-  v1       | storage.k8s.io                                      | StorageClass
-  v1       | storage.k8s.io                                      | VolumeAttachment
-  v1       | storage.k8s.io                                      | 
-  v1       | webhook-crd-test.k8s.io                             | 
-  v1       | webhook-multiversion-crd-test.k8s.io                | 
-  v1       |                                                     | Binding
-  v1       |                                                     | DeleteOptions
-  v1       |                                                     | Endpoints
-  v1       |                                                     | LimitRange
-  v1       |                                                     | Namespace
-  v1       |                                                     | Node
-  v1       |                                                     | PersistentVolume
-  v1       |                                                     | PersistentVolumeClaim
-  v1       |                                                     | Pod
-  v1       |                                                     | PodTemplate
-  v1       |                                                     | ReplicationController
-  v1       |                                                     | ResourceQuota
-  v1       |                                                     | Service
-  v1       |                                                     | ServiceAccount
-  v1       |                                                     | 
-  v1alpha1 | scalingpolicy.kope.io                               | 
-  v1alpha1 | settings.k8s.io                                     | DeleteOptions
-  v1alpha1 | settings.k8s.io                                     | 
-  v1alpha1 | snapshot.storage.k8s.io                             | 
-  v1alpha1 | wardle.k8s.io                                       | 
-  v1beta1  | admissionregistration.k8s.io                        | MutatingWebhookConfiguration
-  v1beta1  | admissionregistration.k8s.io                        | ValidatingWebhookConfiguration
-  v1beta1  | admissionregistration.k8s.io                        | 
-  v1beta1  | apiextensions.k8s.io                                | CustomResourceDefinition
-  v1beta1  | apiextensions.k8s.io                                | 
-  v1beta1  | apiregistration.k8s.io                              | APIService
-  v1beta1  | apiregistration.k8s.io                              | 
-  v1beta1  | authorization.k8s.io                                | SubjectAccessReview
-  v1beta1  | batch                                               | CronJob
-  v1beta1  | batch                                               | DeleteOptions
-  v1beta1  | batch                                               | 
-  v1beta1  | certificates.k8s.io                                 | CertificateSigningRequest
-  v1beta1  | certificates.k8s.io                                 | 
-  v1beta1  | coordination.k8s.io                                 | 
-  v1beta1  | crd-publish-openapi-test-waldo.k8s.io               | 
-  v1beta1  | events.k8s.io                                       | DeleteOptions
-  v1beta1  | events.k8s.io                                       | 
-  v1beta1  | extensions                                          | DeleteOptions
-  v1beta1  | extensions                                          | Deployment
-  v1beta1  | extensions                                          | DeploymentRollback
-  v1beta1  | extensions                                          | Scale
-  v1beta1  | extensions                                          | 
-  v1beta1  | metrics.k8s.io                                      | 
-  v1beta1  | mygroup.example.com                                 | 
-  v1beta1  | networking.k8s.io                                   | DeleteOptions
-  v1beta1  | networking.k8s.io                                   | 
-  v1beta1  | node.k8s.io                                         | RuntimeClass
-  v1beta1  | node.k8s.io                                         | 
-  v1beta1  | policy                                              | DeleteOptions
-  v1beta1  | policy                                              | PodDisruptionBudget
-  v1beta1  | policy                                              | PodSecurityPolicy
-  v1beta1  | policy                                              | 
-  v1beta1  | rbac.authorization.k8s.io                           | ClusterRole
-  v1beta1  | rbac.authorization.k8s.io                           | ClusterRoleBinding
-  v1beta1  | rbac.authorization.k8s.io                           | DeleteOptions
-  v1beta1  | rbac.authorization.k8s.io                           | Role
-  v1beta1  | rbac.authorization.k8s.io                           | RoleBinding
-  v1beta1  | rbac.authorization.k8s.io                           | 
-  v1beta1  | scheduling.k8s.io                                   | PriorityClass
-  v1beta1  | scheduling.k8s.io                                   | 
-  v1beta1  | storage.k8s.io                                      | CSIDriver
-  v1beta1  | storage.k8s.io                                      | CSINode
-  v1beta1  | storage.k8s.io                                      | VolumeAttachment
-  v1beta1  | storage.k8s.io                                      | 
-  v2       | stable.example.com                                  | 
-  v2       | webhook-multiversion-crd-test.k8s.io                | 
-  v2alpha1 | batch                                               | CronJob
-  v2alpha1 | batch                                               | 
-  v3       | crd-publish-openapi-test-multi-ver.k8s.io           | 
-  v4       | crd-publish-openapi-test-common-group.k8s.io        | 
-  v4       | crd-publish-openapi-test-multi-ver.k8s.io           | 
-  v5       | crd-publish-openapi-test-common-group.k8s.io        | 
-  v5       | crd-publish-openapi-test-multi-to-single-ver.k8s.io | 
-  v6       | crd-publish-openapi-test-common-group.k8s.io        | 
-           |                                                     | 
- (118 rows)
-
- #+end_src
-
-*** Simple View for distinct events
-    We could have distinct events based on operationId or, what feels smarter, a combination of version,group,kind,verb.  I want to see how different the two for distinct entries, and so rather then refactoring the full recursive function, let's start with the simplest building blocks.
+*** Ensure we can get same # of records  using alternate id
     
-    #+NAME: distinct operation Id's
-    #+BEGIN_SRC sql-mode
-      CREATE or REPLACE VIEW "public"."distinct_events_by_op_id" AS
-        SELECT
-          operation_id
-          FROM
-              audit_event;
-    #+END_SRC
+    What seems like a smart mapping for an audit_event woudl be verstion, group, kind, verb.  If we could use this as an identifier, instead of operationID, then we could build out distinct views without using any regex and the only medium between data and results is transparent sql queries. To be happy with this, though, we need to make sure that a view of distinct entries on this grouping matches a view with distinct groupings on operation_id. 
 
-    #+RESULTS: distinct operation Id's
-    #+begin_src sql-mode
-    CREATE VIEW
-    #+end_src
+    One limit I'm going to put on these views is to only grab audit events with request_objects.  This sharply decreases the number of events we are looking at.  The reason for this is:
+    - It's been stated that sig-arch only cares about the requests, and not the responses.  We want to see the events that hit--or make requests to-the api.
+    - our grouping requires =kind= which is available in the request_object, so we want a consistent ability to grab this.
     
-    #+NAME: distinct v/g/k/vb
-    #+BEGIN_SRC sql-mode
-      CREATE OR REPLACE VIEW "public"."events_by_group_version_kind_verb" AS
+      So let's make a view that takes from our audit_event and pulls op_id plus the specific fields we want to id on.
+      I've noticed that the objectRef can sometimes contain resource and subResources, which map to slightly altered operationId's, so I want to include these as well.
+    #+NAME: events by gvkrv
+    #+BEGIN_SRC sql-mode :results silent
+      CREATE OR REPLACE VIEW "public"."events_by_gvkrv" AS
         SELECT
-          (a.data -> 'objectRef'->>'apiVersion') as api_version,
           CASE
           WHEN ((a.data -> 'objectRef' ->> 'apiGroup') IS NULL) THEN ''
           ELSE (a.data -> 'objectRef' ->> 'apiGroup')
-          END as api_group,
+                END as api_group,
+          (a.data -> 'objectRef' ->>'apiVersion') as api_version,
+          (a.data -> 'requestObject'->>'kind') as kind,
+          (a.data -> 'objectRef'->>'resource') as resource,
+            (a.data -> 'objectRef'->>'subresource') as sub_resource,
           (a.data->>'verb') as event_verb,
-          (a.data -> 'requestObject'->>'kind') as kind
-          FROM audit_event as a;
+          operation_id,
+          audit_id
+          FROM audit_event as a
+         where data->'requestObject' is not null;
     #+END_SRC
 
-    #+RESULTS: distinct v/g/k/vb
-    #+begin_src sql-mode
-    CREATE VIEW
-    #+end_src
-
+    
+    As a sanity check, we can ensure the # of records for our new view matches the raw audit_events.
     #+NAME: Record Count
     #+BEGIN_SRC sql-mode
       SELECT
         (
           SELECT
             count(*)
-            FROM distinct_events_by_op_id
-        ) as op_id,
+            FROM audit_event
+                   WHERE (data->'requestObject') IS NOT NULL
+
+        ) as request_event_raw_count,
         (
           SELECT
             count(*)
             FROM
-                events_by_group_version_kind_verb
-        ) as gvkv;
+                events_by_gvkrv
+        ) as gvkv_count;
 
     #+END_SRC
 
     #+RESULTS: Record Count
     #+begin_src sql-mode
-     op_id  |  gvkv  
-    --------+--------
-     313431 | 313431
+     request_event_raw_count | gvkv_count 
+    -------------------------+------------
+                       62087 |      62087
     (1 row)
 
     #+end_src
 
-    Sweet, so we are getting the exact same amount of records, of course, but it's a nice sanity check.  Now, what about distinct?
+    Sweet, so we are getting the exact same amount of records, of course.  There's no reason we wouldn't, but it's a nice sanity check.
     
-    #+NAME: DISTINCT Record Count
+    So now we want to compare distinct operation_ids to distinct group_version_kind.  We should get the same number for this too.
+    
+    #+NAME: Count Comparison: raw vs. gvkv
     #+BEGIN_SRC sql-mode
-      SELECT
-        (
-          SELECT
-            count(DISTINCT operation_ID)
-            FROM distinct_events_by_op_id
-        ) as op_id,
+      SELECT (
+        SELECT
+          count(distinct operation_id)
+          FROM audit_event
+         WHERE
+            (data->'requestObject') IS NOT NULL
+      ) as raw_count,
         (
           SELECT
             count(*)
-            FROM
-                (
-                  SELECT
-                    DISTINCT api_version, api_group, event_verb, kind
-                    FROM
-                        events_by_group_version_kind_verb
-                ) as distinct_gvkv
-        ) as gvkv;
-
+            FROM(
+              SELECT distinct
+                api_version,
+                api_group,
+                event_verb,
+                kind
+                FROM events_by_gvkrv
+            ) as distinct_gvkrv
+        ) as gvkrv_count;
     #+END_SRC
-    
-    #+RESULTS: DISTINCT Record Count
+
+    #+RESULTS: Count Comparison: raw vs. gvkv
     #+begin_src sql-mode
-     op_id | gvkv 
-    -------+------
-       364 |  275
+     raw_count | gvkrv_count 
+    -----------+-------------
+           166 |         108
     (1 row)
 
     #+end_src
+
+    Using just group, version, kind, verb we do not get the same number of distinct results.
+    If we expand to resources, though...
+    #+NAME: Count Comparison: raw vs. gvkrv
+    #+BEGIN_SRC sql-mode
+      SELECT (
+        SELECT
+          count(distinct operation_id)
+          FROM audit_event
+         WHERE
+            (data->'requestObject') IS NOT NULL
+      ) as raw_count,
+        (
+          SELECT
+            count(*)
+            FROM(
+              SELECT distinct
+                api_version,
+                api_group,
+                event_verb,
+                kind,
+                resource,
+                sub_resource
+                FROM events_by_gvkrv
+            ) as distinct_gvkrv
+        ) as gvkrv_count;
+    #+END_SRC
+
+    #+RESULTS: Count Comparison: raw vs. gvkrv
+    #+begin_src sql-mode
+     raw_count | gvkrv_count 
+    -----------+-------------
+           166 |         166
+    (1 row)
+
+    #+end_src
+
+    Beauty!
     
+    And just for completion, let's ensure that we are not getting the same number of distinct results, but _different_ distinct results.
+    One way to do this is to compare operation id's for the two views.  Even if we are using a new id'ing, the old op_id method should still work and so there should be no difference in the distinct op_ids between the old and new view.
+    
+    To make the comparison query simpler, we'll make a view that is distinct on gvkrv, but also contains the op_id.
+   #+NAME: distinct on gvkv + op_id 
+   #+BEGIN_SRC sql-mode :results silent
+     CREATE OR REPLACE VIEW "public"."distinct_gvkv" AS
+       SELECT DISTINCT ON (
+         api_version,
+         api_group,
+         event_verb,
+         kind,
+         resource,
+         sub_resource
+       ) api_version,
+                       operation_id
+         FROM
+             events_by_gvkrv;
+   #+END_SRC
+   
+   And compare the count of op_ids in our raw_count that don't exist in our gkrv count.  We are hoping for 0.
+   #+RESULTS: distinct on gvkv + op_id
+   #+begin_src sql-mode
+   CREATE VIEW
+   #+end_src
+   #+BEGIN_SRC sql-mode 
+     select count (*)
+       FROM (
+      SELECT
+        distinct operation_id
+        FROM audit_event
+        WHERE (data->'requestObject') IS NOT NULL
+      EXCEPT
+      SELECT
+        operation_id
+        FROM
+            distinct_gvkv
+     ) as gkvrv_op_id;
+   #+END_SRC
+   
+   #+RESULTS:
+   #+begin_src sql-mode
+    count 
+   -------
+        0
+   (1 row)
+
+   #+end_src
+   
+   Fantastic!  
+*** Conclusion
+    If we limit the events we look at in our audit logs to just request events (those with requestObject), then we can meaningfully group these events by group,version,kind,resource,subResource,verb.  Looking at the distinct results based around this grouping gives us identical #'s to our previous grouping of operationID.
+
+    While this grouping is more verbose than op_id it has several advantages.  For one, it requires no expensive regex function to run on the data, decreasing the startup of our system by 30 minutes.  It also means we are not inserting anything additional into the audit events.  Our views are coming directly from the data given, using the same language as outlined in the k8s docs and the openAPI spec.
+
+    There's also a nice path for our sunburst:  moving outward we can have version->group->kind->resource->subResource->verb.  It doubles the rings in the sunburst, but ensures that every node maps exactly to discrete endpoint and traversing the sunburst is more logical to the community we're serving.
 
 ** TODO Move down line of cascading views based on this change
 *** 601: Revised PodSpec Field Coverage View
