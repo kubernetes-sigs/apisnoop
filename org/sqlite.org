@@ -148,7 +148,7 @@ To ensure you're set up properly, you want to run down this checklist:
   You're all set up and ready to go, but hydration is important!  Get a drink of water, stretch, and recharge before you crush it today!  
   Also, =gh gh gh= to go back to the top then =,TTd= to mark this task as DONE!
 
-* Raw Swaggers Table, and Helper Functions
+* API Swaggers Table
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
   :header-args:sql-mode+: :product sqlite
@@ -173,112 +173,16 @@ CREATE TABLE IF NOT EXISTS api_swagger (
     data jsonb NOT NULL
 );
 #+END_SRC
-** 120: Function for load swagger via github
-  :PROPERTIES:
-  :header-args:python+: :tangle ../apps/sqlite/120_function_load_swagger_via_github.py
-  :END:
-
-https://docs.python.org/3/library/sqlite3.html
-
-#+NAME: load_swagger_via_curl.py
-#+BEGIN_SRC python :exports code :dir (concat (file-name-directory buffer-file-name) "../apps/sqlite") :results output
-  # should probably sanitize branch_or_tag
-  import sqlite3
-  import requests
-  def load_swagger_via_github(cursor, branch_or_tag):
-      swagger_url = '/'.join([
-          'https://raw.githubusercontent.com/kubernetes/kubernetes',
-          branch_or_tag,
-          'api/openapi-spec/swagger.json'])
-      r = requests.get(swagger_url)
-      if r.status_code != 200:
-          raise 'hand'
-      insert_query = """insert into 'api_swagger'
-      (version, gitref, data)
-      VALUES (?, ?, json(?))"""
-      insert_tuple = ('master', branch_or_tag, r.text)
-      cursor.execute(insert_query, insert_tuple)
-      con.commit()
-
-  con = sqlite3.connect('raiinbow.db')
-  # con.create_function('load_swagger_for_ref',1,load_swagger_via_github)
-  # con.text_factory = str
-  # conn = sqlite3.connect(":memory:")
-  # con.enable_load_extension(False)
-  con.isolation_level = None
-  c = con.cursor()
-  load_swagger_via_github(c,'master')
-  con.close()
-#+END_SRC
-
-#+RESULTS: load_swagger_via_curl.py
-
-
-* Explore
+* API Operations
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
   :header-args:sql-mode+: :product sqlite
   :header-args:sql-mode+: :session raiinbow
   :header-args:sqlite+: :db (concat (file-name-directory buffer-file-name) "../apps/sqlite/raiinbow.db")
   :header-args:sqlite+: :colnames yes
-  :header-args:sqlite+: :results table replace
+  :header-args:sqlite+: :results table silent
   :END:
-
-https://www.sqlite.org/json1.html#jeach
-
-#+BEGIN_SRC sql-mode
-CREATE TABLE json_tree(
-    key ANY,             -- key for current element relative to its parent
-    value ANY,           -- value for the current element
-    type TEXT,           -- 'object','array','string','integer', etc.
-    atom ANY,            -- value for primitive types, null for array & object
-    id INTEGER,          -- integer ID for this element
-    parent INTEGER,      -- integer ID for the parent of this element
-    fullkey TEXT,        -- full path describing the current element
-    path TEXT,           -- path to the container of the current row
-    json JSON HIDDEN,    -- 1st input parameter: the raw JSON
-    root TEXT HIDDEN     -- 2nd input parameter: the PATH at which to start
-);
-#+END_SRC
-
-** top level keys
-*** 5 keys
-#+NAME: top level keys
-#+BEGIN_SRC sqlite
-select j.key, j.type, j.atom, j.id from api_swagger, json_each(api_swagger.data) as j;
--- limit 10;
--- select j.key from api_swagger, json_tree(api_swagger.data) as j;
--- from api_swagger, json_each(api_swagger.data, '$.paths') as paths limit 1;
-#+END_SRC
-
-#+RESULTS: top level keys
-| key                 | type   | atom |     id |
-|---------------------+--------+------+--------|
-| definitions         | object |      |      2 |
-| info                | object |      |  28384 |
-| paths               | object |      |  28390 |
-| security            | array  |      | 158969 |
-| securityDefinitions | object |      | 158974 |
-| swagger             | text   |  2.0 | 158986 |
-
-*** info - title:Kubernetes version:v1.17.0
-
-#+NAME: info
-#+BEGIN_SRC sqlite
-select j.key, j.type, j.atom, j.id
-from api_swagger,
-     json_each(api_swagger.data, '$.info') as j
--- select j.key from api_swagger, json_tree(api_swagger.data) as j;
--- from api_swagger, json_each(api_swagger.data, '$.paths') as paths limit 1;
-#+END_SRC
-
-#+RESULTS: info
-| key     | type | atom       |    id |
-|---------+------+------------+-------|
-| title   | text | Kubernetes | 28386 |
-| version | text | v1.17.0    | 28388 |
-
-*** operations
+** operations
 
 #+BEGIN_SRC sqlite
    with paths as (select p.key, p.value, 0 as level
@@ -330,9 +234,7 @@ from api_swagger,
    ;
 #+END_SRC
 
-
-*** operation parameters
-
+** operation parameters
 #+BEGIN_SRC sqlite :results raw
   with
   operations as (
@@ -380,116 +282,7 @@ from api_swagger,
   ;
 #+END_SRC
 
-#+RESULTS:
-| param_op                                  | param_name          | param_schema                                       | required | unique_items | in    | type    | u |
-|-------------------------------------------+---------------------+----------------------------------------------------+----------+--------------+-------+---------+---|
-| listCoreV1Namespace                       | allowWatchBookmarks | boolean                                            |        0 |            0 | query | boolean | 1 |
-| listCoreV1Namespace                       | continue            | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1Namespace                       | fieldSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1Namespace                       | labelSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1Namespace                       | limit               | integer                                            |        0 |            0 | query | integer | 1 |
-| listCoreV1Namespace                       | resourceVersion     | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1Namespace                       | timeoutSeconds      | integer                                            |        0 |            0 | query | integer | 1 |
-| listCoreV1Namespace                       | watch               | boolean                                            |        0 |            0 | query | boolean | 1 |
-| createCoreV1Namespace                     | body                | io.k8s.api.core.v1.Namespace                       |        0 |            0 | body  |         |   |
-| createCoreV1Namespace                     | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| createCoreV1Namespace                     | fieldManager        | string                                             |        0 |            0 | query | string  | 1 |
-| createCoreV1NamespacedBinding             | body                | io.k8s.api.core.v1.Binding                         |        0 |            0 | body  |         |   |
-| deleteCoreV1CollectionNamespacedConfigMap | allowWatchBookmarks | boolean                                            |        0 |            0 | query | boolean | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | body                | io.k8s.apimachinery.pkg.apis.meta.v1.DeleteOptions |        0 |            0 | body  |         |   |
-| deleteCoreV1CollectionNamespacedConfigMap | continue            | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | fieldSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | gracePeriodSeconds  | integer                                            |        0 |            0 | query | integer | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | labelSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | limit               | integer                                            |        0 |            0 | query | integer | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | orphanDependents    | boolean                                            |        0 |            0 | query | boolean | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | propagationPolicy   | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | resourceVersion     | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | timeoutSeconds      | integer                                            |        0 |            0 | query | integer | 1 |
-| deleteCoreV1CollectionNamespacedConfigMap | watch               | boolean                                            |        0 |            0 | query | boolean | 1 |
-| listCoreV1NamespacedConfigMap             | allowWatchBookmarks | boolean                                            |        0 |            0 | query | boolean | 1 |
-| listCoreV1NamespacedConfigMap             | continue            | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1NamespacedConfigMap             | fieldSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1NamespacedConfigMap             | labelSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1NamespacedConfigMap             | limit               | integer                                            |        0 |            0 | query | integer | 1 |
-| listCoreV1NamespacedConfigMap             | resourceVersion     | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1NamespacedConfigMap             | timeoutSeconds      | integer                                            |        0 |            0 | query | integer | 1 |
-| listCoreV1NamespacedConfigMap             | watch               | boolean                                            |        0 |            0 | query | boolean | 1 |
-| createCoreV1NamespacedConfigMap           | body                | io.k8s.api.core.v1.ConfigMap                       |        0 |            0 | body  |         |   |
-| createCoreV1NamespacedConfigMap           | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| createCoreV1NamespacedConfigMap           | fieldManager        | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1NamespacedConfigMap           | body                | io.k8s.apimachinery.pkg.apis.meta.v1.DeleteOptions |        0 |            0 | body  |         |   |
-| deleteCoreV1NamespacedConfigMap           | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1NamespacedConfigMap           | gracePeriodSeconds  | integer                                            |        0 |            0 | query | integer | 1 |
-| deleteCoreV1NamespacedConfigMap           | orphanDependents    | boolean                                            |        0 |            0 | query | boolean | 1 |
-| deleteCoreV1NamespacedConfigMap           | propagationPolicy   | string                                             |        0 |            0 | query | string  | 1 |
-| readCoreV1NamespacedConfigMap             | exact               | boolean                                            |        0 |            0 | query | boolean | 1 |
-| readCoreV1NamespacedConfigMap             | export              | boolean                                            |        0 |            0 | query | boolean | 1 |
-| patchCoreV1NamespacedConfigMap            | body                | io.k8s.apimachinery.pkg.apis.meta.v1.Patch         |        0 |            0 | body  |         |   |
-| patchCoreV1NamespacedConfigMap            | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| patchCoreV1NamespacedConfigMap            | fieldManager        | string                                             |        0 |            0 | query | string  | 1 |
-| patchCoreV1NamespacedConfigMap            | force               | boolean                                            |        0 |            0 | query | boolean | 1 |
-| replaceCoreV1NamespacedConfigMap          | body                | io.k8s.api.core.v1.ConfigMap                       |        0 |            0 | body  |         |   |
-| replaceCoreV1NamespacedConfigMap          | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| replaceCoreV1NamespacedConfigMap          | fieldManager        | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | allowWatchBookmarks | boolean                                            |        0 |            0 | query | boolean | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | body                | io.k8s.apimachinery.pkg.apis.meta.v1.DeleteOptions |        0 |            0 | body  |         |   |
-| deleteCoreV1CollectionNamespacedEndpoints | continue            | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | fieldSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | gracePeriodSeconds  | integer                                            |        0 |            0 | query | integer | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | labelSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | limit               | integer                                            |        0 |            0 | query | integer | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | orphanDependents    | boolean                                            |        0 |            0 | query | boolean | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | propagationPolicy   | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | resourceVersion     | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | timeoutSeconds      | integer                                            |        0 |            0 | query | integer | 1 |
-| deleteCoreV1CollectionNamespacedEndpoints | watch               | boolean                                            |        0 |            0 | query | boolean | 1 |
-| listCoreV1NamespacedEndpoints             | allowWatchBookmarks | boolean                                            |        0 |            0 | query | boolean | 1 |
-| listCoreV1NamespacedEndpoints             | continue            | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1NamespacedEndpoints             | fieldSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1NamespacedEndpoints             | labelSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1NamespacedEndpoints             | limit               | integer                                            |        0 |            0 | query | integer | 1 |
-| listCoreV1NamespacedEndpoints             | resourceVersion     | string                                             |        0 |            0 | query | string  | 1 |
-| listCoreV1NamespacedEndpoints             | timeoutSeconds      | integer                                            |        0 |            0 | query | integer | 1 |
-| listCoreV1NamespacedEndpoints             | watch               | boolean                                            |        0 |            0 | query | boolean | 1 |
-| createCoreV1NamespacedEndpoints           | body                | io.k8s.api.core.v1.Endpoints                       |        0 |            0 | body  |         |   |
-| createCoreV1NamespacedEndpoints           | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| createCoreV1NamespacedEndpoints           | fieldManager        | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1NamespacedEndpoints           | body                | io.k8s.apimachinery.pkg.apis.meta.v1.DeleteOptions |        0 |            0 | body  |         |   |
-| deleteCoreV1NamespacedEndpoints           | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1NamespacedEndpoints           | gracePeriodSeconds  | integer                                            |        0 |            0 | query | integer | 1 |
-| deleteCoreV1NamespacedEndpoints           | orphanDependents    | boolean                                            |        0 |            0 | query | boolean | 1 |
-| deleteCoreV1NamespacedEndpoints           | propagationPolicy   | string                                             |        0 |            0 | query | string  | 1 |
-| readCoreV1NamespacedEndpoints             | exact               | boolean                                            |        0 |            0 | query | boolean | 1 |
-| readCoreV1NamespacedEndpoints             | export              | boolean                                            |        0 |            0 | query | boolean | 1 |
-| patchCoreV1NamespacedEndpoints            | body                | io.k8s.apimachinery.pkg.apis.meta.v1.Patch         |        0 |            0 | body  |         |   |
-| patchCoreV1NamespacedEndpoints            | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| patchCoreV1NamespacedEndpoints            | fieldManager        | string                                             |        0 |            0 | query | string  | 1 |
-| patchCoreV1NamespacedEndpoints            | force               | boolean                                            |        0 |            0 | query | boolean | 1 |
-| replaceCoreV1NamespacedEndpoints          | body                | io.k8s.api.core.v1.Endpoints                       |        0 |            0 | body  |         |   |
-| replaceCoreV1NamespacedEndpoints          | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| replaceCoreV1NamespacedEndpoints          | fieldManager        | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | allowWatchBookmarks | boolean                                            |        0 |            0 | query | boolean | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | body                | io.k8s.apimachinery.pkg.apis.meta.v1.DeleteOptions |        0 |            0 | body  |         |   |
-| deleteCoreV1CollectionNamespacedEvent     | continue            | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | dryRun              | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | fieldSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | gracePeriodSeconds  | integer                                            |        0 |            0 | query | integer | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | labelSelector       | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | limit               | integer                                            |        0 |            0 | query | integer | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | orphanDependents    | boolean                                            |        0 |            0 | query | boolean | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | propagationPolicy   | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | resourceVersion     | string                                             |        0 |            0 | query | string  | 1 |
-| deleteCoreV1CollectionNamespacedEvent     | timeoutSeconds      | integer                                            |        0 |            0 | query | integer | 1 |
-
-
-
-
-
-
-*** operation responses
+** operation responses
 
 #+BEGIN_SRC sqlite :results raw
   with
@@ -634,12 +427,16 @@ from api_swagger,
 | deleteCoreV1CollectionNamespacedPersistentVolumeClaim | 401 |                                                      | Unauthorized |
 
 
-
-
-
-
-
-*** schema
+* API Schema
+  :PROPERTIES:
+  :header-args:sql-mode+: :results silent
+  :header-args:sql-mode+: :product sqlite
+  :header-args:sql-mode+: :session raiinbow
+  :header-args:sqlite+: :db (concat (file-name-directory buffer-file-name) "../apps/sqlite/raiinbow.db")
+  :header-args:sqlite+: :colnames yes
+  :header-args:sqlite+: :results table silent
+  :END:
+** schema
 
 #+BEGIN_SRC sqlite
    with definitions as (select d.key as schema, d.value as attributes
@@ -648,41 +445,14 @@ from api_swagger,
    select
      d.schema as kind
      , json_extract(d.attributes, '$.type') as schema_type
-     -- , gvk.value as val
-     -- , json_extract(d.attndributes, '$.required') as param_type
      , json_extract(gvk.value, '$.kind') as k8s_kind
      , json_extract(gvk.value, '$.group') as k8s_group
      , json_extract(gvk.value, '$.version') as k8s_version
      , json_extract(d.attributes, '$.required') as required_fields
      , json_extract(d.attributes, '$.properties') as properties
-    --instr(json_extract(o.value, '$.tags'),'_') AS h,
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-kind') as k8s
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-kind.group') as k8s_group
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-kind.group') as k8s_group
-     -- , json_extract(json_extract(d.attributes, '$.x-kubernetes-group-version-kind'), '$.group') as ak8s_group
-     -- , json_extract(json_extract(d.attributes, '$.x-kubernetes-group-version-kind'), '$.version') as ak8s_version
-     -- ,,, json_extract(json_extract(d.attributes, '$.x-kubernetes-group-version-kind'), '$.kind') as ak8s_kind
-     --  , json_extract(d.attributes, '$.x-kubernetes-group-version-kind.kind') as k8s_kind
-     -- , json_extract(gvk, '$.version') as ak8s_version
-     -- , json_extract(gvk, '$.kind') as ak8s_kind
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-kind') as ak8s_kind
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-kind.kind') as ak8s_kind
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-kind.group') as ak8s_group
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-kind.version') as ak8s_version
-     -- , json_extract(d.attributes, '$.required') as required
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-version') as ik8s_version
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-kind.group') as k8s_group
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-kind.version') as k8s_version
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-kind.kind') as k8s_kind
-     -- , json_extract(d.attributes, '$.x-kubernetes-group-version-group') as ik8s_group
-     -- json_extract(o.value, '$.operationId') as op_id,
-     --paths.key as path,
-     --o.key as http_method
      from definitions as d
          , json_each(d.attributes, '$.x-kubernetes-group-version-kind') as gvk
-          -- , json_each(definitions.attributes) as attribs
      limit 60
-  --  limit 40
    ;
 #+END_SRC
 
@@ -750,11 +520,7 @@ from api_swagger,
 | io.k8s.api.batch.v1.JobList                                                 | object      | JobList                            | batch                        | v1          | items             | apiVersion":{"description":"APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources","type":"string"},"items":{"description":"items is the list of Jobs.","items":{"$ref":"#/definitions/io.k8s.api.batch.v1.Job"},"type":"array"},"kind":{"description":"Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds","type":"string"},"metadata":{"$ref":"#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta","description":"Standard list metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | io.k8s.api.batch.v1beta1.CronJob                                            | object      | CronJob                            | batch                        | v1beta1     |                   | apiVersion":{"description":"APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources","type":"string"},"kind":{"description":"Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds","type":"string"},"metadata":{"$ref":"#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta","description":"Standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata"},"spec":{"$ref":"#/definitions/io.k8s.api.batch.v1beta1.CronJobSpec","description":"Specification of the desired behavior of a cron job, including the schedule. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status"},"status":{"$ref":"#/definitions/io.k8s.api.batch.v1beta1.CronJobStatus","description":"Current status of a cron job. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status                                                                                                                                                                                                                                                  |
 
-
-
-
-
-*** schema fields
+** schema fields
 
 #+BEGIN_SRC sqlite
   with schemas as (
@@ -795,18 +561,10 @@ from api_swagger,
            THEN 'subtype'
            ELSE json_extract(p.value, '$.type')
            END AS field_type
-         -- , json_array_length(s.required_fields) as required_count
-         -- , s.required_fields
          , CASE 
            WHEN s.required_fields like '%"' || p.key || '"%' THEN 1
            ELSE 0
              END as required
-         -- , json_extract(p.value, '$.description') as description
-
-         -- , CASE
-         --   WHEN '"' || p.key || '"' IN () THEN 1
-         --   ELSE 0
-         --   END as required
          , CASE
            WHEN (   json_extract(p.value, '$.description') like '%This field is alpha-level%'
                  or json_extract(p.value, '$.description') like '%This is an alpha field%'
@@ -859,12 +617,376 @@ from api_swagger,
 | io.k8s.api.storage.v1beta1.StorageClass      | allowedTopologies | array                            | array      |        0 | ga      |          0 |             1 |
 | io.k8s.api.storage.v1beta1.StorageClass      | volumeBindingMode | string                           | string     |        0 | ga      |          0 |             1 |
 
+* Loading a specific API Schema from GitHub
+  :PROPERTIES:
+  :header-args:python+: :tangle ../apps/sqlite/120_function_load_swagger_via_github.py
+  :END:
+
+https://docs.python.org/3/library/sqlite3.html
+
+#+NAME: load_swagger_via_curl.py
+#+BEGIN_SRC python :exports code :dir (concat (file-name-directory buffer-file-name) "../apps/sqlite") :results output
+  # should probably sanitize branch_or_tag
+  import sqlite3
+  import requests
+  def load_swagger_via_github(cursor, branch_or_tag):
+      swagger_url = '/'.join([
+          'https://raw.githubusercontent.com/kubernetes/kubernetes',
+          branch_or_tag,
+          'api/openapi-spec/swagger.json'])
+      r = requests.get(swagger_url)
+      if r.status_code != 200:
+          raise 'hand'
+      insert_query = """insert into 'api_swagger'
+      (version, gitref, data)
+      VALUES (?, ?, json(?))"""
+      insert_tuple = ('master', branch_or_tag, r.text)
+      cursor.execute(insert_query, insert_tuple)
+      con.commit()
+
+  con = sqlite3.connect('raiinbow.db')
+  # con.create_function('load_swagger_for_ref',1,load_swagger_via_github)
+  # con.text_factory = str
+  # conn = sqlite3.connect(":memory:")
+  # con.enable_load_extension(False)
+  con.isolation_level = None
+  c = con.cursor()
+  load_swagger_via_github(c,'master')
+  con.close()
+#+END_SRC
+
+#+RESULTS: load_swagger_via_curl.py
+
+* Raw Audit Events Table
+  :PROPERTIES:
+  :header-args:sql-mode+: :results silent
+  :header-args:sql-mode+: :product sqlite
+  :header-args:sql-mode+: :session raiinbow
+  :header-args:sqlite+: :db (concat (file-name-directory buffer-file-name) "../apps/sqlite/raiinbow.db")
+  :header-args:sqlite+: :colnames yes
+  :header-args:sqlite+: :results table silent
+  :END:
+** create
+#+BEGIN_SRC sqlite
+  DROP TABLE raw_audit_event;
+  CREATE TABLE raw_audit_event (
+    -- id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    -- ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+    bucket text
+    , job text
+    , audit_id text NOT NULL
+    , stage text NOT NULL
+    , event_verb text NOT NULL
+    , request_uri text NOT NULL
+    , object_resource text
+    , object_namespace text
+    , object_name text
+    , object_apiversion text
+    , request_object jsonb
+    , response_object jsonb
+    , request_recieved_ts timestamp
+    , stage_ts timestamp
+    , annotations jsonb
+    , operation_id text
+  );
+#+END_SRC
+
+#+BEGIN_SRC sqlite :result output
+.tables
+#+END_SRC
+
+** load
+
+#+BEGIN_SRC sqlite
+#+END_SRC
+
+#+BEGIN_SRC python :exports none :tangle /tmp/load.py
+  #print(foo)
+  import json
+  import sqlite3
+  bucket='ci-kubernetes-e2e-gci-gce'
+  job='1171138971078496256'
+  logfile='/tmp/apisnoop-ci-kubernetes-e2e-gci-gce-1171138971078496256-rnherk8c/kube-apiserver-audit.log'
+  dbfile='/zfs/home/hh/ii/apisnoop/apps/sqlite/raiinbow.db'
+  sql = """INSERT INTO raw_audit_event(
+  bucket
+  , job
+  , audit_id
+  , stage
+  , event_verb
+  , request_uri
+  , object_resource
+  , object_namespace
+  , object_name
+  , object_apiversion
+  , request_object
+  , response_object
+  , request_recieved_ts
+  , stage_ts
+  , annotations
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ,?)"""
+  conn = sqlite3.connect(dbfile)
+  # con.create_function('load_swagger_for_ref',1,load_swagger_via_github)
+  # con.text_factory = str
+  # conn = sqlite3.connect(":memory:")
+  # con.enable_load_extension(False)
+  conn.isolation_level = None
+  cursor = conn.cursor()
+  # load_swagger_via_github(c,'master')
+  # rv = plpy.execute(sql)
+  with open(logfile) as log:
+    some_audits=[]
+
+    for entry in log:,bt
+      # print (entry)
+      j=json.loads(entry)
+      object_ref = j['objectRef'] if j.has_key('objectRef') else {}
+      some_audits.append([
+        bucket,
+        job,
+        j['auditID'],
+        j['stage'],
+        j['verb'],
+        j['requestURI'],
+        object_ref['resource'] if object_ref.has_key('resource') else None,
+        object_ref['namespace'] if object_ref.has_key('namespace') else None,
+        object_ref['name'] if object_ref.has_key('name') else None,
+        object_ref['apiVersion'] if object_ref.has_key('apiVersion') else None,
+        json.dumps(j['requestObject']) if j.has_key('requestObject') else None,
+        json.dumps(j['responseObject']) if j.has_key('responseObject') else None,
+        j['requestReceivedTimestamp'],
+        j['stageTimestamp'],
+        json.dumps(j['annotations']) if j.has_key('annotations') else None,
+      ])
+      if len(some_audits) > 500:
+        cursor.executemany(sql, some_audits)
+        # some_audits are loaded, clear for next batch
+        some_audits=[]
+  cursor.executemany(sql, some_audits)
+  # conn.commit()
+  conn.close()
+#+END_SRC
+
+#+RESULTS:
 
 
+#+NAME: load_audit_events.py
+#+BEGIN_SRC python :noweb yes :exports none
+  ##!/usr/bin/env python3
+  from urllib.request import urlopen, urlretrieve
+  #import urllib.request
+  import requests
+  import os
+  import sys
+  import re
+  from bs4 import BeautifulSoup
+  import subprocess
+  import time
+  import glob
+  from tempfile import mkdtemp
+  from string import Template
+  import sqlite3
 
 
+  def get_html(url):
+      sys.stderr.write(url + '\n')
+      html = urlopen(url).read()
+      soup = BeautifulSoup(html, 'html.parser')
+      return soup
 
 
+  def download_url_to_path(url, local_path):
+      local_dir = os.path.dirname(local_path)
+      if not os.path.isdir(local_dir):
+          os.makedirs(local_dir)
+      if not os.path.isfile(local_path):
+          process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
+          downloads[local_path] = process
+
+  # this global dict is used to track our wget subprocesses
+  # wget was used because the files can get to several halfa gig
+  downloads = {}
+  def load_audit_events(bucket,job):
+      bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
+      artifacts_url = 'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/' + bucket + '/' +  job + '/' + 'artifacts'
+      job_metadata_files = [
+          'finished.json',
+          'artifacts/metadata.json',
+          'artifacts/junit_01.xml',
+          'build-log.txt'
+      ]
+      download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job + '-') + '/'
+      combined_log_file = download_path + 'audit.log'
+
+      # meta data to download
+      for jobfile in job_metadata_files:
+          download_url_to_path( bucket_url + jobfile,
+                                download_path + jobfile )
+
+      # Use soup to grab url of each of audit.log.* (some end in .gz)
+      soup = get_html(artifacts_url)
+      master_link = soup.find(href=re.compile("master"))
+      master_soup = get_html(
+          "https://gcsweb.k8s.io" + master_link['href'])
+      log_links = master_soup.find_all(
+          href=re.compile("audit.log"))
+
+      # download all logs
+      for link in log_links:
+          log_url = link['href']
+          log_file = download_path + os.path.basename(log_url)
+          download_url_to_path( log_url, log_file)
+
+      # Our Downloader uses subprocess of curl for speed
+      for download in downloads.keys():
+          # Sleep for 5 seconds and check for next download
+          while downloads[download].poll() is None:
+              time.sleep(5)
+              # print("Still downloading: " + download)
+          # print("Downloaded: " + download)
+
+      # Loop through the files, (z)cat them into a combined audit.log
+      with open(combined_log_file, 'ab') as log:
+          for logfile in sorted(
+                  glob.glob(download_path + '*kube-apiserver-audit*'), reverse=True):
+              if logfile.endswith('z'):
+                  subprocess.run(['zcat', logfile], stdout=log, check=True)
+              else:
+                  subprocess.run(['cat', logfile], stdout=log, check=True)
+      # Load the resulting combined audit.log directly into raw_audit_event
+      insert_audit_events(bucket,job,combined_log_file,dbfile)
+  def insert_audit_events(bucket,job,logfile,dbfile):
+      sql = """INSERT INTO raw_audit_event(
+      bucket
+      , job
+      , audit_id
+      , stage
+      , event_verb
+      , request_uri
+      , object_resource
+      , object_namespace
+      , object_name
+      , object_apiversion
+      , request_object
+      , response_object
+      , request_recieved_ts
+      , stage_ts
+      , annotations
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ,?)"""
+      conn = sqlite3.connect(dbfile)
+      # con.create_function('load_swagger_for_ref',1,load_swagger_via_github)
+      # con.text_factory = str
+      # conn = sqlite3.connect(":memory:")
+      # con.enable_load_extension(False)
+      conn.isolation_level = None
+      cursor = conn.cursor()
+      # load_swagger_via_github(c,'master')
+      # rv = plpy.execute(sql)
+      with open(logfile) as log:
+          some_audits=[]
+          for entry in log:
+              # print (entry)
+              j=json.loads(entry)
+              object_ref = j['objectRef'] if j.has_key('objectRef') else {}
+              some_audits.append([
+                  bucket,
+                  job,
+                  j['auditID'],
+                  j['stage'],
+                  j['verb'],
+                  j['requestURI'],
+                  object_ref['resource'] if object_ref.has_key('resource') else None,
+                  object_ref['namespace'] if object_ref.has_key('namespace') else None,
+                  object_ref['name'] if object_ref.has_key('name') else None,
+                  object_ref['apiVersion'] if object_ref.has_key('apiVersion') else None,
+                  json.dumps(j['requestObject']) if j.has_key('requestObject') else None,
+                  json.dumps(j['responseObject']) if j.has_key('responseObject') else None,
+                  j['requestReceivedTimestamp'],
+                  j['stageTimestamp'],
+                  json.dumps(j['annotations']) if j.has_key('annotations') else None,
+              ])
+              if len(some_audits) > 500:
+                  cursor.executemany(sql, some_audits)
+                  # some_audits are loaded, clear for next batch
+                  some_audits=[]
+          cursor.executemany(sql, some_audits)
+          # conn.commit()
+          conn.close()
+
+  # if __name__ == "__main__":
+  #     load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234')
+  # else:
+  #     load_audit_events(bucket,job)
+  # https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1171138971078496256/
+  load_audit_events('ci-kubernetes-e2e-gci-gce','1171138971078496256')
+#+END_SRC
+
+#+RESULTS: load_audit_events.py
+: None
+
+* Explore
+  :PROPERTIES:
+  :header-args:sql-mode+: :results silent
+  :header-args:sql-mode+: :product sqlite
+  :header-args:sql-mode+: :session raiinbow
+  :header-args:sqlite+: :db (concat (file-name-directory buffer-file-name) "../apps/sqlite/raiinbow.db")
+  :header-args:sqlite+: :colnames yes
+  :header-args:sqlite+: :results table replace
+  :END:
+
+https://www.sqlite.org/json1.html#jeach
+
+#+BEGIN_SRC sql-mode
+CREATE TABLE json_tree(
+    key ANY,             -- key for current element relative to its parent
+    value ANY,           -- value for the current element
+    type TEXT,           -- 'object','array','string','integer', etc.
+    atom ANY,            -- value for primitive types, null for array & object
+    id INTEGER,          -- integer ID for this element
+    parent INTEGER,      -- integer ID for the parent of this element
+    fullkey TEXT,        -- full path describing the current element
+    path TEXT,           -- path to the container of the current row
+    json JSON HIDDEN,    -- 1st input parameter: the raw JSON
+    root TEXT HIDDEN     -- 2nd input parameter: the PATH at which to start
+);
+#+END_SRC
+
+** top level keys
+*** 5 keys
+#+NAME: top level keys
+#+BEGIN_SRC sqlite
+select j.key, j.type, j.atom, j.id from api_swagger, json_each(api_swagger.data) as j;
+-- limit 10;
+-- select j.key from api_swagger, json_tree(api_swagger.data) as j;
+-- from api_swagger, json_each(api_swagger.data, '$.paths') as paths limit 1;
+#+END_SRC
+
+#+RESULTS: top level keys
+| key                 | type   | atom |     id |
+|---------------------+--------+------+--------|
+| definitions         | object |      |      2 |
+| info                | object |      |  28384 |
+| paths               | object |      |  28390 |
+| security            | array  |      | 158969 |
+| securityDefinitions | object |      | 158974 |
+| swagger             | text   |  2.0 | 158986 |
+
+*** info - title:Kubernetes version:v1.17.0
+
+#+NAME: info
+#+BEGIN_SRC sqlite
+select j.key, j.type, j.atom, j.id
+from api_swagger,
+     json_each(api_swagger.data, '$.info') as j
+-- select j.key from api_swagger, json_tree(api_swagger.data) as j;
+-- from api_swagger, json_each(api_swagger.data, '$.paths') as paths limit 1;
+#+END_SRC
+
+#+RESULTS: info
+| key     | type | atom       |    id |
+|---------+------+------------+-------|
+| title   | text | Kubernetes | 28386 |
+| version | text | v1.17.0    | 28388 |
 
 
 * Footnotes

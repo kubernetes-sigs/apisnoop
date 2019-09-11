@@ -3,6 +3,7 @@
 (
  (org-mode
   (org-babel-tmate-session-prefix . "")
+  (org-babel-python-command . "python3")
   (org-babel-tmate-default-window-name . "main")
   (org-confirm-babel-evaluate . nil)
   (org-use-property-inheritance . t)
