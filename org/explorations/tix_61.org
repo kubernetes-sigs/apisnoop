@@ -501,7 +501,8 @@ From this refactoring, a hope is that it offers another perspective into the arr
 *** Conclusion  
     I think we could reference the definition simply using the objectRef and requestObject in the audit_event, at least enough to explore our field coverage again.
 
-** TODO Rebuild initial Podspec query to not use operation_id
+** DONE Rebuild initial Podspec query to not use operation_id
+   CLOSED: [2019-09-11 Wed 04:37]
 *** Original PodSpec Materialized View
    Here we have our original to draw from.  It's a comple query, and before we refactor the parts, we should ensure a diff. method  on id would return same # of results on a simpler query.
  #+NAME: view podspec_field_coverage_material
@@ -581,7 +582,10 @@ From this refactoring, a hope is that it offers another perspective into the arr
             (a.data -> 'objectRef'->>'subresource') as sub_resource,
           (a.data->>'verb') as event_verb,
           operation_id,
-          audit_id
+          audit_id,
+          split_part(a.useragent, '--', 2) as test,
+          split_part(a.useragent, '--', 1) as useragent,
+          (a.data -> 'requestObject') as request_object
           FROM audit_event as a
          where data->'requestObject' is not null;
     #+END_SRC
@@ -740,13 +744,105 @@ From this refactoring, a hope is that it offers another perspective into the arr
    #+end_src
    
    Fantastic!  
-*** Conclusion
-    If we limit the events we look at in our audit logs to just request events (those with requestObject), then we can meaningfully group these events by group,version,kind,resource,subResource,verb.  Looking at the distinct results based around this grouping gives us identical #'s to our previous grouping of operationID.
+**** Conclusion
+     If we limit the events we look at in our audit logs to just request events (those with requestObject), then we can meaningfully group these events by group,version,kind,resource,subResource,verb.  Looking at the distinct results based around this grouping gives us identical #'s to our previous grouping of operationID.
 
-    While this grouping is more verbose than op_id it has several advantages.  For one, it requires no expensive regex function to run on the data, decreasing the startup of our system by 30 minutes.  It also means we are not inserting anything additional into the audit events.  Our views are coming directly from the data given, using the same language as outlined in the k8s docs and the openAPI spec.
+     While this grouping is more verbose than op_id it has several advantages.  For one, it requires no expensive regex function to run on the data, decreasing the startup of our system by 30 minutes.  It also means we are not inserting anything additional into the audit events.  Our views are coming directly from the data given, using the same language as outlined in the k8s docs and the openAPI spec.
 
-    There's also a nice path for our sunburst:  moving outward we can have version->group->kind->resource->subResource->verb.  It doubles the rings in the sunburst, but ensures that every node maps exactly to discrete endpoint and traversing the sunburst is more logical to the community we're serving.
+     There's also a nice path for our sunburst:  moving outward we can have version->group->kind->resource->subResource->verb.  It doubles the rings in the sunburst, but ensures that every node maps exactly to discrete endpoint and traversing the sunburst is more logical to the community we're serving.
 
+*** Revised PodSpec Materialized View
+
+    If we build off our events_by_gvkrv view, we can rebuild the table without operation_id and with a slightly cleaner format.  
+    
+  #+NAME: view podspec_field_coverage_material
+  #+BEGIN_SRC sql-mode :results silent
+    CREATE MATERIALIZED VIEW "public"."revised_podspec_field_coverage_material" AS 
+    SELECT DISTINCT
+      api_group,
+      api_version,
+      kind,
+      event_verb,
+      resource,
+      sub_resource,
+      test,
+      useragent,
+      jsonb_object_keys(request_object -> 'spec'::text) AS podspec_field,
+      count(event_field.event_field) AS hits
+      FROM events_by_gvkrv,
+           LATERAL
+             jsonb_object_keys(events_by_gvkrv.request_object -> 'spec'::text) event_field(event_field)
+     WHERE kind = 'Pod'
+       AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}')) -- api_version doesn't contain alpha or beta;
+     GROUP BY api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field
+          UNION
+    SELECT DISTINCT
+      api_group,
+      api_version,
+      kind,
+      event_verb,
+      resource,
+      sub_resource,
+      test,
+      useragent,
+      jsonb_object_keys(request_object -> 'template' -> 'spec'::text) AS podspec_field,
+      count(event_field.event_field) AS hits
+      FROM events_by_gvkrv,
+           LATERAL
+             jsonb_object_keys(events_by_gvkrv.request_object -> 'template'-> 'spec'::text) event_field(event_field)
+     WHERE kind = 'PodTemplate'
+       AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+     GROUP BY api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field
+          UNION
+    SELECT DISTINCT
+      api_group,
+      api_version,
+      kind,
+      event_verb,
+      resource,
+      sub_resource,
+      test,
+      useragent,
+      jsonb_object_keys(request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+      count(event_field.event_field) AS hits
+      FROM events_by_gvkrv,
+           LATERAL
+             jsonb_object_keys(events_by_gvkrv.request_object -> 'spec' -> 'template'-> 'spec'::text) event_field(event_field)
+     WHERE kind = ANY('{DaemonSet, Deployment, ReplicationController, StatefulSet, Job,ReplicaSet}')
+       AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+     GROUP BY api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field; 
+ #+END_SRC
+ 
+ And comparing the two we get the same number of records.
+
+  #+NAME: Comparison of orig and revised podspec
+  #+BEGIN_SRC sql-mode
+    SELECT
+      (
+        SELECT
+          count(*)
+          FROM
+              podspec_field_coverage_material
+      ) AS original_count,
+      (
+        SELECT
+          count(*)
+          FROM
+              revised_podspec_field_coverage_material
+        ) as revised_count;
+
+  #+END_SRC
+
+  #+RESULTS: Comparison of orig and revised podspec
+  #+begin_src sql-mode
+   original_count | revised_count 
+  ----------------+---------------
+             6572 |          6572
+  (1 row)
+
+  #+end_src
+  
+  Success!
 ** TODO Move down line of cascading views based on this change
 *** 601: Revised PodSpec Field Coverage View
 
