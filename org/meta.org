@@ -909,6 +909,34 @@ psql < /tmp/ci-kubernetes-e2e-gci-gce.1165794879855398916.sql
                raw.data as data
         FROM raw_audit_event raw;
     #+END_SRC
+** 250: Audit Events By GVKRV(Group, Version, Kind, Resource(s),Verb)
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/250_view_audit_event_by_gvkrv.up.sql
+  :END:
+  
+  This is a slim view, and will need to be updated to contain all useful info if/when we phase out operationID across reports.
+    #+NAME: events by gvkrv
+    #+BEGIN_SRC sql-mode :results silent
+      CREATE OR REPLACE VIEW "public"."audit_events_by_gvkrv" AS
+        SELECT
+          CASE
+          WHEN ((a.data -> 'objectRef' ->> 'apiGroup') IS NULL) THEN ''
+          ELSE (a.data -> 'objectRef' ->> 'apiGroup')
+                END as api_group,
+          (a.data -> 'objectRef' ->>'apiVersion') as api_version,
+          (a.data -> 'requestObject'->>'kind') as kind,
+          (a.data -> 'objectRef'->>'resource') as resource,
+            (a.data -> 'objectRef'->>'subresource') as sub_resource,
+          (a.data->>'verb') as event_verb,
+          operation_id,
+          audit_id,
+          split_part(a.useragent, '--', 2) as test,
+          split_part(a.useragent, '--', 1) as useragent,
+          (a.data -> 'requestObject') as request_object
+          FROM audit_event as a
+         where data->'requestObject' is not null;
+    #+END_SRC
+  
 * Field Coverage
   :PROPERTIES:
   :header-args:sql-mode+: :results silent
@@ -1020,59 +1048,63 @@ CREATE INDEX kfpm_sub_kind_idx   ON kind_field_path_material (sub_kind);
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/600_podspec_field_coverage_material.up.sql
   :END:
-#+NAME: view podspec_field_coverage_material
-#+BEGIN_SRC sql-mode
-  CREATE MATERIALIZED VIEW "public"."podspec_field_coverage_material" AS 
-  SELECT DISTINCT
-    audit_event.operation_id,
-    jsonb_object_keys(audit_event.request_object -> 'spec'::text) AS podspec_field,
-    count(event_field.event_field) AS hits,
-    split_part(audit_event.useragent, '--', 2) as test,
-    split_part(audit_event.useragent, '--', 1) as useragent
-    FROM audit_event,
-         LATERAL
-           jsonb_object_keys(audit_event.request_object -> 'spec'::text)
-           event_field(event_field)
-   WHERE (audit_event.request_object ->> 'kind'::text) = 'Pod'::text
-     AND audit_event.operation_id !~~ '%alpha%'::text
-     AND audit_event.operation_id !~~ '%beta%'::text
-   GROUP BY operation_id, podspec_field, useragent
-  UNION
-  SELECT DISTINCT
-    audit_event.operation_id,
-    jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text) AS podspec_field,
-    count(event_field.event_field) AS hits,
-    split_part(audit_event.useragent, '--', 2) as test,
-    split_part(audit_event.useragent, '--', 1) as useragent
-    FROM audit_event,
-         LATERAL
-           jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text)
-           event_field(event_field)
-   WHERE (audit_event.request_object ->> 'kind'::text) = 'PodTemplate'::text
-     AND audit_event.operation_id !~~ '%alpha%'::text
-     AND audit_event.operation_id !~~ '%beta%'::text
-   GROUP BY operation_id, podspec_field, useragent
-  UNION
-  SELECT DISTINCT
-    audit_event.operation_id,
-    jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
-    count(event_field.event_field) AS hits,
-    split_part(audit_event.useragent, '--', 2) as test,
-    split_part(audit_event.useragent, '--', 1) as useragent
-    FROM audit_event,
-         LATERAL
-           jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text)
-           event_field(event_field)
-   WHERE (audit_event.request_object->>'kind' = 'DaemonSet'
-     OR  audit_event.request_object->>'kind' = 'Deployment'
-     OR  audit_event.request_object->>'kind' = 'ReplicationController'
-     OR  audit_event.request_object->>'kind' = 'StatefulSet'
-     OR  audit_event.request_object->>'kind' = 'Job'
-     OR  audit_event.request_object->>'kind' = 'ReplicaSet')
-     AND audit_event.operation_id !~~ '%alpha%'::text
-     AND audit_event.operation_id !~~ '%beta%'::text
-   GROUP BY operation_id, podspec_field, useragent;
-#+END_SRC
+  #+NAME: view podspec_field_coverage_material
+  #+BEGIN_SRC sql-mode :results silent
+    CREATE MATERIALIZED VIEW "public"."podspec_field_coverage_material" AS 
+    SELECT DISTINCT
+      api_group,
+      api_version,
+      kind,
+      event_verb,
+      resource,
+      sub_resource,
+      test,
+      useragent,
+      jsonb_object_keys(request_object -> 'spec'::text) AS podspec_field,
+      count(event_field.event_field) AS hits
+      FROM audit_events_by_gvkrv,
+           LATERAL
+             jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'spec'::text) event_field(event_field)
+     WHERE kind = 'Pod'
+       AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}')) -- api_version doesn't contain alpha or beta;
+     GROUP BY api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field
+          UNION
+    SELECT DISTINCT
+      api_group,
+      api_version,
+      kind,
+      event_verb,
+      resource,
+      sub_resource,
+      test,
+      useragent,
+      jsonb_object_keys(request_object -> 'template' -> 'spec'::text) AS podspec_field,
+      count(event_field.event_field) AS hits
+      FROM audit_events_by_gvkrv,
+           LATERAL
+             jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'template'-> 'spec'::text) event_field(event_field)
+     WHERE kind = 'PodTemplate'
+       AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+     GROUP BY api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field
+          UNION
+    SELECT DISTINCT
+      api_group,
+      api_version,
+      kind,
+      event_verb,
+      resource,
+      sub_resource,
+      test,
+      useragent,
+      jsonb_object_keys(request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+      count(event_field.event_field) AS hits
+      FROM audit_events_by_gvkrv,
+           LATERAL
+             jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'spec' -> 'template'-> 'spec'::text) event_field(event_field)
+     WHERE kind = ANY('{DaemonSet, Deployment, ReplicationController, StatefulSet, Job,ReplicaSet}')
+       AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+     GROUP BY api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field; 
+ #+END_SRC
 ** 601: PodSpec Field Coverage View
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/601_view_podspec_field_coverage.up.sql
@@ -1124,45 +1156,30 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
      and test like '%Conformance%'
    group by podspec_field;
 #+END_SRC
-** 604: PodSpec Field mid Report View
+** 603: PodSpec Field mid Report View
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/604_view_podspec_field_report.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/603_view_podspec_field_mid_report.up.sql
   :END:
-#+NAME: podspec_field_hits
-#+BEGIN_SRC sql-mode
-  create or replace view podspec_field_mid_report as
-  select distinct
-    field_name as podspec_field,
-    0 as other_hits,
-    0 as e2e_hits,
-    0 as conf_hits,
-    release,
-    deprecated,
-    feature_gated as gated,
-    required,
-    field_kind,
-    field_type
-    from api_schema_field
-   where field_schema like '%PodSpec%'
-   UNION
-  select distinct podspec_field,
-        sum(other_hits) as other_hits,
-        sum(e2e_hits) as e2e_hits,
-        sum(conf_hits) as conf_hits,
-        kfp.release,
-        kfp.deprecated,
-        kfp.gated,
-        kfp.required,
-        kfp.field_kind,
-        kfp.field_type
-  from podspec_field_summary pfs, kind_field_path kfp
-  where kfp.field_type not like 'io%'
-    and (kfp.kind like '%PodSpec'
-    or kfp.sub_kind like '%PodSpec')
-    and pfs.podspec_field = regexp_replace(kfp.field_path, '.*\.','') 
-  group by podspec_field, kfp.release, kfp.deprecated, kfp.gated, kfp.required, kfp.field_kind, kfp.field_type
-  order by conf_hits, e2e_hits, other_hits;
-#+END_SRC
+ #+NAME: podspec_field_mid_report
+ #+BEGIN_SRC sql-mode :results silent
+   create or replace view podspec_field_mid_report as
+   select distinct podspec_field,
+         sum(other_hits) as other_hits,
+         sum(e2e_hits) as e2e_hits,
+         sum(conf_hits) as conf_hits,
+         kfp.release,
+         kfp.deprecated,
+         kfp.gated,
+         kfp.required,
+         kfp.field_kind,
+         kfp.field_type
+   from podspec_field_summary pfs, kind_field_path_recursion kfp
+   where 
+     kfp.kind = 'io.k8s.api.core.v1.PodSpec'
+     and pfs.podspec_field = kfp.field_path
+   group by podspec_field, kfp.release, kfp.deprecated, kfp.gated, kfp.required, kfp.field_kind, kfp.field_type
+   order by conf_hits, e2e_hits, other_hits;
+ #+END_SRC
 
 ** 604: PodSpec Field Report View
   :PROPERTIES:
