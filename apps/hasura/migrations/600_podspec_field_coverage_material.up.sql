@@ -2,55 +2,59 @@
 --   :PROPERTIES:
 --   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/600_podspec_field_coverage_material.up.sql
 --   :END:
--- #+NAME: view podspec_field_coverage_material
+--   #+NAME: view podspec_field_coverage_material
 
 CREATE MATERIALIZED VIEW "public"."podspec_field_coverage_material" AS 
 SELECT DISTINCT
-  audit_event.operation_id,
-  jsonb_object_keys(audit_event.request_object -> 'spec'::text) AS podspec_field,
-  count(event_field.event_field) AS hits,
-  split_part(audit_event.useragent, '--', 2) as test,
-  split_part(audit_event.useragent, '--', 1) as useragent
-  FROM audit_event,
+  api_group,
+  api_version,
+  kind,
+  event_verb,
+  resource,
+  sub_resource,
+  test,
+  useragent,
+  jsonb_object_keys(request_object -> 'spec'::text) AS podspec_field,
+  count(event_field.event_field) AS hits
+  FROM audit_events_by_gvkrv,
        LATERAL
-         jsonb_object_keys(audit_event.request_object -> 'spec'::text)
-         event_field(event_field)
- WHERE (audit_event.request_object ->> 'kind'::text) = 'Pod'::text
-   AND audit_event.operation_id !~~ '%alpha%'::text
-   AND audit_event.operation_id !~~ '%beta%'::text
- GROUP BY operation_id, podspec_field, useragent
-UNION
+         jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'spec'::text) event_field(event_field)
+ WHERE kind = 'Pod'
+   AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}')) -- api_version doesn't contain alpha or beta;
+ GROUP BY api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field
+      UNION
 SELECT DISTINCT
-  audit_event.operation_id,
-  jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text) AS podspec_field,
-  count(event_field.event_field) AS hits,
-  split_part(audit_event.useragent, '--', 2) as test,
-  split_part(audit_event.useragent, '--', 1) as useragent
-  FROM audit_event,
+  api_group,
+  api_version,
+  kind,
+  event_verb,
+  resource,
+  sub_resource,
+  test,
+  useragent,
+  jsonb_object_keys(request_object -> 'template' -> 'spec'::text) AS podspec_field,
+  count(event_field.event_field) AS hits
+  FROM audit_events_by_gvkrv,
        LATERAL
-         jsonb_object_keys(audit_event.request_object -> 'template' -> 'spec'::text)
-         event_field(event_field)
- WHERE (audit_event.request_object ->> 'kind'::text) = 'PodTemplate'::text
-   AND audit_event.operation_id !~~ '%alpha%'::text
-   AND audit_event.operation_id !~~ '%beta%'::text
- GROUP BY operation_id, podspec_field, useragent
-UNION
+         jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'template'-> 'spec'::text) event_field(event_field)
+ WHERE kind = 'PodTemplate'
+   AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+ GROUP BY api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field
+      UNION
 SELECT DISTINCT
-  audit_event.operation_id,
-  jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
-  count(event_field.event_field) AS hits,
-  split_part(audit_event.useragent, '--', 2) as test,
-  split_part(audit_event.useragent, '--', 1) as useragent
-  FROM audit_event,
+  api_group,
+  api_version,
+  kind,
+  event_verb,
+  resource,
+  sub_resource,
+  test,
+  useragent,
+  jsonb_object_keys(request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+  count(event_field.event_field) AS hits
+  FROM audit_events_by_gvkrv,
        LATERAL
-         jsonb_object_keys(audit_event.request_object -> 'spec' -> 'template' -> 'spec'::text)
-         event_field(event_field)
- WHERE (audit_event.request_object->>'kind' = 'DaemonSet'
-   OR  audit_event.request_object->>'kind' = 'Deployment'
-   OR  audit_event.request_object->>'kind' = 'ReplicationController'
-   OR  audit_event.request_object->>'kind' = 'StatefulSet'
-   OR  audit_event.request_object->>'kind' = 'Job'
-   OR  audit_event.request_object->>'kind' = 'ReplicaSet')
-   AND audit_event.operation_id !~~ '%alpha%'::text
-   AND audit_event.operation_id !~~ '%beta%'::text
- GROUP BY operation_id, podspec_field, useragent;
+         jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'spec' -> 'template'-> 'spec'::text) event_field(event_field)
+ WHERE kind = ANY('{DaemonSet, Deployment, ReplicationController, StatefulSet, Job,ReplicaSet}')
+   AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+ GROUP BY api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field;
