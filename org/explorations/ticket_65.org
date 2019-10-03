@@ -55,123 +55,86 @@
       job text,
       commit_hash text,
       passed text,
-      result text,
+      job_result text,
       pod text,
       infra_commit text,
       job_version text,
-      job_timestamp text,
+      job_timestamp timestamp,
       node_os_image text,
-      master_os_image text 
+      master_os_image text ,
+      swagger jsonb
   );
 #+END_SRC
  
 ** Create python script for curl > temp table > job_bucket flow
     Am using the audit_event loading as a guide, though put in an explicit exception to help catch sql bugs.
-    #+BEGIN_SRC python
-
-             ${metadata.result} as result,
-             ${metadata['metadata']['infra-commit']} as infra_commit,
-             ${metadata['metadata']['pod']} as pod,
-             ${metadata['metadata']['job-version']} as job_version,
-             to_timestamp(${metadata['timestamp']}::bigint) AT TIME ZONE 'UTC' as job_timestamp,
-             ${metadata['metadata']['node_os_image']} as node_os_image,
-             ${metadata['metadata']['master_os_image']} as master_os_image
-
-    #+END_SRC
-
    
 #+NAME: load_job_bucket_via_curl.py
 #+BEGIN_SRC python :results output
-  try:
-      from urllib.request import urlopen, urlretrieve
-      from string import Template
-      import json
-      bucket = 'ci-kubernetes-e2e-gci-gce' # for debugging right now
-      job = '1178464478988079104' # for debugging right now
-      metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
-      metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-      commit_hash = metadata["version"].split("+")[1]
-      swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json']) 
-      swagger = json.loads(urlopen(swagger_url).read().decode('utf-8'))
-      passed = metadata['passed']
-      sql = Template("""
-   INSERT INTO job_bucket(
-             bucket,
-             job,
-             commit_hash, 
-             passed)
-     SELECT
-
-             '$bucket' as bucket,
-             '$job' as job,
-             '$commit_hash' as commit_hash,
-             '$passed' as passed
-      """).substitute(metadata = metadata, bucket = bucket, job = job, commit_hash = commit_hash, passed = passed)
-      rv = plpy.execute(sql)
-      return "it worked!"
-  except Exception as err:
-      return Template("something went wrong, likely this: ${error}").substitute(error = err)
+            try:
+                from urllib.request import urlopen, urlretrieve
+                from string import Template
+                import json
+                bucket = 'ci-kubernetes-e2e-gci-gce' # for debugging right now
+                job = '1178464478988079104' # for debugging right now
+                metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
+                metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+                commit_hash = metadata["version"].split("+")[1]
+                swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json']) 
+                #swagger = json.loads(urlopen(swagger_url).read().decode('utf-8'))
+                swagger = urlopen(swagger_url).read().decode('utf-8') # may change this to ascii
+                # sql = Template("""
+                sql = """
+             INSERT INTO job_bucket(
+                       bucket,
+                       job,
+                       commit_hash, 
+                       passed,
+                       job_result,
+                       pod,
+                       infra_commit,
+                       job_version,
+                       job_timestamp,
+                       node_os_image,
+                       master_os_image,
+                       swagger
+                )
+               SELECT
+                       $1 as bucket,
+                       $2 as job,
+                       $3 as commit_hash,
+                       $4 as passed,
+                       $5 as job_result,
+                       $6 as pod,
+                       $7 as infra_commit,
+                       $8 as job_version,
+                       (to_timestamp($9)) AT TIME ZONE 'UTC' as job_timestamp,
+                       $10 as node_os_image,
+                       $11 as master_os_image,
+                       $12 as swagger
+                """
+                plan = plpy.prepare(sql, [
+                    'text','text','text','text',
+                    'text','text','text','text',
+                    'integer','text','text','jsonb'])
+                rv = plpy.execute(plan, [
+                    bucket,job,commit_hash,
+                    metadata['passed'],metadata['result'],
+                    metadata['metadata']['pod'],
+                    metadata['metadata']['infra-commit'],
+                    metadata['version'],
+                    int(metadata['timestamp']),
+                    metadata['metadata']['node_os_image'],
+                    metadata['metadata']['master_os_image'],
+                    json.dumps(swagger)
+                ])
+                return "it worked!"
+            except Exception as err:
+                return Template("something went wrong, likely this: ${error}").substitute(error = err)
 #+END_SRC
 
 #+RESULTS: load_job_bucket_via_curl.py
 
- #+NAME: load_job_bucket_via_curl_old.py
- #+BEGIN_SRC python :eval never :exports code
-         try:
-             from string import Template
-             metadata = ''.join([
-                 'curl ',
-                 'https://storage.googleapis.com/kubernetes-jenkins/logs/',
-                 bucket,
-                 '/',
-                 job,
-                 '/finished.json | jq -c .'])
-             curlswagger= ''.join([
-                'IFS="+"; ',
-                'version=$(',
-                metadata,
-                ' | jq -c .version); ',
-                'commit=${version##*+}; ',
-                'commit_hash=${commit%\"*}; ',
-                'swagger_link="https://raw.githubusercontent.com/kubernetes/kubernetes/${commit_hash}/api/openapi-spec/swagger.json"; ',
-                'curl ${swagger_link} | jq -c .'])
-             sql = Template("""
-   DROP TABLE raw_job_bucket_import;
-   CREATE TEMPORARY TABLE raw_job_bucket_import (data jsonb not null, swagger jsonb);
-   COPY raw_job_bucket_import (data) FROM PROGRAM '$curl' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
-   INSERT INTO job_bucket(
-             bucket,
-             job,
-             commit_hash,
-             passed,
-             result,
-             infra_commit,
-             pod,
-             job_version,
-             job_timestamp,
-             node_os_image,
-             master_os_image)
-     SELECT
-             '${bucket}' as bucket,
-             '${job}' as job,
-             split_part((raw.data ->> 'job-version'), '+', 2) as commit_hash,
-             CASE (raw.data ->> 'passed') WHEN 'true' THEN TRUE ELSE FALSE END as passed,
-             (raw.data ->> 'result') as result,
-             (raw.data -> 'metadata' ->> 'infra-commit') as infra_commit,
-             (raw.data -> 'metadata' ->> 'pod') as pod,
-             (raw.data -> 'metadata' ->> 'job-version') as job_version,
-             (to_timestamp((raw.data ->>'timestamp')::bigint) AT TIME ZONE 'UTC') as job_timestamp,
-             (raw.data -> 'metadata' ->> 'node_os_image') as node_os_image,
-             (raw.data -> 'metadata' ->> 'master_os_image') as master_os_image,
-             (raw.swagger) as swagger
-       FROM raw_job_bucket_import raw;
-             """).substitute(curl =  metadata, bucket = bucket, job = job, curlswagger = curlswagger)
-             rv = plpy.execute(sql)
-             return "it worked!"
-         except Exception as err:
-             return Template("something went wrong, likely this: ${error}").substitute(error = err)
- #+END_SRC
- 
  The only real manipulation of the data we do is:
 - convert the passed value back into a boolean (it comes in as text)
 
@@ -195,9 +158,10 @@ We can now create the sql function
   #+begin_src sql-mode
   SET
   DROP FUNCTION
-  apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# CREATE FUNCTION
+  apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# CREATE FUNCTION
   RESET
   #+end_src
+
   
 ** Load Job Bucket
    Now we test out the loading of the job_buckets.  We'll use the most recent api_snoop bucket and two other random ones in the jenkins logs.
@@ -218,34 +182,40 @@ We can now create the sql function
  #+end_src
 
  #+BEGIN_SRC sql-mode
- select passed, bucket, job, commit_hash, job_timestamp, ingested_at from job_bucket;
+ select job_version, job_timestamp, passed from job_bucket;
  #+END_SRC
 
  #+RESULTS:
  #+begin_src sql-mode
-  passed |          bucket           |         job         |  commit_hash   | job_timestamp |        ingested_at         
- --------+---------------------------+---------------------+----------------+---------------+----------------------------
-         | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | 2b795b9825e485 |               | 2019-10-03 03:18:39.896701
-         | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | 2b795b9825e485 |               | 2019-10-03 03:18:40.096853
-         | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | 2b795b9825e485 |               | 2019-10-03 03:18:40.281389
-  True   | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | 2b795b9825e485 |               | 2019-10-03 03:27:21.688886
-  True   | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | 2b795b9825e485 |               | 2019-10-03 03:27:21.872503
-  True   | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | 2b795b9825e485 |               | 2019-10-03 03:27:22.065762
- (6 rows)
+              job_version             |    job_timestamp    | passed 
+ -------------------------------------+---------------------+--------
+  v1.17.0-alpha.0.1912+2b795b9825e485 | 2019-09-30 01:01:01 | True
+  v1.17.0-alpha.0.1912+2b795b9825e485 | 2019-09-30 01:01:01 | True
+  v1.17.0-alpha.0.1912+2b795b9825e485 | 2019-09-30 01:01:01 | True
+ (3 rows)
 
  #+end_src
   
  Fantastic!
 
+* Conclusion
+  We reduced the cognitive load by including the swagger into our job_bucket.  This means we'll have two tables still: one for swagger and surrounding metadata, and one for audit_events.  all views would spring from these.
+  
+  The step to load job_buckets is done with a mix of python and sql, and using the plpy functions of ~prepare~ and ~execute~, this lets us do simple variable subsitution and ensure json loads properly (trying to do it with python subtitution gave escaping errors).  
+
+We still need to set keys to avoid duplication, but can verify that we can load multiple swaggers, and distinguish them by commit hash or the date of the job run.
+
 * Next Steps
 ** TODO Check for primary key in the job bucket, and ensure we don't put in duplicates
    we'll use bucket + job as the primary key.
-** TODO Expand api_swagger to include commit hash, job, bucket as means to connect to job_bucket.
+** DONE Expand api_swagger to include commit hash, job, bucket as means to connect to job_bucket.
+   CLOSED: [2019-10-03 Thu 20:44]
+   we did this by including the swagger in our job_bucket
 ** TODO Expand audit_events to include commit hash, job, bucket as means to connect to job_bucket.
-** TODO Trigger an insertion into our api_swagger, based on insertion into job_bucket
-   We will want to take the job/bucket/commit_hash (or maybe just the commit_hash) and pass this into our load_swagger function, upon a successful insertion into job_bucket.  This feels like a trigger function, but am unsure!
 ** TODO Trigger an insertion into our raw_audit_events, based on insertion into job_bucket
    This is a bit more involved, and will likely require some prepping of the data before we put it into the db.
+** TODO add job_bucket table to migrations, with a few swaggers loaded.
+** TODO Update swagger views to pull from job_bucket instead
 * Footnotes
 ** Connect to Database
     If you already have your db and hasura endpoint up and running:
@@ -267,16 +237,3 @@ We can now create the sql function
    #+END_SRC
 
 
-#+BEGIN_SRC shell
-  IFS="+";\
-  version=$(curl https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1178464478988079104/finished.json | jq .version);\
-  commit=${version##*+};\
-  commit_hash=${commit%\"*};\
-  swagger_link="https://raw.githubusercontent.com/kubernetes/kubernetes/${commit_hash}/api/openapi-spec/swagger.json"
-  echo $swagger_link
-#+END_SRC
-
-#+RESULTS:
-#+begin_EXAMPLE
-https://raw.githubusercontent.com/kubernetes/kubernetes/2b795b9825e485/api/openapi-spec/swagger.json
-#+end_EXAMPLE
