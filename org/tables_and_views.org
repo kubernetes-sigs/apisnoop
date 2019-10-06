@@ -1,0 +1,784 @@
+#+TITLE: APIsnoop Tables and Views
+#+AUTHOR: ii team
+#+DATE: 07 October 2019
+#+INCLUDE: "config.org"
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | TADA(d)
+#+ARCHIVE: archive/tables_and_views.archive.org::
+#+PROPERTY: header-args:sql-mode+ :results silent
+
+
+* Purpose
+  This org houses all the tables and views that are migrated upon creation of apisnoop.  So these are the crucial parts of the apisnoop database.
+  If you are working on a new view, it is best to do it in our ~explorations~ folder, where it can be iterated and reviewed.  Once that view is determined to be crucial for the database, it would be ported to here, and tangled to a migration file.
+* 100: Raw Data Tables and Helper Functions
+** 100: bucket_job_swagger table
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/100_table_bucket_job_swagger.up.sql
+  :END:
+*** Create Table
+    :PROPERTIES:
+    :header-args:sql-mode+: :notangle ../apps/hasura/migrations/100_table_bucket_job_swagger.up.sql
+    :END:
+    #+BEGIN_SRC sql-mode
+    DROP TABLE bucket_job_swagger CASCADE;
+    #+END_SRC
+
+    #+RESULTS:
+    #+begin_src sql-mode
+    DROP TABLE
+    #+end_src
+
+ #+NAME: bucket_job_swagger
+ #+BEGIN_SRC sql-mode :results silent
+   CREATE TABLE bucket_job_swagger (
+       ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+       bucket text,
+       job text,
+       commit_hash text,
+       passed text,
+       job_result text,
+       pod text,
+       infra_commit text,
+       job_version text,
+       job_timestamp timestamp,
+       node_os_image text,
+       master_os_image text ,
+       swagger jsonb,
+       PRIMARY KEY (bucket, job)
+   );
+ #+END_SRC
+*** Index Table
+ #+NAME: general index the raw_swagger
+ #+BEGIN_SRC sql-mode
+   CREATE INDEX idx_swagger_jsonb_ops ON bucket_job_swagger
+     USING GIN (swagger jsonb_ops);
+   CREATE INDEX idx_swagger_jsonb_path_ops ON bucket_job_swagger
+     USING GIN (swagger jsonb_path_ops);
+ #+END_SRC
+** 101: Function to Load bucket_job_swagger via curl
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/105_function_load_bucket_job_swagger_via_curl.up.sql
+  :END:
+  
+   #+NAME: load_bucket_job_swagger_via_curl.sql
+   #+BEGIN_SRC sql-mode :noweb yes
+     set role dba;
+     DROP FUNCTION IF EXISTS load_bucket_job_swagger_via_curl;
+     CREATE OR REPLACE FUNCTION load_bucket_job_swagger_via_curl(bucket text, job text)
+     RETURNS text AS $$
+     <<load_bucket_job_swagger_via_curl.py>>
+     $$ LANGUAGE plpython3u ;
+     reset role;
+   #+END_SRC
+
+ #+NAME: load_bucket_job_swagger_via_curl.py
+ #+BEGIN_SRC python :eval never :exports code
+   try:
+       from urllib.request import urlopen, urlretrieve
+       from string import Template
+       import json
+       metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
+       metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+       commit_hash = metadata["version"].split("+")[1]
+       swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json']) 
+       swagger = urlopen(swagger_url).read() # may change this to ascii
+       sql = """
+    INSERT INTO bucket_job_swagger(
+              bucket,
+              job,
+              commit_hash, 
+              passed,
+              job_result,
+              pod,
+              infra_commit,
+              job_version,
+              job_timestamp,
+              node_os_image,
+              master_os_image,
+              swagger
+       )
+      SELECT
+              $1 as bucket,
+              $2 as job,
+              $3 as commit_hash,
+              $4 as passed,
+              $5 as job_result,
+              $6 as pod,
+              $7 as infra_commit,
+              $8 as job_version,
+              (to_timestamp($9)) AT TIME ZONE 'UTC' as job_timestamp,
+              $10 as node_os_image,
+              $11 as master_os_image,
+              $12 as swagger
+       """
+       plan = plpy.prepare(sql, [
+           'text','text','text','text',
+           'text','text','text','text',
+           'integer','text','text','jsonb'])
+       rv = plpy.execute(plan, [
+           bucket,job,commit_hash,
+           metadata['passed'],metadata['result'],
+           metadata['metadata']['pod'],
+           metadata['metadata']['infra-commit'],
+           metadata['version'],
+           int(metadata['timestamp']),
+           metadata['metadata']['node_os_image'],
+           metadata['metadata']['master_os_image'],
+           json.dumps(swagger)
+       ])
+       return "it worked!"
+   except Exception as err:
+       return Template("something went wrong, likely this: ${error}").substitute(error = err)
+ #+END_SRC
+
+** 110: raw_audit_event Table
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/110_table_raw_audit_event.up.sql
+  :END:
+*** Create
+#+NAME: raw_audit_event
+#+BEGIN_SRC sql-mode
+  CREATE UNLOGGED TABLE raw_audit_event (
+    -- id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    -- ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+    bucket text,
+    job text,
+    audit_id text NOT NULL,
+    stage text NOT NULL,
+    event_verb text NOT NULL,
+    request_uri text NOT NULL,
+    operation_id text,
+    data jsonb NOT NULL
+  );
+#+END_SRC
+*** TODO Index
+I am not sure why our create index and alter table lines are commented out.
+the TODO is to enquire on why these lines are commented
+#+NAME: index the raw_audit_event
+#+BEGIN_SRC sql-mode
+-- CREATE INDEX idx_audit_event_primary          ON raw_audit_event (bucket, job, audit_id, stage);
+-- ALTER TABLE raw_audit_event add primary key using index idx_audit_event_primary;
+CREATE INDEX idx_audit_event_jsonb_ops        ON raw_audit_event USING GIN (data jsonb_ops);
+CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data jsonb_path_ops);
+#+END_SRC
+
+** 111: audit_event_op_update operation Function
+  :PROPERTIES:
+  :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/114_function_audit_event_op_update.up.sql
+  :END:
+*** Create
+#+NAME: audit_events_op_update.sql
+#+BEGIN_SRC sql-mode :noweb yes
+  set role dba;
+  CREATE OR REPLACE FUNCTION audit_event_op_update()
+  RETURNS text AS $$
+  #!/bin/bash
+  (echo 'hello'
+   pwd
+   id
+   env
+   unset PGLOCALEDIR
+   unset PGSYSCONFDIR
+   /usr/local/bin/rmatch || echo FAILS
+  ) 2>&1 > /tmp/rmatch.log
+  $$ LANGUAGE plsh ;
+  reset role;
+#+END_SRC
+
+** 112: load_audit_event Function
+  :PROPERTIES:
+  :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/115_function_load_audit_event.up.sql
+  :END:
+*** Python Code
+#+NAME: load_audit_events.py
+#+BEGIN_SRC python :noweb yes :exports none
+  #!/usr/bin/env python3
+  from urllib.request import urlopen, urlretrieve
+  import os
+  import re
+  from bs4 import BeautifulSoup
+  import subprocess
+  import time
+  import glob
+  from tempfile import mkdtemp
+  from string import Template
+
+
+  def get_html(url):
+      html = urlopen(url).read()
+      soup = BeautifulSoup(html, 'html.parser')
+      return soup
+
+
+  def download_url_to_path(url, local_path):
+      local_dir = os.path.dirname(local_path)
+      if not os.path.isdir(local_dir):
+          os.makedirs(local_dir)
+      if not os.path.isfile(local_path):
+          process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
+          downloads[local_path] = process
+
+  # this global dict is used to track our wget subprocesses
+  # wget was used because the files can get to several halfa gig
+  downloads = {}
+  def load_audit_events(bucket,job):
+      bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
+      artifacts_url = 'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/' + bucket + '/' +  job + '/' + 'artifacts'
+      job_metadata_files = [
+          'finished.json',
+          'artifacts/metadata.json',
+          'artifacts/junit_01.xml',
+          'build-log.txt'
+      ]
+      download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
+      combined_log_file = download_path + 'audit.log'
+
+      # meta data to download
+      for jobfile in job_metadata_files:
+          download_url_to_path( bucket_url + jobfile,
+                                download_path + jobfile )
+
+      # Use soup to grab url of each of audit.log.* (some end in .gz)
+      soup = get_html(artifacts_url)
+      master_link = soup.find(href=re.compile("master"))
+      master_soup = get_html(
+          "https://gcsweb.k8s.io" + master_link['href'])
+      log_links = master_soup.find_all(
+          href=re.compile("audit.log"))
+
+      # download all logs
+      for link in log_links:
+          log_url = link['href']
+          log_file = download_path + os.path.basename(log_url)
+          download_url_to_path( log_url, log_file)
+
+      # Our Downloader uses subprocess of curl for speed
+      for download in downloads.keys():
+          # Sleep for 5 seconds and check for next download
+          while downloads[download].poll() is None:
+              time.sleep(5)
+              # print("Still downloading: " + download)
+          # print("Downloaded: " + download)
+
+      # Loop through the files, (z)cat them into a combined audit.log
+      with open(combined_log_file, 'ab') as log:
+          for logfile in sorted(
+                  glob.glob(download_path + '*kube-apiserver-audit*'), reverse=True):
+              if logfile.endswith('z'):
+                  subprocess.run(['zcat', logfile], stdout=log, check=True)
+              else:
+                  subprocess.run(['cat', logfile], stdout=log, check=True)
+      # Load the resulting combined audit.log directly into raw_audit_event
+      try:
+          # for some reason tangling isn't working to reference this SQL block
+          sql = Template("""
+  CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
+  COPY raw_audit_event_import (data)
+  FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
+
+  INSERT INTO raw_audit_event(bucket, job,
+                               audit_id, stage,
+                               event_verb, request_uri,
+                               -- operation_id,
+                               data)
+  SELECT '${bucket}', '${job}',
+         (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
+         (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
+         -- ops.operation_id,
+         raw.data 
+    FROM raw_audit_event_import raw;
+           -- FIXME: this join is necesary, but expensive
+           -- https://github.com/cncf/apisnoopregexp is an alterative approach
+           -- LEFT JOIN api_operation_material ops ON
+           --  ops.raw_swagger_id = 1
+           --    AND raw.data ->> 'verb' = ANY(ops.event_verb)
+           --    AND raw.data ->> 'requestURI' ~ ops.regex;
+          """).substitute(
+              audit_logfile = combined_log_file,
+              bucket = bucket,
+              job = job
+          )
+          with open(download_path + 'load.sql', 'w') as sqlfile:
+            sqlfile.write(sql)
+          rv = plpy.execute(sql)
+          #plpy.commit()
+          # this calls external binary, not part of transaction 8(
+          #rv = plpy.execute("select * from audit_event_op_update();")
+          #plpy.commit()
+          #rv = plpy.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY podspec_field_coverage_material;")
+          #plpy.commit()
+          return "it worked"
+      except plpy.SPIError:
+          return "something went wrong with plpy"
+      except:
+          return "something unknown went wrong"
+  if __name__ == "__main__":
+      load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234')
+  else:
+      load_audit_events(bucket,job)
+#+END_SRC
+
+*** Create
+#+NAME: load_audit_events.sql
+#+BEGIN_SRC sql-mode :noweb yes
+  set role dba;
+  CREATE OR REPLACE FUNCTION load_audit_events(bucket text, job text)
+  RETURNS text AS $$
+  <<load_audit_events.py>>
+  $$ LANGUAGE plpython3u ;
+  reset role;
+#+END_SRC
+* 200: API Views
+** 200: api_operation_material view
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/200_view_api_operation_material.up.sql
+  :END:
+  We can track this, but it won't show up in Hasura as it does not support materialized views yet.  We can still use it to create _other_ views hasura can see though.
+*** Define regex_from_path function
+#+NAME: regex_from_path.py
+#+BEGIN_SRC python :eval never :export none
+  import re
+  if path is None:
+    return None
+  K8S_PATH_VARIABLE_PATTERN = re.compile("{(path)}$")
+  VARIABLE_PATTERN = re.compile("{([^}]+)}")
+  path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
+  path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
+  if not path_regex.endswith(")") and not path_regex.endswith("?"):
+    path_regex += "([^/]*)"
+  if path_regex.endswith("proxy"):
+      path_regex += "/?$"
+  else:
+      path_regex += "$"
+  return path_regex
+#+END_SRC
+
+#+NAME: regex_from_path.sql
+#+BEGIN_SRC sql-mode :noweb yes
+  set role dba;
+  CREATE OR REPLACE FUNCTION regex_from_path(path text)
+  RETURNS text AS $$
+  <<regex_from_path.py>>
+  $$ LANGUAGE plpython3u ;
+  reset role;
+#+END_SRC
+
+*** Create
+    
+#+NAME: api_operation_material
+#+BEGIN_SRC sql-mode 
+  CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
+    SELECT
+      (d.value ->> 'operationId'::text) AS operation_id,
+      CASE
+      WHEN paths.key ~~ '%alpha%' THEN 'alpha'
+      WHEN paths.key ~~ '%beta%' THEN 'beta'
+      ELSE 'stable'
+           END AS level,
+      split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+      ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+      ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+      ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+      CASE
+      WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
+      ELSE false
+           END AS deprecated,
+      (d.value ->> 'description'::text) AS description,
+      d.key AS http_method,
+      (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+      CASE
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'get' THEN ARRAY ['get']
+      WHEN (d.value ->> 'x-kubernetes-action'::text) =  'list' THEN ARRAY [ 'list' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'proxy' THEN ARRAY [ 'proxy' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'deletecollection' THEN ARRAY [ 'deletecollection' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'watch' THEN ARRAY [ 'watch' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'post' THEN ARRAY [ 'post', 'create' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) =  'put' THEN ARRAY [ 'put', 'update' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch' THEN ARRAY [ 'patch' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN ARRAY [ 'connect' ]
+      ELSE NULL
+             END as event_verb,
+      paths.key AS path,
+      (d.value -> 'consumes'::text)::jsonb AS consumes,
+      (d.value -> 'responses'::text)::jsonb AS responses,
+      (d.value -> 'parameters'::text)::jsonb AS parameters,
+      string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
+      string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
+      regex_from_path(paths.key) as regex,
+      bjs.bucket AS bucket,
+      bjs.job AS job
+      FROM bucket_job_swagger bjs
+           , jsonb_each((bjs.swagger -> 'paths'::text)) paths(key, value)
+           , jsonb_each(paths.value) d(key, value)
+           , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+           , jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)
+           , jsonb_array_elements((d.value -> 'schemes'::text)) schemestring(value)
+     GROUP BY bjs.bucket, bjs.job, paths.key, d.key, d.value, cat_tag.value
+     ORDER BY paths.key;
+#+END_SRC
+
+*** Index
+#+NAME: index the api_operation_material
+#+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/260_view_api_operation_material.up.sql :results silent
+    CREATE INDEX api_operation_materialized_event_verb  ON api_operation_material            (event_verb);
+    CREATE INDEX api_operation_materialized_k8s_action  ON api_operation_material            (k8s_action);
+    CREATE INDEX api_operation_materialized_k8s_group   ON api_operation_material            (k8s_group);
+    CREATE INDEX api_operation_materialized_k8s_version ON api_operation_material            (k8s_version);
+    CREATE INDEX api_operation_materialized_k8s_kind    ON api_operation_material            (k8s_kind);
+    CREATE INDEX api_operation_materialized_tags        ON api_operation_material            (tags);
+    CREATE INDEX api_operation_materialized_schemes     ON api_operation_material            (schemes);
+    CREATE INDEX api_operation_materialized_regex_gist  ON api_operation_material USING GIST (regex gist_trgm_ops);
+    CREATE INDEX api_operation_materialized_regex_gin   ON api_operation_material USING GIN  (regex gin_trgm_ops);
+    CREATE INDEX api_operation_materialized_consumes_ops   ON api_operation_material USING GIN  (consumes jsonb_ops);
+    CREATE INDEX api_operation_materialized_consumes_path  ON api_operation_material USING GIN  (consumes jsonb_path_ops);
+    CREATE INDEX api_operation_materialized_parameters_ops   ON api_operation_material USING GIN  (parameters jsonb_ops);
+    CREATE INDEX api_operation_materialized_parameters_path  ON api_operation_material USING GIN  (parameters jsonb_path_ops);
+    CREATE INDEX api_operation_materialized_responses_ops   ON api_operation_material USING GIN  (responses jsonb_ops);
+    CREATE INDEX api_operation_materialized_responses_path  ON api_operation_material USING GIN  (responses jsonb_path_ops);
+#+END_SRC
+** 210: api_operation view of material
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/210_view_api_operation.up.sql
+  :END:
+   This grabs the 'paths' section of our swagger.json, where each path contains operation Id, tags, schemes, etc.
+*** Create View
+#+NAME: api_operation view
+#+BEGIN_SRC sql-mode 
+  CREATE OR REPLACE VIEW "public"."api_operation" AS 
+    SELECT * from api_operation_material;
+#+END_SRC
+
+#+BEGIN_SRC sql-mode
+select * from api_operation limit 3;
+#+END_SRC
+
+** 220: api_operation_parameter_material
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/220_view_api_operation_parameter_material.up.sql
+  :END:
+*** Create
+Using our api_operation_material view, look into the parameters field in each one.     
+#+NAME: api_operation_parameter_material view
+#+BEGIN_SRC sql-mode
+  CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS 
+    SELECT api_operation.operation_id AS param_op,
+    (param.entry ->> 'name'::text) AS param_name,
+           -- for resource:
+           -- if param is body in body, take its $ref from its schema
+           -- otherwise, take its type
+           replace(
+             CASE
+             WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
+              AND ((param.entry -> 'schema'::text) is not null)
+               THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+             ELSE (param.entry ->> 'type'::text)
+             END, '#/definitions/','') AS param_schema,
+           CASE
+           WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
+           ELSE false
+            END AS required,
+           (param.entry ->> 'description'::text) AS param_description,
+           CASE
+           WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
+           ELSE false
+           END AS unique_items,
+           (param.entry ->> 'in'::text) AS "in",
+           api_operation.bucket,
+           api_operation.job,
+           param.entry as entry
+      FROM api_operation
+           , jsonb_array_elements(api_operation.parameters) WITH ORDINALITY param(entry, index)
+            WHERE api_operation.parameters IS NOT NULL;
+#+END_SRC
+*** Index
+#+NAME: index the api_operation_material
+#+BEGIN_SRC sql-mode
+    CREATE UNIQUE INDEX                                  ON api_operation_parameter_material(raw_swagger_id, param_op, param_name);
+    CREATE INDEX api_parameters_materialized_schema      ON api_operation_parameter_material            (param_schema);
+    -- CREATE INDEX api_parameters_materialized_entry       ON api_operation_parameter_material            (entry);
+#+END_SRC
+
+** 230: api_operation_parameter view of material
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/230_view_api_operation_parameter.up.sql
+  :END:
+Using our api_operation view, look into the parameters field in each one.     
+*** Create
+ #+NAME: api_operation_parameter view
+ #+BEGIN_SRC sql-mode
+   CREATE OR REPLACE VIEW "public"."api_operation_parameter" AS 
+     SELECT * from api_operation_parameter_material;
+ #+END_SRC
+
+** 240: api_operation_response view
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/240_view_api_operation_response.up.sql
+  :END:
+   Similar to parameters, within each of the paths of the swagger.json, there is a responses field.  We are listing the values within this field.
+*** Create
+ #+NAME: Responses View
+ #+BEGIN_SRC sql-mode 
+   CREATE OR REPLACE VIEW "public"."api_operation_response" AS 
+     SELECT api_operation.operation_id as resp_op,
+            d.key AS resp_code,
+            (d.value ->> 'description'::text) AS resp_description,
+            replace(
+              CASE
+              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> 'type'::text) IS NOT NULL))
+                THEN ((d.value -> 'schema'::text) ->> 'type'::text)
+              WHEN (((d.value -> 'schema'::text) IS NOT NULL) AND (((d.value -> 'schema'::text) -> '$ref'::text) IS NOT NULL))
+                THEN ((d.value -> 'schema'::text) ->> '$ref'::text)
+              ELSE NULL::text
+              END, '#/definitions/','') AS resp_schema,
+              api_operation.bucket,
+              api_operation.job
+       FROM (api_operation
+             JOIN LATERAL jsonb_each(api_operation.responses) d(key, value) ON (true))
+      ORDER BY (uuid_generate_v1());
+ #+END_SRC
+** 250: api_schema view
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/250_view_api_schema.up.sql
+  :END:
+*** Create
+
+ #+NAME: api_schema view
+ #+BEGIN_SRC sql-mode 
+   CREATE OR REPLACE VIEW "public"."api_schema" AS 
+    SELECT 
+       bjs.bucket,
+       bjs.job,
+       d.key AS schema_name,
+       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
+       (d.value ->> 'type'::text) AS resource_type,
+       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
+       (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
+       ARRAY(SELECT jsonb_array_elements_text(d.value -> 'required')) as required_fields,
+       (d.value -> 'properties'::text) AS properties,
+       d.value
+      FROM bucket_job_swagger bjs
+        , jsonb_each((bjs.swagger -> 'definitions'::text)) d(key, value)
+      GROUP BY bjs.bucket, bjs.job, d.key, d.value;
+
+ #+END_SRC
+** 260: api_schema_field view
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/260_view_api_schema_field.up.sql
+  :END:
+*** Create
+#+NAME: api_schema_field view
+#+BEGIN_SRC sql-mode 
+  CREATE OR REPLACE VIEW "public"."api_schema_field" AS 
+    SELECT api_schema.schema_name as field_schema,
+           d.key AS field_name,
+           replace(
+             CASE
+             WHEN d.value->>'type' = 'string' THEN 'string'
+             WHEN d.value->>'type' IS NULL THEN d.value->>'$ref'
+             WHEN d.value->>'type' = 'array'
+              AND d.value->'items'->> 'type' IS NULL
+               THEN d.value->'items'->>'$ref'
+             WHEN d.value->>'type' = 'array'
+              AND d.value->'items'->>'$ref' IS NULL
+               THEN d.value->'items'->>'type'
+             ELSE 'integer'::text
+             END, '#/definitions/','') AS field_kind,
+           CASE
+           WHEN d.value->>'type' IS NULL THEN 'subtype'
+           ELSE d.value->>'type'
+             END AS field_type,
+           d.value->>'description' AS description,
+           CASE
+           WHEN d.key = ANY(api_schema.required_fields) THEN true
+           ELSE false
+             END AS required,
+           CASE
+           WHEN (   d.value->>'description' ilike '%This field is alpha-level%'
+                 or d.value->>'description' ilike '%This is an alpha field%'
+                 or d.value->>'description' ilike '%This is an alpha feature%') THEN 'alpha'
+           WHEN (   d.value->>'description' ilike '%This field is beta-level%'
+                 or d.value->>'description' ilike '%This field is beta%'
+                 or d.value->>'description' ilike '%This is a beta feature%'
+                 or d.value->>'description' ilike '%This is an beta feature%'
+                 or d.value->>'description' ilike '%This is an beta field%') THEN 'beta'
+           ELSE 'ga'
+             END AS release,
+           CASE
+           WHEN  d.value->>'description' ilike '%deprecated%' THEN true
+            ELSE false
+            END AS deprecated,
+           CASE
+           WHEN ( d.value->>'description' ilike '%requires the % feature gate to be enabled%'
+                 or d.value->>'description' ilike '%depends on the % feature gate being enabled%'
+                 or d.value->>'description' ilike '%requires the % feature flag to be enabled%'
+                 or d.value->>'description' ilike '%honored if the API server enables the % feature gate%'
+                 or d.value->>'description' ilike '%honored by servers that enable the % feature%'
+                 or d.value->>'description' ilike '%requires enabling % feature gate%'
+                 or d.value->>'description' ilike '%honored by clusters that enables the % feature%'
+                 or d.value->>'description' ilike '%only if the % feature gate is enabled%'
+                 ) THEN true
+           ELSE false
+             END AS feature_gated,
+           d.value->>'format' AS format,
+           d.value->>'x-kubernetes-patch-merge-key' AS merge_key,
+           d.value->>'x-kubernetes-patch-strategy' AS patch_strategy,
+           api_schema.bucket,
+           api_schema.job,
+           d.value
+      FROM (api_schema
+            JOIN LATERAL jsonb_each(api_schema.properties) d(key, value) ON (true));
+#+END_SRC
+* 300: Audit Event Views
+** 300: Audit Events View
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/300_view_audit_event.up.sql
+  :END:
+*** Create
+    #+NAME: view audit_event
+    #+BEGIN_SRC sql-mode
+      CREATE OR REPLACE VIEW "public"."audit_event" AS
+        SELECT (raw.data ->> 'auditID') as audit_id,
+               raw.bucket,
+               raw.job,
+               raw.data ->> 'level' as event_level,
+               raw.data ->> 'stage' as event_stage,
+               raw.operation_id,
+               raw.data ->> 'verb' as event_verb,
+               raw.data ->> 'apiVersion' as api_version,
+               raw.data ->> 'requestURI' as request_uri,
+               -- Always "Event"
+               -- raw.data ->> 'kind' as kind,
+               raw.data ->> 'userAgent' as useragent,
+               raw.data -> 'user' as event_user,
+               raw.data #>> '{objectRef,namespace}' as object_namespace,
+               raw.data #>> '{objectRef,resource}' as object_type,
+               raw.data #>> '{objectRef,apiGroup}' as object_group,
+               raw.data #>> '{objectRef,apiVersion}' as object_ver,
+               raw.data -> 'sourceIPs' as source_ips,
+               raw.data -> 'annotations' as annotations,
+               raw.data -> 'requestObject' as request_object,
+               raw.data -> 'responseObject' as response_object,
+               raw.data -> 'responseStatus' as response_status,
+               raw.data ->> 'stageTimestamp' as stage_timestamp,
+               raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
+               raw.data as data
+        FROM raw_audit_event raw;
+    #+END_SRC
+** 310: Audit Events By GVKRV(Group, Version, Kind, Resource(s),Verb)
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/310_view_audit_event_by_gvkrv.up.sql
+  :END:
+  
+  This is a slim view, and will need to be updated to contain all useful info if/when we phase out operationID across reports.
+    #+NAME: events by gvkrv
+    #+BEGIN_SRC sql-mode :results silent
+      CREATE OR REPLACE VIEW "public"."audit_events_by_gvkrv" AS
+        SELECT
+          CASE
+          WHEN ((a.data -> 'objectRef' ->> 'apiGroup') IS NULL) THEN ''
+          ELSE (a.data -> 'objectRef' ->> 'apiGroup')
+                END as api_group,
+          (a.data -> 'objectRef' ->>'apiVersion') as api_version,
+          (a.data -> 'requestObject'->>'kind') as kind,
+          (a.data -> 'objectRef'->>'resource') as resource,
+            (a.data -> 'objectRef'->>'subresource') as sub_resource,
+          (a.data->>'verb') as event_verb,
+          operation_id,
+          audit_id,
+          split_part(a.useragent, '--', 2) as test,
+          split_part(a.useragent, '--', 1) as useragent,
+          (a.data -> 'requestObject') as request_object,
+          bucket,
+          job
+          FROM audit_event as a
+         where data->'requestObject' is not null;
+    #+END_SRC
+  
+* 400: Podspec Field Views
+* 900: Population Functions
+** 900: Populate bucket_job_swagger Up
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/900_load_and_populate_swaggers.up.sql
+  :header-args:sql-mode+: :results silent
+  :END:
+  We need to be careful with this, in that 3 months from now this function will not work as the bucket will not be in the kubernetes storage.
+  
+#+NAME: reload swaggers for particluar releases
+#+BEGIN_SRC sql-mode
+    delete from bucket_job_swagger;
+    select * from load_bucket_job_swagger_via_curl('ci-kubernetes-e2e-gci-gce', '1178464478988079104');
+   REFRESH MATERIALIZED VIEW api_operation_material;
+    HINT:  Create a unique index with no WHERE clause on one or more columns of the materialized view^
+   REFRESH MATERIALIZED VIEW CONCURRENTLY api_operation_parameter_material;
+#+END_SRC
+** 910: populate_audit_events.up.sql
+  :PROPERTIES:
+  :header-args:sql-mode+: :notangle ../apps/hasura/migrations/900_populate_audit_events.up.sql
+  :END:
+
+We could load audit_events directly from test-grid via bucket and job.
+However they do NOT include the OperationID.
+It's computationally expensive... nearly 30 minutes on a 56 Xeon core box with 300+ gigs of ram.
+
+Might be good to instead save our processed audit_events via
+
+#+BEGIN_SRC shell :eval never
+pg_dump --host=$PGHOST --port=$PGPORT --username=$PGUSER --dbname=$PGDATABASE --table=raw_audit_event
+ > $BUCKET.$JOB.sql 
+#+END_SRC
+
+Which we could easily load via:
+
+#+BEGIN_SRC shell :eval
+psql < /tmp/ci-kubernetes-e2e-gci-gce.1165794879855398916.sql
+#+END_SRC
+
+#+RESULTS:
+#+begin_EXAMPLE
+#+end_EXAMPLE
+
+*** Call load_audit_events()
+
+#+NAME: reload sample audit event 
+#+BEGIN_SRC sql-mode :noweb yes :results append :output both
+  select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1165794879855398916');
+#+END_SRC
+
+#+RESULTS: reload sample audit event
+#+begin_src sql-mode
+ load_audit_events 
+-------------------
+ 
+(1 row)
+
+#+end_src
+
+** 911: update_audit_events.up.sql
+  :PROPERTIES:
+  :header-args:sql-mode+: :notangle ../apps/hasura/migrations/901_update_audit_events.up.sql
+  :END:
+*** Call load_audit_events() interactively
+#+NAME: update event operation_id sample audit event
+#+BEGIN_SRC tmate :session sql:update_opid1 :exports none
+  cd ~/ii/apisnoop/apps
+  . .loadenv
+  psql
+  select * from audit_event_op_update()\;
+  REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
+#+END_SRC
+*** follow htop to see CPU usage
+#+NAME: update event operation_id sample audit event
+#+BEGIN_SRC tmate :session sql:htop1 :exports none
+  htop
+#+END_SRC
+
+*** see how far we have to go
+#+NAME: every 10 seconsd count the number of events with no operation_id
+#+BEGIN_SRC tmate :session sql:op_count1 :exports none
+  cd ~/ii/apisnoop/apps
+  . .loadenv
+  psql
+  select count(*) from raw_audit_event where operation_id is null; \watch 10
+#+END_SRC
+
+* Footnotes
