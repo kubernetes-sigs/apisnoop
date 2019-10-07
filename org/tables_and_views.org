@@ -6,7 +6,6 @@
 #+ARCHIVE: archive/tables_and_views.archive.org::
 #+PROPERTY: header-args:sql-mode+ :results silent
 
-
 * Purpose
   This org houses all the tables and views that are migrated upon creation of apisnoop.  So these are the crucial parts of the apisnoop database.
   If you are working on a new view, it is best to do it in our ~explorations~ folder, where it can be iterated and reviewed.  Once that view is determined to be crucial for the database, it would be ported to here, and tangled to a migration file.
@@ -19,15 +18,6 @@
     :PROPERTIES:
     :header-args:sql-mode+: :notangle ../apps/hasura/migrations/100_table_bucket_job_swagger.up.sql
     :END:
-    #+BEGIN_SRC sql-mode
-    DROP TABLE bucket_job_swagger CASCADE;
-    #+END_SRC
-
-    #+RESULTS:
-    #+begin_src sql-mode
-    DROP TABLE
-    #+end_src
-
  #+NAME: bucket_job_swagger
  #+BEGIN_SRC sql-mode :results silent
    CREATE TABLE bucket_job_swagger (
@@ -61,7 +51,7 @@
   :END:
   
    #+NAME: load_bucket_job_swagger_via_curl.sql
-   #+BEGIN_SRC sql-mode :noweb yes
+   #+BEGIN_SRC sql-mode :noweb yes :results silent
      set role dba;
      DROP FUNCTION IF EXISTS load_bucket_job_swagger_via_curl;
      CREATE OR REPLACE FUNCTION load_bucket_job_swagger_via_curl(bucket text, job text)
@@ -81,7 +71,7 @@
        metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
        commit_hash = metadata["version"].split("+")[1]
        swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json']) 
-       swagger = urlopen(swagger_url).read() # may change this to ascii
+       swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
        sql = """
     INSERT INTO bucket_job_swagger(
               bucket,
@@ -162,34 +152,164 @@ CREATE INDEX idx_audit_event_jsonb_ops        ON raw_audit_event USING GIN (data
 CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data jsonb_path_ops);
 #+END_SRC
 
-** 111: audit_event_op_update operation Function
+** 111: load_audit_event Function
   :PROPERTIES:
-  :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/114_function_audit_event_op_update.up.sql
-  :END:
-*** Create
-#+NAME: audit_events_op_update.sql
-#+BEGIN_SRC sql-mode :noweb yes
-  set role dba;
-  CREATE OR REPLACE FUNCTION audit_event_op_update()
-  RETURNS text AS $$
-  #!/bin/bash
-  (echo 'hello'
-   pwd
-   id
-   env
-   unset PGLOCALEDIR
-   unset PGSYSCONFDIR
-   /usr/local/bin/rmatch || echo FAILS
-  ) 2>&1 > /tmp/rmatch.log
-  $$ LANGUAGE plsh ;
-  reset role;
-#+END_SRC
-
-** 112: load_audit_event Function
-  :PROPERTIES:
-  :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/115_function_load_audit_event.up.sql
+  :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/111_function_load_audit_event.up.sql
   :END:
 *** Python Code
+**** deep_merge
+#+NAME: deep_merge
+#+BEGIN_SRC python :tangle no
+  from copy import deepcopy
+  from functools import reduce
+
+  def deep_merge(*dicts, update=False):
+      """
+      Merges dicts deeply.
+      Parameters
+      ----------
+      dicts : list[dict]
+          List of dicts.
+      update : bool
+          Whether to update the first dict or create a new dict.
+      Returns
+      -------
+      merged : dict
+          Merged dict.
+      """
+      def merge_into(d1, d2):
+          for key in d2:
+              if key not in d1 or not isinstance(d1[key], dict):
+                  d1[key] = deepcopy(d2[key])
+              else:
+                  d1[key] = merge_into(d1[key], d2[key])
+          return d1
+
+      if update:
+          return reduce(merge_into, dicts[1:], dicts[0])
+      else:
+          return reduce(merge_into, dicts, {})
+#+END_SRC
+
+**** load_openapi_spec
+#+NAME: load_openapi_spec
+#+BEGIN_SRC python :tangle no
+  def load_openapi_spec(url):
+      cache=defaultdict(dict)
+      openapi_spec = {}
+      openapi_spec['hit_cache'] = {}
+
+      swagger = requests.get(url).json()
+      for path in swagger['paths']:
+          path_data = {}
+          path_parts = path.strip("/").split("/")
+          path_len = len(path_parts)
+          path_dict = {}
+          last_part = None
+          last_level = None
+          current_level = path_dict
+          for part in path_parts:
+              if part not in current_level:
+                  current_level[part] = {}
+              last_part=part
+              last_level = current_level
+              current_level = current_level[part]
+          for method, swagger_method in swagger['paths'][path].items():
+              if method == 'parameters':
+                  next
+              else:
+                  current_level[method]=swagger_method.get('operationId', '')
+          cache = deep_merge(cache, {path_len:path_dict})
+      openapi_spec['cache'] = cache
+      #import ipdb; ipdb.set_trace(context=60)
+      return openapi_spec
+#+END_SRC
+
+#+RESULTS: load_openapi_spec
+: None
+**** find_operation_id
+#+NAME: find_operation_id
+#+BEGIN_SRC python :tangle no
+  def find_operation_id(openapi_spec, event):
+    verb_to_method={
+      'get': 'get',
+      'list': 'get',
+      'proxy': 'proxy',
+      'create': 'post',
+      'post':'post',
+      'put':'post',
+      'update':'put',
+      'patch':'patch',
+      'connect':'connect',
+      'delete':'delete',
+      'deletecollection':'delete',
+      'watch':'get'
+    }
+    method=verb_to_method[event['verb']]
+    url = urlparse(event['requestURI'])
+    # 1) Cached seen before results
+    if url.path in openapi_spec['hit_cache']:
+      if method in openapi_spec['hit_cache'][url.path].keys():
+        return openapi_spec['hit_cache'][url.path][method]
+    uri_parts = url.path.strip('/').split('/')
+    if 'proxy' in uri_parts:
+        uri_parts = uri_parts[0:uri_parts.index('proxy')]
+    part_count = len(uri_parts)
+    try: # may have more parts... so no match
+      cache = openapi_spec['cache'][part_count]
+    except:
+      import ipdb; ipdb.set_trace(context=60)
+    last_part = None
+    last_level = None
+    current_level = cache
+    for idx in range(part_count):
+      part = uri_parts[idx]
+      last_level = current_level
+      if part in current_level:
+        current_level = current_level[part] # part in current_level
+      elif idx == part_count-1:
+        if part == 'metrics': # we aren't collecting metrics for now
+          return None
+        #   elif part == '': # The last V
+        #     current_level = last_level
+        #       else:
+        variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
+        if len(variable_levels) > 1:
+          import ipdb; ipdb.set_trace(context=60)
+        next_level=variable_levels[0] # the var is the next level
+        current_level = current_level[next_level] # variable part is final part
+      else:
+        next_part = uri_parts[idx+1]
+        variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}  
+        if not variable_levels: # there is no match
+          if 'example.com' in part:
+            return None
+          elif 'kope.io' in part:
+            return None
+          elif 'snapshot.storage.k8s.io' in part:
+            return None
+          elif 'metrics.k8s.io' in part:
+            return None
+          elif 'wardle.k8s.io' in part:
+            return None
+          elif ['openapi','v2'] == uri_parts: # not part our our spec
+            return None
+          else:
+            print(url.path)
+            return None
+        next_level={v: k for k, v in variable_levels.items()}[True]
+        current_level = current_level[next_level] #coo
+    try:
+      op_id=current_level[method]
+    except:
+      import ipdb; ipdb.set_trace(context=60)
+    if url.path not in openapi_spec['hit_cache']:
+      openapi_spec['hit_cache'][url.path]={method:op_id}
+    else:
+      openapi_spec['hit_cache'][url.path][method]=op_id
+    return op_id
+#+END_SRC
+**** load_audit_events
 #+NAME: load_audit_events.py
 #+BEGIN_SRC python :noweb yes :exports none
   #!/usr/bin/env python3
@@ -202,7 +322,17 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   import glob
   from tempfile import mkdtemp
   from string import Template
+  from urllib.parse import urlparse
+  import requests
+  import hashlib
+  from collections import defaultdict
+  import json
+  import csv
+  import sys
 
+  <<deep_merge>>
+  <<load_openapi_spec>>
+  <<find_operation_id>>
 
   def get_html(url):
       html = urlopen(url).read()
@@ -246,6 +376,8 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
       log_links = master_soup.find_all(
           href=re.compile("audit.log"))
 
+      finished_metadata = json.load(open(download_path + 'finished.json'))
+      commit_hash=finished_metadata['job-version'].split('+')[1]
       # download all logs
       for link in log_links:
           log_url = link['href']
@@ -268,7 +400,18 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
                   subprocess.run(['zcat', logfile], stdout=log, check=True)
               else:
                   subprocess.run(['cat', logfile], stdout=log, check=True)
-      # Load the resulting combined audit.log directly into raw_audit_event
+      # Process the resulting combined raw audit.log by adding operationId
+      spec = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/' + commit_hash +  '/api/openapi-spec/swagger.json')
+      infilepath=combined_log_file
+      outfilepath=combined_log_file+'+opid'
+      with open(infilepath) as infile:
+          with open(outfilepath,'w') as output:
+              for line in infile.readlines():
+                  event = json.loads(line)
+                  event['operationId']=find_operation_id(spec,event)
+                  output.write(json.dumps(event)+'\n')
+      #####
+      # Load the resulting updated audit.log directly into raw_audit_event
       try:
           # for some reason tangling isn't working to reference this SQL block
           sql = Template("""
@@ -279,22 +422,17 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   INSERT INTO raw_audit_event(bucket, job,
                                audit_id, stage,
                                event_verb, request_uri,
-                               -- operation_id,
+                               operation_id,
                                data)
   SELECT '${bucket}', '${job}',
          (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
          (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
-         -- ops.operation_id,
+         (raw.data ->> 'operationId'),
          raw.data 
     FROM raw_audit_event_import raw;
-           -- FIXME: this join is necesary, but expensive
-           -- https://github.com/cncf/apisnoopregexp is an alterative approach
-           -- LEFT JOIN api_operation_material ops ON
-           --  ops.raw_swagger_id = 1
-           --    AND raw.data ->> 'verb' = ANY(ops.event_verb)
-           --    AND raw.data ->> 'requestURI' ~ ops.regex;
           """).substitute(
-              audit_logfile = combined_log_file,
+              audit_logfile = outfilepath,
+              # audit_logfile = combined_log_file,
               bucket = bucket,
               job = job
           )
@@ -312,10 +450,10 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
           return "something went wrong with plpy"
       except:
           return "something unknown went wrong"
-  if __name__ == "__main__":
-      load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234')
-  else:
-      load_audit_events(bucket,job)
+  #if __name__ == "__main__":
+  #    load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234')
+  #else:
+  load_audit_events(bucket,job)
 #+END_SRC
 
 *** Create
@@ -419,7 +557,7 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
 
 *** Index
 #+NAME: index the api_operation_material
-#+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/260_view_api_operation_material.up.sql :results silent
+#+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/201_view_api_operation_material.up.sql :results silent
     CREATE INDEX api_operation_materialized_event_verb  ON api_operation_material            (event_verb);
     CREATE INDEX api_operation_materialized_k8s_action  ON api_operation_material            (k8s_action);
     CREATE INDEX api_operation_materialized_k8s_group   ON api_operation_material            (k8s_group);
@@ -493,7 +631,7 @@ Using our api_operation_material view, look into the parameters field in each on
 *** Index
 #+NAME: index the api_operation_material
 #+BEGIN_SRC sql-mode
-    CREATE UNIQUE INDEX                                  ON api_operation_parameter_material(raw_swagger_id, param_op, param_name);
+    -- CREATE UNIQUE INDEX                                  ON api_operation_parameter_material(raw_swagger_id, param_op, param_name);
     CREATE INDEX api_parameters_materialized_schema      ON api_operation_parameter_material            (param_schema);
     -- CREATE INDEX api_parameters_materialized_entry       ON api_operation_parameter_material            (entry);
 #+END_SRC
@@ -695,7 +833,315 @@ Using our api_operation view, look into the parameters field in each one.
     #+END_SRC
   
 * 400: Podspec Field Views
-* 900: Population Functions
+** Field Coverage
+   :PROPERTIES:
+   :header-args:sql-mode+: :results silent
+   :END:
+*** 400: kind_field_path_recursion
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/400_view_kind_field_recursion.up.sql
+    :END:
+#+NAME: Recursive kind_field_path view
+#+BEGIN_SRC sql-mode
+  create or replace recursive view kind_field_path_recursion(
+    kind,
+    field_path,
+    field_kind,
+    field_type,
+    sub_kind,
+    release,
+    deprecated,
+    gated,
+    required,
+    bucket,
+    job
+  ) AS
+   SELECT DISTINCT
+   sf.field_schema AS kind,
+   sf.field_name AS field_path, -- this becomes a path
+   sf.field_kind AS field_kind,
+   sf.field_type AS field_type,
+   sf.field_schema AS sub_kind, -- this is the kind at this level
+   sf.release AS release,
+   sf.deprecated AS deprecated, 
+   sf.feature_gated AS feature_gated,
+   sf.required AS required,
+   sf.bucket as bucket,
+   sf.job as job
+   from api_schema_field sf
+   UNION
+   SELECT
+    kfpr.kind AS kind,
+    ( kfpr.field_path || '.' || f.field_name ) AS field_path,
+    f.field_kind AS field_kind,
+    f.field_type AS field_type,
+    CASE
+    WHEN f.field_kind = 'string' OR f.field_kind = 'integer' THEN f.field_schema
+    ELSE f.field_kind
+     END as sub_kind,
+    f.release AS release,
+    f.deprecated AS deprecated,
+    f.feature_gated AS feature_gated,
+    f.required AS required,
+    kfpr.bucket,
+    kfpr.job
+    FROM api_schema_field f
+    INNER JOIN kind_field_path_recursion kfpr ON
+    f.field_schema = kfpr.field_kind
+    AND f.field_kind not like 'io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.%.JSONSchemaProps';
+  ;
+#+END_SRC
+*** 410: kind_field_path_material
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/410_view_kind_field_path_material.up.sql
+    :END:
+#+NAME: kind_field_path material
+#+BEGIN_SRC sql-mode
+   create materialized view kind_field_path_material AS
+   select
+     kind,
+     field_path AS field_path,
+     field_kind AS field_kind,
+     field_type,
+     sub_kind,
+     release,
+     deprecated,
+     gated,
+     required,
+     bucket,
+     job
+    from kind_field_path_recursion;
+  -- drop materialized view kind_field_path_material cascade;
+#+END_SRC
+
+**** kind_field_path_material indexes
+ #+NAME: kind_field_path_material indexs
+ #+BEGIN_SRC sql-mode
+ CREATE INDEX kfpm_kind_idx       ON kind_field_path_material (kind);
+ CREATE INDEX kfpm_field_path_idx ON kind_field_path_material (field_path);
+ CREATE INDEX kfpm_field_type_idx ON kind_field_path_material (field_type);
+ CREATE INDEX kfpm_sub_kind_idx   ON kind_field_path_material (sub_kind);
+ -- GIST requires ltree
+ -- CREATE INDEX kfpm_kind_idx       ON kind_field_path_material USING GIST (kind);
+ -- CREATE INDEX kfpm_field_path_idx ON kind_field_path_material USING GIST (field_path);
+ -- CREATE INDEX kfpm_field_type_idx ON kind_field_type_material USING GIST (field_type);
+ -- CREATE INDEX kfpm_sub_kind_idx   ON kind_field_path_material USING GIST (sub_kind);
+ #+END_SRC
+
+*** 420: kind_field_path view
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/420_view_kind_field_path.up.sql
+    :END:
+#+NAME: kind_field_path view
+#+BEGIN_SRC sql-mode
+  create or replace view kind_field_path AS
+  select
+    kind,
+    field_path,
+    field_kind,
+    field_type,
+    sub_kind,
+    release,
+    deprecated,
+    gated,
+    required,
+    bucket,
+    job
+   from kind_field_path_material where field_kind not like 'io%';
+#+END_SRC
+
+*** 430: PodSpec Materialized View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/430_podspec_field_coverage_material.up.sql
+    :END:
+    
+   #+NAME: view podspec_field_coverage_material
+   #+BEGIN_SRC sql-mode :results silent
+     CREATE MATERIALIZED VIEW "public"."podspec_field_coverage_material" AS 
+     SELECT DISTINCT
+       bucket,
+       job,
+       api_group,
+       api_version,
+       kind,
+       event_verb,
+       resource,
+       sub_resource,
+       test,
+       useragent,
+       jsonb_object_keys(request_object -> 'spec'::text) AS podspec_field,
+       count(event_field.event_field) AS hits
+       FROM audit_events_by_gvkrv,
+            LATERAL
+              jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'spec'::text) event_field(event_field)
+      WHERE kind = 'Pod'
+        AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}')) -- api_version doesn't contain alpha or beta;
+      GROUP BY bucket, job, api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field
+           UNION
+     SELECT DISTINCT
+       bucket,
+       job,
+       api_group,
+       api_version,
+       kind,
+       event_verb,
+       resource,
+       sub_resource,
+       test,
+       useragent,
+       jsonb_object_keys(request_object -> 'template' -> 'spec'::text) AS podspec_field,
+       count(event_field.event_field) AS hits
+       FROM audit_events_by_gvkrv,
+            LATERAL
+              jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'template'-> 'spec'::text) event_field(event_field)
+      WHERE kind = 'PodTemplate'
+        AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+      GROUP BY bucket, job, api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field
+           UNION
+     SELECT DISTINCT
+       bucket,
+       job,
+       api_group,
+       api_version,
+       kind,
+       event_verb,
+       resource,
+       sub_resource,
+       test,
+       useragent,
+       jsonb_object_keys(request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+       count(event_field.event_field) AS hits
+       FROM audit_events_by_gvkrv,
+            LATERAL
+              jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'spec' -> 'template'-> 'spec'::text) event_field(event_field)
+      WHERE kind = ANY('{DaemonSet, Deployment, ReplicationController, StatefulSet, Job,ReplicaSet}')
+        AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+      GROUP BY bucket, job, api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field; 
+  #+END_SRC
+  
+  #+BEGIN_SRC sql-mode
+select distinct bucket, job from podspec_field_coverage_material;
+  #+END_SRC
+
+*** 440: PodSpec Field Coverage View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/440_view_podspec_field_coverage.up.sql
+    :END:
+ #+NAME: view podspec_field_coverage
+ #+BEGIN_SRC sql-mode
+ create view podspec_field_coverage as select * from podspec_field_coverage_material;
+ #+END_SRC
+ 
+*** 450: PodSpec Field Summary View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/450_view_podspec_field_summary.up.sql
+    :END:
+ #+NAME: view podspec_field_summary
+ #+BEGIN_SRC sql-mode
+   create view podspec_field_summary as
+     select distinct field_name as podspec_field,
+                     0 as other_hits,
+                     0 as e2e_hits,
+                     0 as conf_hits,
+                     bucket,
+                     job
+       from api_schema_field
+      where field_schema like '%PodSpec%'
+      UNION
+     select
+       podspec_field,
+       sum(hits) as other_hits,
+       0 as e2e_hits,
+       0 as conf_hits,
+       bucket,
+       job
+       from podspec_field_coverage
+      where useragent not like 'e2e.test%'
+      group by podspec_field, bucket, job
+      UNION
+     select
+       podspec_field,
+       0 as other_hits,
+       sum(hits) as e2e_hits,
+       0 as conf_hits,
+       bucket,
+       job
+       from podspec_field_coverage
+      where useragent like 'e2e.test%'
+        and test not like '%Conformance%'
+      group by podspec_field, bucket, job
+      UNION
+     select
+       podspec_field,
+       0 as other_hits,
+       0 as e2e_hits,
+       sum(hits) as conf_hits,
+       bucket,
+       job
+       from podspec_field_coverage
+      where useragent like 'e2e.test%'
+        and test like '%Conformance%'
+      group by podspec_field, bucket, job;
+ #+END_SRC
+*** 460: PodSpec Field mid Report View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/460_view_podspec_field_mid_report.up.sql
+    :END:
+  #+NAME: podspec_field_mid_report
+  #+BEGIN_SRC sql-mode :results silent
+    create or replace view podspec_field_mid_report as
+    select distinct podspec_field,
+          sum(other_hits) as other_hits,
+          sum(e2e_hits) as e2e_hits,
+          sum(conf_hits) as conf_hits,
+          kfp.release,
+          kfp.deprecated,
+          kfp.gated,
+          kfp.required,
+          kfp.field_kind,
+          kfp.field_type,
+          pfs.bucket, 
+          pfs.job
+    from podspec_field_summary pfs, kind_field_path_recursion kfp
+    where 
+      kfp.kind = 'io.k8s.api.core.v1.PodSpec'
+      and pfs.podspec_field = kfp.field_path
+    group by podspec_field, kfp.release, kfp.deprecated, kfp.gated, kfp.required, kfp.field_kind, kfp.field_type, pfs.bucket, pfs.job
+    order by conf_hits, e2e_hits, other_hits;
+  #+END_SRC
+
+*** 470: PodSpec Field Report View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/470_view_podspec_field_report.up.sql
+    :END:
+ #+NAME: podspec_field_hits
+ #+BEGIN_SRC sql-mode
+   create or replace view podspec_field_report as
+   select distinct podspec_field,
+         sum(other_hits) as other_hits,
+         sum(e2e_hits) as e2e_hits,
+         sum(conf_hits) as conf_hits,
+         release,
+         deprecated,
+         gated,
+         required,
+         field_kind,
+         field_type,
+         bucket,
+         job
+   from podspec_field_mid_report
+   group by podspec_field, release, deprecated, gated, required, field_kind, field_type, bucket, job
+   order by conf_hits, e2e_hits, other_hits;
+ #+END_SRC
+ 
+ #+BEGIN_SRC sql-mode :results replace drawer
+   select
+     podspec_field, e2e_hits, pfr.job, bjs.job_timestamp
+     from podspec_field_report pfr
+     JOIN bucket_job_swagger bjs on(bjs.bucket = pfr.bucket AND bjs.job = pfr.job) 
+    order by podspec_field;
+ #+END_SRC
+* 900: Population And Tracking
 ** 900: Populate bucket_job_swagger Up
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/900_load_and_populate_swaggers.up.sql
@@ -706,79 +1152,158 @@ Using our api_operation view, look into the parameters field in each one.
 #+NAME: reload swaggers for particluar releases
 #+BEGIN_SRC sql-mode
     delete from bucket_job_swagger;
+    select * from load_bucket_job_swagger_via_curl('ci-kubernetes-e2e-gci-gce', '1173412183980118017');
     select * from load_bucket_job_swagger_via_curl('ci-kubernetes-e2e-gci-gce', '1178464478988079104');
    REFRESH MATERIALIZED VIEW api_operation_material;
-    HINT:  Create a unique index with no WHERE clause on one or more columns of the materialized view^
-   REFRESH MATERIALIZED VIEW CONCURRENTLY api_operation_parameter_material;
+    -- HINT:  Create a unique index with no WHERE clause on one or more columns of the materialized view^
+   -- REFRESH MATERIALIZED VIEW CONCURRENTLY api_operation_parameter_material;
 #+END_SRC
+
 ** 910: populate_audit_events.up.sql
   :PROPERTIES:
-  :header-args:sql-mode+: :notangle ../apps/hasura/migrations/900_populate_audit_events.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/910_populate_audit_events.up.sql
   :END:
-
-We could load audit_events directly from test-grid via bucket and job.
-However they do NOT include the OperationID.
-It's computationally expensive... nearly 30 minutes on a 56 Xeon core box with 300+ gigs of ram.
-
-Might be good to instead save our processed audit_events via
-
-#+BEGIN_SRC shell :eval never
-pg_dump --host=$PGHOST --port=$PGPORT --username=$PGUSER --dbname=$PGDATABASE --table=raw_audit_event
- > $BUCKET.$JOB.sql 
-#+END_SRC
-
-Which we could easily load via:
-
-#+BEGIN_SRC shell :eval
-psql < /tmp/ci-kubernetes-e2e-gci-gce.1165794879855398916.sql
-#+END_SRC
-
-#+RESULTS:
-#+begin_EXAMPLE
-#+end_EXAMPLE
-
-*** Call load_audit_events()
-
 #+NAME: reload sample audit event 
 #+BEGIN_SRC sql-mode :noweb yes :results append :output both
-  select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1165794879855398916');
+  delete from raw_audit_event;
+  select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1178464478988079104');
+  select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1173412183980118017');
+   REFRESH MATERIALIZED VIEW kind_field_path_material;
+   REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
+#+END_SRC
+** 999: Tracking Tables
+   :PROPERTIES:
+   :header-args:yaml+: :tangle ../apps/hasura/migrations/999_tracking.up.yaml
+   :END:
+*** bucket_job_swagger
+#+NAME: track api_swagger
+#+BEGIN_SRC yaml
+- type: track_table
+  args:
+    schema: public
+    name: bucket_job_swagger
+#+END_SRC
+*** api_operation
+#+NAME: track api_operation
+#+BEGIN_SRC yaml
+- type: track_table
+  args:
+    schema: public
+    name: api_operation
 #+END_SRC
 
-#+RESULTS: reload sample audit event
-#+begin_src sql-mode
- load_audit_events 
--------------------
- 
-(1 row)
+*** api_operation_parameter
 
-#+end_src
+ #+NAME: track api_operation_parameter
+ #+BEGIN_SRC yaml
+ - type: track_table
+   args:
+     schema: public
+     name: api_operation_parameter
+ #+END_SRC
+*** api_operation_response
+ #+NAME: track api_operation_response
+ #+BEGIN_SRC yaml
+ - type: track_table
+   args:
+     schema: public
+     name: api_operation_response
+ #+END_SRC
 
-** 911: update_audit_events.up.sql
-  :PROPERTIES:
-  :header-args:sql-mode+: :notangle ../apps/hasura/migrations/901_update_audit_events.up.sql
-  :END:
-*** Call load_audit_events() interactively
-#+NAME: update event operation_id sample audit event
-#+BEGIN_SRC tmate :session sql:update_opid1 :exports none
-  cd ~/ii/apisnoop/apps
-  . .loadenv
-  psql
-  select * from audit_event_op_update()\;
-  REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
-#+END_SRC
-*** follow htop to see CPU usage
-#+NAME: update event operation_id sample audit event
-#+BEGIN_SRC tmate :session sql:htop1 :exports none
-  htop
+*** api_schema
+ #+NAME: track api_schema
+ #+BEGIN_SRC yaml
+ - type: track_table
+   args:
+     schema: public
+     name: api_schema
+ #+END_SRC
+
+*** api_schema_field
+#+NAME: track api_schema_field
+#+BEGIN_SRC yaml
+- type: track_table
+  args:
+    schema: public
+    name: api_schema_field
 #+END_SRC
 
-*** see how far we have to go
-#+NAME: every 10 seconsd count the number of events with no operation_id
-#+BEGIN_SRC tmate :session sql:op_count1 :exports none
-  cd ~/ii/apisnoop/apps
-  . .loadenv
-  psql
-  select count(*) from raw_audit_event where operation_id is null; \watch 10
+*** raw_audit_event
+#+NAME: track raw_audit_event
+#+BEGIN_SRC yaml
+- type: track_table
+  args:
+    schema: public
+    name: raw_audit_event
 #+END_SRC
+*** audit_event
+ #+NAME: track audit_event
+ #+BEGIN_SRC yaml
+ - type: track_table
+   args:
+     schema: public
+     name: audit_event
+ #+END_SRC
+
+*** kind_field_path
+ #+NAME: track kind_field_path
+ #+BEGIN_SRC yaml :tangle no
+ - type: track_table
+   args:
+     schema: public
+     name: kind_field_path
+ #+END_SRC
+
+*** kind_field_path_recursion
+ #+NAME: track kind_field_path_recursion
+ #+BEGIN_SRC yaml :tangle no
+ - type: track_table
+   args:
+     schema: public
+     name: kind_field_path_recursion
+ #+END_SRC
+
+*** podspec_field_coverage
+ #+NAME: track podspec_field_coverage
+ #+BEGIN_SRC yaml :tangle no
+ - type: track_table
+   args:
+     schema: public
+     name: podspec_field_coverage
+ #+END_SRC
+
+*** podspec_field_summary
+ #+NAME: track podspec_field_summary
+ #+BEGIN_SRC yaml :tangle no
+ - type: track_table
+   args:
+     schema: public
+     name: podspec_field_summary
+ #+END_SRC
+
+*** podspec_field_report
+ #+NAME: track podspec_field_report
+ #+BEGIN_SRC yaml :tangle no
+ - type: track_table
+   args:
+     schema: public
+     name: podspec_field_report
+ #+END_SRC
 
 * Footnotes
+- [X] Connect to your postgres db from within this file
+  You'll want execute this code block by moving your cursor within and typing =,,=
+  
+  #+NAME: Connect org to postgres
+  #+BEGIN_SRC emacs-lisp :results silent
+    (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+  #+END_SRC
+
+- [X] Test your connection works
+  You can run this sql block, and it see a message in your minbuffer like:
+  : You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10041".
+
+  #+NAME: Test Connection
+  #+BEGIN_SRC sql-mode :results silent
+  \conninfo
+  #+END_SRC
