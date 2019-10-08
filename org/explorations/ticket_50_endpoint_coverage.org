@@ -1,0 +1,530 @@
+#+TITLE: Endpoint Coverage
+#+AUTHOR: Zach Mandeville
+
+* Ticket
+  https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/50
+  #+BEGIN_QUOTE
+This is the standard info we use to generate the classic APISnoop sunburst.  This should be available, then, as a query we can make in the raiinbow frontend, to build out the sunburst again.
+  #+END_QUOTE
+  
+  So we are not making the sunburst yet, this can just be a table that is showing operationID, hits, test_hits, and conformance_hits.
+* Definitions
+  - unhit :: operation_id is present in the corresponding swagger.json for that audit, but is not present in any of the audit logs.
+  - hit :: operation_id is present in the audit log. 
+  - test_hit :: operation_id is present in the audit log, and includes events with a useragent that starts with ~e2e.test~
+  - other_hits :: appearances of operation_id in the event where useragent does not start with ~e2e.test~
+  - conformance_hit :: same as test_hit, but event includes useragents whose test name includes ~[Conformance]~
+  - total_hits :: how many times the operation_id appears in the audit_event.  test_hit + other_hits should add up to total_hits.
+
+If an operation_id is present in the audit event, then it is by definition hit.  If we want to show the unhit operation_id's (which we do), then we will need to do a union with our api_operation table.
+[[file:~/ii/apisnoop/org/tables_and_views.org::*450:%20PodSpec%20Field%20Summary%20View][450: PodSpec Field Summary View]] is a good example of how to do this.
+* Process
+** Double check that both audit_events loaded
+   We should, as part of getting the db up, have two audit events loaded.  I did a quick check at the start and found only one.
+   #+Check for both audit events
+   #+BEGIN_SRC sql-mode
+     SELECT
+       bucket,
+       job
+       -- count(*) filter (where useragent like 'e2e.test%') as test_hits
+       FROM
+           audit_event
+       GROUP BY bucket, job;
+   #+END_SRC
+   
+   So I ran the load_audit_events function for the one missing, refreshing our two materialized views that spring from it.
+   #+BEGIN_SRC sql-mode :results silent
+  select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1173412183980118017');
+   REFRESH MATERIALIZED VIEW kind_field_path_material;
+   REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
+   #+END_SRC
+
+
+   I am unsure why one would not be there, when it was there yesterday.  We should double check that both exist as soon as the db is up, otherwise our population migration may not be working as we expect.
+** Check how to count numbers for two different bucket/jobs
+   to start, we want to just give an overall sum of numbers where the query is run once but divided into two bucket/jobs.  We can compare these numbers to our apisnoop to make sure they are the same.  From here we can git more specific with the columns.
+   
+   #+NAME: test, conf, other for bucket and job
+   #+BEGIN_SRC sql-mode
+     SELECT DISTINCT
+       bucket,
+       job,
+       operation_id,
+       count(*) filter (where useragent like 'e2e.test%') as test_hits,
+       count(*) filter (where useragent not like 'e2e.test%') as other_hits,
+       count(*) filter (where useragent is null) as null_user,
+       count(*) as total_hits
+       FROM
+           audit_event 
+       GROUP BY bucket, job, operation_id
+       LIMIT 20;
+   #+END_SRC
+
+   #+RESULTS: test, conf, other for bucket and job
+   #+begin_src sql-mode
+             bucket           |         job         |                        operation_id                         | test_hits | other_hits | null_user | total_hits 
+   ---------------------------+---------------------+-------------------------------------------------------------+-----------+------------+-----------+------------
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | connectCoreV1GetNamespacedPodExec                           |         0 |          0 |         2 |          2
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | connectCoreV1GetNamespacedPodPortforward                    |         0 |          0 |         4 |          4
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | connectCoreV1PostNamespacedPodAttach                        |         0 |         12 |         0 |         12
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | connectCoreV1PostNamespacedPodExec                          |         0 |       2655 |         0 |       2655
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | connectCoreV1PostNamespacedPodPortforward                   |         0 |         14 |         0 |         14
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAdmissionregistrationV1MutatingWebhookConfiguration   |        18 |          0 |         0 |         18
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAdmissionregistrationV1ValidatingWebhookConfiguration |        22 |          0 |         0 |         22
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createApiextensionsV1beta1CustomResourceDefinition          |         0 |         70 |         0 |         70
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createApiextensionsV1CustomResourceDefinition               |        41 |          0 |         0 |         41
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createApiregistrationV1APIService                           |         1 |         89 |         0 |         90
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAppsV1NamespacedControllerRevision                    |         0 |        190 |         0 |        190
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAppsV1NamespacedDaemonSet                             |        10 |          2 |         0 |         12
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAppsV1NamespacedDeployment                            |        33 |         14 |         0 |         47
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAppsV1NamespacedReplicaSet                            |        17 |        104 |         0 |        121
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAppsV1NamespacedStatefulSet                           |       174 |          0 |         0 |        174
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAuthenticationV1TokenReview                           |         1 |          0 |         0 |          1
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAuthorizationV1beta1SubjectAccessReview               |         0 |        341 |         0 |        341
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAuthorizationV1SelfSubjectAccessReview                |         1 |          0 |         0 |          1
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createAuthorizationV1SubjectAccessReview                    |       852 |          0 |         0 |        852
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createBatchV1beta1NamespacedCronJob                         |         8 |          1 |         0 |          9
+   (20 rows)
+
+   #+end_src
+   We can double check this math by lessing test_hits and null_hits from total_hits. The value should equal other_hits.
+   #+BEGIN_SRC python :results output
+     print("should equal 217840:  ", 322676 - 104828 - 8)
+     print("should equal 220338:  ", 325712 - 105366 - 8)
+   #+END_SRC
+
+   Sweet!  And the count is already distinguishing the different bucket jobs as we want.
+   
+** Build out Count for test hits and conformance hits
+   
+   I built out the initial query, and then started to filter to endpoints grabbed from apisnoop.
+   Everything matched in the two buckets except for this readCoreV1NamespacedPod.  
+   #+NAME: Count of Test Hits and Conformance Hits
+   #+BEGIN_SRC  sql-mode
+     SELECT DISTINCT
+       ae.bucket,
+       ae.job,
+       ae.operation_id,
+       count(*) filter (where useragent like 'e2e.test%') as test_hits,
+       count(*) filter (where useragent like 'e2e.test%' AND useragent like '%[Conformance]%') as conf_hits,
+       count(*) filter (where useragent not like 'e2e.test%') as other_hits,
+       count(*) filter (where useragent is null) as null_user,
+       count(*) as total_hits,
+       bjs.job_timestamp::date as date
+       FROM
+           audit_event  ae
+       NATURAL JOIN bucket_job_swagger bjs
+       WHERE (operation_id = 'readCoreV1NamespacedPod')
+       GROUP BY bucket, job, operation_id, bjs.job_timestamp
+       LIMIT 50;
+   #+END_SRC
+
+   #+RESULTS: Count of Test Hits and Conformance Hits
+   #+begin_src sql-mode
+             bucket           |         job         |      operation_id       | test_hits | conf_hits | other_hits | null_user | total_hits |    date    
+   ---------------------------+---------------------+-------------------------+-----------+-----------+------------+-----------+------------+------------
+    ci-kubernetes-e2e-gci-gce | 1173412183980118017 | readCoreV1NamespacedPod |      9938 |      2560 |      10229 |         0 |      20167 | 2019-09-16
+    ci-kubernetes-e2e-gci-gce | 1178464478988079104 | readCoreV1NamespacedPod |     10089 |      2908 |      10124 |         0 |      20213 | 2019-09-30
+   (2 rows)
+
+   #+end_src
+   
+   I took a look at the useragents that are coutning as conformance, to see why the number might be off by several hundred hits.  A quick scan (there are 300+ results) didn't show any glaring weirdness.  So I started to do a find/replace on keywords that stood out.  I saw that tests around Garbage collectors are in these results, but they are not in our apisnoop.cncf.io results of tests.  This is a bit too manual to dive deeper into now, but it is easier to follow,a nd therefore trust, the results here.  I am going to say they are good.
+   
+   #+BEGIN_SRC sql-mode
+     select DISTINCT
+       useragent 
+       from audit_event
+      WHERE (useragent like 'e2e.test%' AND useragent like '%[Conformance]%')
+            AND (operation_id = 'readCoreV1NamespacedPod');
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_src sql-mode
+                                                                                                                                            useragent                                                                                                                                         
+   -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart exec hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart http hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop exec hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop http hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] as empty when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from file when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from log output if TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] if TerminationMessagePath is set as non-root user and at a non-default path [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Container Runtime blackbox test when starting a container that exits should run with the expected status [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Docker Containers should be able to override the image's default arguments (docker cmd) [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Docker Containers should be able to override the image's default command and arguments [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Docker Containers should be able to override the image's default command (docker entrypoint) [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Docker Containers should use the image defaults if command and args are blank [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] KubeletManagedEtcHosts should test kubelet managed /etc/hosts file [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Kubelet when scheduling a busybox command in a pod should print the output to logs [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Kubelet when scheduling a busybox command that always fails in a pod should have an terminated reason [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Kubelet when scheduling a busybox Pod with hostAliases should write entries to /etc/hosts [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Kubelet when scheduling a read only busybox container should not write to root filesystem [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Pods should allow activeDeadlineSeconds to be updated [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Pods should be submitted and removed [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Pods should be updated [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Pods should contain environment variables for services [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Pods should get a host IP [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Pods should support remote command execution over websockets [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Pods should support retrieving logs from the container over websockets [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Probing container should be restarted with a exec "cat /tmp/health" liveness probe [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Probing container should be restarted with a /healthz http liveness probe [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Probing container should have monotonically increasing restart count [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Probing container should *not* be restarted with a exec "cat /tmp/health" liveness probe [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Probing container should *not* be restarted with a /healthz http liveness probe [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Probing container with readiness probe should not be ready before initial delay and never restart [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Probing container with readiness probe that fails should never be ready and never restart [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Security Context When creating a container with runAsUser should run the container with uid 65534 [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Security Context When creating a pod with privileged should run the container as unprivileged when false [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Security Context When creating a pod with readOnlyRootFilesystem should run the container with writable rootfs when readOnlyRootFilesystem=false [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Security Context when creating containers with AllowPrivilegeEscalation should not allow privilege escalation when false [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] [sig-node] Events should be sent by kubelets and the scheduler about pods scheduling and running  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] [sig-node] Pods Extended [k8s.io] Delete Grace Period should be submitted and removed [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] [sig-node] Pods Extended [k8s.io] Pods Set QOS Class should be set on Pods with matching resource requests and limits for memory and cpu [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] [sig-node] PreStop should call prestop when killing a pod  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Variable Expansion should allow composing env vars into new env vars [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Variable Expansion should allow substituting values in a container's args [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [k8s.io] Variable Expansion should allow substituting values in a container's command [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-api-machinery] AdmissionWebhook [Privileged:ClusterAdmin] should be able to deny attaching pod [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-api-machinery] AdmissionWebhook [Privileged:ClusterAdmin] should be able to deny pod and configmap creation [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-api-machinery] Garbage collector should delete pods created by rc when not orphaning [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-api-machinery] Garbage collector should delete RS created by deployment when not orphaning [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-api-machinery] Garbage collector should keep the rc around until all its pods are deleted if the deleteOptions says so [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-api-machinery] Garbage collector should not delete dependents that have both valid owner and owner that's waiting for dependents to be deleted [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-api-machinery] Garbage collector should orphan pods created by rc if delete options say so [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-api-machinery] Garbage collector should orphan RS created by deployment when deleteOptions.PropagationPolicy is Orphan [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-api-machinery] Secrets should be consumable from pods in env vars [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-api-machinery] Secrets should be consumable via the environment [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] Deployment deployment should delete old replica sets [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] Deployment deployment should support proportional scaling [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] Deployment deployment should support rollover [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] Deployment RollingUpdateDeployment should delete old pods and create new ones [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] Job should adopt matching orphans and release non-matching pods [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] ReplicaSet should adopt matching pods on creation and release no longer matching pods [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] ReplicaSet should serve a basic image on each replica with a public image  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] ReplicationController should adopt matching pods on creation [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] ReplicationController should release no longer matching pods [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] ReplicationController should serve a basic image on each replica with a public image  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-apps] StatefulSet [k8s.io] Basic StatefulSet functionality [StatefulSetBasic] Should recreate evicted statefulset [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-auth] ServiceAccounts should mount an API token into pods  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-cli] Kubectl client Kubectl label should update the label on a resource  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-cli] Kubectl client Kubectl logs should be able to retrieve and filter logs  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-cli] Kubectl client Kubectl replace should update a single-container pod's image  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-cli] Kubectl client Kubectl run pod should create a pod from an image when restart is Never  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-cli] Kubectl client Kubectl run rc should create an rc from an image  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-cli] Kubectl client Update Demo should create and stop a replication controller  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-cli] Kubectl client Update Demo should do a rolling update of a replication controller  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-cli] Kubectl client Update Demo should scale a replication controller  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] DNS should provide DNS for ExternalName services [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] DNS should provide DNS for pods for Hostname [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] DNS should provide DNS for pods for Subdomain [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] DNS should provide DNS for services  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] DNS should provide DNS for the cluster  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] DNS should provide /etc/hosts entries for the cluster [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] DNS should resolve DNS of partial qualified names for services [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] DNS should support configurable pod DNS nameservers [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Networking Granular Checks: Pods should function for intra-pod communication: http [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Networking Granular Checks: Pods should function for intra-pod communication: udp [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Networking Granular Checks: Pods should function for node-pod communication: http [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Networking Granular Checks: Pods should function for node-pod communication: udp [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Proxy version v1 should proxy through a service and a pod  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Services should be able to change the type from ClusterIP to ExternalName [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Services should be able to change the type from ExternalName to ClusterIP [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Services should be able to change the type from ExternalName to NodePort [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Services should be able to change the type from NodePort to ExternalName [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Services should be able to create a functioning NodePort service [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Services should serve a basic endpoint from pods  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-network] Services should serve multiport endpoints from pods  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-node] ConfigMap should be consumable via environment variable [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-node] ConfigMap should be consumable via the environment [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-node] Downward API should provide container's limits.cpu/memory and requests.cpu/memory as env vars [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-node] Downward API should provide default limits.cpu/memory from node allocatable [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-node] Downward API should provide host IP as an env var [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-node] Downward API should provide pod name, namespace and IP address as env vars [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-node] Downward API should provide pod UID as env vars [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] ConfigMap binary data should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] ConfigMap optional updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] ConfigMap should be consumable from pods in volume as non-root [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] ConfigMap should be consumable from pods in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] ConfigMap should be consumable from pods in volume with defaultMode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] ConfigMap should be consumable from pods in volume with mappings and Item mode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] ConfigMap should be consumable from pods in volume with mappings as non-root [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] ConfigMap should be consumable from pods in volume with mappings [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] ConfigMap should be consumable in multiple volumes in the same pod [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] ConfigMap updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should provide container's cpu limit [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should provide container's cpu request [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should provide container's memory limit [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should provide container's memory request [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should provide node allocatable (cpu) as default cpu limit if the limit is not set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should provide node allocatable (memory) as default memory limit if the limit is not set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should provide podname only [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should set DefaultMode on files [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should set mode on item file [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should update annotations on modification [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Downward API volume should update labels on modification [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes pod should support shared volumes between containers [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (non-root,0644,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (non-root,0644,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (non-root,0666,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (non-root,0666,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (non-root,0777,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (non-root,0777,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (root,0644,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (root,0644,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (root,0666,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (root,0666,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (root,0777,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes should support (root,0777,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes volume on default medium should have the correct mode [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir volumes volume on tmpfs should have the correct mode [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] EmptyDir wrapper volumes should not conflict [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] HostPath should give a volume the correct mode [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected combined should project all components that make up the projection API [Projection][NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected configMap optional updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected configMap should be consumable from pods in volume as non-root [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected configMap should be consumable from pods in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected configMap should be consumable from pods in volume with defaultMode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected configMap should be consumable from pods in volume with mappings and Item mode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected configMap should be consumable from pods in volume with mappings as non-root [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected configMap should be consumable from pods in volume with mappings [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected configMap should be consumable in multiple volumes in the same pod [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected configMap updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should provide container's cpu limit [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should provide container's cpu request [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should provide container's memory limit [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should provide container's memory request [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should provide node allocatable (cpu) as default cpu limit if the limit is not set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should provide node allocatable (memory) as default memory limit if the limit is not set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should provide podname only [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should set DefaultMode on files [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should set mode on item file [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should update annotations on modification [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected downwardAPI should update labels on modification [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected secret optional updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected secret should be consumable from pods in volume as non-root with defaultMode and fsGroup set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected secret should be consumable from pods in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected secret should be consumable from pods in volume with defaultMode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected secret should be consumable from pods in volume with mappings and Item Mode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected secret should be consumable from pods in volume with mappings [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Projected secret should be consumable in multiple volumes in a pod [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Secrets optional updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Secrets should be able to mount in a volume regardless of a different secret existing with same name in different namespace [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Secrets should be consumable from pods in volume as non-root with defaultMode and fsGroup set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Secrets should be consumable from pods in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Secrets should be consumable from pods in volume with defaultMode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Secrets should be consumable from pods in volume with mappings and Item Mode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Secrets should be consumable from pods in volume with mappings [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Secrets should be consumable in multiple volumes in a pod [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Subpath Atomic writer volumes should support subpaths with configmap pod [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Subpath Atomic writer volumes should support subpaths with configmap pod with mountPath of existing file [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Subpath Atomic writer volumes should support subpaths with downward pod [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Subpath Atomic writer volumes should support subpaths with projected pod [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/2b795b9 -- [sig-storage] Subpath Atomic writer volumes should support subpaths with secret pod [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart exec hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart http hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop exec hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop http hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] as empty when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from file when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from log output if TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] if TerminationMessagePath is set as non-root user and at a non-default path [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Container Runtime blackbox test when starting a container that exits should run with the expected status [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Docker Containers should be able to override the image's default arguments (docker cmd) [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Docker Containers should be able to override the image's default command and arguments [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Docker Containers should be able to override the image's default command (docker entrypoint) [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Docker Containers should use the image defaults if command and args are blank [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] KubeletManagedEtcHosts should test kubelet managed /etc/hosts file [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Kubelet when scheduling a busybox command in a pod should print the output to logs [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Kubelet when scheduling a busybox command that always fails in a pod should have an terminated reason [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Kubelet when scheduling a busybox Pod with hostAliases should write entries to /etc/hosts [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Kubelet when scheduling a read only busybox container should not write to root filesystem [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Pods should allow activeDeadlineSeconds to be updated [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Pods should be submitted and removed [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Pods should be updated [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Pods should contain environment variables for services [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Pods should get a host IP [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Pods should support remote command execution over websockets [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Pods should support retrieving logs from the container over websockets [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Probing container should be restarted with a exec "cat /tmp/health" liveness probe [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Probing container should be restarted with a /healthz http liveness probe [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Probing container should have monotonically increasing restart count [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Probing container should *not* be restarted with a exec "cat /tmp/health" liveness probe [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Probing container should *not* be restarted with a /healthz http liveness probe [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Probing container with readiness probe should not be ready before initial delay and never restart [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Probing container with readiness probe that fails should never be ready and never restart [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Security Context When creating a container with runAsUser should run the container with uid 65534 [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Security Context When creating a pod with privileged should run the container as unprivileged when false [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Security Context When creating a pod with readOnlyRootFilesystem should run the container with writable rootfs when readOnlyRootFilesystem=false [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Security Context when creating containers with AllowPrivilegeEscalation should not allow privilege escalation when false [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] [sig-node] Events should be sent by kubelets and the scheduler about pods scheduling and running  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] [sig-node] Pods Extended [k8s.io] Delete Grace Period should be submitted and removed [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] [sig-node] Pods Extended [k8s.io] Pods Set QOS Class should be set on Pods with matching resource requests and limits for memory and cpu [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] [sig-node] PreStop should call prestop when killing a pod  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Variable Expansion should allow composing env vars into new env vars [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Variable Expansion should allow substituting values in a container's args [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [k8s.io] Variable Expansion should allow substituting values in a container's command [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-api-machinery] AdmissionWebhook [Privileged:ClusterAdmin] should be able to deny attaching pod [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-api-machinery] AdmissionWebhook [Privileged:ClusterAdmin] should be able to deny pod and configmap creation [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-api-machinery] Garbage collector should delete pods created by rc when not orphaning [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-api-machinery] Garbage collector should delete RS created by deployment when not orphaning [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-api-machinery] Garbage collector should keep the rc around until all its pods are deleted if the deleteOptions says so [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-api-machinery] Garbage collector should not delete dependents that have both valid owner and owner that's waiting for dependents to be deleted [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-api-machinery] Garbage collector should orphan pods created by rc if delete options say so [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-api-machinery] Garbage collector should orphan RS created by deployment when deleteOptions.PropagationPolicy is Orphan [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-api-machinery] Secrets should be consumable from pods in env vars [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-api-machinery] Secrets should be consumable via the environment [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] Deployment deployment should delete old replica sets [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] Deployment deployment should support proportional scaling [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] Deployment deployment should support rollover [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] Deployment RollingUpdateDeployment should delete old pods and create new ones [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] Job should adopt matching orphans and release non-matching pods [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] ReplicaSet should adopt matching pods on creation and release no longer matching pods [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] ReplicaSet should serve a basic image on each replica with a public image  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] ReplicationController should adopt matching pods on creation [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] ReplicationController should release no longer matching pods [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] ReplicationController should serve a basic image on each replica with a public image  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-apps] StatefulSet [k8s.io] Basic StatefulSet functionality [StatefulSetBasic] Should recreate evicted statefulset [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-auth] ServiceAccounts should mount an API token into pods  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-cli] Kubectl client Kubectl label should update the label on a resource  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-cli] Kubectl client Kubectl logs should be able to retrieve and filter logs  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-cli] Kubectl client Kubectl replace should update a single-container pod's image  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-cli] Kubectl client Kubectl run pod should create a pod from an image when restart is Never  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-cli] Kubectl client Kubectl run rc should create an rc from an image  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-cli] Kubectl client Update Demo should create and stop a replication controller  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-cli] Kubectl client Update Demo should do a rolling update of a replication controller  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-cli] Kubectl client Update Demo should scale a replication controller  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] DNS should provide DNS for ExternalName services [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] DNS should provide DNS for pods for Hostname [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] DNS should provide DNS for pods for Subdomain [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] DNS should provide DNS for services  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] DNS should provide DNS for the cluster  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] DNS should provide /etc/hosts entries for the cluster [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Networking Granular Checks: Pods should function for intra-pod communication: http [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Networking Granular Checks: Pods should function for intra-pod communication: udp [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Networking Granular Checks: Pods should function for node-pod communication: http [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Networking Granular Checks: Pods should function for node-pod communication: udp [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Proxy version v1 should proxy through a service and a pod  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Services should be able to change the type from ClusterIP to ExternalName [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Services should be able to change the type from ExternalName to ClusterIP [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Services should be able to change the type from ExternalName to NodePort [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Services should be able to change the type from NodePort to ExternalName [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Services should be able to create a functioning NodePort service [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Services should serve a basic endpoint from pods  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-network] Services should serve multiport endpoints from pods  [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-node] ConfigMap should be consumable via environment variable [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-node] ConfigMap should be consumable via the environment [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-node] Downward API should provide container's limits.cpu/memory and requests.cpu/memory as env vars [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-node] Downward API should provide default limits.cpu/memory from node allocatable [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-node] Downward API should provide host IP as an env var [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-node] Downward API should provide pod name, namespace and IP address as env vars [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-node] Downward API should provide pod UID as env vars [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] ConfigMap binary data should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] ConfigMap optional updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] ConfigMap should be consumable from pods in volume as non-root [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] ConfigMap should be consumable from pods in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] ConfigMap should be consumable from pods in volume with defaultMode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] ConfigMap should be consumable from pods in volume with mappings and Item mode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] ConfigMap should be consumable from pods in volume with mappings as non-root [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] ConfigMap should be consumable from pods in volume with mappings [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] ConfigMap should be consumable in multiple volumes in the same pod [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] ConfigMap updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should provide container's cpu limit [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should provide container's cpu request [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should provide container's memory limit [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should provide container's memory request [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should provide node allocatable (cpu) as default cpu limit if the limit is not set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should provide node allocatable (memory) as default memory limit if the limit is not set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should provide podname only [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should set DefaultMode on files [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should set mode on item file [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should update annotations on modification [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Downward API volume should update labels on modification [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes pod should support shared volumes between containers [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (non-root,0644,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (non-root,0644,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (non-root,0666,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (non-root,0666,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (non-root,0777,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (non-root,0777,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (root,0644,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (root,0644,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (root,0666,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (root,0666,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (root,0777,default) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes should support (root,0777,tmpfs) [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes volume on default medium should have the correct mode [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir volumes volume on tmpfs should have the correct mode [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] EmptyDir wrapper volumes should not conflict [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] HostPath should give a volume the correct mode [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected combined should project all components that make up the projection API [Projection][NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected configMap optional updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected configMap should be consumable from pods in volume as non-root [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected configMap should be consumable from pods in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected configMap should be consumable from pods in volume with defaultMode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected configMap should be consumable from pods in volume with mappings and Item mode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected configMap should be consumable from pods in volume with mappings as non-root [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected configMap should be consumable from pods in volume with mappings [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected configMap should be consumable in multiple volumes in the same pod [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected configMap updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should provide container's cpu limit [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should provide container's cpu request [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should provide container's memory limit [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should provide container's memory request [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should provide node allocatable (cpu) as default cpu limit if the limit is not set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should provide node allocatable (memory) as default memory limit if the limit is not set [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should provide podname only [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should set DefaultMode on files [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should set mode on item file [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should update annotations on modification [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected downwardAPI should update labels on modification [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected secret optional updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected secret should be consumable from pods in volume as non-root with defaultMode and fsGroup set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected secret should be consumable from pods in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected secret should be consumable from pods in volume with defaultMode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected secret should be consumable from pods in volume with mappings and Item Mode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected secret should be consumable from pods in volume with mappings [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Projected secret should be consumable in multiple volumes in a pod [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Secrets optional updates should be reflected in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Secrets should be able to mount in a volume regardless of a different secret existing with same name in different namespace [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Secrets should be consumable from pods in volume as non-root with defaultMode and fsGroup set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Secrets should be consumable from pods in volume [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Secrets should be consumable from pods in volume with defaultMode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Secrets should be consumable from pods in volume with mappings and Item Mode set [LinuxOnly] [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Secrets should be consumable from pods in volume with mappings [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Secrets should be consumable in multiple volumes in a pod [NodeConformance] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Subpath Atomic writer volumes should support subpaths with configmap pod [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Subpath Atomic writer volumes should support subpaths with configmap pod with mountPath of existing file [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Subpath Atomic writer volumes should support subpaths with downward pod [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Subpath Atomic writer volumes should support subpaths with projected pod [LinuxOnly] [Conformance]
+    e2e.test/v1.17.0 (linux/amd64) kubernetes/ba07527 -- [sig-storage] Subpath Atomic writer volumes should support subpaths with secret pod [LinuxOnly] [Conformance]
+   (356 rows)
+
+   #+end_src
+
+
+* Conclusion
+* Next Steps
+* Footnotes
+** Connect to Database
+    If you already have your db and hasura endpoint up and running:
+ - [ ] Connect to your postgres db from within this file
+   You'll want execute this code block by moving your cursor within and typing =,,=
+  
+   #+NAME: Connect org to postgres
+   #+BEGIN_SRC emacs-lisp :results silent
+     (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+   #+END_SRC
+
+ - [ ] Test your connection works
+   You can run this sql block, and it see a message in your minbuffer like:
+   : You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10041".
+   
+   #+NAME: Test Connection
+   #+BEGIN_SRC sql-mode :results silent
+   \conninfo
+   #+END_SRC
+
+
+
