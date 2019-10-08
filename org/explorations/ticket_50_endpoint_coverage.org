@@ -503,7 +503,6 @@ If an operation_id is present in the audit event, then it is by definition hit. 
 
    #+end_src
 
-
 ** Build out Count for No Hits Too
    I am wondering if I could just do a left join on the api_operation table, but where we do a where clause on tests so that if it's null we mark it as 0.
    
@@ -533,38 +532,105 @@ If an operation_id is present in the audit event, then it is by definition hit. 
    I can test this against some endpoints that I know have tests and those that I know are not hit.
    
    #+BEGIN_SRC sql-mode
-     select *
+     select date, operation_id, test_hits, conf_hits
       from endpoint_coverage
       where (operation_id = 'patchCoreV1NamespacedEndpoints')
       OR (operation_id = 'replaceCoreV1NamespacedConfigMap')
       OR (operation_id = 'createCoreV1Namespace')
       OR (operation_id = 'readCoreV1NamespacedService')
       OR (operation_id = 'readCoreV1NamespacedResourceQuota')
-      OR (operation_id = 'readCoreV1NamespacedEvent');
+      OR (operation_id = 'readCoreV1NamespacedEvent')
+      OR (operation_id = 'listCoreV1EventForAllNamespaces')
+      OR (operation_id = 'readCoreV1Namespace')
+      ORDER BY operation_id, date;
    #+END_SRC
 
    #+RESULTS:
    #+begin_src sql-mode
-       date    |          bucket           |         job         |           operation_id            | level  | category | group |     kind      | version | test_hits | conf_hits | other_hits | total_hits 
-   ------------+---------------------------+---------------------+-----------------------------------+--------+----------+-------+---------------+---------+-----------+-----------+------------+------------
-    2019-09-16 | ci-kubernetes-e2e-gci-gce | 1173412183980118017 | createCoreV1Namespace             | stable | core     |       | Namespace     | v1      |       853 |       279 |          4 |        857
-    2019-09-16 | ci-kubernetes-e2e-gci-gce | 1173412183980118017 | patchCoreV1NamespacedEndpoints    | stable | core     |       | Endpoints     | v1      |         0 |         0 |          0 |          0
-    2019-09-16 | ci-kubernetes-e2e-gci-gce | 1173412183980118017 | readCoreV1NamespacedEvent         | stable | core     |       | Event         | v1      |         0 |         0 |          0 |          0
-    2019-09-16 | ci-kubernetes-e2e-gci-gce | 1173412183980118017 | readCoreV1NamespacedResourceQuota | stable | core     |       | ResourceQuota | v1      |        55 |        41 |          0 |         55
-    2019-09-16 | ci-kubernetes-e2e-gci-gce | 1173412183980118017 | readCoreV1NamespacedService       | stable | core     |       | Service       | v1      |       361 |       260 |        762 |       1123
-    2019-09-16 | ci-kubernetes-e2e-gci-gce | 1173412183980118017 | replaceCoreV1NamespacedConfigMap  | stable | core     |       | ConfigMap     | v1      |        74 |        68 |        689 |        763
-    2019-09-30 | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | createCoreV1Namespace             | stable | core     |       | Namespace     | v1      |       856 |       282 |          4 |        860
-    2019-09-30 | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | patchCoreV1NamespacedEndpoints    | stable | core     |       | Endpoints     | v1      |         0 |         0 |          0 |          0
-    2019-09-30 | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | readCoreV1NamespacedEvent         | stable | core     |       | Event         | v1      |         0 |         0 |          0 |          0
-    2019-09-30 | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | readCoreV1NamespacedResourceQuota | stable | core     |       | ResourceQuota | v1      |        57 |        40 |          0 |         57
-    2019-09-30 | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | readCoreV1NamespacedService       | stable | core     |       | Service       | v1      |       361 |       260 |        757 |       1118
-    2019-09-30 | ci-kubernetes-e2e-gci-gce | 1178464478988079104 | replaceCoreV1NamespacedConfigMap  | stable | core     |       | ConfigMap     | v1      |        72 |        66 |        689 |        761
-   (12 rows)
+       date    |           operation_id            | test_hits | conf_hits 
+   ------------+-----------------------------------+-----------+-----------
+    2019-09-16 | createCoreV1Namespace             |       853 |       279
+    2019-09-30 | createCoreV1Namespace             |       856 |       282
+    2019-09-16 | listCoreV1EventForAllNamespaces   |         0 |         0
+    2019-09-30 | listCoreV1EventForAllNamespaces   |         0 |         0
+    2019-09-16 | patchCoreV1NamespacedEndpoints    |         0 |         0
+    2019-09-30 | patchCoreV1NamespacedEndpoints    |         0 |         0
+    2019-09-16 | readCoreV1Namespace               |      5771 |      1984
+    2019-09-30 | readCoreV1Namespace               |      5863 |      2012
+    2019-09-16 | readCoreV1NamespacedEvent         |         0 |         0
+    2019-09-30 | readCoreV1NamespacedEvent         |         0 |         0
+    2019-09-16 | readCoreV1NamespacedResourceQuota |        55 |        41
+    2019-09-30 | readCoreV1NamespacedResourceQuota |        57 |        40
+    2019-09-16 | readCoreV1NamespacedService       |       361 |       260
+    2019-09-30 | readCoreV1NamespacedService       |       361 |       260
+    2019-09-16 | replaceCoreV1NamespacedConfigMap  |        74 |        68
+    2019-09-30 | replaceCoreV1NamespacedConfigMap  |        72 |        66
+   (16 rows)
 
    #+end_src
+   
+  All of them match except the ~readCoreV1NamespacedService~ which has far more than the others.  Because of the 
+** Grab a summary of percent tested per date
+   
+   This is a rough version of getting the summaries, but the sql query is executing slowly.  It might be due to there being no indexes on our endpiont coverage, or we are doing too many counts.
+  #+BEGIN_SRC sql-mode
+    EXPLAIN select
+      date,
+      COUNT(operation_id) as total_endpoints,
+      COUNT(*) filter(WHERE test_hits > 0) as test_hits,
+      COUNT(*) filter(WHERE conf_hits > 0) as conf_hits,
+      ROUND(((count(*) filter(WHERE test_hits > 0)) * 100 )::numeric / count(*), 2) as percent_tested,
+      ROUND(((count(*) filter(WHERE conf_hits > 0)) * 100 )::numeric / count(*), 2) as percent_conf_tested
+      from endpoint_coverage group by date;
+  #+END_SRC
 
+  #+RESULTS:
+  #+begin_src sql-mode
+                                                                                                                                                                                                                                                                                                                                               QUERY PLAN                                                                                                                                                                                                                                                                                                                                             
+  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+   GroupAggregate  (cost=170567.09..170742.99 rows=200 width=92)
+     Group Key: ((bjs.job_timestamp)::date)
+     ->  Unique  (cost=170567.09..170645.91 rows=2252 width=166)
+           ->  Sort  (cost=170567.09..170572.72 rows=2252 width=166)
+                 Sort Key: ((bjs.job_timestamp)::date), api_operation_material.bucket, api_operation_material.job, api_operation_material.operation_id, api_operation_material.level, api_operation_material.category, api_operation_material.k8s_group, api_operation_material.k8s_kind, api_operation_material.k8s_version, (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text))), (count(*) FILTER (WHERE (((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text) AND ((raw.data ->> 'userAgent'::text) ~~ '%[Conformance]%'::text)))), (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) !~~ 'e2e.test%'::text))), (count((raw.data ->> 'userAgent'::text)))
+                 ->  HashAggregate  (cost=170413.53..170441.68 rows=2252 width=166)
+                       Group Key: api_operation_material.operation_id, api_operation_material.bucket, api_operation_material.job, (bjs.job_timestamp)::date, api_operation_material.level, api_operation_material.category, api_operation_material.k8s_group, api_operation_material.k8s_kind, api_operation_material.k8s_version
+                       ->  Hash Right Join  (cost=411.60..137467.16 rows=599025 width=1260)
+                             Hash Cond: ((raw.operation_id = api_operation_material.operation_id) AND (raw.bucket = api_operation_material.bucket) AND (raw.job = api_operation_material.job))
+                             ->  Seq Scan on raw_audit_event raw  (cost=0.00..119837.70 rows=648670 width=1205)
+                             ->  Hash  (cost=372.19..372.19 rows=2252 width=138)
+                                   ->  Hash Left Join  (cost=1.05..372.19 rows=2252 width=138)
+                                         Hash Cond: ((api_operation_material.bucket = bjs.bucket) AND (api_operation_material.job = bjs.job))
+                                         ->  Seq Scan on api_operation_material  (cost=0.00..345.52 rows=2252 width=130)
+                                         ->  Hash  (cost=1.02..1.02 rows=2 width=54)
+                                               ->  Seq Scan on bucket_job_swagger bjs  (cost=0.00..1.02 rows=2 width=54)
+  (16 rows)
 
-   All of them match except the ~readCoreV1NamespacedService~ which has far more than the others.
+  #+end_src
+  
+  Regardless, it gives us the numbers we want...though it's going to be lower than our last report due to there being more endpoints in the swagger than we've been accounting for (1126 compared to 900).
+  
+  #+NAME: Testing Percentages with Timestamp
+  #+BEGIN_SRC sql-mode
+    SELECT
+      date,
+      COUNT(operation_id) as total_endpoints,
+      COUNT(*) filter(WHERE test_hits > 0) as test_hits,
+      COUNT(*) filter(WHERE conf_hits > 0) as conf_hits,
+      ROUND(((count(*) filter(WHERE test_hits > 0)) * 100 )::numeric / count(*), 2) as percent_tested,
+      ROUND(((count(*) filter(WHERE conf_hits > 0)) * 100 )::numeric / count(*), 2) as percent_conf_tested
+      FROM endpoint_coverage GROUP BY date;
+  #+END_SRC
+
+  #+RESULTS: Testing Percentages with Timestamp
+  #+begin_src sql-mode
+      date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+  ------------+-----------------+-----------+-----------+----------------+---------------------
+   2019-09-16 |            1126 |       224 |       147 |          19.89 |               13.06
+   2019-09-30 |            1126 |       224 |       153 |          19.89 |               13.59
+  (2 rows)
+
+  #+end_src
 
 * Conclusion
 * Next Steps
@@ -587,6 +653,3 @@ If an operation_id is present in the audit event, then it is by definition hit. 
    #+BEGIN_SRC sql-mode :results silent
    \conninfo
    #+END_SRC
-
-
-
