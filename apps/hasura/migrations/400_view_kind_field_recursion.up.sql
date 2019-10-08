@@ -1,7 +1,7 @@
 -- 400: kind_field_path_recursion
---     :PROPERTIES:
---     :header-args:sql-mode+: :tangle ../apps/hasura/migrations/400_view_kind_field_recursion.up.sql
---     :END:
+--    :PROPERTIES:
+--    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/400_view_kind_field_recursion.up.sql
+--    :END:
 -- #+NAME: Recursive kind_field_path view
 
 create or replace recursive view kind_field_path_recursion(

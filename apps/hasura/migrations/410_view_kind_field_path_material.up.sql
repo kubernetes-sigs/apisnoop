@@ -1,7 +1,7 @@
 -- 410: kind_field_path_material
---     :PROPERTIES:
---     :header-args:sql-mode+: :tangle ../apps/hasura/migrations/410_view_kind_field_path_material.up.sql
---     :END:
+--    :PROPERTIES:
+--    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/410_view_kind_field_path_material.up.sql
+--    :END:
 -- #+NAME: kind_field_path material
 
 create materialized view kind_field_path_material AS
@@ -21,7 +21,7 @@ create materialized view kind_field_path_material AS
 -- drop materialized view kind_field_path_material cascade;
 
 -- kind_field_path_material indexes
---  #+NAME: kind_field_path_material indexs
+-- #+NAME: kind_field_path_material indexs
 
 CREATE INDEX kfpm_kind_idx       ON kind_field_path_material (kind);
 CREATE INDEX kfpm_field_path_idx ON kind_field_path_material (field_path);

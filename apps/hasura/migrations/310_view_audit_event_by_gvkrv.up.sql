@@ -14,6 +14,7 @@ CREATE OR REPLACE VIEW "public"."audit_events_by_gvkrv" AS
           END as api_group,
     (a.data -> 'objectRef' ->>'apiVersion') as api_version,
     (a.data -> 'requestObject'->>'kind') as kind,
+    a.param_schema as body_schema,
     (a.data -> 'objectRef'->>'resource') as resource,
       (a.data -> 'objectRef'->>'subresource') as sub_resource,
     (a.data->>'verb') as event_verb,

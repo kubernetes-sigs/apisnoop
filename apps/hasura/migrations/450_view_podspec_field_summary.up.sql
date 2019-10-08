@@ -1,8 +1,8 @@
 -- 450: PodSpec Field Summary View
---     :PROPERTIES:
---     :header-args:sql-mode+: :tangle ../apps/hasura/migrations/450_view_podspec_field_summary.up.sql
---     :END:
---  #+NAME: view podspec_field_summary
+--    :PROPERTIES:
+--    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/450_view_podspec_field_summary.up.sql
+--    :END:
+-- #+NAME: view podspec_field_summary
 
 create view podspec_field_summary as
   select distinct field_name as podspec_field,

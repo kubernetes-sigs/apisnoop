@@ -1,8 +1,8 @@
 -- 470: PodSpec Field Report View
---     :PROPERTIES:
---     :header-args:sql-mode+: :tangle ../apps/hasura/migrations/470_view_podspec_field_report.up.sql
---     :END:
---  #+NAME: podspec_field_hits
+--    :PROPERTIES:
+--    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/470_view_podspec_field_report.up.sql
+--    :END:
+-- #+NAME: podspec_field_hits
 
 create or replace view podspec_field_report as
 select distinct podspec_field,

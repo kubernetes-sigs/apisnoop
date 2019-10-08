@@ -8,6 +8,7 @@ CREATE OR REPLACE VIEW "public"."audit_event" AS
          raw.data ->> 'level' as event_level,
          raw.data ->> 'stage' as event_stage,
          raw.operation_id,
+         aop.param_schema,
          raw.data ->> 'verb' as event_verb,
          raw.data ->> 'apiVersion' as api_version,
          raw.data ->> 'requestURI' as request_uri,
@@ -26,8 +27,7 @@ CREATE OR REPLACE VIEW "public"."audit_event" AS
          raw.data -> 'responseStatus' as response_status,
          raw.data ->> 'stageTimestamp' as stage_timestamp,
          raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
-         raw.data as data,
-         aop.param_schema
+         raw.data as data
     FROM raw_audit_event raw
            LEFT JOIN (
              select param_op, param_schema

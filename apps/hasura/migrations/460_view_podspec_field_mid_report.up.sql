@@ -1,8 +1,8 @@
 -- 460: PodSpec Field mid Report View
---     :PROPERTIES:
---     :header-args:sql-mode+: :tangle ../apps/hasura/migrations/460_view_podspec_field_mid_report.up.sql
---     :END:
---   #+NAME: podspec_field_mid_report
+--    :PROPERTIES:
+--    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/460_view_podspec_field_mid_report.up.sql
+--    :END:
+--  #+NAME: podspec_field_mid_report
 
 create or replace view podspec_field_mid_report as
 select distinct podspec_field,
