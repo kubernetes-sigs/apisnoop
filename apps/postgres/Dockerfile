@@ -1,9 +1,9 @@
-FROM postgres:11.5
+FROM postgres:12.0
  MAINTAINER Hippie Hacker <hh@ii.coop>
  RUN apt-get update \
    && apt-get install -y --no-install-recommends \
-   postgresql-plpython3-11 \
-   postgresql-11-plsh \
+   postgresql-plpython3-12 \
+   postgresql-12-plsh \
    python3-bs4\
    python3-requests \
    wget \
