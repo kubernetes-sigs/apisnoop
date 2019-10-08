@@ -1,0 +1,413 @@
+#+TITLE: Field Coverage (Map children for all Kinds)
+* Purpose
+Keeping track of all values for specific Kinds, mapping back to the AuditEvent that contains them.
+* Approach
+SQLJSON-PATh support in Postgresql 12 will help efficently aggregrate those kinds quickly.
+** [1/3] Steps
+- [X] Upgrade to Postgresql 12
+- [ ] Select unique values for a specific Kind across all events
+- [ ] Create view linking all events that include a specific kind + field
+
+** api_operation_materialized
+#+BEGIN_SRC sql-mode
+REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+REFRESH MATERIALIZED VIEW
+#+end_src
+
+#+BEGIN_SRC sql-mode
+select count(*) from api_operation_parameter_material limit 1;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+ count 
+-------
+  6916
+(1 row)
+
+#+end_src
+
+#+BEGIN_SRC sql-mode
+select distinct(
+
+#+END_SRC
+** PodSpec field_paths
+
+How can we get a list of:
+kinds that are direct api_ops field_path
+
+So we can use a search for matches?
+*** daemonset counts
+#+BEGIN_SRC sql-mode
+select distinct audit_id, jsonb_path_query(request_object,'$.spec.template.spec')
+-- select jsonb_path_query(request_object,'$.spec.template.spec')
+-- request_object->'$.spec'
+from audit_event
+-- select count(*) from audit_event
+where 
+    job = '1178464478988079104'
+and (
+(param_schema = 'io.k8s.api.apps.v1.DaemonSet'
+-- and request_object @@ '$.spec.template.spec '
+and jsonb_path_match(request_object,'exists($.spec.template.spec)',silent=>TRUE)))
+limit 20
+; 
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+               audit_id               |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           jsonb_path_query                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+--------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 00368d03-9a6b-4839-ac51-eb4bf6acdb87 | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-3568", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-nx44", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-3568/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-provisioning-3568"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 0244ad12-aeaa-4049-9efe-ba5b631bf2d0 | {"volumes": [{"name": "varlog", "hostPath": {"path": "/var/log", "type": ""}}, {"name": "varlibdockercontainers", "hostPath": {"path": "/var/lib/docker/containers", "type": ""}}, {"name": "config-volume", "configMap": {"name": "fluentd-gcp-config-old-v1.2.5", "defaultMode": 420}}], "dnsPolicy": "Default", "containers": [{"env": [{"name": "NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}, {"name": "STACKDRIVER_METADATA_AGENT_URL", "value": "http://$(NODE_NAME):8799"}], "name": "fluentd-gcp", "image": "gcr.io/stackdriver-agents/stackdriver-logging-agent:1.6.17", "resources": {}, "volumeMounts": [{"name": "varlog", "mountPath": "/var/log"}, {"name": "varlibdockercontainers", "readOnly": true, "mountPath": "/var/lib/docker/containers"}, {"name": "config-volume", "mountPath": "/etc/google-fluentd/config.d"}], "livenessProbe": {"exec": {"command": ["/bin/sh", "-c", "LIVENESS_THRESHOLD_SECONDS=${LIVENESS_THRESHOLD_SECONDS:-300}; STUCK_THRESHOLD_SECONDS=${STUCK_THRESHOLD_SECONDS:-900}; if [ ! -e /var/log/fluentd-buffers ]; then\n  exit 1;\nfi; touch -d \"${STUCK_THRESHOLD_SECONDS} seconds ago\" /tmp/marker-stuck; if [ -z \"$(find /var/log/fluentd-buffers -type d -newer /tmp/marker-stuck -print -quit)\" ]; then\n  rm -rf /var/log/fluentd-buffers;\n  exit 1;\nfi; touch -d \"${LIVENESS_THRESHOLD_SECONDS} seconds ago\" /tmp/marker-liveness; if [ -z \"$(find /var/log/fluentd-buffers -type d -newer /tmp/marker-liveness -print -quit)\" ]; then\n  exit 1;\nfi;\n"]}, "periodSeconds": 60, "timeoutSeconds": 1, "failureThreshold": 3, "successThreshold": 1, "initialDelaySeconds": 600}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "POD_NAME", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name", "apiVersion": "v1"}}}, {"name": "POD_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace", "apiVersion": "v1"}}}], "name": "prometheus-to-sd-exporter", "image": "k8s.gcr.io/prometheus-to-sd:v0.5.0", "command": ["/monitor", "--stackdriver-prefix=custom.googleapis.com/addons", "--api-override=https://monitoring.googleapis.com/", "--source=fluentd:http://localhost:24231?whitelisted=stackdriver_successful_requests_count,stackdriver_failed_requests_count,stackdriver_ingested_entries_count,stackdriver_dropped_entries_count", "--pod-id=$(POD_NAME)", "--namespace-id=$(POD_NAMESPACE)"], "resources": {}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "tolerations": [{"effect": "NoExecute", "operator": "Exists"}, {"effect": "NoSchedule", "operator": "Exists"}], "nodeSelector": {"beta.kubernetes.io/os": "linux"}, "restartPolicy": "Always", "schedulerName": "default-scheduler", "serviceAccount": "fluentd-gcp", "securityContext": {}, "priorityClassName": "system-node-critical", "serviceAccountName": "fluentd-gcp", "terminationGracePeriodSeconds": 60}
+ 05287acc-1a2d-4aea-98cf-255f3d3c87a7 | {"dnsPolicy": "Default", "containers": [{"name": "metadata-proxy", "image": "k8s.gcr.io/metadata-proxy:v0.1.12", "resources": {"limits": {"cpu": "30m", "memory": "25Mi"}, "requests": {"cpu": "30m", "memory": "25Mi"}}, "imagePullPolicy": "IfNotPresent", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "POD_NAME", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name", "apiVersion": "v1"}}}, {"name": "POD_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace", "apiVersion": "v1"}}}], "name": "prometheus-to-sd-exporter", "image": "k8s.gcr.io/prometheus-to-sd:v0.5.0", "command": ["/monitor", "--stackdriver-prefix=custom.googleapis.com/addons", "--api-override=https://monitoring.googleapis.com/", "--source=metadata_proxy:http://127.0.0.1:989?whitelisted=request_count", "--pod-id=$(POD_NAME)", "--namespace-id=$(POD_NAMESPACE)"], "resources": {"limits": {"cpu": "2m", "memory": "20Mi"}, "requests": {"cpu": "2m", "memory": "20Mi"}}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "tolerations": [{"effect": "NoExecute", "operator": "Exists"}, {"effect": "NoSchedule", "operator": "Exists"}], "nodeSelector": {"beta.kubernetes.io/os": "linux", "cloud.google.com/metadata-proxy-ready": "true"}, "restartPolicy": "Always", "schedulerName": "default-scheduler", "serviceAccount": "metadata-proxy", "securityContext": {}, "priorityClassName": "system-node-critical", "serviceAccountName": "metadata-proxy", "terminationGracePeriodSeconds": 30}
+ 058188cb-31dc-42d0-b8a4-cfe36d31610e | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-6051", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-36rc", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-6051/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-provisioning-6051"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 062c2909-1a03-4aa0-9dc1-3b4669bb2c8a | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-1755", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-zc9s", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-1755/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-provisioning-1755"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 090b7202-fd2e-44fb-84be-84c5a670e031 | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-volume-896", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-36rc", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-volume-896/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-volume-896"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 0b2c7dae-d23f-4b30-adf3-222fe5109f29 | {"dnsPolicy": "Default", "containers": [{"name": "metadata-proxy", "image": "k8s.gcr.io/metadata-proxy:v0.1.12", "resources": {"limits": {"cpu": "30m", "memory": "25Mi"}, "requests": {"cpu": "30m", "memory": "25Mi"}}, "imagePullPolicy": "IfNotPresent", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "POD_NAME", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name", "apiVersion": "v1"}}}, {"name": "POD_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace", "apiVersion": "v1"}}}], "name": "prometheus-to-sd-exporter", "image": "k8s.gcr.io/prometheus-to-sd:v0.5.0", "command": ["/monitor", "--stackdriver-prefix=custom.googleapis.com/addons", "--api-override=https://monitoring.googleapis.com/", "--source=metadata_proxy:http://127.0.0.1:989?whitelisted=request_count", "--pod-id=$(POD_NAME)", "--namespace-id=$(POD_NAMESPACE)"], "resources": {"limits": {"cpu": "2m", "memory": "20Mi"}, "requests": {"cpu": "2m", "memory": "20Mi"}}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "tolerations": [{"effect": "NoExecute", "operator": "Exists"}, {"effect": "NoSchedule", "operator": "Exists"}], "nodeSelector": {"beta.kubernetes.io/os": "linux", "cloud.google.com/metadata-proxy-ready": "true"}, "restartPolicy": "Always", "schedulerName": "default-scheduler", "serviceAccount": "metadata-proxy", "securityContext": {}, "priorityClassName": "system-node-critical", "serviceAccountName": "metadata-proxy", "terminationGracePeriodSeconds": 30}
+ 0b86b394-18c6-42d2-b49e-4ef90adb9c49 | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-volumemode-9287", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-zc9s", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-volumemode-9287/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-volumemode-9287"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 0cf342fe-94f9-40f9-993b-f80075d09773 | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-4635", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-36rc", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-4635/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-provisioning-4635"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 0ee66f40-3dfe-4df4-83f5-ce542c7f5267 | {"volumes": [{"name": "varlog", "hostPath": {"path": "/var/log", "type": ""}}, {"name": "varlibdockercontainers", "hostPath": {"path": "/var/lib/docker/containers", "type": ""}}, {"name": "config-volume", "configMap": {"name": "fluentd-gcp-config-old-v1.2.5", "defaultMode": 420}}], "dnsPolicy": "Default", "containers": [{"env": [{"name": "NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}, {"name": "STACKDRIVER_METADATA_AGENT_URL", "value": "http://$(NODE_NAME):8799"}], "name": "fluentd-gcp", "image": "gcr.io/stackdriver-agents/stackdriver-logging-agent:1.6.17", "resources": {}, "volumeMounts": [{"name": "varlog", "mountPath": "/var/log"}, {"name": "varlibdockercontainers", "readOnly": true, "mountPath": "/var/lib/docker/containers"}, {"name": "config-volume", "mountPath": "/etc/google-fluentd/config.d"}], "livenessProbe": {"exec": {"command": ["/bin/sh", "-c", "LIVENESS_THRESHOLD_SECONDS=${LIVENESS_THRESHOLD_SECONDS:-300}; STUCK_THRESHOLD_SECONDS=${STUCK_THRESHOLD_SECONDS:-900}; if [ ! -e /var/log/fluentd-buffers ]; then\n  exit 1;\nfi; touch -d \"${STUCK_THRESHOLD_SECONDS} seconds ago\" /tmp/marker-stuck; if [ -z \"$(find /var/log/fluentd-buffers -type d -newer /tmp/marker-stuck -print -quit)\" ]; then\n  rm -rf /var/log/fluentd-buffers;\n  exit 1;\nfi; touch -d \"${LIVENESS_THRESHOLD_SECONDS} seconds ago\" /tmp/marker-liveness; if [ -z \"$(find /var/log/fluentd-buffers -type d -newer /tmp/marker-liveness -print -quit)\" ]; then\n  exit 1;\nfi;\n"]}, "periodSeconds": 60, "timeoutSeconds": 1, "failureThreshold": 3, "successThreshold": 1, "initialDelaySeconds": 600}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "POD_NAME", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name", "apiVersion": "v1"}}}, {"name": "POD_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace", "apiVersion": "v1"}}}], "name": "prometheus-to-sd-exporter", "image": "k8s.gcr.io/prometheus-to-sd:v0.5.0", "command": ["/monitor", "--stackdriver-prefix=custom.googleapis.com/addons", "--api-override=https://monitoring.googleapis.com/", "--source=fluentd:http://localhost:24231?whitelisted=stackdriver_successful_requests_count,stackdriver_failed_requests_count,stackdriver_ingested_entries_count,stackdriver_dropped_entries_count", "--pod-id=$(POD_NAME)", "--namespace-id=$(POD_NAMESPACE)"], "resources": {}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "tolerations": [{"effect": "NoExecute", "operator": "Exists"}, {"effect": "NoSchedule", "operator": "Exists"}], "nodeSelector": {"beta.kubernetes.io/os": "linux"}, "restartPolicy": "Always", "schedulerName": "default-scheduler", "serviceAccount": "fluentd-gcp", "securityContext": {}, "priorityClassName": "system-node-critical", "serviceAccountName": "fluentd-gcp", "terminationGracePeriodSeconds": 60}
+ 124d5703-6d6f-46cb-b80a-7dd72263916f | {"volumes": [{"name": "varlog", "hostPath": {"path": "/var/log", "type": ""}}, {"name": "varlibdockercontainers", "hostPath": {"path": "/var/lib/docker/containers", "type": ""}}, {"name": "config-volume", "configMap": {"name": "fluentd-gcp-config-old-v1.2.5", "defaultMode": 420}}], "dnsPolicy": "Default", "containers": [{"env": [{"name": "NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}, {"name": "STACKDRIVER_METADATA_AGENT_URL", "value": "http://$(NODE_NAME):8799"}], "name": "fluentd-gcp", "image": "gcr.io/stackdriver-agents/stackdriver-logging-agent:1.6.17", "resources": {}, "volumeMounts": [{"name": "varlog", "mountPath": "/var/log"}, {"name": "varlibdockercontainers", "readOnly": true, "mountPath": "/var/lib/docker/containers"}, {"name": "config-volume", "mountPath": "/etc/google-fluentd/config.d"}], "livenessProbe": {"exec": {"command": ["/bin/sh", "-c", "LIVENESS_THRESHOLD_SECONDS=${LIVENESS_THRESHOLD_SECONDS:-300}; STUCK_THRESHOLD_SECONDS=${STUCK_THRESHOLD_SECONDS:-900}; if [ ! -e /var/log/fluentd-buffers ]; then\n  exit 1;\nfi; touch -d \"${STUCK_THRESHOLD_SECONDS} seconds ago\" /tmp/marker-stuck; if [ -z \"$(find /var/log/fluentd-buffers -type d -newer /tmp/marker-stuck -print -quit)\" ]; then\n  rm -rf /var/log/fluentd-buffers;\n  exit 1;\nfi; touch -d \"${LIVENESS_THRESHOLD_SECONDS} seconds ago\" /tmp/marker-liveness; if [ -z \"$(find /var/log/fluentd-buffers -type d -newer /tmp/marker-liveness -print -quit)\" ]; then\n  exit 1;\nfi;\n"]}, "periodSeconds": 60, "timeoutSeconds": 1, "failureThreshold": 3, "successThreshold": 1, "initialDelaySeconds": 600}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "POD_NAME", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name", "apiVersion": "v1"}}}, {"name": "POD_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace", "apiVersion": "v1"}}}], "name": "prometheus-to-sd-exporter", "image": "k8s.gcr.io/prometheus-to-sd:v0.5.0", "command": ["/monitor", "--stackdriver-prefix=custom.googleapis.com/addons", "--api-override=https://monitoring.googleapis.com/", "--source=fluentd:http://localhost:24231?whitelisted=stackdriver_successful_requests_count,stackdriver_failed_requests_count,stackdriver_ingested_entries_count,stackdriver_dropped_entries_count", "--pod-id=$(POD_NAME)", "--namespace-id=$(POD_NAMESPACE)"], "resources": {}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "tolerations": [{"effect": "NoExecute", "operator": "Exists"}, {"effect": "NoSchedule", "operator": "Exists"}], "nodeSelector": {"beta.kubernetes.io/os": "linux"}, "restartPolicy": "Always", "schedulerName": "default-scheduler", "serviceAccount": "fluentd-gcp", "securityContext": {}, "priorityClassName": "system-node-critical", "serviceAccountName": "fluentd-gcp", "terminationGracePeriodSeconds": 60}
+ 19988cf4-131d-49d5-943c-ac7b88c7a49d | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-3568", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-nx44", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-3568/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-provisioning-3568"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 221774d6-de50-42bf-9421-bc549b5378fe | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-8841", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-nx44", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-8841/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-provisioning-8841"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 223959eb-2a3e-4f0f-a995-cd8dfc7507ee | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-4635", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-36rc", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-4635/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-provisioning-4635"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 273dd3ec-1c8d-4fd9-9cc6-bb0d0f542b2a | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-7497", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-36rc", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-7497/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-provisioning-7497"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 27479eee-c140-4b49-b15d-0f1c972f4ad5 | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-6472", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-36rc", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-6472/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-provisioning-6472"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 2823b68f-c54e-4c60-8f3f-cd4224729870 | {"volumes": [{"name": "varlog", "hostPath": {"path": "/var/log", "type": ""}}, {"name": "varlibdockercontainers", "hostPath": {"path": "/var/lib/docker/containers", "type": ""}}, {"name": "config-volume", "configMap": {"name": "fluentd-gcp-config-old-v1.2.5", "defaultMode": 420}}], "dnsPolicy": "Default", "containers": [{"env": [{"name": "NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}, {"name": "STACKDRIVER_METADATA_AGENT_URL", "value": "http://$(NODE_NAME):8799"}], "name": "fluentd-gcp", "image": "gcr.io/stackdriver-agents/stackdriver-logging-agent:1.6.17", "resources": {}, "volumeMounts": [{"name": "varlog", "mountPath": "/var/log"}, {"name": "varlibdockercontainers", "readOnly": true, "mountPath": "/var/lib/docker/containers"}, {"name": "config-volume", "mountPath": "/etc/google-fluentd/config.d"}], "livenessProbe": {"exec": {"command": ["/bin/sh", "-c", "LIVENESS_THRESHOLD_SECONDS=${LIVENESS_THRESHOLD_SECONDS:-300}; STUCK_THRESHOLD_SECONDS=${STUCK_THRESHOLD_SECONDS:-900}; if [ ! -e /var/log/fluentd-buffers ]; then\n  exit 1;\nfi; touch -d \"${STUCK_THRESHOLD_SECONDS} seconds ago\" /tmp/marker-stuck; if [ -z \"$(find /var/log/fluentd-buffers -type d -newer /tmp/marker-stuck -print -quit)\" ]; then\n  rm -rf /var/log/fluentd-buffers;\n  exit 1;\nfi; touch -d \"${LIVENESS_THRESHOLD_SECONDS} seconds ago\" /tmp/marker-liveness; if [ -z \"$(find /var/log/fluentd-buffers -type d -newer /tmp/marker-liveness -print -quit)\" ]; then\n  exit 1;\nfi;\n"]}, "periodSeconds": 60, "timeoutSeconds": 1, "failureThreshold": 3, "successThreshold": 1, "initialDelaySeconds": 600}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "POD_NAME", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name", "apiVersion": "v1"}}}, {"name": "POD_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace", "apiVersion": "v1"}}}], "name": "prometheus-to-sd-exporter", "image": "k8s.gcr.io/prometheus-to-sd:v0.5.0", "command": ["/monitor", "--stackdriver-prefix=custom.googleapis.com/addons", "--api-override=https://monitoring.googleapis.com/", "--source=fluentd:http://localhost:24231?whitelisted=stackdriver_successful_requests_count,stackdriver_failed_requests_count,stackdriver_ingested_entries_count,stackdriver_dropped_entries_count", "--pod-id=$(POD_NAME)", "--namespace-id=$(POD_NAMESPACE)"], "resources": {}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "tolerations": [{"effect": "NoExecute", "operator": "Exists"}, {"effect": "NoSchedule", "operator": "Exists"}], "nodeSelector": {"beta.kubernetes.io/os": "linux"}, "restartPolicy": "Always", "schedulerName": "default-scheduler", "serviceAccount": "fluentd-gcp", "securityContext": {}, "priorityClassName": "system-node-critical", "serviceAccountName": "fluentd-gcp", "terminationGracePeriodSeconds": 60}
+ 2a98c881-0fa4-4ce2-af8c-2bbe83064964 | {"dnsPolicy": "Default", "containers": [{"name": "metadata-proxy", "image": "k8s.gcr.io/metadata-proxy:v0.1.12", "resources": {"limits": {"cpu": "30m", "memory": "25Mi"}, "requests": {"cpu": "30m", "memory": "25Mi"}}, "imagePullPolicy": "IfNotPresent", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "POD_NAME", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name", "apiVersion": "v1"}}}, {"name": "POD_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace", "apiVersion": "v1"}}}], "name": "prometheus-to-sd-exporter", "image": "k8s.gcr.io/prometheus-to-sd:v0.5.0", "command": ["/monitor", "--stackdriver-prefix=custom.googleapis.com/addons", "--api-override=https://monitoring.googleapis.com/", "--source=metadata_proxy:http://127.0.0.1:989?whitelisted=request_count", "--pod-id=$(POD_NAME)", "--namespace-id=$(POD_NAMESPACE)"], "resources": {"limits": {"cpu": "2m", "memory": "20Mi"}, "requests": {"cpu": "2m", "memory": "20Mi"}}, "imagePullPolicy": "IfNotPresent", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "tolerations": [{"effect": "NoExecute", "operator": "Exists"}, {"effect": "NoSchedule", "operator": "Exists"}], "nodeSelector": {"beta.kubernetes.io/os": "linux", "cloud.google.com/metadata-proxy-ready": "true"}, "restartPolicy": "Always", "schedulerName": "default-scheduler", "serviceAccount": "metadata-proxy", "securityContext": {}, "priorityClassName": "system-node-critical", "serviceAccountName": "metadata-proxy", "terminationGracePeriodSeconds": 30}
+ 362ba2dd-90f3-46d6-9fcb-5ee4906f1d95 | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-volumemode-9287", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-zc9s", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-volumemode-9287/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-volumemode-9287"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+ 37ac9e20-7642-4350-9289-10ef3b9f9e85 | {"volumes": [{"name": "socket-dir", "hostPath": {"path": "/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-6472", "type": "DirectoryOrCreate"}}, {"name": "mountpoint-dir", "hostPath": {"path": "/var/lib/kubelet/pods", "type": "DirectoryOrCreate"}}, {"name": "registration-dir", "hostPath": {"path": "/var/lib/kubelet/plugins", "type": "Directory"}}], "nodeName": "bootstrap-e2e-minion-group-36rc", "dnsPolicy": "ClusterFirst", "containers": [{"env": [{"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--csi-address=/csi/csi.sock", "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath-v0-provisioning-6472/csi.sock"], "name": "driver-registrar", "image": "quay.io/k8scsi/driver-registrar:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "registration-dir", "mountPath": "/registration"}], "imagePullPolicy": "Always", "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}, {"env": [{"name": "CSI_ENDPOINT", "value": "unix:///csi/csi.sock"}, {"name": "KUBE_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName", "apiVersion": "v1"}}}], "args": ["--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)", "--drivername=csi-hostpath-v0-provisioning-6472"], "name": "hostpath", "image": "quay.io/k8scsi/hostpathplugin:v0.4.1", "resources": {}, "volumeMounts": [{"name": "socket-dir", "mountPath": "/csi"}, {"name": "mountpoint-dir", "mountPath": "/var/lib/kubelet/pods", "mountPropagation": "Bidirectional"}], "imagePullPolicy": "Always", "securityContext": {"privileged": true}, "terminationMessagePath": "/dev/termination-log", "terminationMessagePolicy": "File"}], "hostNetwork": true, "restartPolicy": "Always", "schedulerName": "default-scheduler", "securityContext": {}, "terminationGracePeriodSeconds": 30}
+(20 rows)
+
+#+end_src
+
+
+*** distinct kind
+#+BEGIN_SRC sql-mode
+select
+distinct kind, field_path
+from kind_field_path_recursion
+where
+kind not like '%alpha%'
+and kind not like '%beta%'
+and field_kind = 'io.k8s.api.core.v1.PodSpec'
+and job = '1178464478988079104'
+;
+-- )
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                     kind                     |        field_path        
+----------------------------------------------+--------------------------
+ io.k8s.api.apps.v1.DaemonSet                 | spec.template.spec
+ io.k8s.api.apps.v1.DaemonSetList             | items.spec.template.spec
+ io.k8s.api.apps.v1.DaemonSetSpec             | template.spec
+ io.k8s.api.apps.v1.Deployment                | spec.template.spec
+ io.k8s.api.apps.v1.DeploymentList            | items.spec.template.spec
+ io.k8s.api.apps.v1.DeploymentSpec            | template.spec
+ io.k8s.api.apps.v1.ReplicaSet                | spec.template.spec
+ io.k8s.api.apps.v1.ReplicaSetList            | items.spec.template.spec
+ io.k8s.api.apps.v1.ReplicaSetSpec            | template.spec
+ io.k8s.api.apps.v1.StatefulSet               | spec.template.spec
+ io.k8s.api.apps.v1.StatefulSetList           | items.spec.template.spec
+ io.k8s.api.apps.v1.StatefulSetSpec           | template.spec
+ io.k8s.api.batch.v1.Job                      | spec.template.spec
+ io.k8s.api.batch.v1.JobList                  | items.spec.template.spec
+ io.k8s.api.batch.v1.JobSpec                  | template.spec
+ io.k8s.api.core.v1.Pod                       | spec
+ io.k8s.api.core.v1.PodList                   | items.spec
+ io.k8s.api.core.v1.PodTemplate               | template.spec
+ io.k8s.api.core.v1.PodTemplateList           | items.template.spec
+ io.k8s.api.core.v1.PodTemplateSpec           | spec
+ io.k8s.api.core.v1.ReplicationController     | spec.template.spec
+ io.k8s.api.core.v1.ReplicationControllerList | items.spec.template.spec
+ io.k8s.api.core.v1.ReplicationControllerSpec | template.spec
+(23 rows)
+#+end_src
+
+*** operation -> kind
+
+#+BEGIN_SRC sql-mode
+select param_op, param_schema
+from api_operation_parameter
+ where param_schema = 'io.k8s.api.core.v1.Pod'
+and job = '1178464478988079104'
+;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+             param_op             |      param_schema      
+----------------------------------+------------------------
+ createCoreV1NamespacedPod        | io.k8s.api.core.v1.Pod
+ replaceCoreV1NamespacedPod       | io.k8s.api.core.v1.Pod
+ replaceCoreV1NamespacedPodStatus | io.k8s.api.core.v1.Pod
+(3 rows)
+
+#+end_src
+
+#+BEGIN_SRC sql-mode
+select
+distinct kind, field_path
+-- *
+--count(*)
+from kind_field_path_recursion
+where
+kind not like '%alpha%'
+and kind not like '%beta%'
+and field_kind = 'io.k8s.api.core.v1.PodSpec'
+-- and sub_kind = 'io.k8s.api.core.v1.PodSpec'
+and field_path like '%.%'
+and field_path not like 'volumes%'
+and job = '1178464478988079104'
+--limit 55
+;
+-- and (
+-- kind = 'io.k8s.api.core.v1.PodSpec' or
+-- )
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                     kind                     |        field_path        
+----------------------------------------------+--------------------------
+ io.k8s.api.apps.v1.DaemonSet                 | spec.template.spec
+ io.k8s.api.apps.v1.DaemonSetList             | items.spec.template.spec
+ io.k8s.api.apps.v1.DaemonSetSpec             | template.spec
+ io.k8s.api.apps.v1.Deployment                | spec.template.spec
+ io.k8s.api.apps.v1.DeploymentList            | items.spec.template.spec
+ io.k8s.api.apps.v1.DeploymentSpec            | template.spec
+ io.k8s.api.apps.v1.ReplicaSet                | spec.template.spec
+ io.k8s.api.apps.v1.ReplicaSetList            | items.spec.template.spec
+ io.k8s.api.apps.v1.ReplicaSetSpec            | template.spec
+ io.k8s.api.apps.v1.StatefulSet               | spec.template.spec
+ io.k8s.api.apps.v1.StatefulSetList           | items.spec.template.spec
+ io.k8s.api.apps.v1.StatefulSetSpec           | template.spec
+ io.k8s.api.batch.v1.Job                      | spec.template.spec
+ io.k8s.api.batch.v1.JobList                  | items.spec.template.spec
+ io.k8s.api.batch.v1.JobSpec                  | template.spec
+ io.k8s.api.core.v1.PodList                   | items.spec
+ io.k8s.api.core.v1.PodTemplate               | template.spec
+ io.k8s.api.core.v1.PodTemplateList           | items.template.spec
+ io.k8s.api.core.v1.ReplicationController     | spec.template.spec
+ io.k8s.api.core.v1.ReplicationControllerList | items.spec.template.spec
+ io.k8s.api.core.v1.ReplicationControllerSpec | template.spec
+(21 rows)
+
+#+end_src
+
+*** Schema/Kind that have direct api_operations
+
+These are the one's we can hit via the API.
+They are the starting point of interest for us.
+It would help if they were in the initial data, just like our api_op...
+
+#+BEGIN_SRC sql-mode
+select distinct param_schema from audit_event
+where
+    job = '1178464478988079104'
+and param_schema not like '%alpha%'
+and param_schema not like '%beta%'
+INTERSECT
+select
+distinct kind
+from kind_field_path_recursion
+where
+kind not like '%alpha%'
+and kind not like '%beta%'
+and field_kind = 'io.k8s.api.core.v1.PodSpec'
+and job = '1178464478988079104';
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+               param_schema               
+------------------------------------------
+ io.k8s.api.apps.v1.ReplicaSet
+ io.k8s.api.core.v1.ReplicationController
+ io.k8s.api.batch.v1.Job
+ io.k8s.api.apps.v1.Deployment
+ io.k8s.api.core.v1.Pod
+ io.k8s.api.core.v1.PodTemplate
+ io.k8s.api.apps.v1.DaemonSet
+ io.k8s.api.apps.v1.StatefulSet
+(8 rows)
+
+#+end_src
+
+*** audit_entry
+#+BEGIN_SRC sql-mode
+select count(*) from audit_event where operation_id is not null and operation_id != '';
+--select count(*) from audit_events_by_gvkrv where operation_id is not null;
+
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+ count  
+--------
+ 379104
+(1 row)
+
+#+end_src
+
+** Container field_paths
+*** distinct kind
+#+BEGIN_SRC sql-mode
+select
+distinct kind
+from kind_field_path_recursion
+where
+kind not like '%alpha%'
+and kind not like '%beta%'
+and field_kind = 'io.k8s.api.core.v1.Container'
+and job = '1178464478988079104'
+;
+-- )
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                     kind                     
+----------------------------------------------
+ io.k8s.api.apps.v1.DaemonSet
+ io.k8s.api.apps.v1.DaemonSetList
+ io.k8s.api.apps.v1.DaemonSetSpec
+ io.k8s.api.apps.v1.Deployment
+ io.k8s.api.apps.v1.DeploymentList
+ io.k8s.api.apps.v1.DeploymentSpec
+ io.k8s.api.apps.v1.ReplicaSet
+ io.k8s.api.apps.v1.ReplicaSetList
+ io.k8s.api.apps.v1.ReplicaSetSpec
+ io.k8s.api.apps.v1.StatefulSet
+ io.k8s.api.apps.v1.StatefulSetList
+ io.k8s.api.apps.v1.StatefulSetSpec
+ io.k8s.api.batch.v1.Job
+ io.k8s.api.batch.v1.JobList
+ io.k8s.api.batch.v1.JobSpec
+ io.k8s.api.core.v1.Pod
+ io.k8s.api.core.v1.PodList
+ io.k8s.api.core.v1.PodSpec
+ io.k8s.api.core.v1.PodTemplate
+ io.k8s.api.core.v1.PodTemplateList
+ io.k8s.api.core.v1.PodTemplateSpec
+ io.k8s.api.core.v1.ReplicationController
+ io.k8s.api.core.v1.ReplicationControllerList
+ io.k8s.api.core.v1.ReplicationControllerSpec
+(24 rows)
+
+#+end_src
+
+*** kind + field_path
+#+BEGIN_SRC sql-mode
+select
+distinct kind, field_path
+-- *
+--count(*)
+from kind_field_path_recursion
+where
+kind not like '%alpha%'
+and kind not like '%beta%'
+and field_kind = 'io.k8s.api.core.v1.Container'
+-- and sub_kind = 'io.k8s.api.core.v1.PodSpec'
+and job = '1178464478988079104'
+--limit 55
+;
+-- and (
+-- kind = 'io.k8s.api.core.v1.PodSpec' or
+-- )
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                     kind                     |               field_path                
+----------------------------------------------+-----------------------------------------
+ io.k8s.api.apps.v1.DaemonSet                 | spec.template.spec.containers
+ io.k8s.api.apps.v1.DaemonSet                 | spec.template.spec.initContainers
+ io.k8s.api.apps.v1.DaemonSetList             | items.spec.template.spec.containers
+ io.k8s.api.apps.v1.DaemonSetList             | items.spec.template.spec.initContainers
+ io.k8s.api.apps.v1.DaemonSetSpec             | template.spec.containers
+ io.k8s.api.apps.v1.DaemonSetSpec             | template.spec.initContainers
+ io.k8s.api.apps.v1.Deployment                | spec.template.spec.containers
+ io.k8s.api.apps.v1.Deployment                | spec.template.spec.initContainers
+ io.k8s.api.apps.v1.DeploymentList            | items.spec.template.spec.containers
+ io.k8s.api.apps.v1.DeploymentList            | items.spec.template.spec.initContainers
+ io.k8s.api.apps.v1.DeploymentSpec            | template.spec.containers
+ io.k8s.api.apps.v1.DeploymentSpec            | template.spec.initContainers
+ io.k8s.api.apps.v1.ReplicaSet                | spec.template.spec.containers
+ io.k8s.api.apps.v1.ReplicaSet                | spec.template.spec.initContainers
+ io.k8s.api.apps.v1.ReplicaSetList            | items.spec.template.spec.containers
+ io.k8s.api.apps.v1.ReplicaSetList            | items.spec.template.spec.initContainers
+ io.k8s.api.apps.v1.ReplicaSetSpec            | template.spec.containers
+ io.k8s.api.apps.v1.ReplicaSetSpec            | template.spec.initContainers
+ io.k8s.api.apps.v1.StatefulSet               | spec.template.spec.containers
+ io.k8s.api.apps.v1.StatefulSet               | spec.template.spec.initContainers
+ io.k8s.api.apps.v1.StatefulSetList           | items.spec.template.spec.containers
+ io.k8s.api.apps.v1.StatefulSetList           | items.spec.template.spec.initContainers
+ io.k8s.api.apps.v1.StatefulSetSpec           | template.spec.containers
+ io.k8s.api.apps.v1.StatefulSetSpec           | template.spec.initContainers
+ io.k8s.api.batch.v1.Job                      | spec.template.spec.containers
+ io.k8s.api.batch.v1.Job                      | spec.template.spec.initContainers
+ io.k8s.api.batch.v1.JobList                  | items.spec.template.spec.containers
+ io.k8s.api.batch.v1.JobList                  | items.spec.template.spec.initContainers
+ io.k8s.api.batch.v1.JobSpec                  | template.spec.containers
+ io.k8s.api.batch.v1.JobSpec                  | template.spec.initContainers
+ io.k8s.api.core.v1.Pod                       | spec.containers
+ io.k8s.api.core.v1.Pod                       | spec.initContainers
+ io.k8s.api.core.v1.PodList                   | items.spec.containers
+ io.k8s.api.core.v1.PodList                   | items.spec.initContainers
+ io.k8s.api.core.v1.PodSpec                   | containers
+ io.k8s.api.core.v1.PodSpec                   | initContainers
+ io.k8s.api.core.v1.PodTemplate               | template.spec.containers
+ io.k8s.api.core.v1.PodTemplate               | template.spec.initContainers
+ io.k8s.api.core.v1.PodTemplateList           | items.template.spec.containers
+ io.k8s.api.core.v1.PodTemplateList           | items.template.spec.initContainers
+ io.k8s.api.core.v1.PodTemplateSpec           | spec.containers
+ io.k8s.api.core.v1.PodTemplateSpec           | spec.initContainers
+ io.k8s.api.core.v1.ReplicationController     | spec.template.spec.containers
+ io.k8s.api.core.v1.ReplicationController     | spec.template.spec.initContainers
+ io.k8s.api.core.v1.ReplicationControllerList | items.spec.template.spec.containers
+ io.k8s.api.core.v1.ReplicationControllerList | items.spec.template.spec.initContainers
+ io.k8s.api.core.v1.ReplicationControllerSpec | template.spec.containers
+ io.k8s.api.core.v1.ReplicationControllerSpec | template.spec.initContainers
+(48 rows)
+
+#+end_src
+
+** Testing views
+
+#+BEGIN_SRC sql-mode
+select * from api_operation_parameter limit 1;
+#+END_SRC
+
+#+RESULTS:
+#+begin_src sql-mode
+                                 param_op                                 |     param_name      | param_schema | required |                                                                                                                                                                                                                               param_description                                                                                                                                                                                                                                | unique_items |  in   |          bucket           |         job         |                                                                                                                                                                                                                                                                                                      entry                                                                                                                                                                                                                                                                                                       
+--------------------------------------------------------------------------+---------------------+--------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------------+-------+---------------------------+---------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ deleteAdmissionregistrationV1beta1CollectionMutatingWebhookConfiguration | allowWatchBookmarks | boolean      | f        | allowWatchBookmarks requests watch events with type "BOOKMARK". Servers that do not implement bookmarks may ignore this flag and bookmarks are sent at the server's discretion. Clients should not assume bookmarks are returned at any specific interval, nor may they assume the server will send any BOOKMARK event during a session. If this is not a watch, this field is ignored. If the feature gate WatchBookmarks is not enabled in apiserver, this field is ignored.+| t            | query | ci-kubernetes-e2e-gci-gce | 1173412183980118017 | {"in": "query", "name": "allowWatchBookmarks", "type": "boolean", "description": "allowWatchBookmarks requests watch events with type \"BOOKMARK\". Servers that do not implement bookmarks may ignore this flag and bookmarks are sent at the server's discretion. Clients should not assume bookmarks are returned at any specific interval, nor may they assume the server will send any BOOKMARK event during a session. If this is not a watch, this field is ignored. If the feature gate WatchBookmarks is not enabled in apiserver, this field is ignored.\n\nThis field is beta.", "uniqueItems": true}
+                                                                          |                     |              |          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                               +|              |       |                           |                     | 
+                                                                          |                     |              |          | This field is beta.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |              |       |                           |                     | 
+(1 row)
+
+#+end_src
+
+* MISC
+  #+NAME: Connect org to postgres
+  #+BEGIN_SRC emacs-lisp :results silent
+    (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+  #+END_SRC
+
+- [ ] Test your connection works
+  You can run this sql block, and it see a message in your minbuffer like:
+  : You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10041".
+
+  #+NAME: Test Connection
+  #+BEGIN_SRC sql-mode :results silent
+  \conninfo
+  #+END_SRC
