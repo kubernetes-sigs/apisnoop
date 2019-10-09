@@ -1,0 +1,339 @@
+* The Ticket
+  [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/58][gitlab link]]
+
+  #+BEGIN_QUOTE
+Map child fields for every Object/Kind (27k stable required fields total)
+  #+END_QUOTE
+
+A rough sketch of what we want:
+ - a view that shows kind, field_path, field_kind and audit_id
+   A materialized view, built off audit_events, that contained:
+ - audit_id, param_schema(body_schema). So we want audit events that have a param_scehma, and their audit_id.
+ - 
+
+ given a kind and a field path, grab a list of audit events that have that kind as their param_schema (figure out a better name, let's call it request_kind).  Then, return true or false per audit event, based on whether it's request object contains that field path (eg:
+ for field_path ~items.spec.containers~ this request object would return true:
+ #+BEGIN_SRC json
+ request_object: {
+   items: {
+     spec: {
+      containers: []
+     }
+   }
+ }
+ #+END_SRC
+
+ Once we have that process, how do we link to this list for every kind/field_path/field_kind combination. gs
+* Process
+** Choose a starting kind and field_path to look at
+   We'll grab a list of kind, field_path, and field_kinds for podspec field.
+#+NAME: Select of pod_spec fields
+#+BEGIN_SRC sql-mode
+select
+distinct kind, field_path, field_kind
+from kind_field_path_recursion
+where
+kind not like '%alpha%'
+and kind not like '%beta%'
+and field_kind = 'io.k8s.api.core.v1.PodSpec'
+and field_path like '%.%'
+and field_path not like 'volumes%'
+and job = '1178464478988079104'
+order by field_path
+;
+#+END_SRC
+
+#+RESULTS: Select of pod_spec fields
+#+begin_src sql-mode
+                     kind                     |        field_path        |         field_kind         
+----------------------------------------------+--------------------------+----------------------------
+ io.k8s.api.core.v1.PodList                   | items.spec               | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.DaemonSetList             | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.DeploymentList            | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.ReplicaSetList            | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.StatefulSetList           | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.batch.v1.JobList                  | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.core.v1.ReplicationControllerList | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.core.v1.PodTemplateList           | items.template.spec      | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.DaemonSet                 | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.Deployment                | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.ReplicaSet                | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.StatefulSet               | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.batch.v1.Job                      | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.core.v1.ReplicationController     | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.DaemonSetSpec             | template.spec            | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.DeploymentSpec            | template.spec            | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.ReplicaSetSpec            | template.spec            | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.apps.v1.StatefulSetSpec           | template.spec            | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.batch.v1.JobSpec                  | template.spec            | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.core.v1.PodTemplate               | template.spec            | io.k8s.api.core.v1.PodSpec
+ io.k8s.api.core.v1.ReplicationControllerSpec | template.spec            | io.k8s.api.core.v1.PodSpec
+(21 rows)
+
+#+end_src
+
+We can move from a small path to a larger one.  I'll start from the bottom, so the kind will be  ~io.k8s.api.core.v1.PodTemplate~, and the field_path will be   ~template.spec~
+
+** First Pass: kind is Podlist, field path items.spec
+   
+   So my initial quest is to see if we can insert our podspec_field as a variable to to check whether that path exists in a request object. 
+   It looks like we can, through a _slight_ hack of constructing a string using that var and then casting it to a jsonpath.  this lets us perform the ~json_path_exists~ function.
+   #+BEGIN_SRC sql-mode
+     WITH pathvar(var, badvar) as (values ('template.spec', 'zach.is.cool'))
+     select 
+       jsonb_path_exists(request_object, ('$.'||pathvar.var)::jsonpath) as should_be_t,
+       jsonb_path_exists(request_object, ('$.'||pathvar.badvar)::jsonpath) as should_be_f
+     from
+     (select request_object from audit_event where param_schema ilike '%io.k8s.api.core.v1.PodTemplate%' limit 5) as ro, pathvar;
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_src sql-mode
+    should_be_t | should_be_f 
+   -------------+-------------
+    t           | f
+    t           | f
+    t           | f
+    t           | f
+    t           | f
+   (5 rows)
+
+   #+end_src
+
+   So now, how would we construct this as a dynamic variable?  this will let us star tto construct a view that gives us a count of how many audit id's match.
+** Basic Query using json_path_exists
+ 
+  I want to be able to return to this query easily, so i'll save it as a view.  This'll need to change of course. 
+   #+NAME: basic query for json_path_exists
+   #+BEGIN_SRC sql-mode
+   CREATE OR REPLACE VIEW "public"."fieldwork" AS
+     select
+       distinct kind, field_path, field_kind
+       from kind_field_path_recursion
+      where
+     kind not like '%alpha%'
+     and kind not like '%beta%'
+     and field_kind = 'io.k8s.api.core.v1.PodSpec'
+     and field_path like '%.%'
+     and field_path not like 'volumes%'
+     and job = '1178464478988079104';
+   #+END_SRC
+
+   #+RESULTS: basic query for json_path_exists
+   #+begin_src sql-mode
+   CREATE VIEW
+   #+end_src
+
+   So we can now refer to these 21 values easily.
+   
+   #+BEGIN_SRC sql-mode
+select * from fieldwork;
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_src sql-mode
+                        kind                     |        field_path        |         field_kind         
+   ----------------------------------------------+--------------------------+----------------------------
+    io.k8s.api.apps.v1.DaemonSet                 | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.DaemonSetList             | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.DaemonSetSpec             | template.spec            | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.Deployment                | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.DeploymentList            | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.DeploymentSpec            | template.spec            | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.ReplicaSet                | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.ReplicaSetList            | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.ReplicaSetSpec            | template.spec            | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.StatefulSet               | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.StatefulSetList           | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.apps.v1.StatefulSetSpec           | template.spec            | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.batch.v1.Job                      | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.batch.v1.JobList                  | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.batch.v1.JobSpec                  | template.spec            | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.core.v1.PodList                   | items.spec               | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.core.v1.PodTemplate               | template.spec            | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.core.v1.PodTemplateList           | items.template.spec      | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.core.v1.ReplicationController     | spec.template.spec       | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.core.v1.ReplicationControllerList | items.spec.template.spec | io.k8s.api.core.v1.PodSpec
+    io.k8s.api.core.v1.ReplicationControllerSpec | template.spec            | io.k8s.api.core.v1.PodSpec
+   (21 rows)
+
+   #+end_src
+
+
+   I am realizing that we could just do a join based on if the schema matches and the jsonb exists.  That's what we're looking for, so we could keep it simple.
+   I think this just...might work?  We can verify by grabbing different audit_id events from the event array and searching for them specifically to do a sanity check.
+   We'll do a left join to keep the fields who have no hits in this audit log.  so we can expect PodList to have 0 but PodTemplate to have like 1680.
+   
+   #+NAME: Count events with each of the kind scehmas.
+   #+BEGIN_SRC sql-mode
+     CREATE OR REPLACE VIEW "public"."kind_field_path_coverage" AS
+     SELECT
+       f.kind,
+       f.field_path,
+       f.field_kind,
+       array_agg(ae.audit_id) as events,
+       count(ae.audit_id) as hits
+       FROM fieldwork f
+           LEFT JOIN LATERAL (select * from audit_event WHERE param_schema = f.kind AND jsonb_path_exists(request_object, ('$.'||f.field_path)::jsonpath)) ae ON true
+       GROUP BY f.kind, f.field_path, f.field_kind; 
+   #+END_SRC
+
+   #+RESULTS: Count events with each of the kind scehmas.
+   #+begin_src sql-mode
+   CREATE VIEW
+   #+end_src
+   
+   #+BEGIN_SRC sql-mode
+   select kind, field_path, hits from kind_field_path_coverage;
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_src sql-mode
+                        kind                     |        field_path        | hits 
+   ----------------------------------------------+--------------------------+------
+    io.k8s.api.apps.v1.DaemonSet                 | spec.template.spec       |  258
+    io.k8s.api.apps.v1.DaemonSetList             | items.spec.template.spec |    0
+    io.k8s.api.apps.v1.DaemonSetSpec             | template.spec            |    0
+    io.k8s.api.apps.v1.Deployment                | spec.template.spec       | 2488
+    io.k8s.api.apps.v1.DeploymentList            | items.spec.template.spec |    0
+    io.k8s.api.apps.v1.DeploymentSpec            | template.spec            |    0
+    io.k8s.api.apps.v1.ReplicaSet                | spec.template.spec       | 3006
+    io.k8s.api.apps.v1.ReplicaSetList            | items.spec.template.spec |    0
+    io.k8s.api.apps.v1.ReplicaSetSpec            | template.spec            |    0
+    io.k8s.api.apps.v1.StatefulSet               | spec.template.spec       | 3124
+    io.k8s.api.apps.v1.StatefulSetList           | items.spec.template.spec |    0
+    io.k8s.api.apps.v1.StatefulSetSpec           | template.spec            |    0
+    io.k8s.api.batch.v1.Job                      | spec.template.spec       |  358
+    io.k8s.api.batch.v1.JobList                  | items.spec.template.spec |    0
+    io.k8s.api.batch.v1.JobSpec                  | template.spec            |    0
+    io.k8s.api.core.v1.PodList                   | items.spec               |    0
+    io.k8s.api.core.v1.PodTemplate               | template.spec            | 1680
+    io.k8s.api.core.v1.PodTemplateList           | items.template.spec      |    0
+    io.k8s.api.core.v1.ReplicationController     | spec.template.spec       | 1334
+    io.k8s.api.core.v1.ReplicationControllerList | items.spec.template.spec |    0
+    io.k8s.api.core.v1.ReplicationControllerSpec | template.spec            |    0
+   (21 rows)
+
+   #+end_src
+
+   
+HUZZAH IT WORKS!
+
+** extend fieldwork to include containers 
+   what does it look like if we don't limit to just podspec field?  Does it still run in a reasonable amount of time?
+ 
+   #+NAME: Extended Fieldwork 
+   #+BEGIN_SRC sql-mode
+   CREATE OR REPLACE VIEW "public"."fieldwork" AS
+     select
+       distinct kind, field_path, field_kind
+       from kind_field_path_recursion
+      where
+     kind not like '%alpha%'
+     and kind not like '%beta%'
+     and field_kind = ANY('{"io.k8s.api.core.v1.PodSpec", "io.k8s.api.core.v1.Container"}')
+     and field_path like '%.%'
+     and field_path not like 'volumes%'
+     and job = '1178464478988079104';
+   #+END_SRC
+
+   #+RESULTS: Extended Fieldwork
+   #+begin_src sql-mode
+   CREATE VIEW
+   #+end_src
+   
+   #+BEGIN_SRC sql-mode
+select kind, field_path, hits from kind_field_path_coverage;
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_src sql-mode
+                        kind                     |               field_path                | hits  
+   ----------------------------------------------+-----------------------------------------+-------
+    io.k8s.api.apps.v1.DaemonSet                 | spec.template.spec                      |   258
+    io.k8s.api.apps.v1.DaemonSet                 | spec.template.spec.containers           |   258
+    io.k8s.api.apps.v1.DaemonSet                 | spec.template.spec.initContainers       |     0
+    io.k8s.api.apps.v1.DaemonSetList             | items.spec.template.spec                |     0
+    io.k8s.api.apps.v1.DaemonSetList             | items.spec.template.spec.containers     |     0
+    io.k8s.api.apps.v1.DaemonSetList             | items.spec.template.spec.initContainers |     0
+    io.k8s.api.apps.v1.DaemonSetSpec             | template.spec                           |     0
+    io.k8s.api.apps.v1.DaemonSetSpec             | template.spec.containers                |     0
+    io.k8s.api.apps.v1.DaemonSetSpec             | template.spec.initContainers            |     0
+    io.k8s.api.apps.v1.Deployment                | spec.template.spec                      |  2488
+    io.k8s.api.apps.v1.Deployment                | spec.template.spec.containers           |  2488
+    io.k8s.api.apps.v1.Deployment                | spec.template.spec.initContainers       |     0
+    io.k8s.api.apps.v1.DeploymentList            | items.spec.template.spec                |     0
+    io.k8s.api.apps.v1.DeploymentList            | items.spec.template.spec.containers     |     0
+    io.k8s.api.apps.v1.DeploymentList            | items.spec.template.spec.initContainers |     0
+    io.k8s.api.apps.v1.DeploymentSpec            | template.spec                           |     0
+    io.k8s.api.apps.v1.DeploymentSpec            | template.spec.containers                |     0
+    io.k8s.api.apps.v1.DeploymentSpec            | template.spec.initContainers            |     0
+    io.k8s.api.apps.v1.ReplicaSet                | spec.template.spec                      |  3006
+    io.k8s.api.apps.v1.ReplicaSet                | spec.template.spec.containers           |  3006
+    io.k8s.api.apps.v1.ReplicaSet                | spec.template.spec.initContainers       |     0
+    io.k8s.api.apps.v1.ReplicaSetList            | items.spec.template.spec                |     0
+    io.k8s.api.apps.v1.ReplicaSetList            | items.spec.template.spec.containers     |     0
+    io.k8s.api.apps.v1.ReplicaSetList            | items.spec.template.spec.initContainers |     0
+    io.k8s.api.apps.v1.ReplicaSetSpec            | template.spec                           |     0
+    io.k8s.api.apps.v1.ReplicaSetSpec            | template.spec.containers                |     0
+    io.k8s.api.apps.v1.ReplicaSetSpec            | template.spec.initContainers            |     0
+    io.k8s.api.apps.v1.StatefulSet               | spec.template.spec                      |  3124
+    io.k8s.api.apps.v1.StatefulSet               | spec.template.spec.containers           |  3124
+    io.k8s.api.apps.v1.StatefulSet               | spec.template.spec.initContainers       |     0
+    io.k8s.api.apps.v1.StatefulSetList           | items.spec.template.spec                |     0
+    io.k8s.api.apps.v1.StatefulSetList           | items.spec.template.spec.containers     |     0
+    io.k8s.api.apps.v1.StatefulSetList           | items.spec.template.spec.initContainers |     0
+    io.k8s.api.apps.v1.StatefulSetSpec           | template.spec                           |     0
+    io.k8s.api.apps.v1.StatefulSetSpec           | template.spec.containers                |     0
+    io.k8s.api.apps.v1.StatefulSetSpec           | template.spec.initContainers            |     0
+    io.k8s.api.batch.v1.Job                      | spec.template.spec                      |   358
+    io.k8s.api.batch.v1.Job                      | spec.template.spec.containers           |   358
+    io.k8s.api.batch.v1.Job                      | spec.template.spec.initContainers       |     0
+    io.k8s.api.batch.v1.JobList                  | items.spec.template.spec                |     0
+    io.k8s.api.batch.v1.JobList                  | items.spec.template.spec.containers     |     0
+    io.k8s.api.batch.v1.JobList                  | items.spec.template.spec.initContainers |     0
+    io.k8s.api.batch.v1.JobSpec                  | template.spec                           |     0
+    io.k8s.api.batch.v1.JobSpec                  | template.spec.containers                |     0
+    io.k8s.api.batch.v1.JobSpec                  | template.spec.initContainers            |     0
+    io.k8s.api.core.v1.Pod                       | spec.containers                         | 10296
+    io.k8s.api.core.v1.Pod                       | spec.initContainers                     |   452
+    io.k8s.api.core.v1.PodList                   | items.spec                              |     0
+    io.k8s.api.core.v1.PodList                   | items.spec.containers                   |     0
+    io.k8s.api.core.v1.PodList                   | items.spec.initContainers               |     0
+    io.k8s.api.core.v1.PodTemplate               | template.spec                           |  1680
+    io.k8s.api.core.v1.PodTemplate               | template.spec.containers                |  1680
+    io.k8s.api.core.v1.PodTemplate               | template.spec.initContainers            |     0
+    io.k8s.api.core.v1.PodTemplateList           | items.template.spec                     |     0
+    io.k8s.api.core.v1.PodTemplateList           | items.template.spec.containers          |     0
+    io.k8s.api.core.v1.PodTemplateList           | items.template.spec.initContainers      |     0
+    io.k8s.api.core.v1.PodTemplateSpec           | spec.containers                         |     0
+    io.k8s.api.core.v1.PodTemplateSpec           | spec.initContainers                     |     0
+    io.k8s.api.core.v1.ReplicationController     | spec.template.spec                      |  1334
+    io.k8s.api.core.v1.ReplicationController     | spec.template.spec.containers           |  1334
+    io.k8s.api.core.v1.ReplicationController     | spec.template.spec.initContainers       |     0
+    io.k8s.api.core.v1.ReplicationControllerList | items.spec.template.spec                |     0
+    io.k8s.api.core.v1.ReplicationControllerList | items.spec.template.spec.containers     |     0
+    io.k8s.api.core.v1.ReplicationControllerList | items.spec.template.spec.initContainers |     0
+    io.k8s.api.core.v1.ReplicationControllerSpec | template.spec                           |     0
+    io.k8s.api.core.v1.ReplicationControllerSpec | template.spec.containers                |     0
+    io.k8s.api.core.v1.ReplicationControllerSpec | template.spec.initContainers            |     0
+   (67 rows)
+
+   #+end_src
+
+* Conclusions || Next Steps
+   This is definitely giving us results, but it feels a little strange that all the things that are not spec.template.spec are returning 0 hits.  Either that is the nature of what we're looking at, or I have the json check wrong.  Next steps is to do some blunt sanity checking on the returned audit events, and check with chris on whether these values are making sense.  It's still a nice start.
+* Footnotes
+  #+NAME: Connect org to postgres
+  #+BEGIN_SRC emacs-lisp :results silent
+    (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+  #+END_SRC
+
+- [ ] Test your connection works
+  You can run this sql block, and it see a message in your minbuffer like:
+  : You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10041".
+
+  #+NAME: Test Connection
+  #+BEGIN_SRC sql-mode :results silent
+  \conninfo
+  #+END_SRC
