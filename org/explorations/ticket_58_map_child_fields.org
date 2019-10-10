@@ -174,10 +174,7 @@ select * from fieldwork;
        f.kind,
        f.field_path,
        f.field_kind,
-       array_agg(ae.audit_id) as events,
-       count(ae.audit_id) as hits,
-       count(ae.audit_id) FILTER (where ae.useragent like 'e2e.test%') as test_hits,
-       count(ae.audit_id) FILTER(where ae.useragent like 'e2e.test%' AND ae.useragent like '%[Conformance]%') as conf_hits
+       ae.audit_id as audit_event_id
        FROM fieldwork f
            LEFT JOIN LATERAL (select * from audit_event WHERE param_schema = f.kind AND jsonb_path_exists(request_object, ('$.'||f.field_path)::jsonpath)) ae ON true
        GROUP BY f.kind, f.field_path, f.field_kind; 
@@ -289,15 +286,14 @@ HUZZAH IT WORKS!
    #+BEGIN_SRC sql-mode
    CREATE OR REPLACE VIEW "public"."fieldwork" AS
      select
-       distinct kind, field_path, field_kind
+       distinct kind, field_path, field_kind, bucket, job
        from kind_field_path_recursion
       where
      kind not like '%alpha%'
      and kind not like '%beta%'
-     and field_kind = ANY('{"io.k8s.api.core.v1.PodSpec", "io.k8s.api.core.v1.Container"}')
+     -- and field_kind = ANY('{"io.k8s.api.core.v1.PodSpec", "io.k8s.api.core.v1.Container"}')
      and field_path like '%.%'
-     and field_path not like 'volumes%'
-     and job = '1178464478988079104';
+     and field_path not like 'volumes%';
    #+END_SRC
 
    #+RESULTS: Extended Fieldwork
@@ -968,6 +964,85 @@ select kind, field_path, hits, test_hits, conf_hits from kind_field_path_coverag
     
     for both jobs, there are ≅80,000 more events than distinct events, and ≅10,000 more distinct events than distinct ids.  According to the [[https://stupefied-goodall-e282f7.netlify.com/contributors/design-proposals/api-machinery/auditing/][Auditing Design Proposal]], audit id's are not necessarily unique, but I am not sure why we are getting events with completely duplicate data.  This won't affect our look into whether something is tested or not, but it does affect the count of # of tests.  Perhaps we should sanitize the log further before adding it to the db, making sure to remove duplicate entries? 
 
+** Rebuild our kind_field_path coverage for matrialized view
+   Instead of doing the count right at the start, we'll do a materialized view of all records, and then aggregate from that.  This should improve performance.
+   #+NAME: kind_field_path_coverage_material
+   #+BEGIN_SRC sql-mode
+     CREATE MATERIALIZED VIEW "public"."kind_field_path_coverage_material" AS
+     SELECT
+       f.bucket,
+       f.job,
+       f.kind,
+       f.field_path,
+       f.field_kind,
+       ae.audit_id as audit_event_id
+       FROM fieldwork f
+           LEFT JOIN LATERAL (select * from audit_event WHERE param_schema = f.kind AND jsonb_path_exists(request_object, ('$.'||f.field_path)::jsonpath)) ae ON true
+       GROUP BY f.kind, f.field_path, f.field_kind, f.bucket, f.job, ae.audit_id; 
+   #+END_SRC
+
+   #+RESULTS: kind_field_path_coverage_material
+   #+begin_src sql-mode
+   CREATE OR REPLACE VIEW kind_field_path_coverage AS
+   SELECT * from kind_field_path_coverage_material;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src sql-mode
+   CREATE VIEW
+   #+end_src
+**    Sort kind_field_path coverage by distance
+  #+BEGIN_SRC  sql-mode
+    select distinct
+      bucket,
+      job,
+      field_kind,
+      field_path,
+      kind,
+      (array_length(string_to_array(field_path, '.'),1) - 1) as distance
+      from kind_field_path_coverage
+             ORDER BY distance DESC LIMIT 30;
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql-mode
+            bucket           |         job         |                  field_kind                   |                                                                      field_path                                                                       |                     kind                     | distance 
+  ---------------------------+---------------------+-----------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------+----------
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | io.k8s.apimachinery.pkg.api.resource.Quantity | items.spec.template.spec.volumes.projected.sources.downwardAPI.items.resourceFieldRef.divisor                                                         | io.k8s.api.apps.v1.DaemonSetList             |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | io.k8s.apimachinery.pkg.api.resource.Quantity | items.spec.template.spec.volumes.projected.sources.downwardAPI.items.resourceFieldRef.divisor                                                         | io.k8s.api.apps.v1.DeploymentList            |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | io.k8s.apimachinery.pkg.api.resource.Quantity | items.spec.template.spec.volumes.projected.sources.downwardAPI.items.resourceFieldRef.divisor                                                         | io.k8s.api.apps.v1.ReplicaSetList            |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | io.k8s.apimachinery.pkg.api.resource.Quantity | items.spec.template.spec.volumes.projected.sources.downwardAPI.items.resourceFieldRef.divisor                                                         | io.k8s.api.apps.v1.StatefulSetList           |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | io.k8s.apimachinery.pkg.api.resource.Quantity | items.spec.template.spec.volumes.projected.sources.downwardAPI.items.resourceFieldRef.divisor                                                         | io.k8s.api.batch.v1.JobList                  |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | io.k8s.apimachinery.pkg.api.resource.Quantity | items.spec.template.spec.volumes.projected.sources.downwardAPI.items.resourceFieldRef.divisor                                                         | io.k8s.api.core.v1.ReplicationControllerList |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key      | io.k8s.api.apps.v1.DaemonSetList             |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key      | io.k8s.api.apps.v1.DeploymentList            |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key      | io.k8s.api.apps.v1.ReplicaSetList            |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key      | io.k8s.api.apps.v1.StatefulSetList           |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key      | io.k8s.api.batch.v1.JobList                  |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key      | io.k8s.api.core.v1.ReplicationControllerList |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.operator | io.k8s.api.apps.v1.DaemonSetList             |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.operator | io.k8s.api.apps.v1.DeploymentList            |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.operator | io.k8s.api.apps.v1.ReplicaSetList            |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.operator | io.k8s.api.apps.v1.StatefulSetList           |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.operator | io.k8s.api.batch.v1.JobList                  |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.operator | io.k8s.api.core.v1.ReplicationControllerList |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.values   | io.k8s.api.apps.v1.DaemonSetList             |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.values   | io.k8s.api.apps.v1.DeploymentList            |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.values   | io.k8s.api.apps.v1.ReplicaSetList            |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.values   | io.k8s.api.apps.v1.StatefulSetList           |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.values   | io.k8s.api.batch.v1.JobList                  |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.values   | io.k8s.api.core.v1.ReplicationControllerList |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key  | io.k8s.api.apps.v1.DaemonSetList             |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key  | io.k8s.api.apps.v1.DeploymentList            |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key  | io.k8s.api.apps.v1.ReplicaSetList            |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key  | io.k8s.api.apps.v1.StatefulSetList           |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key  | io.k8s.api.batch.v1.JobList                  |       10
+   ci-kubernetes-e2e-gci-gce | 1173412183980118017 | string                                        | items.spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector.matchExpressions.key  | io.k8s.api.core.v1.ReplicationControllerList |       10
+  (30 rows)
+
+  #+end_src
+
+
 * Conclusions || Next Steps
    This is definitely giving us results, but it feels a little strange how consistent the gaps in coverage are.  Essentially the top level kind will be hit, but all its descendants (the List and Spec kinds) will not be.  This is seen in the respective field_path coverage too.  Either this is the nature of coverage today, or I am misunderstanding how these subkinds are represented in the audit event, or the json traversal is not nuanced enough.  Next steps is to do some blunt sanity checking on the returned audit events, and check with chris on whether these values are making sense.  It's still a nice start.
 ** Next Steps:
@@ -988,3 +1063,5 @@ select kind, field_path, hits, test_hits, conf_hits from kind_field_path_coverag
   #+BEGIN_SRC sql-mode :results silent
   \conninfo
   #+END_SRC
+
+ 
