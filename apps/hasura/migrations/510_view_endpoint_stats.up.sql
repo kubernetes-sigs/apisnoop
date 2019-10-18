@@ -7,6 +7,7 @@
 
 CREATE OR REPLACE VIEW "public"."endpoint_stats" AS
 SELECT
+  job,
   date,
   COUNT(1) as total_endpoints,
   COUNT(1) filter(WHERE test_hits > 0) as test_hits,
@@ -14,4 +15,4 @@ SELECT
   ROUND(((count(*) filter(WHERE test_hits > 0)) * 100 )::numeric / count(*), 2) as percent_tested,
   ROUND(((count(*) filter(WHERE conf_hits > 0)) * 100 )::numeric / count(*), 2) as percent_conf_tested
   FROM endpoint_coverage 
- GROUP BY date;
+ GROUP BY date, job;
