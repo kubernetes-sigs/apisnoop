@@ -1,9 +1,6 @@
--- 900: Populate bucket_job_swagger Up
---   :PROPERTIES:
---   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/900_load_and_populate_swaggers.up.sql
---   :header-args:sql-mode+: :results silent
---   :END:
---   We need to be careful with this, in that 3 months from now this function will not work as the bucket will not be in the kubernetes storage.
+
+
+
   
 -- #+NAME: reload swaggers for particluar releases
 

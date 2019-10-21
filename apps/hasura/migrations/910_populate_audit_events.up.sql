@@ -10,3 +10,5 @@ select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '117846447898807910
 select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1181584183475048448');
  REFRESH MATERIALIZED VIEW kind_field_path_material;
  REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
+ REFRESH MATERIALIZED VIEW kind_field_path_coverage_material;
+ REFRESH MATERIALIZED VIEW full_podspec_field_coverage_material;

@@ -1148,6 +1148,89 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
     JOIN bucket_job_swagger bjs on(bjs.bucket = pfr.bucket AND bjs.job = pfr.job) 
    order by podspec_field;
 #+END_SRC
+** 480: materialized kind_field_path_coverage
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/480_kind_field_path_coverage_material.up.sql
+   :END:
+   This is the base view we use to traverse the paths later.  It grabs all relevant fields from our kind_field_path_recursion and joins it to our audit_events based on where the request_object of the event includes the relevant fieldpath.
+   
+   #+NAME: kind_field_path_coverage_material_improved
+   #+BEGIN_SRC sql-mode
+     CREATE MATERIALIZED VIEW "public"."kind_field_path_coverage_material" AS
+     SELECT
+       kfpr.bucket,
+       kfpr.job,
+       kfpr.kind,
+       kfpr.field_path,
+       kfpr.field_kind,
+       kfpr.sub_kind,
+       (array_length(string_to_array(kfpr.field_path, '.'),1) - 1) as distance,
+       ae.audit_id as audit_event_id,
+       ae.useragent as useragent,
+       ae.operation_id
+       FROM kind_field_path_recursion kfpr
+           LEFT JOIN LATERAL (select * from audit_event WHERE param_schema = kfpr.kind AND jsonb_path_exists(request_object, ('$.'||kfpr.field_path)::jsonpath)) ae ON true
+       GROUP BY kfpr.kind, kfpr.field_path, kfpr.field_kind, kfpr.bucket, kfpr.job, kfpr.sub_kind, ae.audit_id, ae.useragent, ae.operation_id; 
+   #+END_SRC
+   
+** 485: kind_field_path_coverage
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/485_kind_field_path_coverage.up.sql
+   :END:
+   A view into our material,  so hasura can track it.
+   #+NAME: kind_field_path_coverage
+   #+BEGIN_SRC sql-mode
+     CREATE OR REPLACE VIEW "public"."kind_field_path_coverage" AS
+      select * from kind_field_path_coverage_material;
+   #+END_SRC
+** 490: materialized full_podspec_field_coverage
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/490_full_podspec_field_coverage_material.up.sql
+   :END:
+   We want a subset of this grand field_coverage view, looking only for fields that come from Podspec.    
+   This is going to look across all our buckets and jobs, so it will take a bit of time to materialize.
+   
+   We are only looking at the stable, core kinds or the GA kinds.
+   
+   #+NAME: full_podspec_field_coverage_material
+   #+BEGIN_SRC sql-mode
+   CREATE MATERIALIZED VIEW "public"."full_podspec_field_coverage_material" AS
+     WITH podspec_kinds AS (
+           SELECT DISTINCT kind, field_path
+             FROM kind_field_path_coverage
+              WHERE field_kind = 'io.k8s.api.core.v1.PodSpec'
+              AND kind not like '%alpha%'
+              AND kind not like '%beta%'
+              AND operation_id is not null
+     )
+     SELECT DISTINCT
+       trim(leading 'io.k8s.api.' from c.kind) as kind,
+       trim(leading 'io.k8s.api.' from c.sub_kind) as  sub_kind,
+       c.field_path,
+       distance,
+       count(*) FILTER(WHERE c.useragent like 'e2e.test%') as test_hits,
+       count(*) FILTER(WHERE c.useragent like '%[Conformance]%') as conf_hits,
+       c.field_kind
+       FROM kind_field_path_coverage c
+         INNER JOIN podspec_kinds pk ON (c.kind = pk.kind AND c.field_path like  pk.field_path || '%')
+         and sub_kind not like '%VolumeSource'
+         GROUP BY c.sub_kind, c.kind, c.field_path, c.field_kind, c.distance, pk.field_path
+         ORDER BY field_path;
+   #+END_SRC
+
+** 495: full_podspec_field_coverage
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/495_full_podspec_field_coverage.up.sql
+   :END:
+   And we can create a view from this
+   #+NAME: full_podspec_field_coverage
+   #+BEGIN_SRC sql-mode
+    CREATE OR REPLACE VIEW "public"."full_podspec_field_coverage" AS
+     select * from full_podspec_field_coverage_material;
+   #+END_SRC
+   
+   When using the view, you will want ot make sure to limit it by a job, otherwise you'll get massive results.
+
 * 500: Endpoint Coverage Views
    :PROPERTIES:
    :header-args:sql-mode+: :results silent
@@ -1203,6 +1286,26 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
       GROUP BY date, job;
    #+END_SRC
    
+** 520: stable endpoint_stats_view
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/520_view_stable_endpoint_stats.up.sql
+   :END:
+   Based on the update we give to dan, developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]] 
+   #+NAME: Endpoint Stats View
+   #+BEGIN_SRC sql-mode
+     CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS
+     SELECT
+       ec.job,
+       ec.date,
+       COUNT(1) as total_endpoints,
+       COUNT(1) filter(WHERE test_hits > 0) as test_hits,
+       COUNT(1) filter(WHERE conf_hits > 0) as conf_hits,
+       ROUND(((count(*) filter(WHERE test_hits > 0)) * 100 )::numeric / count(*), 2) as percent_tested,
+       ROUND(((count(*) filter(WHERE conf_hits > 0)) * 100 )::numeric / count(*), 2) as percent_conf_tested
+       FROM endpoint_coverage ec
+         WHERE ec.level = 'stable'
+      GROUP BY ec.date, ec.job;
+   #+END_SRC
 * 900: Population And Tracking
 ** 900: Populate bucket_job_swagger Up
   :PROPERTIES:
@@ -1210,6 +1313,19 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
   :header-args:sql-mode+: :results silent
   :END:
   We need to be careful with this, in that 3 months from now this function will not work as the bucket will not be in the kubernetes storage.
+  #+BEGIN_SRC bash :tangle runme_sql.sh
+    . ~/ii/apisnoop/apps/.loadenv
+    echo delete from bucket_job_swagger\; | psql
+    select * from load_bucket_job_swagger_via_curl('ci-kubernetes-e2e-gci-gce', '1173412183980118017')\; | psql
+    select count(*) from bucket_job_swagger where bucket = '1173412183980118017'\; | psql
+    # select * from load_bucket_job_swagger_via_curl('ci-kubernetes-e2e-gci-gce', '1178464478988079104')\; | psql
+    # select count(*) from raw_audit_event where bucket = '1173412183980118017'\; | psql
+    # echo "select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1183553991464718336');" | psql
+    # echo "select count(*) from raw_audit_event where bucket = '1183553991464718336';" | psql
+    # echo "REFRESH MATERIALIZED VIEW api_operation_material;" | psql
+#+END_SRC
+
+
   
 #+NAME: reload swaggers for particluar releases
 #+BEGIN_SRC sql-mode
@@ -1234,6 +1350,8 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
   select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1181584183475048448');
    REFRESH MATERIALIZED VIEW kind_field_path_material;
    REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
+   REFRESH MATERIALIZED VIEW kind_field_path_coverage_material;
+   REFRESH MATERIALIZED VIEW full_podspec_field_coverage_material;
 #+END_SRC
 ** 999: Tracking Tables
    :PROPERTIES:
@@ -1354,6 +1472,22 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
      name: podspec_field_report
  #+END_SRC
 
+*** kind_field_path_coverage
+ #+NAME: track kind_field_path_coverage
+ #+BEGIN_SRC yaml
+ - type: track_table
+   args:
+     schema: public
+     name: kind_field_path_coverage
+ #+END_SRC
+*** full_podspec_field_coverage
+ #+NAME: track full_podspec_field_coverage
+ #+BEGIN_SRC yaml
+ - type: track_table
+   args:
+     schema: public
+     name: full_podspec_field_coverage
+ #+END_SRC
 *** endpoint_coverage
  #+NAME: track endpoint_coverage
  #+BEGIN_SRC yaml 
@@ -1389,17 +1523,16 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
   #+END_SRC
   
  #+BEGIN_SRC sql-mode
- select * from endpoint_stats;
+ select * from stable_endpoint_stats;
  #+END_SRC
 
  #+RESULTS:
  #+begin_src sql-mode
-     date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
- ------------+-----------------+-----------+-----------+----------------+---------------------
-  2019-09-30 |             910 |         0 |         0 |           0.00 |                0.00
-  2019-10-08 |             910 |         0 |         0 |           0.00 |                0.00
-  2019-09-16 |             910 |         0 |         0 |           0.00 |                0.00
+          job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+ ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+  1181584183475048448 | 2019-10-08 |             430 |       165 |       114 |          38.37 |               26.51
+  1178464478988079104 | 2019-09-30 |             430 |       171 |       124 |          39.77 |               28.84
+  1173412183980118017 | 2019-09-16 |             430 |       171 |       118 |          39.77 |               27.44
  (3 rows)
 
  #+end_src
- 
