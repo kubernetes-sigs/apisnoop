@@ -595,6 +595,16 @@ select * from api_operation limit 3;
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/220_view_api_operation_parameter_material.up.sql
   :END:
 *** Create
+    
+    #+BEGIN_SRC sql-mode
+    refresh materialized view api_operation_parameter_material;
+    #+END_SRC
+
+    #+RESULTS:
+    #+begin_src sql-mode
+    REFRESH MATERIALIZED VIEW
+    #+end_src
+    
 Using our api_operation_material view, look into the parameters field in each one.     
 #+NAME: api_operation_parameter_material view
 #+BEGIN_SRC sql-mode
@@ -1172,6 +1182,9 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
            LEFT JOIN LATERAL (select * from audit_event WHERE param_schema = kfpr.kind AND jsonb_path_exists(request_object, ('$.'||kfpr.field_path)::jsonpath)) ae ON true
        GROUP BY kfpr.kind, kfpr.field_path, kfpr.field_kind, kfpr.bucket, kfpr.job, kfpr.sub_kind, ae.audit_id, ae.useragent, ae.operation_id; 
    #+END_SRC
+   #+begin_src sql-mode
+    refresh materialized view kind_field_path_coverage_material; 
+   #+end_src
    
 ** 485: kind_field_path_coverage
    :PROPERTIES:
@@ -1194,30 +1207,36 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
    
    #+NAME: full_podspec_field_coverage_material
    #+BEGIN_SRC sql-mode
-   CREATE MATERIALIZED VIEW "public"."full_podspec_field_coverage_material" AS
-     WITH podspec_kinds AS (
-           SELECT DISTINCT kind, field_path
-             FROM kind_field_path_coverage
-              WHERE field_kind = 'io.k8s.api.core.v1.PodSpec'
-              AND kind not like '%alpha%'
-              AND kind not like '%beta%'
-              AND operation_id is not null
-     )
-     SELECT DISTINCT
-       trim(leading 'io.k8s.api.' from c.kind) as kind,
-       trim(leading 'io.k8s.api.' from c.sub_kind) as  sub_kind,
-       c.field_path,
-       distance,
-       count(*) FILTER(WHERE c.useragent like 'e2e.test%') as test_hits,
-       count(*) FILTER(WHERE c.useragent like '%[Conformance]%') as conf_hits,
-       c.field_kind
-       FROM kind_field_path_coverage c
-         INNER JOIN podspec_kinds pk ON (c.kind = pk.kind AND c.field_path like  pk.field_path || '%')
-         and sub_kind not like '%VolumeSource'
-         GROUP BY c.sub_kind, c.kind, c.field_path, c.field_kind, c.distance, pk.field_path
-         ORDER BY field_path;
+     CREATE MATERIALIZED VIEW "public"."full_podspec_field_coverage_material" AS
+       WITH podspec_kinds AS (
+             SELECT DISTINCT kind, field_path
+               FROM kind_field_path_coverage
+                WHERE field_kind = 'io.k8s.api.core.v1.PodSpec'
+                AND kind not like '%alpha%'
+                AND kind not like '%beta%'
+                AND operation_id is not null
+       )
+       SELECT DISTINCT
+         trim(leading 'io.k8s.api.' from c.kind) as kind,
+         trim(leading 'io.k8s.api.' from c.sub_kind) as  sub_kind,
+         c.field_path,
+         distance,
+         count(*) FILTER(WHERE c.useragent like 'e2e.test%') as test_hits,
+         count(*) FILTER(WHERE c.useragent like '%[Conformance]%') as conf_hits,
+         c.field_kind,
+         c.job,
+         c.bucket
+         FROM kind_field_path_coverage c
+           INNER JOIN podspec_kinds pk ON (c.kind = pk.kind AND c.field_path like  pk.field_path || '%')
+           and sub_kind not like '%VolumeSource'
+           GROUP BY c.sub_kind, c.kind, c.field_path, c.field_kind, c.distance, pk.field_path, c.job, c.bucket
+           ORDER BY field_path;
    #+END_SRC
 
+   #+begin_src sql-mode
+   drop materialized view full_podspec_field_coverage_material cascade;
+
+   #+end_src
 ** 495: full_podspec_field_coverage
    :PROPERTIES:
    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/495_full_podspec_field_coverage.up.sql
@@ -1229,7 +1248,14 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
      select * from full_podspec_field_coverage_material;
    #+END_SRC
    
+   
    When using the view, you will want ot make sure to limit it by a job, otherwise you'll get massive results.
+   
+   for example
+   #+begin_src sql-mode :results replace :tangle no
+   select kind, sub_kind, test_hits, distance from full_podspec_field_coverage where job = (select job from bucket_job_swagger order by job_timestamp limit 1);
+
+   #+end_src
 
 * 500: Endpoint Coverage Views
    :PROPERTIES:
@@ -1536,3 +1562,4 @@ create view podspec_field_coverage as select * from podspec_field_coverage_mater
  (3 rows)
 
  #+end_src
+ 
