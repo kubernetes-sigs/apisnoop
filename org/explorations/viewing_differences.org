@@ -1207,6 +1207,7 @@
    If it's accurate, then the test count for our old job should be 1 higher than our new one.
    
    We can test this quickly
+   
    #+NAME: Test counts for old and new job
    #+begin_src sql-mode
      with last_two_runs as (
@@ -1249,8 +1250,142 @@
    In these runs, for example, it looks like two tests were combined into a new, better written test.  As long as endpint coverage remains the same, or increases, then a drop in tests might be a good thing...as it'd mean a sharpening of tests focus.
    
 ** TODO List Endpoints covered in new not covered in old
+   This is basically the same as our tests, this time showing the distinct endpoints.  
+   If we are only concerned with stable endpints, then we want to make sure that alpha and beta are removed from the query.
+   #+NAME: added endpoints
+   #+begin_src sql-mode
+     with last_two_runs as (
+       select
+         job, job_timestamp
+         FROM
+             bucket_job_swagger
+        ORDER BY 
+          job_timestamp DESC
+        LIMIT 2
+     ),
+       new_run as (
+         SELECT 
+           job
+           FROM last_two_runs
+          order by job_timestamp DESC
+          limit 1
+       ),
+       old_run as (
+         SELECT
+           job
+           FROM
+               last_two_runs
+          order by job_timestamp asc
+          limit 1
+       )
+         (
+           SELECT DISTINCT
+             operation_id
+             FROM
+                 audit_event ae
+                 INNER JOIN new_run on (ae.job = new_run.job)
+            WHERE ae.useragent LIKE 'e2e.test%' and useragent LIKE '%--%'
+              AND lower(ae.operation_id) not like '%alpha%'
+              AND lower(ae.operation_id) not like '%beta%'
+
+         )
+         EXCEPT
+         (
+           SELECT DISTINCT
+             operation_id
+             FROM
+                 audit_event ae
+                 INNER JOIN old_run on (ae.job = old_run.job)
+            WHERE ae.useragent LIKE 'e2e.test%' and useragent LIKE '%--%'
+              AND lower(ae.operation_id) not like '%alpha%'
+              AND lower(ae.operation_id) not like '%beta%'
+         )
+         ;
+   #+end_src
+
+   #+RESULTS: added endpoints
+   #+begin_src sql-mode
+    operation_id 
+   --------------
+   (0 rows)
+
+   #+end_src
+   
+   Zero, which makes sense if our coverage went down.  If the next task's query returns 0, then something is wrong.
     
-** TODO list endpoints covered in old but not new
+** TODO list endpoints covered in old job but not new
+   This should return a number of endpoints.  if it's 0, the query needs adjusting.
+   #+NAME: removed endpoints
+   #+begin_src sql-mode
+     with last_two_runs as (
+       select
+         job, job_timestamp
+         FROM
+             bucket_job_swagger
+        ORDER BY 
+          job_timestamp DESC
+        LIMIT 2
+     ),
+       new_run as (
+         SELECT 
+           job
+           FROM last_two_runs
+          order by job_timestamp DESC
+          limit 1
+       ),
+       old_run as (
+         SELECT
+           job
+           FROM
+               last_two_runs
+          order by job_timestamp asc
+          limit 1
+       )
+         (
+           SELECT DISTINCT
+             operation_id
+             FROM
+                 audit_event ae
+                 INNER JOIN old_run on (ae.job = old_run.job)
+            WHERE ae.useragent LIKE 'e2e.test%'
+              AND ae.useragent LIKE '%--%'
+                  AND lower(ae.operation_id) not like '%alpha%'
+              AND lower(ae.operation_id) not like '%beta%'
+         )
+         EXCEPT
+         (
+           SELECT DISTINCT
+             operation_id
+             FROM
+                 audit_event ae
+                 INNER JOIN new_run on (ae.job = new_run.job)
+            WHERE ae.useragent LIKE 'e2e.test%'
+              AND useragent LIKE '%--%'
+              AND lower(ae.operation_id) not like '%alpha%'
+              AND lower(ae.operation_id) not like '%beta%'
+         )
+         ;
+   #+end_src
+   
+   #+RESULTS: removed endpoints
+   #+begin_src sql-mode
+                       operation_id                    
+   ----------------------------------------------------
+    listAutoscalingV1NamespacedHorizontalPodAutoscaler
+    listAppsV1NamespacedControllerRevision
+    listRbacAuthorizationV1NamespacedRoleBinding
+    listCoreV1NamespacedService
+    listRbacAuthorizationV1NamespacedRole
+    listAppsV1NamespacedDaemonSet
+    listNetworkingV1NamespacedNetworkPolicy
+   (7 rows)
+
+   #+end_src
+   
+   this is looking good, I think.
+   
+   One thing that'd be good to know is if any of these were conformance tested, though.  These are just showing tested in general.
+
 ** TODO create view that lists endpoint coverage, and whether coverage was added or removed
 * Conclusion || Next Steps
 * Footnotes
