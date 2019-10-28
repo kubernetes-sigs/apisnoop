@@ -1,0 +1,791 @@
+#+TITLE: APIsnoop Tables and Views
+#+AUTHOR: ii team
+#+DATE: 07 October 2019
+#+INCLUDE: "config.org"
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | TADA(d)
+#+ARCHIVE: archive/tables_and_views.archive.org::
+#+PROPERTY: header-args:sql-mode+ :results silent
+
+* Purpose
+  This org houses all the tables and views that are migrated upon creation of apisnoop: BOT VERSION.  So these are the crucial parts for our prow pr bot.
+  
+  If you are working on a new view, it is best to do it in our ~explorations~ folder, where it can be iterated and reviewed.  Once that view is determined to be crucial for the database, it would be ported to here, and tangled to a migration file.
+  
+* 100: Raw Data Tables and Helper Functions
+** 100: bucket_job_swagger table
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/100_table_bucket_job_swagger.up.sql
+  :END:
+*** Create Table
+    :PROPERTIES:
+    :header-args:sql-mode+: :notangle ../apps/hasura/migrations/100_table_bucket_job_swagger.up.sql
+    :END:
+ #+NAME: bucket_job_swagger
+ #+BEGIN_SRC sql-mode :results silent
+   CREATE TABLE bucket_job_swagger (
+       ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+       bucket text,
+       job text,
+       commit_hash text,
+       passed text,
+       job_result text,
+       pod text,
+       infra_commit text,
+       job_version text,
+       job_timestamp timestamp,
+       node_os_image text,
+       master_os_image text ,
+       swagger jsonb,
+       PRIMARY KEY (bucket, job)
+   );
+ #+END_SRC
+*** Index Table
+ #+NAME: general index the raw_swagger
+ #+BEGIN_SRC sql-mode
+   CREATE INDEX idx_swagger_jsonb_ops ON bucket_job_swagger
+     USING GIN (swagger jsonb_ops);
+   CREATE INDEX idx_swagger_jsonb_path_ops ON bucket_job_swagger
+     USING GIN (swagger jsonb_path_ops);
+ #+END_SRC
+** 101: Function to Load bucket_job_swagger via curl
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/105_function_load_bucket_job_swagger_via_curl.up.sql
+  :END:
+  
+   #+NAME: load_bucket_job_swagger_via_curl.sql
+   #+BEGIN_SRC sql-mode :noweb yes :results silent
+     set role dba;
+     DROP FUNCTION IF EXISTS load_bucket_job_swagger_via_curl;
+     CREATE OR REPLACE FUNCTION load_bucket_job_swagger_via_curl(bucket text, job text)
+     RETURNS text AS $$
+     <<load_bucket_job_swagger_via_curl.py>>
+     $$ LANGUAGE plpython3u ;
+     reset role;
+   #+END_SRC
+
+ #+NAME: load_bucket_job_swagger_via_curl.py
+ #+BEGIN_SRC python :eval never :exports code
+   try:
+       from urllib.request import urlopen, urlretrieve
+       from string import Template
+       import json
+       metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
+       metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+       commit_hash = metadata["version"].split("+")[1]
+       swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json']) 
+       swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
+       sql = """
+    INSERT INTO bucket_job_swagger(
+              bucket,
+              job,
+              commit_hash, 
+              passed,
+              job_result,
+              pod,
+              infra_commit,
+              job_version,
+              job_timestamp,
+              node_os_image,
+              master_os_image,
+              swagger
+       )
+      SELECT
+              $1 as bucket,
+              $2 as job,
+              $3 as commit_hash,
+              $4 as passed,
+              $5 as job_result,
+              $6 as pod,
+              $7 as infra_commit,
+              $8 as job_version,
+              (to_timestamp($9)) AT TIME ZONE 'UTC' as job_timestamp,
+              $10 as node_os_image,
+              $11 as master_os_image,
+              $12 as swagger
+       """
+       plan = plpy.prepare(sql, [
+           'text','text','text','text',
+           'text','text','text','text',
+           'integer','text','text','jsonb'])
+       rv = plpy.execute(plan, [
+           bucket,job,commit_hash,
+           metadata['passed'],metadata['result'],
+           metadata['metadata']['pod'],
+           metadata['metadata']['infra-commit'],
+           metadata['version'],
+           int(metadata['timestamp']),
+           metadata['metadata']['node_os_image'],
+           metadata['metadata']['master_os_image'],
+           json.dumps(swagger)
+       ])
+       return "it worked!"
+   except Exception as err:
+       return Template("something went wrong, likely this: ${error}").substitute(error = err)
+ #+END_SRC
+
+** 110: raw_audit_event Table
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/110_table_raw_audit_event.up.sql
+  :END:
+*** Create
+#+NAME: raw_audit_event
+#+BEGIN_SRC sql-mode
+  CREATE UNLOGGED TABLE raw_audit_event (
+    -- id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    -- ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+    bucket text,
+    job text,
+    audit_id text NOT NULL,
+    stage text NOT NULL,
+    event_verb text NOT NULL,
+    request_uri text NOT NULL,
+    operation_id text,
+    data jsonb NOT NULL
+  );
+#+END_SRC
+*** TODO Index
+I am not sure why our create index and alter table lines are commented out.
+the TODO is to enquire on why these lines are commented
+#+NAME: index the raw_audit_event
+#+BEGIN_SRC sql-mode
+-- CREATE INDEX idx_audit_event_primary          ON raw_audit_event (bucket, job, audit_id, stage);
+-- ALTER TABLE raw_audit_event add primary key using index idx_audit_event_primary;
+CREATE INDEX idx_audit_event_jsonb_ops        ON raw_audit_event USING GIN (data jsonb_ops);
+CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data jsonb_path_ops);
+#+END_SRC
+
+** 111: load_audit_event Function
+  :PROPERTIES:
+  :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/111_function_load_audit_event.up.sql
+  :END:
+*** Python Code
+**** deep_merge
+#+NAME: deep_merge
+#+BEGIN_SRC python :tangle no
+  from copy import deepcopy
+  from functools import reduce
+
+  def deep_merge(*dicts, update=False):
+      """
+      Merges dicts deeply.
+      Parameters
+      ----------
+      dicts : list[dict]
+          List of dicts.
+      update : bool
+          Whether to update the first dict or create a new dict.
+      Returns
+      -------
+      merged : dict
+          Merged dict.
+      """
+      def merge_into(d1, d2):
+          for key in d2:
+              if key not in d1 or not isinstance(d1[key], dict):
+                  d1[key] = deepcopy(d2[key])
+              else:
+                  d1[key] = merge_into(d1[key], d2[key])
+          return d1
+
+      if update:
+          return reduce(merge_into, dicts[1:], dicts[0])
+      else:
+          return reduce(merge_into, dicts, {})
+#+END_SRC
+
+**** load_openapi_spec
+#+NAME: load_openapi_spec
+#+BEGIN_SRC python :tangle no
+  def load_openapi_spec(url):
+      cache=defaultdict(dict)
+      openapi_spec = {}
+      openapi_spec['hit_cache'] = {}
+
+      swagger = requests.get(url).json()
+      for path in swagger['paths']:
+          path_data = {}
+          path_parts = path.strip("/").split("/")
+          path_len = len(path_parts)
+          path_dict = {}
+          last_part = None
+          last_level = None
+          current_level = path_dict
+          for part in path_parts:
+              if part not in current_level:
+                  current_level[part] = {}
+              last_part=part
+              last_level = current_level
+              current_level = current_level[part]
+          for method, swagger_method in swagger['paths'][path].items():
+              if method == 'parameters':
+                  next
+              else:
+                  current_level[method]=swagger_method.get('operationId', '')
+          cache = deep_merge(cache, {path_len:path_dict})
+      openapi_spec['cache'] = cache
+      #import ipdb; ipdb.set_trace(context=60)
+      return openapi_spec
+#+END_SRC
+
+#+RESULTS: load_openapi_spec
+: None
+**** find_operation_id
+#+NAME: find_operation_id
+#+BEGIN_SRC python :tangle no
+  def find_operation_id(openapi_spec, event):
+    verb_to_method={
+      'get': 'get',
+      'list': 'get',
+      'proxy': 'proxy',
+      'create': 'post',
+      'post':'post',
+      'put':'post',
+      'update':'put',
+      'patch':'patch',
+      'connect':'connect',
+      'delete':'delete',
+      'deletecollection':'delete',
+      'watch':'get'
+    }
+    method=verb_to_method[event['verb']]
+    url = urlparse(event['requestURI'])
+    # 1) Cached seen before results
+    if url.path in openapi_spec['hit_cache']:
+      if method in openapi_spec['hit_cache'][url.path].keys():
+        return openapi_spec['hit_cache'][url.path][method]
+    uri_parts = url.path.strip('/').split('/')
+    if 'proxy' in uri_parts:
+        uri_parts = uri_parts[0:uri_parts.index('proxy')]
+    part_count = len(uri_parts)
+    try: # may have more parts... so no match
+      cache = openapi_spec['cache'][part_count]
+    except:
+      import ipdb; ipdb.set_trace(context=60)
+    last_part = None
+    last_level = None
+    current_level = cache
+    for idx in range(part_count):
+      part = uri_parts[idx]
+      last_level = current_level
+      if part in current_level:
+        current_level = current_level[part] # part in current_level
+      elif idx == part_count-1:
+        if part == 'metrics': # we aren't collecting metrics for now
+          return None
+        #   elif part == '': # The last V
+        #     current_level = last_level
+        #       else:
+        variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
+        if len(variable_levels) > 1:
+          import ipdb; ipdb.set_trace(context=60)
+        next_level=variable_levels[0] # the var is the next level
+        current_level = current_level[next_level] # variable part is final part
+      else:
+        next_part = uri_parts[idx+1]
+        variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}  
+        if not variable_levels: # there is no match
+          if 'example.com' in part:
+            return None
+          elif 'kope.io' in part:
+            return None
+          elif 'snapshot.storage.k8s.io' in part:
+            return None
+          elif 'metrics.k8s.io' in part:
+            return None
+          elif 'wardle.k8s.io' in part:
+            return None
+          elif ['openapi','v2'] == uri_parts: # not part our our spec
+            return None
+          else:
+            print(url.path)
+            return None
+        next_level={v: k for k, v in variable_levels.items()}[True]
+        current_level = current_level[next_level] #coo
+    try:
+      op_id=current_level[method]
+    except:
+      import ipdb; ipdb.set_trace(context=60)
+    if url.path not in openapi_spec['hit_cache']:
+      openapi_spec['hit_cache'][url.path]={method:op_id}
+    else:
+      openapi_spec['hit_cache'][url.path][method]=op_id
+    return op_id
+#+END_SRC
+**** load_audit_events
+#+NAME: load_audit_events.py
+#+BEGIN_SRC python :noweb yes :exports none
+  #!/usr/bin/env python3
+  from urllib.request import urlopen, urlretrieve
+  import os
+  import re
+  from bs4 import BeautifulSoup
+  import subprocess
+  import time
+  import glob
+  from tempfile import mkdtemp
+  from string import Template
+  from urllib.parse import urlparse
+  import requests
+  import hashlib
+  from collections import defaultdict
+  import json
+  import csv
+  import sys
+
+  <<deep_merge>>
+  <<load_openapi_spec>>
+  <<find_operation_id>>
+
+  def get_html(url):
+      html = urlopen(url).read()
+      soup = BeautifulSoup(html, 'html.parser')
+      return soup
+
+
+  def download_url_to_path(url, local_path):
+      local_dir = os.path.dirname(local_path)
+      if not os.path.isdir(local_dir):
+          os.makedirs(local_dir)
+      if not os.path.isfile(local_path):
+          process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
+          downloads[local_path] = process
+
+  # this global dict is used to track our wget subprocesses
+  # wget was used because the files can get to several halfa gig
+  downloads = {}
+  def load_audit_events(bucket,job):
+      bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
+      artifacts_url = 'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/' + bucket + '/' +  job + '/' + 'artifacts'
+      job_metadata_files = [
+          'finished.json',
+          'artifacts/metadata.json',
+          'artifacts/junit_01.xml',
+          'build-log.txt'
+      ]
+      download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
+      combined_log_file = download_path + 'audit.log'
+
+      # meta data to download
+      for jobfile in job_metadata_files:
+          download_url_to_path( bucket_url + jobfile,
+                                download_path + jobfile )
+
+      # Use soup to grab url of each of audit.log.* (some end in .gz)
+      soup = get_html(artifacts_url)
+      master_link = soup.find(href=re.compile("master"))
+      master_soup = get_html(
+          "https://gcsweb.k8s.io" + master_link['href'])
+      log_links = master_soup.find_all(
+          href=re.compile("audit.log"))
+
+      finished_metadata = json.load(open(download_path + 'finished.json'))
+      commit_hash=finished_metadata['job-version'].split('+')[1]
+      # download all logs
+      for link in log_links:
+          log_url = link['href']
+          log_file = download_path + os.path.basename(log_url)
+          download_url_to_path( log_url, log_file)
+
+      # Our Downloader uses subprocess of curl for speed
+      for download in downloads.keys():
+          # Sleep for 5 seconds and check for next download
+          while downloads[download].poll() is None:
+              time.sleep(5)
+              # print("Still downloading: " + download)
+          # print("Downloaded: " + download)
+
+      # Loop through the files, (z)cat them into a combined audit.log
+      with open(combined_log_file, 'ab') as log:
+          for logfile in sorted(
+                  glob.glob(download_path + '*kube-apiserver-audit*'), reverse=True):
+              if logfile.endswith('z'):
+                  subprocess.run(['zcat', logfile], stdout=log, check=True)
+              else:
+                  subprocess.run(['cat', logfile], stdout=log, check=True)
+      # Process the resulting combined raw audit.log by adding operationId
+      spec = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/' + commit_hash +  '/api/openapi-spec/swagger.json')
+      infilepath=combined_log_file
+      outfilepath=combined_log_file+'+opid'
+      with open(infilepath) as infile:
+          with open(outfilepath,'w') as output:
+              for line in infile.readlines():
+                  event = json.loads(line)
+                  event['operationId']=find_operation_id(spec,event)
+                  output.write(json.dumps(event)+'\n')
+      #####
+      # Load the resulting updated audit.log directly into raw_audit_event
+      try:
+          # for some reason tangling isn't working to reference this SQL block
+          sql = Template("""
+  CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
+  COPY raw_audit_event_import (data)
+  FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
+
+  INSERT INTO raw_audit_event(bucket, job,
+                               audit_id, stage,
+                               event_verb, request_uri,
+                               operation_id,
+                               data)
+  SELECT '${bucket}', '${job}',
+         (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
+         (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
+         (raw.data ->> 'operationId'),
+         raw.data 
+    FROM raw_audit_event_import raw;
+          """).substitute(
+              audit_logfile = outfilepath,
+              # audit_logfile = combined_log_file,
+              bucket = bucket,
+              job = job
+          )
+          with open(download_path + 'load.sql', 'w') as sqlfile:
+            sqlfile.write(sql)
+          rv = plpy.execute(sql)
+          #plpy.commit()
+          # this calls external binary, not part of transaction 8(
+          #rv = plpy.execute("select * from audit_event_op_update();")
+          #plpy.commit()
+          #rv = plpy.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY podspec_field_coverage_material;")
+          #plpy.commit()
+          return "it worked"
+      except plpy.SPIError:
+          return "something went wrong with plpy"
+      except:
+          return "something unknown went wrong"
+  #if __name__ == "__main__":
+  #    load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234')
+  #else:
+  load_audit_events(bucket,job)
+#+END_SRC
+
+*** Create
+#+NAME: load_audit_events.sql
+#+BEGIN_SRC sql-mode :noweb yes
+  set role dba;
+  CREATE OR REPLACE FUNCTION load_audit_events(bucket text, job text)
+  RETURNS text AS $$
+  <<load_audit_events.py>>
+  $$ LANGUAGE plpython3u ;
+  reset role;
+#+END_SRC
+* 200: API Views
+** 200: api_operation_material view
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/200_view_api_operation_material.up.sql
+  :END:
+  We can track this, but it won't show up in Hasura as it does not support materialized views yet.  We can still use it to create _other_ views hasura can see though.
+*** Define regex_from_path function
+#+NAME: regex_from_path.py
+#+BEGIN_SRC python :eval never :export none
+  import re
+  if path is None:
+    return None
+  K8S_PATH_VARIABLE_PATTERN = re.compile("{(path)}$")
+  VARIABLE_PATTERN = re.compile("{([^}]+)}")
+  path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
+  path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
+  if not path_regex.endswith(")") and not path_regex.endswith("?"):
+    path_regex += "([^/]*)"
+  if path_regex.endswith("proxy"):
+      path_regex += "/?$"
+  else:
+      path_regex += "$"
+  return path_regex
+#+END_SRC
+
+#+NAME: regex_from_path.sql
+#+BEGIN_SRC sql-mode :noweb yes
+  set role dba;
+  CREATE OR REPLACE FUNCTION regex_from_path(path text)
+  RETURNS text AS $$
+  <<regex_from_path.py>>
+  $$ LANGUAGE plpython3u ;
+  reset role;
+#+END_SRC
+
+*** Create
+    
+#+NAME: api_operation_material
+#+BEGIN_SRC sql-mode 
+  CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
+    SELECT
+      (d.value ->> 'operationId'::text) AS operation_id,
+      CASE
+      WHEN paths.key ~~ '%alpha%' THEN 'alpha'
+      WHEN paths.key ~~ '%beta%' THEN 'beta'
+      ELSE 'stable'
+           END AS level,
+      split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+      ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+      ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+      ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+      CASE
+      WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
+      ELSE false
+           END AS deprecated,
+      (d.value ->> 'description'::text) AS description,
+      d.key AS http_method,
+      (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+      CASE
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'get' THEN ARRAY ['get']
+      WHEN (d.value ->> 'x-kubernetes-action'::text) =  'list' THEN ARRAY [ 'list' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'proxy' THEN ARRAY [ 'proxy' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'deletecollection' THEN ARRAY [ 'deletecollection' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'watch' THEN ARRAY [ 'watch' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'post' THEN ARRAY [ 'post', 'create' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) =  'put' THEN ARRAY [ 'put', 'update' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch' THEN ARRAY [ 'patch' ]
+      WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN ARRAY [ 'connect' ]
+      ELSE NULL
+             END as event_verb,
+      paths.key AS path,
+      (d.value -> 'consumes'::text)::jsonb AS consumes,
+      (d.value -> 'responses'::text)::jsonb AS responses,
+      (d.value -> 'parameters'::text)::jsonb AS parameters,
+      string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
+      string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
+      regex_from_path(paths.key) as regex,
+      bjs.bucket AS bucket,
+      bjs.job AS job
+      FROM bucket_job_swagger bjs
+           , jsonb_each((bjs.swagger -> 'paths'::text)) paths(key, value)
+           , jsonb_each(paths.value) d(key, value)
+           , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+           , jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)
+           , jsonb_array_elements((d.value -> 'schemes'::text)) schemestring(value)
+     GROUP BY bjs.bucket, bjs.job, paths.key, d.key, d.value, cat_tag.value
+     ORDER BY paths.key;
+#+END_SRC
+
+*** Index
+#+NAME: index the api_operation_material
+#+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/201_view_api_operation_material.up.sql :results silent
+    CREATE INDEX api_operation_materialized_event_verb  ON api_operation_material            (event_verb);
+    CREATE INDEX api_operation_materialized_k8s_action  ON api_operation_material            (k8s_action);
+    CREATE INDEX api_operation_materialized_k8s_group   ON api_operation_material            (k8s_group);
+    CREATE INDEX api_operation_materialized_k8s_version ON api_operation_material            (k8s_version);
+    CREATE INDEX api_operation_materialized_k8s_kind    ON api_operation_material            (k8s_kind);
+    CREATE INDEX api_operation_materialized_tags        ON api_operation_material            (tags);
+    CREATE INDEX api_operation_materialized_schemes     ON api_operation_material            (schemes);
+    CREATE INDEX api_operation_materialized_regex_gist  ON api_operation_material USING GIST (regex gist_trgm_ops);
+    CREATE INDEX api_operation_materialized_regex_gin   ON api_operation_material USING GIN  (regex gin_trgm_ops);
+    CREATE INDEX api_operation_materialized_consumes_ops   ON api_operation_material USING GIN  (consumes jsonb_ops);
+    CREATE INDEX api_operation_materialized_consumes_path  ON api_operation_material USING GIN  (consumes jsonb_path_ops);
+    CREATE INDEX api_operation_materialized_parameters_ops   ON api_operation_material USING GIN  (parameters jsonb_ops);
+    CREATE INDEX api_operation_materialized_parameters_path  ON api_operation_material USING GIN  (parameters jsonb_path_ops);
+    CREATE INDEX api_operation_materialized_responses_ops   ON api_operation_material USING GIN  (responses jsonb_ops);
+    CREATE INDEX api_operation_materialized_responses_path  ON api_operation_material USING GIN  (responses jsonb_path_ops);
+#+END_SRC
+** 220: api_operation_parameter_material
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/220_view_api_operation_parameter_material.up.sql
+  :END:
+*** Create
+Using our api_operation_material view, look into the parameters field in each one.     
+#+NAME: api_operation_parameter_material view
+#+BEGIN_SRC sql-mode
+  CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS 
+    SELECT ao.operation_id AS param_op,
+    (param.entry ->> 'name'::text) AS param_name,
+           -- for resource:
+           -- if param is body in body, take its $ref from its schema
+           -- otherwise, take its type
+           replace(
+             CASE
+             WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
+              AND ((param.entry -> 'schema'::text) is not null)
+               THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+             ELSE (param.entry ->> 'type'::text)
+             END, '#/definitions/','') AS param_schema,
+           CASE
+           WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
+           ELSE false
+            END AS required,
+           (param.entry ->> 'description'::text) AS param_description,
+           CASE
+           WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
+           ELSE false
+           END AS unique_items,
+           (param.entry ->> 'in'::text) AS "in",
+           ao.bucket,
+           ao.job,
+           param.entry as entry
+      FROM api_operation_material ao
+           , jsonb_array_elements(ao.parameters) WITH ORDINALITY param(entry, index)
+            WHERE ao.parameters IS NOT NULL;
+#+END_SRC
+*** Index
+#+NAME: index the api_operation_material
+#+BEGIN_SRC sql-mode
+    CREATE INDEX api_parameters_materialized_schema      ON api_operation_parameter_material            (param_schema);
+#+END_SRC
+
+* 300: Audit Event Views
+** 300: Audit Events View
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/300_view_audit_event.up.sql
+  :END:
+*** Create
+    #+NAME: view audit_event
+    #+BEGIN_SRC sql-mode
+      CREATE OR REPLACE VIEW "public"."audit_event" AS
+        SELECT (raw.data ->> 'auditID') as audit_id,
+               raw.bucket,
+               raw.job,
+               raw.data ->> 'level' as event_level,
+               raw.data ->> 'stage' as event_stage,
+               raw.operation_id,
+               aop.param_schema,
+               raw.data ->> 'verb' as event_verb,
+               raw.data ->> 'apiVersion' as api_version,
+               raw.data ->> 'requestURI' as request_uri,
+               -- Always "Event"
+               -- raw.data ->> 'kind' as kind,
+               raw.data ->> 'userAgent' as useragent,
+               raw.data -> 'user' as event_user,
+               raw.data #>> '{objectRef,namespace}' as object_namespace,
+               raw.data #>> '{objectRef,resource}' as object_type,
+               raw.data #>> '{objectRef,apiGroup}' as object_group,
+               raw.data #>> '{objectRef,apiVersion}' as object_ver,
+               raw.data -> 'sourceIPs' as source_ips,
+               raw.data -> 'annotations' as annotations,
+               raw.data -> 'requestObject' as request_object,
+               raw.data -> 'responseObject' as response_object,
+               raw.data -> 'responseStatus' as response_status,
+               raw.data ->> 'stageTimestamp' as stage_timestamp,
+               raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
+               raw.data as data
+          FROM raw_audit_event raw
+                 LEFT JOIN (
+                   select param_op, param_schema
+                     from api_operation_parameter_material
+                    WHERE param_name = 'body'
+                 ) aop
+                     ON (raw.operation_id = aop.param_op);
+    #+END_SRC
+* 500: Endpoint Coverage Views
+   :PROPERTIES:
+   :header-args:sql-mode+: :results silent
+   :END:
+** 500: Endpoint Coverage View
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/500_view_endpoint_coverage.up.sql
+   :END:
+   
+   developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]] 
+   
+   #+NAME: Endpoint Coverage View
+   #+BEGIN_SRC sql-mode
+     CREATE OR REPLACE VIEW "public"."endpoint_coverage" AS
+      SELECT DISTINCT
+        bjs.job_timestamp::date as date,
+        ao.bucket as bucket,
+        ao.job as job,
+        ao.operation_id as operation_id,
+        ao.level,
+        ao.category,
+        ao.k8s_group as group,
+        ao.k8s_kind as kind,
+        ao.k8s_version as version,
+        count(*) filter (where ae.useragent like 'e2e.test%') as test_hits,
+        count(*) filter (where ae.useragent like 'e2e.test%' AND useragent like '%[Conformance]%') as conf_hits,
+        count(*) filter (where ae.useragent not like 'e2e.test%') as other_hits,
+        count(ae.useragent) total_hits
+        FROM api_operation_material ao
+               LEFT JOIN audit_event ae ON (ao.operation_id = ae.operation_id AND ao.bucket = ae.bucket AND ao.job = ae.job)
+               LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
+          WHERE ao.deprecated IS False
+        GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
+   #+END_SRC
+
+** 520: stable endpoint_stats_view
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/520_view_stable_endpoint_stats.up.sql
+   :END:
+   Based on the update we give to dan, developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]] 
+   #+NAME: Endpoint Stats View
+   #+BEGIN_SRC sql-mode
+     CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS
+     SELECT
+       ec.job,
+       ec.date,
+       COUNT(1) as total_endpoints,
+       COUNT(1) filter(WHERE test_hits > 0) as test_hits,
+       COUNT(1) filter(WHERE conf_hits > 0) as conf_hits,
+       ROUND(((count(*) filter(WHERE test_hits > 0)) * 100 )::numeric / count(*), 2) as percent_tested,
+       ROUND(((count(*) filter(WHERE conf_hits > 0)) * 100 )::numeric / count(*), 2) as percent_conf_tested
+       FROM endpoint_coverage ec
+         WHERE ec.level = 'stable'
+      GROUP BY ec.date, ec.job;
+   #+END_SRC
+* 900: Tracking
+** 999: Tracking Tables
+   :PROPERTIES:
+   :header-args:yaml+: :tangle ../apps/hasura/migrations/999_tracking.up.yaml
+   :END:
+*** bucket_job_swagger
+#+NAME: track api_swagger
+#+BEGIN_SRC yaml
+- type: track_table
+  args:
+    schema: public
+    name: bucket_job_swagger
+#+END_SRC
+*** raw_audit_event
+#+NAME: track raw_audit_event
+#+BEGIN_SRC yaml
+- type: track_table
+  args:
+    schema: public
+    name: raw_audit_event
+#+END_SRC
+*** audit_event
+ #+NAME: track audit_event
+ #+BEGIN_SRC yaml
+ - type: track_table
+   args:
+     schema: public
+     name: audit_event
+ #+END_SRC
+
+*** stable_endpoint_stats
+ #+NAME: track endpoint_stats
+ #+BEGIN_SRC yaml 
+ - type: track_table
+   args:
+     schema: public
+     name: stable_endpoint_stats
+ #+END_SRC
+* Footnotes
+- [X] Connect to your postgres db from within this file
+  You'll want execute this code block by moving your cursor within and typing =,,=
+  
+  #+NAME: Connect org to postgres
+  #+BEGIN_SRC emacs-lisp :results silent
+    (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+  #+END_SRC
+
+- [X] Test your connection works
+  You can run this sql block, and it see a message in your minbuffer like:
+  : You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10041".
+
+  #+NAME: Test Connection
+  #+BEGIN_SRC sql-mode :results silent
+    \conninfo
+  #+END_SRC
+  
+ #+BEGIN_SRC sql-mode
+ select * from stable_endpoint_stats;
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql-mode
+          job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+ ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+  1181584183475048448 | 2019-10-08 |             430 |       165 |       114 |          38.37 |               26.51
+  1178464478988079104 | 2019-09-30 |             430 |       171 |       124 |          39.77 |               28.84
+  1173412183980118017 | 2019-09-16 |             430 |       171 |       118 |          39.77 |               27.44
+ (3 rows)
+
+ #+end_src
+ 
