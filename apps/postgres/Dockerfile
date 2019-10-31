@@ -37,5 +37,5 @@ FROM postgres:12.0
    && cp ~/go/bin/rmatch /usr/local/bin
  COPY ./initdb /docker-entrypoint-initdb.d
  HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 \
-   CMD pg_isready -U apisnoop || exit 1
+   CMD ["pg_isready", "-U ", "apisnoop"] || exit 1
 # RUN sed -i -e"s/^#logging_collector = off.*$/logging_collector = on/" /var/lib/postgresql/data/postgresql.conf
