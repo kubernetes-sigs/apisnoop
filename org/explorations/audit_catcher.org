@@ -1,0 +1,201 @@
+#+TITLE: dynamic audit logging w/ apisnoop
+
+* [4/7] Configuring the cluster to log audit events
+- [X] look at kind (needs to set args to kubeadm)
+- [X] kubeadm sets args for apiserver
+- [X] use above to set apiserver '--audit-dynamic-configuration --feature-gates=DynamicAuditing=true'
+Verify that you can set the https url to something!
+And that traffic goes there
+https://foob.sharing.io
+- [X] setup an http logger up as a container 
+Setup a container that launches this.
+Maybe launches sleep 9999, and this . so you can debug and restart/ recompbine test-server.go
+https://github.com/cncf/apisnoop/blob/shell-script-paths/dev/minikube/test-server.go
+- [ ] raw JSON data returns for each request
+- [ ] configure working https within cluster so spec.webhook.clientConfig.url can be https from the apiserver
+^^^
+- [ ] kubectl apply the AuditSink pointing to the service
+- [ ] load data into Postgres Database for APISnoop
+
+** Statically enabling auditlogfiles... via kind
+** Statically enabling auditsink / webhook
+
+** apisnoop-auditlog-handler code
+#+NAME: auditlogger bot
+#+begin_src go :tangle auditlogger.go
+package main
+
+import (
+        "fmt"
+        "net/http"
+        "net/http/httputil"
+        "log"
+)
+
+func hello(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprintf(w, "hello world")
+}
+
+func log_events(w http.ResponseWriter, r *http.Request) {
+        requestDump, err := httputil.DumpRequest(r, true)
+        if err != nil {
+                fmt.Println(err)
+        }
+        fmt.Println(string(requestDump))
+}
+
+func main() {
+        http.HandleFunc("/", hello)
+        http.HandleFunc("/events", log_events)
+        err := http.ListenAndServe(":9900", nil)
+        if err != nil {
+                log.Fatal("ListenAndServe: ", err)
+        }
+}
+#+end_src
+
+** Dockerfile
+#+NAME: dockerfile for auditlogger bot
+#+begin_src dockerfile :tangle Dockerfile
+FROM golang:1.12.13-alpine3.10
+WORKDIR /go/src/app
+COPY auditlogger.go .
+RUN go get -d -v ./...
+RUN go build -o /usr/local/bin/apisnoop-auditlogger main.go
+EXPOSE 9900
+CMD ["apisnoop-auditlogger"]
+#+end_src
+
+#+NAME: build auditlog bot container image
+#+begin_src 
+docker build -t raiinbow/auditlogger .
+#+end_src
+
+** Dynamic required enabled the alpha feature
+
+https://github.com/kubernetes/website/blob/master/content/en/docs/tasks/debug-application-cluster/audit.md#dynamic-backend
+  #+begin_src shell
+    ./apiserver --arguments-to-add
+    --audit-dynamic-configuration
+    --feature-gates=DynamicAuditing=true
+    #--runtime-config=auditregistration.k8s.io/v1alpha1=true
+  #+end_src
+
+  #+NAME: kind kubeadm DynamicAuditing configuration
+  #+begin_src yaml :tangle kind-cluster-config.yaml
+kind: Cluster
+apiVersion: kind.sigs.k8s.io/v1alpha3
+# patch the generated kubeadm config with some extra settings
+kubeadmConfigPatches:
+- |
+  apiVersion: kubeadm.k8s.io/v1beta2
+  kind: ClusterConfiguration
+  metadata:
+    name: config
+  apiServer:
+    extraArgs:
+      "feature-gates": "DynamicAuditing=true"
+      "runtime-config": "auditregistration.k8s.io/v1alpha1=true"
+      "audit-dynamic-configuration": "true"
+nodes:
+ - role: control-plane
+  #+end_src
+
+#+NAME: Bring up a kind cluster
+#+begin_src 
+kind create cluster --name kind-$USER --config kind-cluster-config.yaml
+#+end_src
+
+  #+NAME: auditlog handler container
+  #+begin_src yaml :tangle apisnoop-auditlogger-deployment-service.yaml
+    apiVersion: v1
+    kind: Deployment
+    metadata:
+      name: apisnoop-auditlogger
+      namespace: kube-system
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: apisnoop-auditlogger
+      template:
+        metadata:
+          labels:
+            app: apisnoop-auditlogger
+        spec:
+          containers:
+            - name: apisnoop-auditlogger
+              image: raiinbow/auditlogger
+              ports:
+                - containerPort: 9900
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: apisnoop-auditlogger
+      namespace: kube-system
+    spec:
+      ports:
+      - port: 9900
+        targetPort: 9900
+      selector:
+        app: apisnoop-auditlogger
+  #+end_src
+
+  #+NAME: create container deployment
+  #+begin_src
+  kubectl create -f apisnoop-auditlogger-deployment-service.yaml 
+  #+end_src
+
+  #+NAME: dynamic audit webhook configuration
+  #+begin_src yaml :tangle auditsink.yaml
+    apiVersion: auditregistration.k8s.io/v1alpha1
+    kind: AuditSink
+    metadata:
+      name: mysink
+      namespace: kube-system
+    spec:
+      policy:
+        level: Metadata
+        stages:
+        - ResponseComplete
+      webhook:
+        throttle:
+          qps: 10
+          burst: 15
+        clientConfig:
+          #url: "http://apisnoop-auditlogger.kube-system.svc.cluster.local:9900"
+          url: "http://10.107.249.78:9900/events"
+  #+end_src
+
+  #+NAME: create auditsink                                                                                        
+  #+begin_src                                                                                                                             
+  kubectl create -f auditsink.yaml                                                                 
+  #+end_src    
+
+** auditing docs
+
+   AuditSink is still Alpha... so it has to be manually enabled
+   At Beta it's enabled by default
+   So we have to pass arguments to the apiserver when it starts to enable dynamic configuration of it
+   Which is not much different than configurating it statically
+   https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.16/#auditsink-v1alpha1-auditregistration-k8s-io
+
+   https://kubernetes.io/docs/tasks/debug-application-cluster/audit/
+   https://github.com/kubernetes/website/blob/master/content/en/docs/tasks/debug-application-cluster/audit.md
+   https://github.com/kubernetes/website/blob/master/content/en/docs/tasks/debug-application-cluster/audit.md#dynamic-backend
+   API Ref: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.16/
+** existing tickets for kind
+
+https://github.com/kubernetes-sigs/kind/pull/457
+https://github.com/kubernetes-sigs/kind/pull/457
+
+** useful golang libraries
+- https://github.com/gin-gonic/gin (go http API library)
+- https://github.com/lib/pq (go postgres connector)
+** original attempt at auditlogger
+https://github.com/cncf/apisnoop/tree/shell-script-paths/dev/minikube
+https://github.com/cncf/apisnoop/blob/shell-script-paths/dev/minikube/webhook-config.yaml
+https://github.com/cncf/apisnoop/blob/shell-script-paths/dev/minikube/test-server.go
+
+
