@@ -21,115 +21,144 @@ https://github.com/cncf/apisnoop/blob/shell-script-paths/dev/minikube/test-serve
 ** Statically enabling auditsink / webhook
 
 ** apisnoop-auditlog-handler code
-#+NAME: auditlogger bot
-#+begin_src go :tangle auditlogger.go
-  package main
+#+NAME: auditlogger bot (nodejs)
+#+begin_src js :tangle auditlogger.js
+  // apisnoop auditlogger
+  const connectionString = typeof process.env.PG_CONNECTION_STRING !== 'undefined' ? process.env.PG_CONNECTION_STRING : 'postgres://apisnoop:s3cretsauc3@postgres/apisnoop?sslmode=disable'
+  const express = require('express')
+  const app = express()
+  const bodyParser = require('body-parser')
+  const morgan = require('morgan')
+  const knex = require('knex')({
+      client: 'pg',
+      connection: connectionString
+  })
 
-  import (
-          "fmt"
-          "net/http"
-          "log"
-          "io/ioutil"
-          "os"
-          //"strings"
-          "encoding/json"
-          "database/sql"
-          _ "github.com/lib/pq"
-  )
+  console.log(`[status] using connection string: ${connectionString}`)
 
-  var dbConnection *sql.DB
-  var dbConnectionString string
-
-  func hello(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprintf(w, "Hey! I'm your friendly neighbourhood auditlogger. Note: the endpoint /events is where logging takes place.")
+  function hello (req, res, next) {
+      const helloMsg = 'Hey! I\'m your friendly neighbourhood auditlogger. Note: the endpoint /events is where logging takes place.'
+      console.log(helloMsg)
+      res.json({ message: helloMsg })
+      return res.end()
   }
 
-  func getConnectionString() (connectionString string) {
-    connectionString = os.Getenv("POSTGRES_CONNECTION_STRING")
-    if connectionString == "" {
-      connectionString = "postgres://apisnoop:s3cretsauc3@postgres/apisnoop?sslmode=disable"
-    }
-    return connectionString
+  function requestFailure (req, res, next, message) {
+      res.status(400)
+      res.json({ message })
+      return res.end()
   }
 
-  func connectToDatabase(connectionString string) (db *sql.DB, err error) {
-    db, err = sql.Open("postgres", connectionString)
-    return db, err
+  function checkForBodyContent (req, res, next) {
+      if (Object.keys(req.body).length === 0 || typeof req.body !== 'object') {
+          console.log('[error] request contains no body')
+          return requestFailure(req, res, next, 'request must contain a body')
+      }
+      return next()
   }
 
-  func writeLogToDatabase(db *sql.DB, content string) (err error) {
-    // parse JSON data
-
-    // TODO ensure correct datatype for property referencing
-    var parsedContent map{}{}
-    //parsedContent := json.NewDecoder(strings.NewReader(content))
-    json.Unmarshal([]byte(content), &parsedContent)
-    fmt.Println(parsedContent)
-
-    // TODO insert correct data
-    _, err = db.Query(fmt.Sprintf("INSERT INTO raw_audit_event(bucket, job, audit_id, stage, event_verb, request_uri, jsonb) VALUES(%v, %v, %v, %v, %v, %v, %v)", "", "", "", "", "", parsedContent["items"][0]["requestURI"], content))
-    if err != nil {
-      return err
-    }
-
-    return
+  function checkUserAgent (req, res, next) {
+      const requestContent = req.body
+      console.log(req.headers['user-agent'])
+      if (req.headers['user-agent'] !== 'kube-apiserver-admission') {
+          console.log('[error] request didn\'t come from kube-apiserver')
+          return requestFailure(req, res, next, 'Error: request must come from Kubernetes apiserver')
+      }
+      return next()
   }
 
-  func log_events(w http.ResponseWriter, r *http.Request) {
-    body, err := ioutil.ReadAll(r.Body)
-    if err != nil {
-      fmt.Println(err)
-    }
-    fmt.Println(string(body))
-    writeLogToDatabase(dbConnection, string(body))
+  function logEventsToDB (req, res, next) {
+      const requestContent = req.body
+      const items = requestContent.items[0]
+
+      console.log(JSON.stringify(requestContent, null, 2))
+
+      console.log('[status] inserting into database')
+      var dataToInsert = {
+           bucket: 'apisnoop',
+           job: 'live', 
+           audit_id: items.auditID,
+           stage: items.stage, 
+           event_verb: items.verb,
+           request_uri: items.requestURI,
+           data: JSON.stringify(requestContent)
+      }
+      console.log(dataToInsert)
+  
+      knex.transaction((trx) => {
+           knex('raw_audit_event').transacting(trx).insert(dataToInsert)
+               .then(trx.commit)
+               .catch(trx.rollback)
+      }).then(resp => {
+          console.log('[status] successfully submitted entry')
+          res.json({ message: 'operation complete; data inserted' })
+          return res.end()
+      }).catch(err => {
+          console.log('[error] database: ${err}')
+          requestFailure(req, res, next, '[error] database: ${err}')
+      })
   }
 
-  func main() {
-    fmt.Println("Starting apisnoop-auditlog-event-handler")
+  console.log('[status] starting apisnoop-auditlog-event-handler')
 
-    dbConnectionString = getConnectionString()
-    fmt.Println("Using connection string:", dbConnectionString)
+  app.use(bodyParser.urlencoded({
+      extended: true
+  }))
+  app.use(express.json())
+  app.use(morgan('combined'))
 
-    dbConnection, err := connectToDatabase(dbConnectionString)
-    if err != nil || dbConnection == nil {
-      fmt.Println(err)
-      os.Exit(1)
-    }
+  app.get('/', hello)
+  app.post('/events', [checkForBodyContent, checkUserAgent], logEventsToDB)
 
-    _, err = dbConnection.Query("SELECT 0;")
-    if err != nil {
-      fmt.Println(err)
-      os.Exit(1)
-    }
+  knex.raw('select 0;').then(() => {
+      console.log('[status] connected to database')
+      app.listen('9900', () => {
+          console.log('[status] started; listening on port 9900')
+      })
 
-    // TODO add function for checking the existence of required tables
+  }).catch(err => {
+      console.log('[error] No database connection found.')
+      console.log(err)
+      process.exit(1)
+  }) 
 
-    // TODO add function to check for /.dockerenv or /run/.containerenv (must be run in a container)
+#+end_src
 
-    http.HandleFunc("/", hello)
-    http.HandleFunc("/events", log_events)
-    err = http.ListenAndServe(":9900", nil)
-    if err != nil {
-      log.Fatal("ListenAndServe: ", err)
-    }
-    fmt.Println("Listening on port 9900")
+#+NAME: auditlogger bot (nodejs) package
+#+begin_src javascript :tangle package.json
+{
+  "name": "apisnoop-auditlogger",
+  "version": "0.0.1",
+  "description": "AuditLogger for apisnoop",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Caleb Woodbine <caleb@ii.coop>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "express": "^4.17.1",
+    "knex": "^0.20.1",
+    "morgan": "^1.9.1",
+    "pg": "^7.12.1"
   }
+}
 #+end_src
 
 ** Dockerfile
 #+NAME: dockerfile for auditlogger bot
 #+begin_src dockerfile :tangle Dockerfile
-FROM golang:1.13.4-buster
+FROM node:12.13.0-stretch
 RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
-RUN  echo "deb http://apt.postgresql.org/pub/repos/apt/ buster-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+RUN  echo "deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main" > /etc/apt/sources.list.d/pgdg.list
 RUN apt update && \
-    apt install -y vim postgresql-client-12 nc
-WORKDIR /go/src/app
-COPY auditlogger.go .
-RUN go get -d -v ./...
-RUN go build -o /usr/local/bin/apisnoop-auditlogger auditlogger.go
+    apt install -y vim postgresql-client-12 netcat
+WORKDIR /opt/apisnoop
+COPY auditlogger.js .
+COPY package.json .
+RUN npm i
 EXPOSE 9900
-CMD ["apisnoop-auditlogger"]
+CMD ["node", "auditlogger.js"]
 #+end_src
 
 #+NAME: build auditlog bot container image
@@ -162,64 +191,9 @@ nodes:
 kind create cluster --name kind-$USER --config kind-cluster-config.yaml
 #+end_src
 
-#+NAME: bring up a Postgres Database
-#+begin_src yaml :tangle apisnoop-auditlog-db.yaml
-apiVersion: extensions/v1beta1
-kind: Deployment
-metadata:
-  name: postgres
-  namespace: kube-system
-spec:
-  replicas: 1
-  template:
-    metadata:
-      labels:
-        io.apisnoop.db: postgres
-    spec:
-      restartPolicy: Always
-      containers:
-      - name: postgres
-        image: "raiinbow/postgres:2019-11-01-13-09"
-        ports:
-        - containerPort: 5432
-        livenessProbe:
-          exec:
-            command:
-            - "pg_isready"
-            - "-U"
-            - "apisnoop"
-          failureThreshold: 5
-          periodSeconds: 10
-          timeoutSeconds: 5
-        env:
-        - name: POSTGRES_DB
-          value: apisnoop
-        - name: POSTGRES_USER
-          value: apisnoop
-        - name: POSTGRES_PASSWORD
-          value: s3cretsauc3
-        - name: PGDATABASE
-          value: apisnoop
-        - name: PGUSER
-          value: apisnoop
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: kube-system
-spec:
-  selector:
-    io.apisnoop.db: postgres
-  ports:
-  - name: "5432"
-    port: 5432
-    targetPort: 5432
-#+end_src
-
-#+NAME: create db deployment
+#+NAME: bring up APIsnoop
 #+begin_src tmate
-kubectl apply -f apisnoop-auditlog-db.yaml 
+kubectl apply -f https://raw.githubusercontent.com/cncf/apisnoop/master/apps/raiinbow.yaml --namespace=kube-system
 #+end_src
 
 #+NAME: auditlog handler container
@@ -241,11 +215,11 @@ kubectl apply -f apisnoop-auditlog-db.yaml
       spec:
         containers:
           - name: apisnoop-auditlogger
-            image: raiinbow/auditlogger:05-11-19_16-20
-            command:
-              - "sleep"
-            args: 
-              - "+Inf"
+            image: raiinbow/auditlogger:06-11-19_16-20
+            #command:
+            #  - "sleep"
+            #args: 
+            #  - "+Inf"
             ports:
               - containerPort: 9900
   ---
@@ -287,7 +261,8 @@ The virtual IP address in spec.webhook.clientConfig.url (for now) must be manual
           burst: 15
         clientConfig:
           #url: "http://apisnoop-auditlogger.kube-system.svc.cluster.local:9900/events"
-          url: "http://10.244.0.15:9900/events"
+          # svc cluster ip of apisnoop-auditlogger
+          url: "http://10.105.25.101:9900/events"
 #+end_src
 
 #+NAME: create auditsink                                                                                        
@@ -315,6 +290,7 @@ https://github.com/kubernetes-sigs/kind/pull/457
 - https://github.com/gin-gonic/gin (go http API library)
 - https://github.com/lib/pq (go postgres connector)
 ** original attempt at auditlogger
+
 https://github.com/cncf/apisnoop/tree/shell-script-paths/dev/minikube
 https://github.com/cncf/apisnoop/blob/shell-script-paths/dev/minikube/webhook-config.yaml
 https://github.com/cncf/apisnoop/blob/shell-script-paths/dev/minikube/test-server.go
