@@ -166,7 +166,7 @@ CMD ["node", "auditlogger.js"]
 docker build -t raiinbow/auditlogger .
 #+end_src
 
-* Ensure Kind will allow dynamic Auditing
+* kube yamls
 ** kind-cluster-config.yaml
 #+NAME: kind kubeadm DynamicAuditing configuration
 #+begin_src yaml :tangle kind-cluster-config.yaml
@@ -186,16 +186,6 @@ kubeadmConfigPatches:
 nodes:
  - role: control-plane
   #+end_src
-** kind create cluster --with-auditing
-#+NAME: Bring up a kind cluster
-#+begin_src tmate
-kind create cluster --name kind-$USER --config kind-cluster-config.yaml
-#+end_src
-** kubectl apply apisnoop
-#+NAME: bring up APIsnoop
-#+begin_src tmate
-kubectl apply -f https://raw.githubusercontent.com/cncf/apisnoop/master/apps/raiinbow.yaml --namespace=kube-system
-#+end_src
 ** auditlogging-deployment.yaml
 
 #+NAME: auditlog handler container
@@ -236,11 +226,8 @@ kubectl apply -f https://raw.githubusercontent.com/cncf/apisnoop/master/apps/rai
         targetPort: 9900
     selector:
       app: apisnoop-auditlogger
-#+end_src
-** kubectl apply auditlogger
-#+NAME: create container deployment
-#+begin_src tmate
-kubectl apply -f apisnoop-auditlogger-deployment-service.yaml 
+    clusterIP: 10.96.96.96
+    type: ClusterIP
 #+end_src
 ** auditsink.yaml (currentyl hardcoded IP)
 The virtual IP address in spec.webhook.clientConfig.url (for now) must be manually adjusted to the virtual IP of the webserver API
@@ -264,7 +251,23 @@ The virtual IP address in spec.webhook.clientConfig.url (for now) must be manual
         clientConfig:
           #url: "http://apisnoop-auditlogger.kube-system.svc.cluster.local:9900/events"
           # svc cluster ip of apisnoop-auditlogger
-          url: "http://10.105.25.101:9900/events"
+          url: "http://10.96.96.96:9900/events"
+#+end_src
+* Ensure Kind will allow dynamic Auditing
+** kind create cluster --with-auditing
+#+NAME: Bring up a kind cluster
+#+begin_src tmate
+kind create cluster --name kind-$USER --config kind-cluster-config.yaml
+#+end_src
+** kubectl apply apisnoop
+#+NAME: bring up APIsnoop
+#+begin_src tmate
+kubectl apply -f https://raw.githubusercontent.com/cncf/apisnoop/master/apps/raiinbow.yaml --namespace=kube-system
+#+end_src
+** kubectl apply auditlogger
+#+NAME: create container deployment
+#+begin_src tmate
+kubectl apply -f apisnoop-auditlogger-deployment-service.yaml 
 #+end_src
 ** kubectl apply the auditsink
 #+NAME: create auditsink                                                                                        
@@ -272,6 +275,54 @@ The virtual IP address in spec.webhook.clientConfig.url (for now) must be manual
 kubectl apply -f auditsink.yaml                                                                 
 #+end_src
 * DOCS
+** what are the defaults  
+   #+name: kubeadm config init-defaults
+   #+begin_src shell :wrap "src yaml"
+     docker exec kind-$USER-control-plane kubeadm config print init-defaults
+   #+end_src
+
+   #+RESULTS: kubeadm config init-defaults
+   #+begin_src yaml
+   apiVersion: kubeadm.k8s.io/v1beta2
+   bootstrapTokens:
+   - groups:
+     - system:bootstrappers:kubeadm:default-node-token
+     token: abcdef.0123456789abcdef
+     ttl: 24h0m0s
+     usages:
+     - signing
+     - authentication
+   kind: InitConfiguration
+   localAPIEndpoint:
+     advertiseAddress: 1.2.3.4
+     bindPort: 6443
+   nodeRegistration:
+     criSocket: /var/run/dockershim.sock
+     name: kind-hh-control-plane
+     taints:
+     - effect: NoSchedule
+       key: node-role.kubernetes.io/master
+   ---
+   apiServer:
+     timeoutForControlPlane: 4m0s
+   apiVersion: kubeadm.k8s.io/v1beta2
+   certificatesDir: /etc/kubernetes/pki
+   clusterName: kubernetes
+   controllerManager: {}
+   dns:
+     type: CoreDNS
+   etcd:
+     local:
+       dataDir: /var/lib/etcd
+   imageRepository: k8s.gcr.io
+   kind: ClusterConfiguration
+   kubernetesVersion: v1.14.0
+   networking:
+     dnsDomain: cluster.local
+     serviceSubnet: 10.96.0.0/12
+   scheduler: {}
+   #+end_src
+
 ** auditing docs
 AuditSink is still Alpha... so it has to be manually enabled
 At Beta it's enabled by default
