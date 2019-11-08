@@ -1,0 +1,143 @@
+# raiinbow.yaml
+apiVersion: v1
+kind: List
+metadata: {}
+items:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: hasura
+  spec:
+    type: ClusterIP
+    clusterIP: None
+    selector:
+      io.apisnoop.graphql: hasura
+    ports:
+    - name: "8080"
+      port: 8080
+      targetPort: 8080
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: postgres
+  spec:
+    selector:
+      io.apisnoop.db: postgres
+    ports:
+    - name: "5432"
+      port: 5432
+      targetPort: 5432
+- apiVersion: extensions/v1beta1
+  kind: Deployment
+  metadata:
+    name: hasura
+  spec:
+    replicas: 1
+    template:
+      metadata:
+        labels:
+          io.apisnoop.graphql: hasura
+      spec:
+        restartPolicy: Always
+        containers:
+        - name: hasura
+          image: "raiinbow/hasura:2019-11-01-13-09"
+          ports:
+          - containerPort: 8080
+          env:
+          - name: HASURA_GRAPHQL_DATABASE_URL
+            value: "postgres://apisnoop:s3cretsauc3@postgres:5432/apisnoop"
+          - name: HASURA_GRAPHQL_ENABLE_CONSOLE
+            value: "true"
+- apiVersion: extensions/v1beta1
+  kind: Deployment
+  metadata:
+    name: postgres
+  spec:
+    replicas: 1
+    template:
+      metadata:
+        labels:
+          io.apisnoop.db: postgres
+      spec:
+        restartPolicy: Always
+        containers:
+        - name: postgres
+          image: "raiinbow/postgres:2019-11-01-13-09"
+          ports:
+          - containerPort: 5432
+          livenessProbe:
+            exec:
+              command:
+              - "pg_isready"
+              - "-U"
+              - "apisnoop"
+            failureThreshold: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          env:
+          - name: POSTGRES_DB
+            value: apisnoop
+          - name: POSTGRES_USER
+            value: apisnoop
+          - name: POSTGRES_PASSWORD
+            value: s3cretsauc3
+          - name: PGDATABASE
+            value: apisnoop
+          - name: PGUSER
+            value: apisnoop
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: apisnoop-auditlogger
+    namespace: kube-system
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: apisnoop-auditlogger
+    template:
+      metadata:
+        labels:
+          app: apisnoop-auditlogger
+      spec:
+        containers:
+          - name: apisnoop-auditlogger
+            image: raiinbow/auditlogger:06-11-19_16-20
+            #command:
+            #  - "sleep"
+            #args: 
+            #  - "+Inf"
+            ports:
+              - containerPort: 9900
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: apisnoop-auditlogger
+    namespace: kube-system
+  spec:
+    ports:
+      - port: 9900
+        targetPort: 9900
+    selector:
+      app: apisnoop-auditlogger
+    clusterIP: 10.96.96.96
+    type: ClusterIP
+- apiVersion: auditregistration.k8s.io/v1alpha1
+  kind: AuditSink
+  metadata:
+    name: auditlogger
+    namespace: kube-system
+  spec:
+    policy:
+      level: Metadata
+      stages:
+      - ResponseComplete
+    webhook:
+      throttle:
+        qps: 10
+        burst: 15
+      clientConfig:
+        #url: "http://apisnoop-auditlogger.kube-system.svc.cluster.local:9900/events"
+        # svc cluster ip of apisnoop-auditlogger
+        url: "http://10.96.96.96:9900/events"
