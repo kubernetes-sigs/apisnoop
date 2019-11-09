@@ -39,25 +39,8 @@ This is a continuation of ticket 88, which has already been mostly done through 
    
    Running through iteration loop we can verify it works!
 
-** TODO setup trigger to grab our open api spec and find op_id based on it.
-   pseudocode trigger
-   #+begin_example python
-postgres create function find_operation_id(specurl text, event json)
-  if SD['spec'][url] doesn't exist then
-    SD[\'spec\'][url] = load_open+api_spec(url)
-   find_op_id(SD[\'spec][url], event)a
-
-
-  TRIGGER
-  ^^^
-  define function for load open_apispec
-  <<load_open_apisspec>>
-  <<find_operation_id>>
-  whenr TD["event"] == INSERT
-  GD["spec"]|=load_open_apispec(http://apiserver/api/v2)
-  TD["NEW"]["operationId"]=find_operation_id(GD["SPEC"],TD["OLD"]["data"])
-   
-   #+end_example
+** TADA setup trigger to grab our open api spec and find op_id based on it.
+   CLOSED: [2019-11-09 Sat 22:43]
    So now we want a slightly more involved function.  Here we want to write it in python, and check for a global variable.
    
    We will bring in the code from our load_audit_event function as this is basically the same, just for a single event instead of looping.
@@ -246,29 +229,37 @@ postgres create function find_operation_id(specurl text, event json)
        <<deep_merge>>
        <<load_openapi_spec>>
        <<find_operation_id>>
-       if "spec" not in GD["spec"]:
-           GD["spec"] = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/7d13dfe3c34f44/api/openapi-spec/swagger.json')
-       spec = GD["spec"]
-       event = json.loads(TD["new"]["data"])
+       if "spec" not in GD:
+           GD["spec"] = "good times"
+# load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/7d13dfe3c34f44/api/openapi-spec/swagger.json')
+       # spec = GD["spec"]
+       # event = json.loads(TD["new"]["data"])
        if TD["new"]["operation_id"] is None:
-           TD["new"]["operation_id"] = find_operation_id(spec, event);
+           TD["new"]["operation_id"] = GD["spec"];
+         # find_operation_id(spec, event);
        return "MODIFY";
      $$ LANGUAGE plpython3u;
    #+end_src
    
    #+NAME: Create Trigger
    #+begin_src sql-mode :results silent
-     CREATE TRIGGER add_op_id BEFORE INSERT ON live_audit_event
+     CREATE TRIGGER add_op_id BEFORE INSERT ON raw_audit_event
        FOR EACH ROW EXECUTE PROCEDURE add_op_id();
    #+end_src
    
    If we run through the iteration loop, we can see a correct op_id applied only if there is no existing op_id. Great!
-** TODO setup a coverage report specifically for the live audit_events.
+** TADA setup a coverage report specifically for the live audit_events.
+   CLOSED: [2019-11-09 Sat 22:44]
+   We actually don't need to do this,w e can add things to our raw_audit_event and then filter using a where clause (we can also delee using a where clause)
+** TADA Update tables_and_views_bot to include this trigger.
+   CLOSED: [2019-11-09 Sat 23:47]
 ** TODO Verify everything works.
 * Iteration Loop for Trigger
-  #+NAME: Insert Entry to live_audit_event
+
+
+  #+NAME: Insert Entry to raw_audit_event
   #+begin_src sql-mode :noweb yes :results silent
-    INSERT INTO live_audit_event( 
+    INSERT INTO raw_audit_event( 
     bucket,
     job,
     audit_id,
@@ -290,29 +281,23 @@ postgres create function find_operation_id(specurl text, event json)
   #+end_src
   
   
-  #+NAME: Check op_id and other data from live_audit_event
+  #+NAME: Check op_id and other data from raw_audit_event
   #+begin_src sql-mode 
-  select audit_id, operation_id from live_audit_event;
+  select audit_id, operation_id from raw_audit_event where bucket = 'apisnoop';
   #+end_src
 
-  #+RESULTS: Check op_id and other data from live_audit_event
+  #+RESULTS: Check op_id and other data from raw_audit_event
   #+begin_src sql-mode
     audit_id  |  operation_id  
   ------------+----------------
    audit11231 | readCoreV1Node
-   audit11231 | readCoreV1Node
-   audit11231 | readCoreV1Node
-   audit11231 | readCoreV1Node
-   audit11231 | readCoreV1Node
-   audit11231 | someOtherOp
-   audit11231 | readCoreV1Node
-  (7 rows)
+  (1 row)
 
   #+end_src
 
-  #+NAME: Delete Entries from live_audit_event
+  #+NAME: Delete Entries from raw_audit_event
   #+begin_src sql-mode :results silent
-  DELETE FROM live_audit_event;
+  DELETE FROM raw_audit_event where bucket = 'apisnoop';
   #+end_src
 
 * Footnotes
