@@ -7,7 +7,10 @@
 
 set role dba;
 DROP FUNCTION IF EXISTS load_bucket_job_swagger_via_curl;
-CREATE OR REPLACE FUNCTION load_bucket_job_swagger_via_curl(bucket text, job text)
+CREATE OR REPLACE FUNCTION load_bucket_job_swagger_via_curl(
+  bucket text default null,
+  job text default null,
+  live boolean default false)
 RETURNS text AS $$
 try:
     from urllib.request import urlopen, urlretrieve
@@ -51,17 +54,36 @@ try:
         'text','text','text','text',
         'text','text','text','text',
         'integer','text','text','jsonb'])
-    rv = plpy.execute(plan, [
-        bucket,job,commit_hash,
-        metadata['passed'],metadata['result'],
-        metadata['metadata']['pod'],
-        metadata['metadata']['infra-commit'],
-        metadata['version'],
-        int(metadata['timestamp']),
-        metadata['metadata']['node_os_image'],
-        metadata['metadata']['master_os_image'],
-        json.dumps(swagger)
-    ])
+    if live:
+        rv = plpy.execute(plan, [
+            'apisnoop',
+            'live',
+            commit_hash,
+            metadata['passed'],
+            metadata['result'],
+            metadata['metadata']['pod'],
+            metadata['metadata']['infra-commit'],
+            metadata['version'],
+            int(metadata['timestamp']),
+            metadata['metadata']['node_os_image'],
+            metadata['metadata']['master_os_image'],
+            json.dumps(swagger)
+        ])
+    else:
+        rv = plpy.execute(plan, [
+            bucket,
+            job,
+            commit_hash,
+            metadata['passed'],
+            metadata['result'],
+            metadata['metadata']['pod'],
+            metadata['metadata']['infra-commit'],
+            metadata['version'],
+            int(metadata['timestamp']),
+            metadata['metadata']['node_os_image'],
+            metadata['metadata']['master_os_image'],
+            json.dumps(swagger)
+        ])
     return "it worked!"
 except Exception as err:
     return Template("something went wrong, likely this: ${error}").substitute(error = err)

@@ -57,7 +57,10 @@
    #+BEGIN_SRC sql-mode :noweb yes :results silent
      set role dba;
      DROP FUNCTION IF EXISTS load_bucket_job_swagger_via_curl;
-     CREATE OR REPLACE FUNCTION load_bucket_job_swagger_via_curl(bucket text, job text)
+     CREATE OR REPLACE FUNCTION load_bucket_job_swagger_via_curl(
+       bucket text default null,
+       job text default null,
+       live boolean default false)
      RETURNS text AS $$
      <<load_bucket_job_swagger_via_curl.py>>
      $$ LANGUAGE plpython3u ;
@@ -108,17 +111,36 @@
            'text','text','text','text',
            'text','text','text','text',
            'integer','text','text','jsonb'])
-       rv = plpy.execute(plan, [
-           bucket,job,commit_hash,
-           metadata['passed'],metadata['result'],
-           metadata['metadata']['pod'],
-           metadata['metadata']['infra-commit'],
-           metadata['version'],
-           int(metadata['timestamp']),
-           metadata['metadata']['node_os_image'],
-           metadata['metadata']['master_os_image'],
-           json.dumps(swagger)
-       ])
+       if live:
+           rv = plpy.execute(plan, [
+               'apisnoop',
+               'live',
+               commit_hash,
+               metadata['passed'],
+               metadata['result'],
+               metadata['metadata']['pod'],
+               metadata['metadata']['infra-commit'],
+               metadata['version'],
+               int(metadata['timestamp']),
+               metadata['metadata']['node_os_image'],
+               metadata['metadata']['master_os_image'],
+               json.dumps(swagger)
+           ])
+       else:
+           rv = plpy.execute(plan, [
+               bucket,
+               job,
+               commit_hash,
+               metadata['passed'],
+               metadata['result'],
+               metadata['metadata']['pod'],
+               metadata['metadata']['infra-commit'],
+               metadata['version'],
+               int(metadata['timestamp']),
+               metadata['metadata']['node_os_image'],
+               metadata['metadata']['master_os_image'],
+               json.dumps(swagger)
+           ])
        return "it worked!"
    except Exception as err:
        return Template("something went wrong, likely this: ${error}").substitute(error = err)
@@ -919,6 +941,8 @@ Using our api_operation_material view, look into the parameters field in each on
   :END:
   #+begin_src sql-mode
     select * from load_bucket_job_swagger_via_curl('ci-kubernetes-e2e-gci-gce', '1188637253832806405');
+    -- create an apisnoop/live bucket/job by setting third argument(live) to true.
+    select * from load_bucket_job_swagger_via_curl('ci-kubernetes-e2e-gci-gce', '1188637253832806405', true);
   #+end_src
 ** 920: Populate Audits Up
   :PROPERTIES:
