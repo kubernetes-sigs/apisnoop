@@ -177,31 +177,6 @@ CREATE INDEX idx_audit_event_jsonb_ops        ON raw_audit_event USING GIN (data
 CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data jsonb_path_ops);
 #+END_SRC
 
-** 120: live_audit_event Table
-  :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/120_table_live_audit_event.up.sql
-  :END:
-*** Create
-#+NAME: raw_audit_event
-#+BEGIN_SRC sql-mode
-  CREATE UNLOGGED TABLE live_audit_event (
-    bucket text,
-    job text,
-    audit_id text NOT NULL,
-    stage text NOT NULL,
-    event_verb text NOT NULL,
-    request_uri text NOT NULL,
-    operation_id text,
-    data jsonb NOT NULL
-  );
-#+END_SRC
-*** Index
-#+NAME: index the raw_audit_event
-#+BEGIN_SRC sql-mode
-CREATE INDEX idx_live_audit_event_jsonb_ops        ON live_audit_event USING GIN (data jsonb_ops);
-CREATE INDEX idx_live_audit_event_jsonb_path_jobs  ON live_audit_event USING GIN (data jsonb_path_ops);
-#+END_SRC
-
 ** 111: load_audit_event Function
   :PROPERTIES:
   :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/111_function_load_audit_event.up.sql
@@ -321,7 +296,7 @@ CREATE INDEX idx_live_audit_event_jsonb_path_jobs  ON live_audit_event USING GIN
       if part in current_level:
         current_level = current_level[part] # part in current_level
       elif idx == part_count-1:
-        if part == 'metrics': # we aren't collecting metrics for now
+        if part == 'metrics':
           return None
         #   elif part == '': # The last V
         #     current_level = last_level
@@ -523,6 +498,64 @@ CREATE INDEX idx_live_audit_event_jsonb_path_jobs  ON live_audit_event USING GIN
   $$ LANGUAGE plpython3u ;
   reset role;
 #+END_SRC
+** 112: add_opp_id function
+  :PROPERTIES:
+  :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/112_function_add_opp_id.up.sql
+  :END:
+*** Python Code
+   #+NAME: add_opp_id.py
+   #+begin_src python :results silent :noweb yes :tangle no
+     import json
+     from urllib.request import urlopen, urlretrieve
+     import os
+     import re
+     from bs4 import BeautifulSoup
+     import subprocess
+     import time
+     import glob
+     from tempfile import mkdtemp
+     from string import Template
+     from urllib.parse import urlparse
+     import requests
+     import hashlib
+     from collections import defaultdict
+     import json
+     import csv
+     import sys
+
+     <<deep_merge>>
+
+     <<load_openapi_spec>>
+
+     <<find_operation_id>>
+
+     if "spec" not in GD:
+         GD["spec"] = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/7d13dfe3c34f44/api/openapi-spec/swagger.json')
+     spec = GD["spec"]
+     event = json.loads(TD["new"]["data"])
+     if TD["new"]["operation_id"] is None:
+         TD["new"]["operation_id"] = find_operation_id(spec, event);
+     return "MODIFY";
+   #+end_src
+   
+*** Create
+#+NAME: add_opp_id.sql
+#+begin_src sql-mode :noweb yes :results silent
+  set role dba;
+  CREATE FUNCTION add_op_id() RETURNS TRIGGER as $$
+  <<add_opp_id.py>>
+  $$ LANGUAGE plpython3u;
+  reset role;
+#+end_src
+** 113: add_opp_id trigger
+  :PROPERTIES:
+  :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/113_trigger_add_opp_id.up.sql
+  :END:
+   #+NAME: Create Trigger
+   #+begin_src sql-mode :results silent
+     CREATE TRIGGER add_op_id BEFORE INSERT ON raw_audit_event
+       FOR EACH ROW EXECUTE PROCEDURE add_op_id();
+   #+end_src
 * 200: API Views
 ** 200: api_operation_material view
   :PROPERTIES:
@@ -926,14 +959,6 @@ Using our api_operation_material view, look into the parameters field in each on
     schema: public
     name: raw_audit_event
 #+END_SRC
-*** live_audit_event
-#+NAME: track raw_audit_event
-#+BEGIN_SRC yaml
-- type: track_table
-  args:
-    schema: public
-    name: live_audit_event
-#+END_SRC
 *** audit_event
  #+NAME: track audit_event
  #+BEGIN_SRC yaml
@@ -986,6 +1011,9 @@ Using our api_operation_material view, look into the parameters field in each on
     REFRESH MATERIALIZED VIEW api_operation_material;
     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
   #+end_src
+* OPEN TASKS
+** TODO remove hardcoded spec from add_opp_id trigger
+** TODO bucket_job_swagger files based on cluster or sources.yaml, and not hardcoded.
 * Footnotes
 - [X] Connect to your postgres db from within this file
   You'll want execute this code block by moving your cursor within and typing =,,=
