@@ -31,7 +31,7 @@ CREATE OR REPLACE VIEW "public"."audit_event" AS
     FROM raw_audit_event raw
            LEFT JOIN (
              select param_op, param_schema
-               from api_operation_parameter
+               from api_operation_parameter_material
               WHERE param_name = 'body'
            ) aop
                ON (raw.operation_id = aop.param_op);

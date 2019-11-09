@@ -106,9 +106,12 @@ def find_operation_id(openapi_spec, event):
       uri_parts = uri_parts[0:uri_parts.index('proxy')]
   part_count = len(uri_parts)
   try: # may have more parts... so no match
-    cache = openapi_spec['cache'][part_count]
-  except:
-    import ipdb; ipdb.set_trace(context=60)
+      cache = openapi_spec['cache'][part_count]
+  except Exception as e:
+    plpy.warning("part_count was:" + part_count)
+    plpy.warning("spec['cache'] keys was:" + openapi_spec['cache'])
+    raise e
+  #  import ipdb; ipdb.set_trace(context=60)
   last_part = None
   last_level = None
   current_level = cache
@@ -125,7 +128,8 @@ def find_operation_id(openapi_spec, event):
       #       else:
       variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
       if len(variable_levels) > 1:
-        import ipdb; ipdb.set_trace(context=60)
+        raise "If we have more than one variable levels... this should never happen."
+        # import ipdb; ipdb.set_trace(context=60)
       next_level=variable_levels[0] # the var is the next level
       current_level = current_level[next_level] # variable part is final part
     else:
@@ -151,8 +155,11 @@ def find_operation_id(openapi_spec, event):
       current_level = current_level[next_level] #coo
   try:
     op_id=current_level[method]
-  except:
-    import ipdb; ipdb.set_trace(context=60)
+  except Exception as err:
+    plpy.warning("method was:" + method)
+    plpy.warning("current_level keys:" + current_level.keys())
+    raise err
+  #   import ipdb; ipdb.set_trace(context=60)
   if url.path not in openapi_spec['hit_cache']:
     openapi_spec['hit_cache'][url.path]={method:op_id}
   else:
