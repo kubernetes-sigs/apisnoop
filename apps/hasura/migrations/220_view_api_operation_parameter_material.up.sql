@@ -3,7 +3,7 @@
 -- #+NAME: api_operation_parameter_material view
 
 CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS 
-  SELECT api_operation.operation_id AS param_op,
+  SELECT ao.operation_id AS param_op,
   (param.entry ->> 'name'::text) AS param_name,
          -- for resource:
          -- if param is body in body, take its $ref from its schema
@@ -25,16 +25,14 @@ CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS
          ELSE false
          END AS unique_items,
          (param.entry ->> 'in'::text) AS "in",
-         api_operation.bucket,
-         api_operation.job,
+         ao.bucket,
+         ao.job,
          param.entry as entry
-    FROM api_operation
-         , jsonb_array_elements(api_operation.parameters) WITH ORDINALITY param(entry, index)
-          WHERE api_operation.parameters IS NOT NULL;
+    FROM api_operation_material ao
+         , jsonb_array_elements(ao.parameters) WITH ORDINALITY param(entry, index)
+          WHERE ao.parameters IS NOT NULL;
 
 -- Index
 -- #+NAME: index the api_operation_material
 
--- CREATE UNIQUE INDEX                                  ON api_operation_parameter_material(raw_swagger_id, param_op, param_name);
 CREATE INDEX api_parameters_materialized_schema      ON api_operation_parameter_material            (param_schema);
--- CREATE INDEX api_parameters_materialized_entry       ON api_operation_parameter_material            (entry);

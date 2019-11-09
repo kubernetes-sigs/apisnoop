@@ -22,7 +22,7 @@ CREATE OR REPLACE VIEW "public"."endpoint_coverage" AS
    count(*) filter (where ae.useragent like 'e2e.test%' AND useragent like '%[Conformance]%') as conf_hits,
    count(*) filter (where ae.useragent not like 'e2e.test%') as other_hits,
    count(ae.useragent) total_hits
-   FROM api_operation ao
+   FROM api_operation_material ao
           LEFT JOIN audit_event ae ON (ao.operation_id = ae.operation_id AND ao.bucket = ae.bucket AND ao.job = ae.job)
           LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
      WHERE ao.deprecated IS False
