@@ -61,7 +61,7 @@ function logEventsToDB (req, res, next) {
     console.log(dataToInsert)
 
     knex.transaction((trx) => {
-         knex('live_audit_event').transacting(trx).insert(dataToInsert)
+         knex('raw_audit_event').transacting(trx).insert(dataToInsert)
              .then(trx.commit)
              .catch(trx.rollback)
     }).then(resp => {
