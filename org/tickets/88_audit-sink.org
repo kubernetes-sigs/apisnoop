@@ -253,7 +253,49 @@ This is a continuation of ticket 88, which has already been mostly done through 
    We actually don't need to do this,w e can add things to our raw_audit_event and then filter using a where clause (we can also delee using a where clause)
 ** TADA Update tables_and_views_bot to include this trigger.
    CLOSED: [2019-11-09 Sat 23:47]
-** TODO Verify everything works.
+** BLOCKED Verify everything works.
+   I updated our raiinbow.yaml to include the audit sink and updated trigger functions.  I can verify that the trigger works on a local setup, but cannot verify the sink.  I can also verify that the cluster can get up and going with the latest raiinbow and with all our functions.
+   
+   However, this process is flaky and slow due to name resolution errors.  When you first get started, the tables will not load at all and hasura will repeatedly crash, with its logs showing the issue being that it's trying to connect to a postgres db but cannot resolve the name (even after the postgres is up and running smoothly).  
+
+   Once I got it working, I tried running our sample go code.  It successfully returns a value, but nothing new got added to our raw_audit_event.  Checking the log, we get this error:
+   #+begin_example
+2019-11-10 01:57:06.040 UTC [176] ERROR:  KeyError: 'verb'
+2019-11-10 01:57:06.040 UTC [176] CONTEXT:  Traceback (most recent call last):
+          PL/Python function "add_op_id", line 167, in <module>
+            TD["new"]["operation_id"] = find_operation_id(spec, event);
+          PL/Python function "add_op_id", line 94, in find_operation_id
+            method=verb_to_method[event['verb']]
+        PL/Python function "add_op_id"
+2019-11-10 01:57:06.040 UTC [176] STATEMENT:  insert into "raw_audit_event" ("audit_id", "bucket", "data", "event_verb", "job", "request_uri"
+, "stage") values ($1, $2, $3, $4, $5, $6, $7)
+   #+end_example
+
+   What I think might be happneing is that it's trying to do an insert, expecting the json from the go code to match a basic audit event..and so it should have a verb to check against, but there isn't one there.  So we can investigate the events given from this function and compare it to lines from our audit logs.
+
+   
+   So then I tried to manually insert a new entry into raw_audit_event, using the same code block that I tested on locally.  This has its data taken from a valid raw_audit_event and so should work.  The manual insert returns this error:
+#+begin_example
+executing Sql-Mode code block (Insert Entry to raw_audit_event)...
+"ERROR:  requests.exceptions.ConnectionError: HTTPSConnectionPool(host=’raw.githubusercontent.com’, port=443): Max retries exceeded with url\
+: /kubernetes/kubernetes/7d13dfe3c34f44/api/openapi-spec/swagger.json (Caused by NewConnectionError(’<urllib3.connection.VerifiedHTTPSConnec\
+tion object at 0x7f301a91cb38>: Failed to establish a new connection: [Errno -2] Name or service not known’))
+CONTEXT:  Traceback (most recent call last):
+  PL/Python function \"add_op_id\", line 163, in <module>
+    GD[\"spec\"] = load_openapi_spec(’https://raw.githubusercontent.com/kubernetes/kubernetes/7d13dfe3c34f44/api/openapi-spec/swagger.json’)
+  PL/Python function \"add_op_id\", line 55, in load_openapi_spec
+    swagger = requests.get(url).json()
+  PL/Python function \"add_op_id\", line 74, in get
+  PL/Python function \"add_op_id\", line 59, in request
+  PL/Python function \"add_op_id\", line 532, in request
+  PL/Python function \"add_op_id\", line 645, in send
+  PL/Python function \"add_op_id\", line 515, in send
+PL/Python function \"add_op_id\"
+#+end_example
+
+So here it is getting to our add_opp_id function, so we know the trigger is working, but gets stuck at the loading of the spec, because it cannot resolve a website's name.  This seems to be another DNS name resolution issue.
+
+What is strange is this same function worked for the loading of the audit events, though it might have happened after a few retries.  I think to properly debug, we will need to ensure the dns is working consistently, as there's too many chance variables at the moment to figure out where the issue might be.
 * Iteration Loop for Trigger
 
 
