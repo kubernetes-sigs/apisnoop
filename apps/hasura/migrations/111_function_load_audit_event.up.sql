@@ -78,7 +78,6 @@ def load_openapi_spec(url):
                 current_level[method]=swagger_method.get('operationId', '')
         cache = deep_merge(cache, {path_len:path_dict})
     openapi_spec['cache'] = cache
-    #import ipdb; ipdb.set_trace(context=60)
     return openapi_spec
 def find_operation_id(openapi_spec, event):
   verb_to_method={
@@ -111,7 +110,6 @@ def find_operation_id(openapi_spec, event):
     plpy.warning("part_count was:" + part_count)
     plpy.warning("spec['cache'] keys was:" + openapi_spec['cache'])
     raise e
-  #  import ipdb; ipdb.set_trace(context=60)
   last_part = None
   last_level = None
   current_level = cache
@@ -121,7 +119,7 @@ def find_operation_id(openapi_spec, event):
     if part in current_level:
       current_level = current_level[part] # part in current_level
     elif idx == part_count-1:
-      if part == 'metrics': # we aren't collecting metrics for now
+      if part == 'metrics':
         return None
       #   elif part == '': # The last V
       #     current_level = last_level
@@ -129,7 +127,6 @@ def find_operation_id(openapi_spec, event):
       variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
       if len(variable_levels) > 1:
         raise "If we have more than one variable levels... this should never happen."
-        # import ipdb; ipdb.set_trace(context=60)
       next_level=variable_levels[0] # the var is the next level
       current_level = current_level[next_level] # variable part is final part
     else:
@@ -159,7 +156,6 @@ def find_operation_id(openapi_spec, event):
     plpy.warning("method was:" + method)
     plpy.warning("current_level keys:" + current_level.keys())
     raise err
-  #   import ipdb; ipdb.set_trace(context=60)
   if url.path not in openapi_spec['hit_cache']:
     openapi_spec['hit_cache'][url.path]={method:op_id}
   else:
