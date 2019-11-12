@@ -58,9 +58,7 @@ fi
 if [ ! -f /home/\$DEVSHELL_USER/.tmux.conf ]; then
    echo Setting up tmux
    # echo set -s escape-time 0 > su -c "tee /home/\$DEVSHELL_USER/.tmux.conf"
-   cat << EOF | su -c "tee /home/\$DEVSHELL_USER/.tmux.conf" \$DEVSHELL_USER
-        set -s escape-time 0
-  EOF
+   echo "set -s escape-time 0" >> "/home/\$DEVSHELL_USER/.tmux.conf"
 fi
 
 echo "unset TMUX" >> /home/\$DEVSHELL_USER/.bashrc
