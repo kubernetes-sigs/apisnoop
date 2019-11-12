@@ -56,7 +56,7 @@ function logEventsToDB (req, res, next) {
          stage: items.stage, 
          event_verb: items.verb,
          request_uri: items.requestURI,
-         data: JSON.stringify(requestContent)
+        data: JSON.stringify(items)
     }
     console.log(dataToInsert)
 
