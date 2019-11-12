@@ -2,6 +2,14 @@
 
 An apisnoop built for querying from multiple angles using a shared language.
 
+## TLDR
+
+---
+
+[![Open in Cloud Shell](https://gstatic.com/cloudssh/images/open-btn.png)](https://console.cloud.google.com/cloudshell/open?git_repo=https://github.com/cncf/apisnoop&tutorial=org/google-cloudshell/README.md)
+
+---
+
 ## Setting it up
 
 To get to our APISnoopQL explorer first clone this repo:
