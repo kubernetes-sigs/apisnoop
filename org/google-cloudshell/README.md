@@ -5,10 +5,22 @@
 ### [1-write-customize_environment.sh](./1-write-customize_environment.sh)
 Initializes the Google Cloudshell container with emacs.
 
-Once launched, run
+1. Once launched, run
 ```bash
-bash org/google-cloudshell/1-write-customize_environment.sh
+./org/google-cloudshell/1-write-customize_environment.sh
 ```
+
+2. Reset the environment
+
+Go to restart in main menu
+[![GCS restart in menu](./1.1-gcs-restart.png)]()
+
+Select to 'Want clean VM state' to reset the environment
+[![GCS restart in menu](./1.2-gcs-reset.png)]()
+
+3. Post run
+
+After you've waited for the environment to be prepared and you've got a shell again, you will now be able to launch `emacs`.
 
 ---
 
