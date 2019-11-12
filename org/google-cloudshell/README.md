@@ -2,25 +2,31 @@
 
 > Setup a working emacs + spacemacs environment in Google Cloudshell
 
-### [1-write-customize_environment.sh](./1-write-customize_environment.sh)
+## [1-write-customize_environment.sh](./1-write-customize_environment.sh)
 Initializes the Google Cloudshell container with emacs.
 
-1. Once launched, run
+### Once launched, run
 ```bash
 ./org/google-cloudshell/1-write-customize_environment.sh
 ```
 
-2. Reset the environment
+### Reset the environment
 
 Go to restart in main menu
+
 [![GCS restart in menu](./1.1-gcs-restart.png)]()
 
-Select to 'Want clean VM state' to reset the environment
+### Select to 'Want clean VM state' to reset the environment
+
 [![GCS restart in menu](./1.2-gcs-reset.png)]()
 
-3. Post run
+### Post run
 
 After you've waited for the environment to be prepared and you've got a shell again, you will now be able to launch `emacs`.
+
+```bash
+inotifywait  -m /google/devshell/ -e create && cd ~/ && emacs apisnoop/org/meta_bot.org
+```
 
 ---
 
