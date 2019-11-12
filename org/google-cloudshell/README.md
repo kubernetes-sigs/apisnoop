@@ -14,11 +14,11 @@ Initializes the Google Cloudshell container with emacs.
 
 Go to restart in main menu
 
-[![GCS restart in menu](./1.1-gcs-restart.png)]()
+[![GCS restart in menu](https://github.com/cncf/apisnoop/raw/master/org/google-cloudshell/1.1-gcs-restart.png)]()
 
 ### Select to 'Want clean VM state' to reset the environment
 
-[![GCS restart in menu](./1.2-gcs-reset.png)]()
+[![GCS restart in menu](https://github.com/cncf/apisnoop/raw/master/org/google-cloudshell/1.2-gcs-reset.png)]()
 
 ### Post run
 
