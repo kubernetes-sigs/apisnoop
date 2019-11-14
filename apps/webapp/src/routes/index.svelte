@@ -3,12 +3,17 @@
     import { gql } from "apollo-boost";
 
     const PROJECTED_CHANGE = gql`
-    query projected_change {
-        projected_change_in_coverage {
-            old_coverage
-            new_coverage
+        query stats {
+            projected_change_in_coverage {
+                new_coverage
+                old_coverage
+            }
+            endpoints_hit_by_new_test{
+                operation_id
+                hit_by_ete
+                hit_by_new_test
+            }
         }
-    }
     `;
     export async function preload() {
     return {
@@ -19,6 +24,9 @@
 
 <script>
  import { query } from 'svelte-apollo';
+ import ProjectedCoverage from '../components/Projected-Coverage.svelte';
+ import EndpointsHitByTest from '../components/Endpoints-Hit-By-Test.svelte';
+
  const projection = query(client, {query: PROJECTED_CHANGE})
 </script>
 
@@ -26,15 +34,12 @@
     <title>APISnoop</title>
 </svelte:head>
 
-<h1>APISnoop!</h1>
-<p>i hope you work</p>
+<h1>Test Writing Helper</h1>
 {#await $projection}
     loading stats...
 {:then results}
-
-    <h2>Projected Change In Coverage</h2>
-    <p>Current # of Endpoints covered by tests: {results.data.projected_change_in_coverage[0].old_coverage}</p>
-    <p># of endpoints covered with yr test merged: {results.data.projected_change_in_coverage[0].new_coverage}</p>
+    <ProjectedCoverage results={results.data.projected_change_in_coverage[0]} />
+    <EndpointsHitByTest results={results.data.endpoints_hit_by_new_test} />
 {/await}
 
 
@@ -46,19 +51,15 @@
  }
 
  h1 {
-     font-size: 2.8em;
+     font-size: 1.8em;
      text-transform: uppercase;
      font-weight: 700;
      margin: 0 0 0.5em 0;
  }
 
- p {
-     margin: 1em auto;
- }
-
  @media (min-width: 480px) {
      h1 {
-         font-size: 4em;
+        font-size: 2em;
      }
  }
 </style>
