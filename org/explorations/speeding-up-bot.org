@@ -2,6 +2,8 @@
 
 * Purpose
   We have a small set of views for our db, but the big money queries take several seconds to complete.  Can we bring it down to milliseconds?
+  
+
 * Process
 ** Check out the indexes for our tables
   
@@ -126,464 +128,399 @@ We need to look into how to get counts faster.
 ** New Endpoint Coverage
    
    First, let's establish a benchmark:
+*** Current Coverage
+    The current view looks as so:
+    #+endpoint_coverage
+    #+BEGIN_SRC sql-mode
+       SELECT DISTINCT
+         bjs.job_timestamp::date as date,
+         ao.bucket as bucket,
+         ao.job as job,
+         ao.operation_id as operation_id,
+         ao.level,
+         ao.category,
+         ao.k8s_group as group,
+         ao.k8s_kind as kind,
+         ao.k8s_version as version,
+         count(*) filter (where ae.useragent like 'e2e.test%') as test_hits,
+         count(*) filter (where ae.useragent like 'e2e.test%' AND useragent like '%[Conformance]%') as conf_hits,
+         count(*) filter (where ae.useragent not like 'e2e.test%') as other_hits,
+         count(ae.useragent) total_hits
+         FROM api_operation_material ao
+                LEFT JOIN audit_event ae ON (ao.operation_id = ae.operation_id AND ao.bucket = ae.bucket AND ao.job = ae.job)
+                LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
+           WHERE ao.deprecated IS False
+         GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
+    #+END_SRC
    
-   The current view looks as so:
-   #+endpoint_coverage
-   #+BEGIN_SRC sql-mode
-      SELECT DISTINCT
-        bjs.job_timestamp::date as date,
-        ao.bucket as bucket,
-        ao.job as job,
-        ao.operation_id as operation_id,
-        ao.level,
-        ao.category,
-        ao.k8s_group as group,
-        ao.k8s_kind as kind,
-        ao.k8s_version as version,
-        count(*) filter (where ae.useragent like 'e2e.test%') as test_hits,
-        count(*) filter (where ae.useragent like 'e2e.test%' AND useragent like '%[Conformance]%') as conf_hits,
-        count(*) filter (where ae.useragent not like 'e2e.test%') as other_hits,
-        count(ae.useragent) total_hits
-        FROM api_operation_material ao
-               LEFT JOIN audit_event ae ON (ao.operation_id = ae.operation_id AND ao.bucket = ae.bucket AND ao.job = ae.job)
-               LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
-          WHERE ao.deprecated IS False
-        GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
-   #+END_SRC
-   
-  Now, we'll create a new view, that does not involve counts.
-
+   Now, we'll create a new view, that does not involve counts.
+*** Improved Coverage
   
-  #+NAME: improved endpoint coverage
-   #+BEGIN_SRC sql-mode
-  CREATE OR REPLACE VIEW improved_coverage AS
-     WITH tested as (
-     SELECT DISTINCT
-     job, operation_id,useragent
-     FROM
-     audit_event ae 
-     WHERE ae.useragent like 'e2e.test%'
-     ), hit as(
-     SELECT DISTINCT
-     job,
-     operation_id
-     FROM audit_event
-     )
-     select distinct
-       ao.bucket,
-       ao.job,
-       ao.operation_id,
-       exists(select 1 from tested c where c.operation_id = ao.operation_id and c.job = ao.job and c.useragent like '%[Conformant]%') as conformance_tested,
-       exists(select 1 from tested t where t.operation_id = ao.operation_id and t.job = ao.job) as tested,
-       exists(select 1 from hit h where  h.operation_id = ao.operation_id and h.job = ao.job) as hit
-       from api_operation_material ao WHERE ao.deprecated IS false
-     ;
-   #+END_SRC
-   
-   #+NAME: ec benchmark
-   #+begin_src sql-mode
-   explain analyze
-   select * from endpoint_coverage;
-   #+end_src
-   
-   #+NAME: zc benchmark
-   #+begin_src sql-mode
-   explain analyze
-   select * from zimproved_coverage;
-   #+end_src
+   #+NAME: improved endpoint coverage
+    #+BEGIN_SRC sql-mode
+     CREATE OR REPLACE VIEW improved_coverage AS
+        WITH tested as (
+        SELECT DISTINCT
+        job, operation_id,useragent
+        FROM
+        audit_event ae 
+        WHERE ae.useragent like 'e2e.test%'
+        ), hit as(
+        SELECT DISTINCT
+        job,
+        operation_id
+        FROM audit_event
+        )
+        select distinct
+           ao.bucket as bucket,
+           ao.job as job,
+           ao.operation_id as operation_id,
+           ao.level,
+           ao.category,
+           ao.k8s_group as group,
+           ao.k8s_kind as kind,
+           ao.k8s_version as version,
+          exists(select 1 from tested c where c.operation_id = ao.operation_id and c.job = ao.job and c.useragent like '%[Conformance]%') as conformance_tested,
+          exists(select 1 from tested t where t.operation_id = ao.operation_id and t.job = ao.job) as tested,
+          exists(select 1 from hit h where  h.operation_id = ao.operation_id and h.job = ao.job) as hit
+          from api_operation_material ao WHERE ao.deprecated IS false;
+    #+END_SRC
 
-
-   #+RESULTS: ec benchmark
-   #+begin_src sql-mode
-                                                                                                                                                                                                                                                             QUERY PLAN                                                                                                                                                                                                                                                          
-   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    Unique  (cost=146808.27..146846.28 rows=1086 width=149) (actual time=3891.641..3892.414 rows=1820 loops=1)
-      ->  Sort  (cost=146808.27..146810.99 rows=1086 width=149) (actual time=3891.640..3891.753 rows=1820 loops=1)
-            Sort Key: ((bjs.job_timestamp)::date), ao.bucket, ao.job, ao.operation_id, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version, (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text))), (count(*) FILTER (WHERE (((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text) AND ((raw.data ->> 'userAgent'::text) ~~ '%[Conformance]%'::text)))), (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) !~~ 'e2e.test%'::text))), (count((raw.data ->> 'userAgent'::text)))
-            Sort Method: quicksort  Memory: 512kB
-            ->  HashAggregate  (cost=146739.94..146753.51 rows=1086 width=149) (actual time=3881.693..3882.201 rows=1820 loops=1)
-                  Group Key: ao.operation_id, ao.bucket, ao.job, (bjs.job_timestamp)::date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version
-                  ->  Hash Left Join  (cost=1167.24..130951.42 rows=287064 width=1195) (actual time=59.809..997.618 rows=711801 loops=1)
-                        Hash Cond: (raw.operation_id = api_operation_parameter_material.param_op)
-                        ->  Hash Right Join  (cost=389.63..118595.92 rows=228274 width=1230) (actual time=57.806..797.346 rows=568369 loops=1)
-                              Hash Cond: ((raw.operation_id = ao.operation_id) AND (raw.bucket = ao.bucket) AND (raw.job = ao.job))
-                              ->  Seq Scan on raw_audit_event raw  (cost=0.00..106932.22 rows=599422 width=1138) (actual time=0.049..352.725 rows=600011 loops=1)
-                              ->  Hash  (cost=357.74..357.74 rows=1822 width=121) (actual time=57.746..57.746 rows=1820 loops=1)
-                                    Buckets: 2048  Batches: 1  Memory Usage: 298kB
-                                    ->  Hash Left Join  (cost=1.05..357.74 rows=1822 width=121) (actual time=54.771..56.928 rows=1820 loops=1)
-                                          Hash Cond: ((ao.bucket = bjs.bucket) AND (ao.job = bjs.job))
-                                          ->  Seq Scan on api_operation_material ao  (cost=0.00..341.54 rows=1822 width=113) (actual time=54.726..55.641 rows=1820 loops=1)
-                                                Filter: (deprecated IS FALSE)
-                                                Rows Removed by Filter: 432
-                                          ->  Hash  (cost=1.02..1.02 rows=2 width=37) (actual time=0.024..0.024 rows=2 loops=1)
-                                                Buckets: 1024  Batches: 1  Memory Usage: 9kB
-                                                ->  Seq Scan on bucket_job_swagger bjs  (cost=0.00..1.02 rows=2 width=37) (actual time=0.016..0.018 rows=2 loops=1)
-                        ->  Hash  (cost=764.44..764.44 rows=1054 width=43) (actual time=1.994..1.994 rows=1054 loops=1)
-                              Buckets: 2048  Batches: 1  Memory Usage: 93kB
-                              ->  Seq Scan on api_operation_parameter_material  (cost=0.00..764.44 rows=1054 width=43) (actual time=0.005..1.763 rows=1054 loops=1)
-                                    Filter: (param_name = 'body'::text)
-                                    Rows Removed by Filter: 5862
-    Planning Time: 1.711 ms
-    JIT:
-      Functions: 46
-      Options: Inlining false, Optimization false, Expressions true, Deforming true
-      Timing: Generation 6.285 ms, Inlining 0.000 ms, Optimization 2.377 ms, Emission 51.693 ms, Total 60.356 ms
-    Execution Time: 3898.939 ms
-   (32 rows)
-
-   #+end_src
-
-   #+RESULTS: zc benchmark
-   #+begin_src sql-mode
-                                                                                                        QUERY PLAN                                                                                                     
-   --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    Unique  (cost=826189.68..826221.56 rows=1822 width=72) (actual time=4233.816..4234.351 rows=1820 loops=1)
-      CTE tested
-        ->  Unique  (cost=107699.14..107737.03 rows=3013 width=75) (actual time=1074.815..1407.693 rows=11860 loops=1)
-              ->  Sort  (cost=107699.14..107708.62 rows=3789 width=75) (actual time=1074.813..1398.610 rows=52358 loops=1)
-                    Sort Key: raw.job, raw.operation_id, ((raw.data ->> 'userAgent'::text))
-                    Sort Method: external merge  Disk: 12728kB
-                    ->  Gather  (cost=1777.61..107473.93 rows=3789 width=75) (actual time=73.065..510.211 rows=52358 loops=1)
-                          Workers Planned: 2
-                          Workers Launched: 2
-                          ->  Hash Left Join  (cost=777.61..106095.03 rows=1579 width=75) (actual time=373.597..630.778 rows=17453 loops=3)
+    #+RESULTS: improved endpoint coverage
+    #+begin_src sql-mode
+    CREATE VIEW
+    #+end_src
+*** original benchmark   
+     #+NAME: ec benchmark
+     #+begin_src sql-mode
+     explain analyze
+     select * from endpoint_coverage;
+     #+end_src
+     
+     #+RESULTS: ec benchmark
+     #+begin_src sql-mode
+                                                                                                                                                                                                                                                               QUERY PLAN                                                                                                                                                                                                                                                          
+     ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+      Unique  (cost=264107.56..268967.97 rows=138869 width=149) (actual time=5441.188..5441.996 rows=1820 loops=1)
+        ->  Sort  (cost=264107.56..264454.73 rows=138869 width=149) (actual time=5441.185..5441.297 rows=1820 loops=1)
+              Sort Key: ((bjs.job_timestamp)::date), ao.bucket, ao.job, ao.operation_id, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version, (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text))), (count(*) FILTER (WHERE (((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text) AND ((raw.data ->> 'userAgent'::text) ~~ '%[Conformance]%'::text)))), (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) !~~ 'e2e.test%'::text))), (count((raw.data ->> 'userAgent'::text)))
+              Sort Method: quicksort  Memory: 512kB
+              ->  GroupAggregate  (cost=232080.98..241801.81 rows=138869 width=149) (actual time=2828.800..5431.226 rows=1820 loops=1)
+                    Group Key: ao.operation_id, ao.bucket, ao.job, ((bjs.job_timestamp)::date), ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version
+                    ->  Sort  (cost=232080.98..232428.15 rows=138869 width=1287) (actual time=2828.625..3344.022 rows=322254 loops=1)
+                          Sort Key: ao.operation_id, ao.bucket, ao.job, ((bjs.job_timestamp)::date), ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version
+                          Sort Method: external merge  Disk: 413400kB
+                          ->  Hash Left Join  (cost=1166.00..64532.23 rows=138869 width=1287) (actual time=54.064..573.843 rows=322254 loops=1)
                                 Hash Cond: (raw.operation_id = api_operation_parameter_material.param_op)
-                                ->  Parallel Seq Scan on raw_audit_event raw  (cost=0.00..105253.77 rows=1255 width=1121) (actual time=371.041..586.355 rows=13810 loops=3)
-                                      Filter: ((data ->> 'userAgent'::text) ~~ 'e2e.test%'::text)
-                                      Rows Removed by Filter: 187365
-                                ->  Hash  (cost=764.44..764.44 rows=1054 width=43) (actual time=2.518..2.519 rows=1054 loops=3)
+                                ->  Hash Left Join  (cost=388.37..58596.40 rows=97781 width=1324) (actual time=51.849..481.171 rows=243789 loops=1)
+                                      Hash Cond: ((ao.bucket = bjs.bucket) AND (ao.job = bjs.job))
+                                      ->  Hash Right Join  (cost=373.37..58068.03 rows=97781 width=1316) (actual time=51.814..392.983 rows=243789 loops=1)
+                                            Hash Cond: ((raw.operation_id = ao.operation_id) AND (raw.bucket = ao.bucket) AND (raw.job = ao.job))
+                                            ->  Seq Scan on raw_audit_event raw  (cost=0.00..52593.74 rows=274874 width=1247) (actual time=0.044..167.179 rows=275429 loops=1)
+                                            ->  Hash  (cost=341.52..341.52 rows=1820 width=113) (actual time=51.751..51.751 rows=1820 loops=1)
+                                                  Buckets: 2048  Batches: 1  Memory Usage: 277kB
+                                                  ->  Seq Scan on api_operation_material ao  (cost=0.00..341.52 rows=1820 width=113) (actual time=49.201..50.928 rows=1820 loops=1)
+                                                        Filter: (deprecated IS FALSE)
+                                                        Rows Removed by Filter: 432
+                                      ->  Hash  (cost=12.00..12.00 rows=200 width=72) (actual time=0.022..0.022 rows=2 loops=1)
+                                            Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                            ->  Seq Scan on bucket_job_swagger bjs  (cost=0.00..12.00 rows=200 width=72) (actual time=0.018..0.018 rows=2 loops=1)
+                                ->  Hash  (cost=764.45..764.45 rows=1054 width=43) (actual time=2.203..2.204 rows=1054 loops=1)
                                       Buckets: 2048  Batches: 1  Memory Usage: 93kB
-                                      ->  Seq Scan on api_operation_parameter_material  (cost=0.00..764.44 rows=1054 width=43) (actual time=0.034..2.293 rows=1054 loops=3)
+                                      ->  Seq Scan on api_operation_parameter_material  (cost=0.00..764.45 rows=1054 width=43) (actual time=0.006..1.958 rows=1054 loops=1)
                                             Filter: (param_name = 'body'::text)
                                             Rows Removed by Filter: 5862
-      ->  Sort  (cost=718452.64..718457.20 rows=1822 width=72) (actual time=4233.815..4233.932 rows=1820 loops=1)
-            Sort Key: ao.bucket, ao.job, ao.operation_id, ((alternatives: SubPlan 2 or hashed SubPlan 3)), ((alternatives: SubPlan 4 or hashed SubPlan 5)), ((alternatives: SubPlan 6 or hashed SubPlan 7))
-            Sort Method: quicksort  Memory: 296kB
-            ->  Seq Scan on api_operation_material ao  (cost=0.00..718353.97 rows=1822 width=72) (actual time=4223.472..4225.222 rows=1820 loops=1)
-                  Filter: (deprecated IS FALSE)
-                  Rows Removed by Filter: 432
-                  SubPlan 2
-                    ->  CTE Scan on tested c  (cost=0.00..82.86 rows=1 width=0) (never executed)
-                          Filter: ((useragent ~~ '%[Conformant]%'::text) AND (operation_id = ao.operation_id) AND (job = ao.job))
-                  SubPlan 3
-                    ->  CTE Scan on tested c_1  (cost=0.00..67.79 rows=1 width=64) (actual time=1418.507..1418.507 rows=0 loops=1)
-                          Filter: (useragent ~~ '%[Conformant]%'::text)
-                          Rows Removed by Filter: 11860
-                  SubPlan 4
-                    ->  CTE Scan on tested t  (cost=0.00..75.33 rows=1 width=0) (never executed)
-                          Filter: ((operation_id = ao.operation_id) AND (job = ao.job))
-                  SubPlan 5
-                    ->  CTE Scan on tested t_1  (cost=0.00..60.26 rows=3013 width=64) (actual time=52.019..54.542 rows=11860 loops=1)
-                  SubPlan 6
-                    ->  Subquery Scan on h  (cost=0.00..111343.27 rows=472 width=0) (never executed)
-                          ->  Unique  (cost=0.00..111338.55 rows=472 width=43) (never executed)
-                                ->  Nested Loop Left Join  (cost=0.00..111338.55 rows=1972 width=43) (never executed)
-                                      Join Filter: (raw_1.operation_id = api_operation_parameter_material_1.param_op)
-                                      ->  Seq Scan on raw_audit_event raw_1  (cost=0.00..110527.24 rows=986 width=43) (never executed)
-                                            Filter: ((operation_id = ao.operation_id) AND (job = ao.job))
-                                      ->  Materialize  (cost=0.00..781.74 rows=2 width=43) (never executed)
-                                            ->  Seq Scan on api_operation_parameter_material api_operation_parameter_material_1  (cost=0.00..781.73 rows=2 width=43) (never executed)
-                                                  Filter: ((param_name = 'body'::text) AND (param_op = ao.operation_id))
-                  SubPlan 7
-                    ->  Subquery Scan on h_1  (cost=140753.83..140765.35 rows=576 width=43) (actual time=673.116..673.251 rows=458 loops=1)
-                          ->  HashAggregate  (cost=140753.83..140759.59 rows=576 width=43) (actual time=673.115..673.204 rows=458 loops=1)
-                                Group Key: raw_2.job, raw_2.operation_id
-                                ->  Hash Left Join  (cost=777.61..136964.34 rows=757899 width=43) (actual time=52.660..495.997 rows=747657 loops=1)
-                                      Hash Cond: (raw_2.operation_id = api_operation_parameter_material_2.param_op)
-                                      ->  Seq Scan on raw_audit_event raw_2  (cost=0.00..107513.83 rows=602683 width=43) (actual time=0.025..278.490 rows=603524 loops=1)
-                                      ->  Hash  (cost=764.44..764.44 rows=1054 width=43) (actual time=52.620..52.620 rows=1054 loops=1)
-                                            Buckets: 2048  Batches: 1  Memory Usage: 93kB
-                                            ->  Seq Scan on api_operation_parameter_material api_operation_parameter_material_2  (cost=0.00..764.44 rows=1054 width=43) (actual time=50.753..52.371 rows=1054 loops=1)
-                                                  Filter: (param_name = 'body'::text)
-                                                  Rows Removed by Filter: 5862
-    Planning Time: 1.950 ms
-    JIT:
-      Functions: 168
-      Options: Inlining true, Optimization true, Expressions true, Deforming true
-      Timing: Generation 20.378 ms, Inlining 171.515 ms, Optimization 1967.013 ms, Emission 1129.386 ms, Total 3288.292 ms
-    Execution Time: 4248.765 ms
-   (65 rows)
+      Planning Time: 1.662 ms
+      JIT:
+        Functions: 44
+        Options: Inlining false, Optimization false, Expressions true, Deforming true
+        Timing: Generation 5.910 ms, Inlining 0.000 ms, Optimization 1.708 ms, Emission 46.819 ms, Total 54.437 ms
+      Execution Time: 5545.713 ms
+     (35 rows)
 
+     #+end_src
+*** improved benchmark 
+     #+NAME: zc benchmark
+     #+begin_src sql-mode
+     explain analyze
+     select * from improved_coverage;
+     #+end_src
+
+
+
+     #+RESULTS: zc benchmark
+     #+begin_src sql-mode
+                                                                                                                                     QUERY PLAN                                                                                                                                 
+     ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+      Unique  (cost=524836.69..524891.29 rows=1820 width=116) (actual time=3703.177..3703.869 rows=1820 loops=1)
+        CTE tested
+          ->  Unique  (cost=54833.78..54853.75 rows=1406 width=84) (actual time=950.132..1283.152 rows=11860 loops=1)
+                ->  Sort  (cost=54833.78..54838.77 rows=1997 width=84) (actual time=950.130..1273.871 rows=52358 loops=1)
+                      Sort Key: raw.job, raw.operation_id, ((raw.data ->> 'userAgent'::text))
+                      Sort Method: external merge  Disk: 12728kB
+                      ->  Hash Left Join  (cost=1777.62..54724.30 rows=1997 width=84) (actual time=56.520..395.540 rows=52358 loops=1)
+                            Hash Cond: (raw.operation_id = api_operation_parameter_material.param_op)
+                            ->  Gather  (cost=1000.00..53872.51 rows=1406 width=1222) (actual time=53.598..264.893 rows=41430 loops=1)
+                                  Workers Planned: 2
+                                  Workers Launched: 2
+                                  ->  Parallel Seq Scan on raw_audit_event raw  (cost=0.00..52731.91 rows=586 width=1222) (actual time=260.438..414.655 rows=13810 loops=3)
+                                        Filter: ((data ->> 'userAgent'::text) ~~ 'e2e.test%'::text)
+                                        Rows Removed by Filter: 80404
+                            ->  Hash  (cost=764.45..764.45 rows=1054 width=43) (actual time=2.884..2.884 rows=1054 loops=1)
+                                  Buckets: 2048  Batches: 1  Memory Usage: 93kB
+                                  ->  Seq Scan on api_operation_parameter_material  (cost=0.00..764.45 rows=1054 width=43) (actual time=0.013..2.662 rows=1054 loops=1)
+                                        Filter: (param_name = 'body'::text)
+                                        Rows Removed by Filter: 5862
+        ->  Sort  (cost=469982.95..469987.50 rows=1820 width=116) (actual time=3703.176..3703.288 rows=1820 loops=1)
+              Sort Key: ao.bucket, ao.job, ao.operation_id, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version, ((alternatives: SubPlan 2 or hashed SubPlan 3)), ((alternatives: SubPlan 4 or hashed SubPlan 5)), ((alternatives: SubPlan 6 or hashed SubPlan 7))
+              Sort Method: quicksort  Memory: 428kB
+              ->  Seq Scan on api_operation_material ao  (cost=0.00..469884.40 rows=1820 width=116) (actual time=3692.514..3694.342 rows=1820 loops=1)
+                    Filter: (deprecated IS FALSE)
+                    Rows Removed by Filter: 432
+                    SubPlan 2
+                      ->  CTE Scan on tested c  (cost=0.00..38.67 rows=1 width=0) (never executed)
+                            Filter: ((useragent ~~ '%[Conformant]%'::text) AND (operation_id = ao.operation_id) AND (job = ao.job))
+                    SubPlan 3
+                      ->  CTE Scan on tested c_1  (cost=0.00..31.63 rows=1 width=64) (actual time=1293.623..1293.623 rows=0 loops=1)
+                            Filter: (useragent ~~ '%[Conformant]%'::text)
+                            Rows Removed by Filter: 11860
+                    SubPlan 4
+                      ->  CTE Scan on tested t  (cost=0.00..35.15 rows=1 width=0) (never executed)
+                            Filter: ((operation_id = ao.operation_id) AND (job = ao.job))
+                    SubPlan 5
+                      ->  CTE Scan on tested t_1  (cost=0.00..28.12 rows=1406 width=64) (actual time=51.555..53.825 rows=11860 loops=1)
+                    SubPlan 6
+                      ->  Subquery Scan on h  (cost=0.00..55989.38 rows=304 width=0) (never executed)
+                            ->  Unique  (cost=0.00..55986.34 rows=304 width=52) (never executed)
+                                  ->  Nested Loop Left Join  (cost=0.00..55986.34 rows=868 width=52) (never executed)
+                                        Join Filter: (raw_1.operation_id = api_operation_parameter_material_1.param_op)
+                                        ->  Seq Scan on raw_audit_event raw_1  (cost=0.00..55191.57 rows=434 width=52) (never executed)
+                                              Filter: ((operation_id = ao.operation_id) AND (job = ao.job))
+                                        ->  Materialize  (cost=0.00..781.75 rows=2 width=43) (never executed)
+                                              ->  Seq Scan on api_operation_parameter_material api_operation_parameter_material_1  (cost=0.00..781.74 rows=2 width=43) (never executed)
+                                                    Filter: ((param_name = 'body'::text) AND (param_op = ao.operation_id))
+                    SubPlan 7
+                      ->  Subquery Scan on h_1  (cost=70390.73..70402.12 rows=570 width=52) (actual time=357.040..357.170 rows=456 loops=1)
+                            ->  HashAggregate  (cost=70390.73..70396.43 rows=570 width=52) (actual time=357.038..357.118 rows=456 loops=1)
+                                  Group Key: raw_2.job, raw_2.operation_id
+                                  ->  Hash Left Join  (cost=777.62..68394.60 rows=399225 width=52) (actual time=53.999..264.836 rows=362546 loops=1)
+                                        Hash Cond: (raw_2.operation_id = api_operation_parameter_material_2.param_op)
+                                        ->  Seq Scan on raw_audit_event raw_2  (cost=0.00..53786.05 rows=281105 width=52) (actual time=0.020..128.978 rows=282642 loops=1)
+                                        ->  Hash  (cost=764.45..764.45 rows=1054 width=43) (actual time=53.964..53.964 rows=1054 loops=1)
+                                              Buckets: 2048  Batches: 1  Memory Usage: 93kB
+                                              ->  Seq Scan on api_operation_parameter_material api_operation_parameter_material_2  (cost=0.00..764.45 rows=1054 width=43) (actual time=52.218..53.717 rows=1054 loops=1)
+                                                    Filter: (param_name = 'body'::text)
+                                                    Rows Removed by Filter: 5862
+      Planning Time: 2.767 ms
+      JIT:
+        Functions: 147
+        Options: Inlining true, Optimization true, Expressions true, Deforming true
+        Timing: Generation 19.005 ms, Inlining 169.994 ms, Optimization 1703.797 ms, Emission 991.601 ms, Total 2884.397 ms
+      Execution Time: 3748.150 ms
+     (65 rows)
+
+     #+end_src
+
+** build endpint report from improved_coverage
+   
+   #+NAME: improved stats
+   #+begin_src sql-mode
+     CREATE OR REPLACE VIEW "public"."improved_endpoint_stats" AS
+     SELECT
+       ec.job,
+       COUNT(1) as total_endpoints,
+       COUNT(1) filter(WHERE tested is true) as test_hits,
+       COUNT(1) filter(WHERE conformance_tested is true) as conformance_hits,
+       ROUND(((count(*) filter(WHERE tested is true)) * 100 )::numeric / count(*), 2) as percent_tested,
+       ROUND(((count(*) filter(WHERE conformance_tested is true)) * 100 )::numeric / count(*), 2) as percent_conf_tested
+       FROM improved_coverage ec
+         WHERE ec.level = 'stable'
+      GROUP BY ec.job;
    #+end_src
 
-** audit_event as materialized view
-   One thing I noticed when going through the planner is that we cannot traverse audit_event using indexes, as it is not materialized.  the raw table has indices, but is a pure data dump.  I wondered how much an improvement would ti be if we used a materialized view for audit events.
-   
-*** Create Materialized View 
-    
-**** 300: Audit Events View
-***** Create
-      #+NAME: view audit_event
-      #+BEGIN_SRC sql-mode
-        CREATE MATERIALIZED VIEW "public"."audit_event_material" AS
-          SELECT (raw.data ->> 'auditID') as audit_id,
-                 raw.bucket,
-                 raw.job,
-                 raw.data ->> 'level' as event_level,
-                 raw.data ->> 'stage' as event_stage,
-                 raw.operation_id,
-                 aop.param_schema,
-                 raw.data ->> 'verb' as event_verb,
-                 raw.data ->> 'apiVersion' as api_version,
-                 raw.data ->> 'requestURI' as request_uri,
-                 raw.data ->> 'userAgent' as useragent,
-                 raw.data -> 'user' as event_user,
-                 raw.data #>> '{objectRef,namespace}' as object_namespace,
-                 raw.data #>> '{objectRef,resource}' as object_type,
-                 raw.data #>> '{objectRef,apiGroup}' as object_group,
-                 raw.data #>> '{objectRef,apiVersion}' as object_ver,
-                 raw.data -> 'sourceIPs' as source_ips,
-                 raw.data -> 'annotations' as annotations,
-                 raw.data -> 'requestObject' as request_object,
-                 raw.data -> 'responseObject' as response_object,
-                 raw.data -> 'responseStatus' as response_status,
-                 raw.data ->> 'stageTimestamp' as stage_timestamp,
-                 raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
-                 raw.data as data
-            FROM raw_audit_event raw
-                   LEFT JOIN (
-                     select param_op, param_schema
-                       from api_operation_parameter_material
-                      WHERE param_name = 'body'
-                   ) aop
-                       ON (raw.operation_id = aop.param_op);
-      #+END_SRC
-
-      #+RESULTS: view audit_event
-      #+begin_src sql-mode
-      SELECT 761871
-      #+end_src
-
-*** Create coverage that is based on this view
-  #+NAME: new and improved endpoint coverage
-   #+BEGIN_SRC sql-mode
-  CREATE OR REPLACE VIEW new_and_improved_coverage AS
-     WITH tested as (
-     SELECT DISTINCT
-     job, operation_id,useragent
-     FROM
-     audit_event_material ae 
-     WHERE ae.useragent like 'e2e.test%'
-     ), hit as(
-     SELECT DISTINCT
-     job,
-     operation_id
-     FROM audit_event_material
-     )
-     select distinct
-       ao.bucket,
-       ao.job,
-       ao.operation_id,
-       exists(select 1 from tested c where c.operation_id = ao.operation_id and c.job = ao.job and c.useragent like '%[Conformant]%') as conformance_tested,
-       exists(select 1 from tested t where t.operation_id = ao.operation_id and t.job = ao.job) as tested,
-       exists(select 1 from hit h where  h.operation_id = ao.operation_id and h.job = ao.job) as hit
-       from api_operation_material ao WHERE ao.deprecated IS false
-     ;
-   #+END_SRC
-
-   #+RESULTS: new and improved endpoint coverage
+   #+RESULTS: improved stats
    #+begin_src sql-mode
    CREATE VIEW
    #+end_src
+   
+   If you run the two of these now, the improved_endpoint_stats is markedly faster.
+   
+   #+begin_src sql-mode
+   explain analyze
+     select * from improved_endpoint_stats;
+   #+end_src
 
-*** Compare coverage views
-    
-    #+NAME: improved coverage benchmark
-    #+begin_src sql-mode
-      explain analyze 
-        select * from improved_coverage;
-    #+end_src
+   #+RESULTS:
+   #+begin_src sql-mode
+                                                                                                                                       QUERY PLAN                                                                                                                                     
+   -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    GroupAggregate  (cost=277711.54..277737.55 rows=200 width=100) (actual time=1633.808..1633.901 rows=2 loops=1)
+      Group Key: ec.job
+      ->  Sort  (cost=277711.54..277713.65 rows=845 width=14) (actual time=1633.692..1633.743 rows=860 loops=1)
+            Sort Key: ec.job
+            Sort Method: quicksort  Memory: 78kB
+            ->  Subquery Scan on ec  (cost=277638.77..277670.46 rows=845 width=14) (actual time=1633.020..1633.519 rows=860 loops=1)
+                  ->  Unique  (cost=277638.77..277662.01 rows=845 width=116) (actual time=1633.017..1633.337 rows=860 loops=1)
+                        CTE tested
+                          ->  Unique  (cost=56216.21..56236.69 rows=1442 width=84) (actual time=824.833..1158.996 rows=11860 loops=1)
+                                ->  Sort  (cost=56216.21..56221.33 rows=2048 width=84) (actual time=824.830..1149.053 rows=52358 loops=1)
+                                      Sort Key: raw.job, raw.operation_id, ((raw.data ->> 'userAgent'::text))
+                                      Sort Method: external merge  Disk: 12728kB
+                                      ->  Hash Left Join  (cost=1777.62..56103.57 rows=2048 width=84) (actual time=5.797..265.414 rows=52358 loops=1)
+                                            Hash Cond: (raw.operation_id = api_operation_parameter_material.param_op)
+                                            ->  Gather  (cost=1000.00..55249.88 rows=1442 width=1222) (actual time=3.912..131.500 rows=41430 loops=1)
+                                                  Workers Planned: 2
+                                                  Workers Launched: 2
+                                                  ->  Parallel Seq Scan on raw_audit_event raw  (cost=0.00..54105.68 rows=601 width=1222) (actual time=13.257..181.118 rows=13810 loops=3)
+                                                        Filter: ((data ->> 'userAgent'::text) ~~ 'e2e.test%'::text)
+                                                        Rows Removed by Filter: 83228
+                                            ->  Hash  (cost=764.45..764.45 rows=1054 width=43) (actual time=1.847..1.847 rows=1054 loops=1)
+                                                  Buckets: 2048  Batches: 1  Memory Usage: 93kB
+                                                  ->  Seq Scan on api_operation_parameter_material  (cost=0.00..764.45 rows=1054 width=43) (actual time=0.007..1.632 rows=1054 loops=1)
+                                                        Filter: (param_name = 'body'::text)
+                                                        Rows Removed by Filter: 5862
+                        ->  Sort  (cost=221402.08..221404.19 rows=845 width=116) (actual time=1633.016..1633.071 rows=860 loops=1)
+                              Sort Key: ao.bucket, ao.job, ao.operation_id, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version, ((alternatives: SubPlan 2 or hashed SubPlan 3)), ((alternatives: SubPlan 4 or hashed SubPlan 5)), ((alternatives: SubPlan 6 or hashed SubPlan 7))
+                              Sort Method: quicksort  Memory: 189kB
+                              ->  Seq Scan on api_operation_material ao  (cost=0.00..221361.00 rows=845 width=116) (actual time=1627.833..1629.362 rows=860 loops=1)
+                                    Filter: ((deprecated IS FALSE) AND (level = 'stable'::text))
+                                    Rows Removed by Filter: 1392
+                                    SubPlan 2
+                                      ->  CTE Scan on tested c  (cost=0.00..39.66 rows=1 width=0) (never executed)
+                                            Filter: ((useragent ~~ '%[Conformance]%'::text) AND (operation_id = ao.operation_id) AND (job = ao.job))
+                                    SubPlan 3
+                                      ->  CTE Scan on tested c_1  (cost=0.00..32.45 rows=1 width=64) (actual time=824.854..1170.062 rows=3244 loops=1)
+                                            Filter: (useragent ~~ '%[Conformance]%'::text)
+                                            Rows Removed by Filter: 8616
+                                    SubPlan 4
+                                      ->  CTE Scan on tested t  (cost=0.00..36.05 rows=1 width=0) (never executed)
+                                            Filter: ((operation_id = ao.operation_id) AND (job = ao.job))
+                                    SubPlan 5
+                                      ->  CTE Scan on tested t_1  (cost=0.00..28.84 rows=1442 width=64) (actual time=4.043..6.729 rows=11860 loops=1)
+                                    SubPlan 6
+                                      ->  Subquery Scan on h  (cost=0.00..57427.60 rows=309 width=0) (never executed)
+                                            ->  Unique  (cost=0.00..57424.51 rows=309 width=52) (never executed)
+                                                  ->  Nested Loop Left Join  (cost=0.00..57424.51 rows=890 width=52) (never executed)
+                                                        Join Filter: (raw_1.operation_id = api_operation_parameter_material_1.param_op)
+                                                        ->  Seq Scan on raw_audit_event raw_1  (cost=0.00..56629.42 rows=445 width=52) (never executed)
+                                                              Filter: ((operation_id = ao.operation_id) AND (job = ao.job))
+                                                        ->  Materialize  (cost=0.00..781.75 rows=2 width=43) (never executed)
+                                                              ->  Seq Scan on api_operation_parameter_material api_operation_parameter_material_1  (cost=0.00..781.74 rows=2 width=43) (never executed)
+                                                                    Filter: ((param_name = 'body'::text) AND (param_op = ao.operation_id))
+                                    SubPlan 7
+                                      ->  Subquery Scan on h_1  (cost=72204.26..72215.66 rows=570 width=52) (actual time=337.788..337.916 rows=456 loops=1)
+                                            ->  HashAggregate  (cost=72204.26..72209.96 rows=570 width=52) (actual time=337.786..337.868 rows=456 loops=1)
+                                                  Group Key: raw_2.job, raw_2.operation_id
+                                                  ->  Hash Left Join  (cost=777.62..70156.13 rows=409625 width=52) (actual time=5.486..236.796 rows=372723 loops=1)
+                                                        Hash Cond: (raw_2.operation_id = api_operation_parameter_material_2.param_op)
+                                                        ->  Seq Scan on raw_audit_event raw_2  (cost=0.00..55187.28 rows=288428 width=52) (actual time=0.016..133.236 rows=291115 loops=1)
+                                                        ->  Hash  (cost=764.45..764.45 rows=1054 width=43) (actual time=5.459..5.459 rows=1054 loops=1)
+                                                              Buckets: 2048  Batches: 1  Memory Usage: 93kB
+                                                              ->  Seq Scan on api_operation_parameter_material api_operation_parameter_material_2  (cost=0.00..764.45 rows=1054 width=43) (actual time=3.644..5.238 rows=1054 loops=1)
+                                                                    Filter: (param_name = 'body'::text)
+                                                                    Rows Removed by Filter: 5862
+    Planning Time: 1.864 ms
+    JIT:
+      Functions: 154
+      Options: Inlining false, Optimization false, Expressions true, Deforming true
+      Timing: Generation 20.021 ms, Inlining 0.000 ms, Optimization 7.319 ms, Emission 144.131 ms, Total 171.471 ms
+    Execution Time: 1650.471 ms
+   (71 rows)
 
-    #+RESULTS: improved coverage benchmark
-    #+begin_src sql-mode
-                                                                                                         QUERY PLAN                                                                                                     
-    --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-     Unique  (cost=840414.59..840446.48 rows=1822 width=72) (actual time=4252.465..4252.990 rows=1820 loops=1)
-       CTE tested
-         ->  Unique  (cost=110006.42..110045.14 rows=3079 width=75) (actual time=1086.327..1419.272 rows=11860 loops=1)
-               ->  Sort  (cost=110006.42..110016.10 rows=3872 width=75) (actual time=1086.322..1410.227 rows=52358 loops=1)
-                     Sort Key: raw.job, raw.operation_id, ((raw.data ->> 'userAgent'::text))
-                     Sort Method: external merge  Disk: 12728kB
-                     ->  Gather  (cost=1777.61..109775.67 rows=3872 width=75) (actual time=83.594..524.383 rows=52358 loops=1)
-                           Workers Planned: 2
-                           Workers Launched: 2
-                           ->  Hash Left Join  (cost=777.61..108388.47 rows=1613 width=75) (actual time=375.652..646.026 rows=17453 loops=3)
-                                 Hash Cond: (raw.operation_id = api_operation_parameter_material.param_op)
-                                 ->  Parallel Seq Scan on raw_audit_event raw  (cost=0.00..107545.79 rows=1283 width=1121) (actual time=373.031..601.283 rows=13810 loops=3)
-                                       Filter: ((data ->> 'userAgent'::text) ~~ 'e2e.test%'::text)
-                                       Rows Removed by Filter: 192088
-                                 ->  Hash  (cost=764.44..764.44 rows=1054 width=43) (actual time=2.588..2.589 rows=1054 loops=3)
-                                       Buckets: 2048  Batches: 1  Memory Usage: 93kB
-                                       ->  Seq Scan on api_operation_parameter_material  (cost=0.00..764.44 rows=1054 width=43) (actual time=0.031..2.365 rows=1054 loops=3)
-                                             Filter: (param_name = 'body'::text)
-                                             Rows Removed by Filter: 5862
-       ->  Sort  (cost=730369.45..730374.01 rows=1822 width=72) (actual time=4252.465..4252.577 rows=1820 loops=1)
-             Sort Key: ao.bucket, ao.job, ao.operation_id, ((alternatives: SubPlan 2 or hashed SubPlan 3)), ((alternatives: SubPlan 4 or hashed SubPlan 5)), ((alternatives: SubPlan 6 or hashed SubPlan 7))
-             Sort Method: quicksort  Memory: 296kB
-             ->  Seq Scan on api_operation_material ao  (cost=0.00..730270.78 rows=1822 width=72) (actual time=4242.081..4243.878 rows=1820 loops=1)
-                   Filter: (deprecated IS FALSE)
-                   Rows Removed by Filter: 432
-                   SubPlan 2
-                     ->  CTE Scan on tested c  (cost=0.00..84.67 rows=1 width=0) (never executed)
-                           Filter: ((useragent ~~ '%[Conformant]%'::text) AND (operation_id = ao.operation_id) AND (job = ao.job))
-                   SubPlan 3
-                     ->  CTE Scan on tested c_1  (cost=0.00..69.28 rows=1 width=64) (actual time=1430.308..1430.308 rows=0 loops=1)
-                           Filter: (useragent ~~ '%[Conformant]%'::text)
-                           Rows Removed by Filter: 11860
-                   SubPlan 4
-                     ->  CTE Scan on tested t  (cost=0.00..76.98 rows=1 width=0) (never executed)
-                           Filter: ((operation_id = ao.operation_id) AND (job = ao.job))
-                   SubPlan 5
-                     ->  CTE Scan on tested t_1  (cost=0.00..61.58 rows=3079 width=64) (actual time=51.147..53.650 rows=11860 loops=1)
-                   SubPlan 6
-                     ->  Subquery Scan on h  (cost=0.00..113750.80 rows=476 width=0) (never executed)
-                           ->  Unique  (cost=0.00..113746.04 rows=476 width=43) (never executed)
-                                 ->  Nested Loop Left Join  (cost=0.00..113746.04 rows=2014 width=43) (never executed)
-                                       Join Filter: (raw_1.operation_id = api_operation_parameter_material_1.param_op)
-                                       ->  Seq Scan on raw_audit_event raw_1  (cost=0.00..112934.10 rows=1007 width=43) (never executed)
-                                             Filter: ((operation_id = ao.operation_id) AND (job = ao.job))
-                                       ->  Materialize  (cost=0.00..781.74 rows=2 width=43) (never executed)
-                                             ->  Seq Scan on api_operation_parameter_material api_operation_parameter_material_1  (cost=0.00..781.73 rows=2 width=43) (never executed)
-                                                   Filter: ((param_name = 'body'::text) AND (param_op = ao.operation_id))
-                   SubPlan 7
-                     ->  Subquery Scan on h_1  (cost=143801.97..143813.49 rows=576 width=43) (actual time=692.029..692.156 rows=458 loops=1)
-                           ->  HashAggregate  (cost=143801.97..143807.73 rows=576 width=43) (actual time=692.027..692.109 rows=458 loops=1)
-                                 Group Key: raw_2.job, raw_2.operation_id
-                                 ->  Hash Left Join  (cost=777.61..139929.96 rows=774403 width=43) (actual time=52.721..510.804 rows=764668 loops=1)
-                                       Hash Cond: (raw_2.operation_id = api_operation_parameter_material_2.param_op)
-                                       ->  Seq Scan on raw_audit_event raw_2  (cost=0.00..109855.07 rows=615807 width=43) (actual time=0.048..286.098 rows=617695 loops=1)
-                                       ->  Hash  (cost=764.44..764.44 rows=1054 width=43) (actual time=52.622..52.622 rows=1054 loops=1)
-                                             Buckets: 2048  Batches: 1  Memory Usage: 93kB
-                                             ->  Seq Scan on api_operation_parameter_material api_operation_parameter_material_2  (cost=0.00..764.44 rows=1054 width=43) (actual time=50.656..52.394 rows=1054 loops=1)
-                                                   Filter: (param_name = 'body'::text)
-                                                   Rows Removed by Filter: 5862
-     Planning Time: 1.889 ms
-     JIT:
-       Functions: 168
-       Options: Inlining true, Optimization true, Expressions true, Deforming true
-       Timing: Generation 20.133 ms, Inlining 170.555 ms, Optimization 1952.104 ms, Emission 1128.472 ms, Total 3271.264 ms
-     Execution Time: 4267.267 ms
-    (65 rows)
+   #+end_src
+   
+   #+begin_src sql-mode
+explain analyze
+     select * from stable_endpoint_stats;
+   #+end_src
 
-    #+end_src
+   #+RESULTS:
+   #+begin_src sql-mode
+                                                                                                                                                                                                                                                           QUERY PLAN                                                                                                                                                                                                                                                        
+   --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    HashAggregate  (cost=165594.83..165831.75 rows=6769 width=104) (actual time=4614.643..4614.674 rows=2 loops=1)
+      Group Key: ((bjs.job_timestamp)::date), ao.job
+      ->  Unique  (cost=160518.23..162718.09 rows=67688 width=149) (actual time=4613.949..4614.280 rows=860 loops=1)
+            ->  Sort  (cost=160518.23..160687.45 rows=67688 width=149) (actual time=4613.948..4614.001 rows=860 loops=1)
+                  Sort Key: ((bjs.job_timestamp)::date), ao.bucket, ao.job, ao.operation_id, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version, (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text))), (count(*) FILTER (WHERE (((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text) AND ((raw.data ->> 'userAgent'::text) ~~ '%[Conformance]%'::text)))), (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) !~~ 'e2e.test%'::text))), (count((raw.data ->> 'userAgent'::text)))
+                  Sort Method: quicksort  Memory: 234kB
+                  ->  GroupAggregate  (cost=145256.76..149994.92 rows=67688 width=149) (actual time=2230.134..4609.822 rows=860 loops=1)
+                        Group Key: ao.operation_id, ao.bucket, ao.job, ((bjs.job_timestamp)::date), ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version
+                        ->  Sort  (cost=145256.76..145425.98 rows=67688 width=1287) (actual time=2230.101..2613.861 rows=273196 loops=1)
+                              Sort Key: ao.operation_id, ao.bucket, ao.job, ((bjs.job_timestamp)::date), ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version
+                              Sort Method: external merge  Disk: 346160kB
+                              ->  Hash Left Join  (cost=1154.56..63938.94 rows=67688 width=1287) (actual time=56.610..515.897 rows=273196 loops=1)
+                                    Hash Cond: (raw.operation_id = api_operation_parameter_material.param_op)
+                                    ->  Hash Left Join  (cost=376.94..60647.08 rows=47661 width=1324) (actual time=54.773..436.282 rows=202093 loops=1)
+                                          Hash Cond: ((ao.bucket = bjs.bucket) AND (ao.job = bjs.job))
+                                          ->  Hash Right Join  (cost=361.94..60381.85 rows=47661 width=1316) (actual time=54.752..363.887 rows=202093 loops=1)
+                                                Hash Cond: ((raw.operation_id = ao.operation_id) AND (raw.bucket = ao.bucket) AND (raw.job = ao.job))
+                                                ->  Seq Scan on raw_audit_event raw  (cost=0.00..55214.72 rows=288572 width=1247) (actual time=0.038..145.090 rows=291279 loops=1)
+                                                ->  Hash  (cost=347.15..347.15 rows=845 width=113) (actual time=54.703..54.703 rows=860 loops=1)
+                                                      Buckets: 1024  Batches: 1  Memory Usage: 123kB
+                                                      ->  Seq Scan on api_operation_material ao  (cost=0.00..347.15 rows=845 width=113) (actual time=53.354..54.365 rows=860 loops=1)
+                                                            Filter: ((deprecated IS FALSE) AND (level = 'stable'::text))
+                                                            Rows Removed by Filter: 1392
+                                          ->  Hash  (cost=12.00..12.00 rows=200 width=72) (actual time=0.009..0.009 rows=2 loops=1)
+                                                Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                                ->  Seq Scan on bucket_job_swagger bjs  (cost=0.00..12.00 rows=200 width=72) (actual time=0.005..0.006 rows=2 loops=1)
+                                    ->  Hash  (cost=764.45..764.45 rows=1054 width=43) (actual time=1.829..1.829 rows=1054 loops=1)
+                                          Buckets: 2048  Batches: 1  Memory Usage: 93kB
+                                          ->  Seq Scan on api_operation_parameter_material  (cost=0.00..764.45 rows=1054 width=43) (actual time=0.005..1.614 rows=1054 loops=1)
+                                                Filter: (param_name = 'body'::text)
+                                                Rows Removed by Filter: 5862
+    Planning Time: 1.752 ms
+    JIT:
+      Functions: 51
+      Options: Inlining false, Optimization false, Expressions true, Deforming true
+      Timing: Generation 7.539 ms, Inlining 0.000 ms, Optimization 2.113 ms, Emission 50.515 ms, Total 60.167 ms
+    Execution Time: 4667.276 ms
+   (37 rows)
 
-    #+NAME: new and improved coverage benchmark
-    #+begin_src sql-mode
-      explain analyze
-     select * from new_and_improved_coverage;
-    #+end_src
+   #+end_src
+   
+   I think we have a winner!
 
-    #+RESULTS: new and improved coverage benchmark
-    #+begin_src sql-mode
-                                                                                                   QUERY PLAN                                                                                                
-    ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-     Unique  (cost=4573945.03..4573976.91 rows=1822 width=72) (actual time=3866.361..3866.865 rows=1820 loops=1)
-       CTE tested
-         ->  Unique  (cost=197005.13..197528.25 rows=38769 width=145) (actual time=1059.953..1391.884 rows=11860 loops=1)
-               ->  Sort  (cost=197005.13..197135.91 rows=52312 width=145) (actual time=1059.951..1383.094 rows=52358 loops=1)
-                     Sort Key: ae.job, ae.operation_id, ae.useragent
-                     Sort Method: external merge  Disk: 12728kB
-                     ->  Seq Scan on audit_event_material ae  (cost=0.00..188971.21 rows=52312 width=145) (actual time=82.178..507.263 rows=52358 loops=1)
-                           Filter: (useragent ~~ 'e2e.test%'::text)
-                           Rows Removed by Filter: 709513
-       ->  Sort  (cost=4376416.78..4376421.33 rows=1822 width=72) (actual time=3866.360..3866.472 rows=1820 loops=1)
-             Sort Key: ao.bucket, ao.job, ao.operation_id, ((alternatives: SubPlan 2 or hashed SubPlan 3)), ((alternatives: SubPlan 4 or hashed SubPlan 5)), ((alternatives: SubPlan 6 or hashed SubPlan 7))
-             Sort Method: quicksort  Memory: 296kB
-             ->  Seq Scan on api_operation_material ao  (cost=0.00..4376318.11 rows=1822 width=72) (actual time=3855.933..3857.808 rows=1820 loops=1)
-                   Filter: (deprecated IS FALSE)
-                   Rows Removed by Filter: 432
-                   SubPlan 2
-                     ->  CTE Scan on tested c  (cost=0.00..1066.15 rows=1 width=0) (never executed)
-                           Filter: ((useragent ~~ '%[Conformant]%'::text) AND (operation_id = ao.operation_id) AND (job = ao.job))
-                   SubPlan 3
-                     ->  CTE Scan on tested c_1  (cost=0.00..872.30 rows=4 width=64) (actual time=1401.916..1401.916 rows=0 loops=1)
-                           Filter: (useragent ~~ '%[Conformant]%'::text)
-                           Rows Removed by Filter: 11860
-                   SubPlan 4
-                     ->  CTE Scan on tested t  (cost=0.00..969.23 rows=1 width=0) (never executed)
-                           Filter: ((operation_id = ao.operation_id) AND (job = ao.job))
-                   SubPlan 5
-                     ->  CTE Scan on tested t_1  (cost=0.00..775.38 rows=38769 width=64) (actual time=51.223..53.575 rows=11860 loops=1)
-                   SubPlan 6
-                     ->  Subquery Scan on h  (cost=0.00..190879.26 rows=521 width=0) (never executed)
-                           ->  Unique  (cost=0.00..190874.05 rows=521 width=43) (never executed)
-                                 ->  Seq Scan on audit_event_material  (cost=0.00..190874.05 rows=1210 width=43) (never executed)
-                                       Filter: ((operation_id = ao.operation_id) AND (job = ao.job))
-                   SubPlan 7
-                     ->  Subquery Scan on h_1  (cost=190874.05..190886.09 rows=602 width=43) (actual time=706.840..706.975 rows=458 loops=1)
-                           ->  HashAggregate  (cost=190874.05..190880.07 rows=602 width=43) (actual time=706.838..706.927 rows=458 loops=1)
-                                 Group Key: audit_event_material_1.job, audit_event_material_1.operation_id
-                                 ->  Seq Scan on audit_event_material audit_event_material_1  (cost=0.00..187068.37 rows=761137 width=43) (actual time=0.038..424.445 rows=761871 loops=1)
-     Planning Time: 0.598 ms
-     JIT:
-       Functions: 76
-       Options: Inlining true, Optimization true, Expressions true, Deforming true
-       Timing: Generation 10.347 ms, Inlining 22.976 ms, Optimization 1153.464 ms, Emission 664.325 ms, Total 1851.112 ms
-     Execution Time: 3878.369 ms
-    (43 rows)
+* Footnotes
+  #+begin_src sql-mode
+    \dt+
+  #+end_src
 
-    #+end_src
-    
-    #+NAME: endpoint coverage benchmark
-    #+begin_src sql-mode
-      explain analyze
-     select * from endpoint_coverage;
+  #+RESULTS:
+  #+begin_src sql-mode
+                             List of relations
+   Schema |        Name        | Type  |  Owner   |  Size   | Description 
+  --------+--------------------+-------+----------+---------+-------------
+   public | bucket_job_swagger | table | apisnoop | 3600 kB | 
+   public | raw_audit_event    | table | apisnoop | 411 MB  | 
+  (2 rows)
+
+  #+end_src
+
+  #+begin_src sql-mode
+\dt+
+  #+end_src
+
+  #+RESULTS:
+  #+begin_src sql-mode
+                             List of relations
+   Schema |        Name        | Type  |  Owner   |  Size   | Description 
+  --------+--------------------+-------+----------+---------+-------------
+   public | bucket_job_swagger | table | apisnoop | 3600 kB | 
+   public | raw_audit_event    | table | apisnoop | 419 MB  | 
+  (2 rows)
+
+  #+end_src
   
-    #+end_src
+  #+begin_src sql-mode
+  select distinct count(*) from endpoint_coverage where level = 'stable' and category = 'core' and other_hits > 0 and test_hits = 0 and job != 'live';
+  #+end_src
 
-    #+RESULTS: endpoint coverage benchmark
-    #+begin_src sql-mode
-                                                                                                                                                                                                                                                              QUERY PLAN                                                                                                                                                                                                                                                          
-    ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-     Unique  (cost=151010.82..151048.83 rows=1086 width=149) (actual time=3948.767..3949.553 rows=1820 loops=1)
-       ->  Sort  (cost=151010.82..151013.54 rows=1086 width=149) (actual time=3948.766..3948.881 rows=1820 loops=1)
-             Sort Key: ((bjs.job_timestamp)::date), ao.bucket, ao.job, ao.operation_id, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version, (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text))), (count(*) FILTER (WHERE (((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text) AND ((raw.data ->> 'userAgent'::text) ~~ '%[Conformance]%'::text)))), (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) !~~ 'e2e.test%'::text))), (count((raw.data ->> 'userAgent'::text)))
-             Sort Method: quicksort  Memory: 512kB
-             ->  HashAggregate  (cost=150942.49..150956.06 rows=1086 width=149) (actual time=3938.638..3939.159 rows=1820 loops=1)
-                   Group Key: ao.operation_id, ao.bucket, ao.job, (bjs.job_timestamp)::date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version
-                   ->  Hash Left Join  (cost=1167.24..134698.18 rows=295351 width=1195) (actual time=59.625..1025.349 rows=734228 loops=1)
-                         Hash Cond: (raw.operation_id = api_operation_parameter_material.param_op)
-                         ->  Hash Right Join  (cost=389.63..122008.44 rows=234864 width=1230) (actual time=57.548..816.746 rows=587056 loops=1)
-                               Hash Cond: ((raw.operation_id = ao.operation_id) AND (raw.bucket = ao.bucket) AND (raw.job = ao.job))
-                               ->  Seq Scan on raw_audit_event raw  (cost=0.00..110019.27 rows=616727 width=1138) (actual time=0.035..358.459 rows=618698 loops=1)
-                               ->  Hash  (cost=357.74..357.74 rows=1822 width=121) (actual time=57.502..57.502 rows=1820 loops=1)
-                                     Buckets: 2048  Batches: 1  Memory Usage: 298kB
-                                     ->  Hash Left Join  (cost=1.05..357.74 rows=1822 width=121) (actual time=54.511..56.702 rows=1820 loops=1)
-                                           Hash Cond: ((ao.bucket = bjs.bucket) AND (ao.job = bjs.job))
-                                           ->  Seq Scan on api_operation_material ao  (cost=0.00..341.54 rows=1822 width=113) (actual time=54.450..55.404 rows=1820 loops=1)
-                                                 Filter: (deprecated IS FALSE)
-                                                 Rows Removed by Filter: 432
-                                           ->  Hash  (cost=1.02..1.02 rows=2 width=37) (actual time=0.024..0.024 rows=2 loops=1)
-                                                 Buckets: 1024  Batches: 1  Memory Usage: 9kB
-                                                 ->  Seq Scan on bucket_job_swagger bjs  (cost=0.00..1.02 rows=2 width=37) (actual time=0.016..0.018 rows=2 loops=1)
-                         ->  Hash  (cost=764.44..764.44 rows=1054 width=43) (actual time=2.068..2.068 rows=1054 loops=1)
-                               Buckets: 2048  Batches: 1  Memory Usage: 93kB
-                               ->  Seq Scan on api_operation_parameter_material  (cost=0.00..764.44 rows=1054 width=43) (actual time=0.006..1.835 rows=1054 loops=1)
-                                     Filter: (param_name = 'body'::text)
-                                     Rows Removed by Filter: 5862
-     Planning Time: 1.803 ms
-     JIT:
-       Functions: 46
-       Options: Inlining false, Optimization false, Expressions true, Deforming true
-       Timing: Generation 7.016 ms, Inlining 0.000 ms, Optimization 2.412 ms, Emission 51.312 ms, Total 60.741 ms
-     Execution Time: 3956.941 ms
-    (32 rows)
+  #+RESULTS:
+  #+begin_src sql-mode
+   count 
+  -------
+      45
+  (1 row)
 
-    #+end_src
-    
-
-    #+begin_src sql-mode
-    select * from stable_endpoint_stats;
-    #+end_src
-
-    #+RESULTS:
-    #+begin_src sql-mode
-             job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
-    ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
-     1188637253832806405 | 2019-10-28 |             430 |       167 |       114 |          38.84 |               26.51
-     live                | 2019-10-28 |             430 |         0 |         0 |           0.00 |                0.00
-    (2 rows)
-
-    #+end_src
-** 
-
+  #+end_src
