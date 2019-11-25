@@ -934,6 +934,80 @@ Using our api_operation_material view, look into the parameters field in each on
          ;
 
    #+end_src
+* 600: Test Writing Views
+** 610: Endpoints Hit by New Test
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/610_view_endpoints_hit_by_new_test.up.sql
+   :END:
+  #+NAME: endpoints hit by new test
+  #+begin_src sql-mode
+    CREATE VIEW "public"."endpoints_hit_by_new_test" AS
+      WITH live_testing_endpoints AS (
+        SELECT DISTINCT
+          operation_id,
+          count(1) as hits
+          FROM
+              audit_event
+         WHERE useragent = 'live-test-writing'
+         GROUP BY operation_id
+      ), baseline AS  (
+        SELECT DISTINCT
+          operation_id,
+          test_hits,
+          conf_hits
+          FROM endpoint_coverage
+         WHERE bucket != 'apisnoop'
+      )
+      SELECT DISTINCT
+        lte.operation_id,
+        b.test_hits as hit_by_ete,
+        lte.hits as hit_by_new_test
+        FROM live_testing_endpoints lte
+               JOIN baseline b ON (b.operation_id = lte.operation_id);
+  #+end_src
+** 620:Projected Change in Coverage
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/620_view_projected_change_in_coverage.up.sql
+   :END:
+   #+NAME: PROJECTED Change in Coverage
+   #+BEGIN_SRC sql-mode :results replace 
+     CREATE OR REPLACE VIEW "public"."projected_change_in_coverage" AS
+      WITH baseline AS (
+        SELECT *
+          FROM
+              stable_endpoint_stats
+         WHERE job != 'live'
+      ), test AS (
+        SELECT
+          COUNT(1) AS endpoints_hit
+          FROM
+              (
+                SELECT
+                  operation_id
+          FROM audit_event
+           WHERE useragent = 'live-test-writing'
+          EXCEPT
+          SELECT
+            operation_id
+          FROM
+              endpoint_coverage
+              WHERE test_hits > 0
+                    ) tested_endpoints
+      ), coverage AS (
+        SELECT
+        baseline.test_hits AS old_coverage,
+        (baseline.test_hits::int + test.endpoints_hit::int) AS new_coverage
+        FROM baseline, test
+      )
+      SELECT
+        'test_coverage' AS category,
+        baseline.total_endpoints,
+        coverage.old_coverage,
+        coverage.new_coverage,
+        (coverage.new_coverage - coverage.old_coverage) AS change_in_number
+        FROM baseline, coverage
+               ;
+   #+END_SRC
 * 900: Tracking
 ** 999: Tracking Tables
    :PROPERTIES:
@@ -987,6 +1061,22 @@ Using our api_operation_material view, look into the parameters field in each on
    args:
      schema: public
      name: change_in_tests 
+ #+END_SRC
+*** endpoints_hit_by_new_test
+ #+NAME: track endpoints_hit_by_new_test
+ #+BEGIN_SRC yaml 
+ - type: track_table
+   args:
+     schema: public
+     name: endpoints_hit_by_new_test
+ #+END_SRC
+*** projected_change_in_coverage
+ #+NAME: track projected_change_in_coverage 
+ #+BEGIN_SRC yaml 
+ - type: track_table
+   args:
+     schema: public
+     name: projected_change_in_coverage 
  #+END_SRC
 ** 910: Populate Swaggers Up
   :PROPERTIES:
