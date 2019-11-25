@@ -3,9 +3,7 @@
   import { setClient } from 'svelte-apollo';
   import Stats from './components/stats.svelte';
 
-	export let name;
-
-  const client = new ApolloClient({ uri: 'http://127.0.0.1:4040/v1/graphql' });
+  const client = new ApolloClient({ uri: 'http://147.75.84.193:8080/v1/graphql' });
   setClient(client);
 </script>
 
