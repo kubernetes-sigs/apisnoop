@@ -64,6 +64,7 @@
    try:
        from urllib.request import urlopen, urlretrieve
        from string import Template
+       import os
        import json
 
        def get_json(url):
@@ -71,12 +72,20 @@
            data = json.loads(body)
            return data
 
-       success_message = "It workd good job!!!" if envbucket is None else envbucket
        gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
-       bucket = 'ci-kubernetes-e2e-gci-gce' if envbucket is None else envbucket
+
+       #establish bucket we'll draw test results from.
+       baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
+       bucket =  baseline_bucket if custom_bucket is None else custom_bucket
+
+       #grab the latest successful test run for our chosen bucket.
        testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
        latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
-       job = latest_success if envjob is None else envjob
+
+       #establish job 
+       baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
+       job = baseline_job if custom_job is None else custom_job
+
        metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
        metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
        commit_hash = metadata["version"].split("+")[1]
@@ -145,7 +154,7 @@
                metadata['metadata']['master_os_image'],
                json.dumps(swagger)
            ])
-       return success_message
+       return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
    except Exception as err:
        return Template("something went wrong, likely this: ${error}").substitute(error = err)
  #+END_SRC
@@ -155,8 +164,8 @@
      set role dba;
      DROP FUNCTION IF EXISTS load_swagger;
      CREATE OR REPLACE FUNCTION load_swagger(
-       envbucket text default current_setting('custom.bucket', true),
-       envjob text default null,
+       custom_bucket text default null,
+       custom_job text default null,
        live boolean default false)
      RETURNS text AS $$
      <<load_swagger.py>>
@@ -169,16 +178,47 @@
    #+end_src
    
    #+begin_src sql-mode
-     select * from load_swagger();
+     select * from load_swagger('ci-kubernetes-e2e-gce-cos-k8sbeta-default');
+     -- select * from load_swagger();
    #+end_src
 
    #+RESULTS:
    #+begin_src sql-mode
-        load_swagger     
-   ----------------------
-    It workd good job!!!
+                                                    load_swagger                                                  
+   ---------------------------------------------------------------------------------------------------------------
+    Success!  Added the swagger for job 1201559454126968833 from bucket ci-kubernetes-e2e-gce-cos-k8sbeta-default
    (1 row)
+
+   #+end_src
+   
+   #+begin_src sql-mode
+   select bucket, job from bucket_job_swagger;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src sql-mode
+                     bucket                   |         job         
+   -------------------------------------------+---------------------
+    ci-kubernetes-e2e-gci-gce                 | 1201590752648368129
+    ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1201559454126968833
+   (2 rows)
 
    #+end_src
 
 ** Use pg.options vars as bucket, job argument in load swaggers
+   
+   Along with integrating the job fetching, we altered the arguments being passed to the function with ~current_setting('custom.bucket', true)~.  
+   Current Setting lets you view all the settings of the db ([[https://www.postgresql.org/docs/current/functions-admin.html][see documentation]]).  We can also pass along some settings when the server first starts using PGOPTIONS(see [[https://dba.stackexchange.com/questions/52235/how-can-i-use-an-environment-variable-in-a-postgres-function][this stackexchange]]).  So the plan is to set a ~custom.bucket~ and ~custom.job~ using pgoptions as part of the docker-compose. 
+
+In the function, then, we declare a bucket and job variable.  Bucket is set to default master unless custom_bucket is set and job is set to latest success of the declared bucket unless custom_job is set.
+
+So now we create a new docker build with a special environment variable for bucket.  If it works, we'll have loaded a swagger from the latest success of an alternate bucket.
+
+
+I think we want something like
+#+begin_example
+  - name: PGOPTIONS
+  value: "-c custom.bucket=ci-kubernetes-e2e-gce-cos-k8sbeta-default"
+#+end_example
+
+however, if we add this to our raiinbow.yaml, postgres will start but will not do any migrations.  i think there is an error being caused that is a bit hard to see in the logs.
