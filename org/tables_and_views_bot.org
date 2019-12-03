@@ -48,18 +48,18 @@
    CREATE INDEX idx_swagger_jsonb_path_ops ON bucket_job_swagger
      USING GIN (swagger jsonb_path_ops);
  #+END_SRC
-** 101: Function to Load bucket_job_swagger via curl
+** 101: Function to Load Swagger 
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/105_function_load_bucket_job_swagger_via_curl.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/101_function_load_swagger.up.sql
   :END:
   
-   #+NAME: load_bucket_job_swagger_via_curl.sql
+   #+NAME: load_swagger.sql
    #+BEGIN_SRC sql-mode :noweb yes :results silent
      set role dba;
      DROP FUNCTION IF EXISTS load_swagger;
      CREATE OR REPLACE FUNCTION load_swagger(
-       bucket text default null,
-       job text default null,
+       custom_bucket text default null,
+       custom_job text default null,
        live boolean default false)
      RETURNS text AS $$
      <<load_swagger.py>>
@@ -959,6 +959,32 @@ Using our api_operation_material view, look into the parameters field in each on
 
    #+end_src
 * 600: Test Writing Views
+** 600: Untested Stable Core Endpoints
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/600_view_untested_stable_core_endpoints.up.sql
+   :END:
+   
+#+NAME: untested endpoints
+#+begin_src sql-mode
+  CREATE OR REPLACE VIEW "public"."untested_stable_core_endpoints" AS
+    SELECT
+      ec.*,
+      ao.description,
+      ao.http_method,
+      ao.k8s_action,
+      ao.path
+      FROM endpoint_coverage ec
+             JOIN
+             api_operation_material ao ON (ec.bucket = ao.bucket AND ec.job = ao.job AND ec.operation_id = ao.operation_id)
+     WHERE ec.level = 'stable'
+       AND ec.category = 'core'
+       AND test_hits = 0
+       AND ao.deprecated IS false
+       AND ec.job != 'live'
+     ORDER BY other_hits desc
+              ;
+#+end_src
+
 ** 610: Endpoints Hit by New Test
    :PROPERTIES:
    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/610_view_endpoints_hit_by_new_test.up.sql
@@ -969,11 +995,11 @@ Using our api_operation_material view, look into the parameters field in each on
       WITH live_testing_endpoints AS (
         SELECT DISTINCT
           operation_id,
-          count(1) as hits
+          useragent,
+          count(*) as hits
           FROM
               audit_event
-         WHERE useragent = 'live-test-writing'
-         GROUP BY operation_id
+         GROUP BY operation_id, useragent
       ), baseline AS  (
         SELECT DISTINCT
           operation_id,
@@ -983,12 +1009,14 @@ Using our api_operation_material view, look into the parameters field in each on
          WHERE bucket != 'apisnoop'
       )
       SELECT DISTINCT
+        lte.useragent,
         lte.operation_id,
         b.test_hits as hit_by_ete,
         lte.hits as hit_by_new_test
         FROM live_testing_endpoints lte
                JOIN baseline b ON (b.operation_id = lte.operation_id);
   #+end_src
+
 ** 620:Projected Change in Coverage
    :PROPERTIES:
    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/620_view_projected_change_in_coverage.up.sql
@@ -1009,7 +1037,7 @@ Using our api_operation_material view, look into the parameters field in each on
                 SELECT
                   operation_id
           FROM audit_event
-           WHERE useragent = 'live-test-writing'
+           WHERE useragent like 'live-test%'
           EXCEPT
           SELECT
             operation_id
@@ -1032,6 +1060,7 @@ Using our api_operation_material view, look into the parameters field in each on
         FROM baseline, coverage
                ;
    #+END_SRC
+   
 * 900: Tracking and Population
 ** 910: Populate Swaggers Up
   :PROPERTIES:
@@ -1104,6 +1133,14 @@ Using our api_operation_material view, look into the parameters field in each on
    args:
      schema: public
      name: change_in_tests 
+ #+END_SRC
+*** untested_stable_core_endpoints
+ #+NAME: track untested_stable_core_endpoints
+ #+BEGIN_SRC yaml 
+ - type: track_table
+   args:
+     schema: public
+     name: untested_stable_core_endpoints
  #+END_SRC
 *** endpoints_hit_by_new_test
  #+NAME: track endpoints_hit_by_new_test

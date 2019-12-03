@@ -8,11 +8,11 @@ CREATE VIEW "public"."endpoints_hit_by_new_test" AS
   WITH live_testing_endpoints AS (
     SELECT DISTINCT
       operation_id,
-      count(1) as hits
+      useragent,
+      count(*) as hits
       FROM
           audit_event
-     WHERE useragent = 'live-test-writing'
-     GROUP BY operation_id
+     GROUP BY operation_id, useragent
   ), baseline AS  (
     SELECT DISTINCT
       operation_id,
@@ -22,6 +22,7 @@ CREATE VIEW "public"."endpoints_hit_by_new_test" AS
      WHERE bucket != 'apisnoop'
   )
   SELECT DISTINCT
+    lte.useragent,
     lte.operation_id,
     b.test_hits as hit_by_ete,
     lte.hits as hit_by_new_test

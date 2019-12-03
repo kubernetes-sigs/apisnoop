@@ -2,7 +2,9 @@
 -- #+NAME: load_audit_events.sql
 
 set role dba;
-CREATE OR REPLACE FUNCTION load_audit_events(bucket text, job text)
+CREATE OR REPLACE FUNCTION load_audit_events(
+custom_bucket text default null, 
+custom_job text default null)
 RETURNS text AS $$
 #!/usr/bin/env python3
 from urllib.request import urlopen, urlretrieve
@@ -161,6 +163,10 @@ def find_operation_id(openapi_spec, event):
   else:
     openapi_spec['hit_cache'][url.path][method]=op_id
   return op_id
+def get_json(url):
+    body = urlopen(url).read()
+    data = json.loads(body)
+    return data
 
 def get_html(url):
     html = urlopen(url).read()
@@ -179,6 +185,20 @@ def download_url_to_path(url, local_path):
 # this global dict is used to track our wget subprocesses
 # wget was used because the files can get to several halfa gig
 downloads = {}
+
+#establish bucket we'll draw test results from.
+gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
+baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
+bucket =  baseline_bucket if custom_bucket is None else custom_bucket
+
+#grab the latest successful test run for our chosen bucket.
+testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
+latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
+
+#establish job 
+baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
+job = baseline_job if custom_job is None else custom_job
+
 def load_audit_events(bucket,job):
     bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
     artifacts_url = 'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/' + bucket + '/' +  job + '/' + 'artifacts'

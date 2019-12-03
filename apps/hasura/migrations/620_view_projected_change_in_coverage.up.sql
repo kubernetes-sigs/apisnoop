@@ -18,7 +18,7 @@ CREATE OR REPLACE VIEW "public"."projected_change_in_coverage" AS
            SELECT
              operation_id
      FROM audit_event
-      WHERE useragent = 'live-test-writing'
+      WHERE useragent like 'live-test%'
      EXCEPT
      SELECT
        operation_id
