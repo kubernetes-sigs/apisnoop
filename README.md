@@ -31,6 +31,13 @@ psql
 
 Or visit http://localhost:9000
 
+You can explore the data using a graphql interface, by port-forwarding hasura:
+```shell
+HASURA_POD=$(kubectl get pod --selector=io.apisnoop.graphql=hasura -o name | sed s:pod/::)
+HASURA_PORT=$(kubectl get pod $HASURA_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+kubectl port-forward $HASURA_POD --address 0.0.0.0 8080:$HASURA_PORT
+```
+
 ## Loading audit event logs
 
 Find the logs of interest at https://k8s-testgrid.appspot.com and note the bucket and job.
