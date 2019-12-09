@@ -1,69 +1,57 @@
 # apisnoop_v3
 
-An apisnoop built for querying from multiple angles using a shared language.
+An apisnoop built for querying your cluster from multiple angles using a shared language.  
 
 ## Setting it up
 
-To get to our APISnoopQL explorer first clone this repo:
+APISnoop is intended to be run in a kubernetes cluster with auditing enabled.
+
+We've included an example config that would setup an APISnoop compatible cluster.
+
 
 ```shell
-git clone https://github.com:cncf/apisnoop
-cd apisnoop
-git checkout v3_rainbow
+curl https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml -o kind-cluster-config.yaml
+kind create cluster --name kind-$USER --config kind-cluster-config.yaml
 ```
 
-Then within the app folder:
+Once up, apply APISnoop using our provided yaml 
 
 ```shell
-cd apps
-. .loadenv
-docker-compose up
+kubectl apply -f "https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/raiinbow.yaml"
 ```
 
-In some other windows start a couple psql clients connecting to the postgres exposed on port 54321:
+APISnoop is built around a set of postgres tables and views, with dta you can explore through queries.
 
+If you want to explore the data using a graphql interface, you can port-forward our hasura frontend:
 ```shell
-cd app
-. .loadenv
-psql
-```
-
-
-Or visit http://localhost:9000
-
-You can explore the data using a graphql interface, by port-forwarding hasura:
-```shell
+export GOOGLE_APPLICATION_CREDENTIALS=$PATH_TO_YOUR_CREDENTIALS
 HASURA_POD=$(kubectl get pod --selector=io.apisnoop.graphql=hasura -o name | sed s:pod/::)
 HASURA_PORT=$(kubectl get pod $HASURA_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
 kubectl port-forward $HASURA_POD --address 0.0.0.0 8080:$HASURA_PORT
 ```
+If you want to explore using direct sql queries, you can port-forward our postgres instance and query using psql:
+```shell
+export GOOGLE_APPLICATION_CREDENTIALS=$PATH_TO_YOUR_CREDENTIALS
+export K8S_NAMESPACE="kube-system"
+kubectl config set-context $(kubectl config current-context) --namespace=$K8S_NAMESPACE 2>&1 > /dev/null
+POSTGRES_POD=$(kubectl get pod --selector=io.apisnoop.db=postgres -o name | sed s:pod/::)
+POSTGRES_PORT=$(kubectl get pod $POSTGRES_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+kubectl port-forward $POSTGRES_POD $(id -u)1:$POSTGRES_PORT
+```
 
 ## Loading audit event logs
+Apisnoop operates with a notion of a 'baseline' set of audit events and coverage information, and 'live' audit events triggered by the commands and functions you run against the cluster.  As you write and query tests, you'll be able to see how your work compares against this baseline.
 
-Find the logs of interest at https://k8s-testgrid.appspot.com and note the bucket and job.
+By default, the baseline comes from the latest successful test run from `ci-kubernetes-e2e-gci-gce`.  However, you can configure a different bucket and/or job as needed.  These are set as env variables in the postgres portion of our provided deployment yaml.  
 
-In the first sql (web or psql) run the following which may take ~60 seconds:
-
-```sql
-select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234');
+```yaml
+env:
+# - name: APISNOOP_BASELINE_BUCKET
+#   value: ci-kubernetes-e2e-gce-cos-k8sbeta-default
+# - name: APISNOOP_BASELINE_JOB
+#   value: 1141312231231223
 ```
-
-When events are loaded, the logs do not record the operation_id.
-It is only found by matching each request to the openapi via a regexp and takes some time.
-Run this sql (via web or psql) which may take 10-25 minutes:
-
-```sql
-select * from audit_event_op_update();
-```
-
-We often see audit logs with 30-60k entries. If you want to track the amount of entries that have yet to be updated run the following in psql:
-
-```sql
-select COUNT(*) from audit_event where operation_id is null;  \watch 10
-```
-
-We also ship a pgadmin running at http://localhost:9001
-Username is `apisnoop@cncf.io` password is what's been set in `apps/.env`
+Simply uncomment and configure this portion in [the raiinbow.yaml](deployment/k8s/raiinbow.yaml).  Then, when building a cluster, apply apisnoop from this local file.
 
 ## Walk-thru for Test Writing
 
