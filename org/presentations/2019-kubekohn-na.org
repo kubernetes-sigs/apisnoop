@@ -1,0 +1,474 @@
+#+TITLE: Test Writing: 
+#+AUTHOR: Hippie Hacker
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+#+ARCHIVE: archive/setup.archive.org::
+* TODO [90%] Cluster Setup
+  :PROPERTIES:
+  :LOGGING:  nil
+  :END:
+  (NOTE: to reduce git noise, when you mark cluster setup as done, run this command to reset the below todo's)
+  #+NAME: Reset Todo's
+  #+begin_src elisp :results silent
+    (org-map-entries (lambda ()
+                       (when
+                           (string=
+                            (nth 2 (org-heading-components)) "DONE")
+                         (org-todo "TODO"))) nil 'tree)
+                         #+end_src
+
+  You'll be using your Right Eye for a decent portion of this setup,
+  so make sure it is up.  
+  You can do =spc spc normal-mode= if you need to grab the ssh address again.
+
+** DONE Check your user is correct and we are attached to right eye. 
+   /bonus: this also ensures code blocks are working!/
+   
+ #+begin_src tmate :results silent
+   echo "You are connected, $USER hhii joy ines pauline Kevin Jayaram Amy"
+ #+end_src
+ 
+** DONE Create a K8s cluster using KIND
+  NOTE: You can build from source or use KIND's upstream images: 
+  https://hub.docker.com/r/kindest/node/tags
+
+  #+BEGIN_SRC tmate :eval never
+    # Uncomment the next line if you want to clean up a previously created cluster.
+    kind delete cluster --name=kind-$USER 
+    curl https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml -o kind-cluster-config.yaml
+    kind create cluster --name kind-$USER --config kind-cluster-config.yaml
+  #+END_SRC
+** DONE Set your KUBECONFIG to point to a new cluster
+  
+ #+BEGIN_SRC shell :results silent
+ # Because we use multiple shells for org-mode, we need this cluster to be the
+ # default everywhere for this user.
+ cp -R ~/.kube/ $HOME/.kube-$(date +'%Y-%m-%d-%H.%M.%S')
+ cp "$(kind get kubeconfig-path --name="kind-$USER")" ~/.kube/config
+ #+END_SRC
+** DONE Grab cluster info, to ensure it is up.
+
+  #+BEGIN_SRC shell :results silent
+  kubectl cluster-info
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_EXAMPLE
+  Kubernetes master is running at https://127.0.0.1:37537
+  KubeDNS is running at https://127.0.0.1:37537/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+  To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+  #+end_EXAMPLE
+
+  In the results block above you should see something like:
+
+  : Kubernetes master is running at https://127.0.0.1:40067
+  : KubeDNS is running at https://127.0.0.1:40067/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+  : To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+** DONE Apply apisnoop
+  #+begin_src shell
+    kubectl apply -f https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/raiinbow.yaml --namespace=kube-system
+  #+end_src
+
+  #+RESULTS:
+  #+begin_EXAMPLE
+  service/hasura unchanged
+  service/postgres unchanged
+  deployment.extensions/hasura unchanged
+  deployment.extensions/postgres unchanged
+  deployment.apps/apisnoop-auditlogger unchanged
+  service/apisnoop-auditlogger unchanged
+  auditsink.auditregistration.k8s.io/auditlogger unchanged
+  #+end_EXAMPLE
+  
+** DONE Verify Pods Running
+  !ATTENTION!: Wait for all pods to have a "Running" status before proceeding
+  past this step.
+  
+  #+begin_src shell
+  kubectl get pods --namespace=kube-system
+  #+end_src
+
+  #+RESULTS:
+  #+begin_EXAMPLE
+  NAME                                            READY   STATUS    RESTARTS   AGE
+  apisnoop-auditlogger-5b8bd798b6-q2d82           1/1     Running   0          9m52s
+  coredns-5c98db65d4-82rs6                        1/1     Running   0          21m
+  coredns-5c98db65d4-wg8hk                        1/1     Running   0          21m
+  etcd-kind-hh-control-plane                      1/1     Running   0          20m
+  hasura-7757bf78dd-4b9gn                         1/1     Running   0          9m52s
+  kindnet-xpbck                                   1/1     Running   0          21m
+  kube-apiserver-kind-hh-control-plane            1/1     Running   0          20m
+  kube-controller-manager-kind-hh-control-plane   1/1     Running   0          20m
+  kube-proxy-sfjvj                                1/1     Running   0          21m
+  kube-scheduler-kind-hh-control-plane            1/1     Running   0          20m
+  postgres-5b4cc49b45-2zpw8                       1/1     Running   0          9m52s
+  #+end_EXAMPLE
+** DONE Setup Port-Forwarding from us to sharing to the cluster
+
+ We'll setup port-forwarding for postgres, to let us easily send queries from within our org file.
+ You can check the status of the port-forward in your right eye.
+  #+BEGIN_SRC tmate :session foo:postgres
+    export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.gcreds.json
+    export K8S_NAMESPACE="kube-system"
+    kubectl config set-context $(kubectl config current-context) --namespace=$K8S_NAMESPACE 2>&1 > /dev/null
+    POSTGRES_POD=$(kubectl get pod --selector=io.apisnoop.db=postgres -o name | sed s:pod/::)
+    POSTGRES_PORT=$(kubectl get pod $POSTGRES_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+    kubectl port-forward $POSTGRES_POD $(id -u)1:$POSTGRES_PORT
+  #+END_SRC
+  
+  Then we'll setup a port-forward for hasura, so our web app can query it directly.
+  #+BEGIN_SRC tmate :session foo:hasura
+    HASURA_POD=$(kubectl get pod --selector=io.apisnoop.graphql=hasura -o name | sed s:pod/::)
+    HASURA_PORT=$(kubectl get pod $HASURA_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+    kubectl port-forward $HASURA_POD --address 0.0.0.0 8080:$HASURA_PORT
+  #+END_SRC
+** DONE Connect Org to our apisnoop db
+  #+NAME: ReConnect org to postgres
+  #+BEGIN_SRC emacs-lisp :results silent
+    (if (get-buffer "*SQL: postgres:data*")
+        (with-current-buffer "*SQL: postgres:data*"
+          (kill-buffer)))
+    (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+  #+END_SRC
+** DONE Check it all worked
+
+  Once the postgres pod has been up for at least three minutes, you can check if it all works.  Running this query should return numbers > 0 for each hits column.  
+
+  If you get an error about ~relation stable_endpoint_stats not found~, the postgres pod, while running, hasn't fully popluated the data.  Give it a minute and try again.
+  
+  If you get a table returned, but it contains 0's, the swagger.json likely did not load.  You can manually populate it, following the instructions in the footnotes
+
+  #+begin_src sql-mode
+  select * from stable_endpoint_stats where job != 'live'; 
+  #+end_src
+
+  #+RESULTS:
+  #+begin_src sql-mode
+           job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+  ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+   1188637253832806405 | 2019-10-28 |             430 |       167 |       114 |          38.84 |               26.51
+  (1 row)
+
+  #+end_src
+
+** TODO Stand up, Stretch, and get a glass of water
+   You did it! By hydration and pauses are important.  Take some you time, and drink a full glass of water!
+* Identify a Feature Using APISnoop
+  
+You can run sql blocks directly in this org-mode to help isolate good endpoints to write a test for.
+
+For an arbitrary example, here is a list of 50 untested, stable/core endpoints ordered by how often they are hit by useragents during the e2e test run.
+
+#+NAME: untested endpoints
+#+begin_src sql-mode
+    SELECT
+      operation_id, other_hits
+      FROM endpoint_coverage
+     WHERE level = 'stable'
+       AND category = 'core'
+         AND test_hits = 0
+         AND job != 'live'
+         ORDER BY other_hits desc
+     LIMIT 50
+  ;
+
+#+end_src
+
+#+RESULTS: untested endpoints
+#+begin_src sql-mode
+                     operation_id                      | other_hits 
+-------------------------------------------------------+------------
+ replaceCoreV1NamespaceFinalize                        |       3416
+ connectCoreV1PostNamespacedPodExec                    |       2780
+ listCoreV1NamespacedService                           |       2660
+ deleteCoreV1CollectionNamespacedServiceAccount        |       2598
+ deleteCoreV1CollectionNamespacedLimitRange            |       2598
+ deleteCoreV1CollectionNamespacedPod                   |       2598
+ deleteCoreV1CollectionNamespacedReplicationController |       2598
+ deleteCoreV1CollectionNamespacedSecret                |       2598
+ deleteCoreV1CollectionNamespacedConfigMap             |       2598
+ deleteCoreV1CollectionNamespacedResourceQuota         |       2598
+ deleteCoreV1CollectionNamespacedPersistentVolumeClaim |       2598
+ deleteCoreV1CollectionNamespacedPodTemplate           |       2596
+ deleteCoreV1CollectionNamespacedEndpoints             |       2596
+ replaceCoreV1NamespacedEndpoints                      |       2228
+ createCoreV1NamespacedPodBinding                      |       2228
+ replaceCoreV1NamespaceStatus                          |       2132
+ replaceCoreV1PersistentVolumeStatus                   |       1414
+ patchCoreV1NodeStatus                                 |       1236
+ replaceCoreV1PersistentVolume                         |        906
+ replaceCoreV1NamespacedReplicationControllerStatus    |        578
+ replaceCoreV1NamespacedPersistentVolumeClaimStatus    |        516
+ listCoreV1PersistentVolumeClaimForAllNamespaces       |        359
+ replaceCoreV1NamespacedPodStatus                      |        152
+ replaceCoreV1NamespacedResourceQuotaStatus            |        150
+ listCoreV1ServiceForAllNamespaces                     |        109
+ patchCoreV1NamespacedPersistentVolumeClaimStatus      |         78
+ createCoreV1NamespacedServiceAccountToken             |         50
+ listCoreV1EndpointsForAllNamespaces                   |         38
+ patchCoreV1NamespacedReplicationController            |         32
+ patchCoreV1PersistentVolume                           |         28
+ createCoreV1Node                                      |         18
+ listCoreV1LimitRangeForAllNamespaces                  |         14
+ connectCoreV1PostNamespacedPodPortforward             |         14
+ listCoreV1ReplicationControllerForAllNamespaces       |         12
+ connectCoreV1PostNamespacedPodAttach                  |         12
+ listCoreV1ServiceAccountForAllNamespaces              |         10
+ listCoreV1SecretForAllNamespaces                      |         10
+ listCoreV1ResourceQuotaForAllNamespaces               |         10
+ patchCoreV1NamespacedServiceStatus                    |          8
+ listCoreV1PodTemplateForAllNamespaces                 |          5
+ listCoreV1ConfigMapForAllNamespaces                   |          5
+ readCoreV1ComponentStatus                             |          4
+ patchCoreV1NamespacedReplicationControllerScale       |          4
+ listCoreV1ComponentStatus                             |          3
+ patchCoreV1NamespacedService                          |          2
+ connectCoreV1PatchNamespacedServiceProxyWithPath      |          0
+ connectCoreV1PatchNamespacedServiceProxy              |          0
+ connectCoreV1GetNodeProxyWithPath                     |          0
+ connectCoreV1PatchNamespacedPodProxyWithPath          |          0
+ connectCoreV1PatchNamespacedPodProxy                  |          0
+(50 rows)
+
+#+end_src
+
+
+You can iterate over a query until you have a set of endpoints you'd like to write a test for.
+
+* Use API Reference to Lightly Document the Feature
+ -  [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+
+* Write Your Test
+  NOTE: This is where the test code goes. It is useful to seperate it into 
+  blocks which can be evaluted independently.
+
+  NOTE: =, ,= or =C-c C-c= while between ~go~ *BEGIN_SRC* and *END_SRC* will
+  execute the code and place the results below. (Requires ob-go) 
+  
+  IMPORTANT: when writing your function, you will want to make sure you set the config.UserAgent to 'live-test-writing'.  This will ensure your test is picked up properly when verifying with apisnoop below.
+  
+** Example Test
+
+#+begin_src shell
+  go get -v -u k8s.io/apimachinery/pkg/apis/meta/v1
+  go get -v -u k8s.io/client-go/kubernetes
+  go get -v -u k8s.io/client-go/tools/clientcmd
+#+end_src
+
+#+RESULTS:
+#+begin_EXAMPLE
+#+end_EXAMPLE
+
+#+begin_src go  :imports '("fmt" "flag" "os" "k8s.io/apimachinery/pkg/apis/meta/v1" "k8s.io/client-go/kubernetes" "k8s.io/client-go/tools/clientcmd")
+  // uses the current context in kubeconfig
+    kubeconfig := flag.String("kubeconfig",
+      fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"),
+      "(optional) absolute path to the kubeconfig file")
+    flag.Parse()
+    config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+    if err != nil {
+      fmt.Println(err)
+    }
+  // make our work easier to find in the audit_event queries
+  config.UserAgent = "live-test-writing"
+  // creates the clientset
+  clientset, _ := kubernetes.NewForConfig(config)
+  // access the API to list pods
+  pods, _ := clientset.CoreV1().Pods("").List(v1.ListOptions{})
+  fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
+#+end_src
+
+#+RESULTS:
+: There are 11 pods in the cluster
+
+
+* Verify with APISnoop
+  TODO: Add process for verifying that your test hits the endpoint you're targeting
+  
+  #+NAME: endpoints hit by new test
+  #+begin_src sql-mode
+    CREATE VIEW "public"."endpoints_hit_by_new_test" AS
+     WITH live_testing_endpoints AS (
+       SELECT DISTINCT
+         operation_id,
+         count(1) as hits
+         FROM
+             audit_event
+        WHERE bucket = 'apisnoop'
+          AND useragent = 'live-test-writing'
+          GROUP BY operation_id
+       ), baseline AS  (
+       SELECT DISTINCT
+         operation_id,
+         test_hits,
+         conf_hits
+           FROM endpoint_coverage where bucket != 'apisnoop' 
+       )
+     SELECT DISTINCT
+       lte.operation_id,
+       b.test_hits as hit_by_ete,
+       lte.hits as hit_by_new_test
+         FROM live_testing_endpoints lte
+                JOIN baseline b ON (b.operation_id = lte.operation_id);
+  #+end_src
+
+** Projected change in coverage VIEW
+   #+NAME: PROJECTED Change in Coverage
+   #+BEGIN_SRC sql-mode :results replace 
+     CREATE OR REPLACE VIEW "public"."projected_change_in_coverage" AS
+      with baseline as (
+        SELECT *
+          FROM
+              stable_endpoint_stats
+         WHERE job != 'live'
+      ), test as (
+        SELECT
+          count(1) as endpoints_hit
+          FROM
+              (
+                select
+                  operation_id
+          FROM audit_event
+           WHERE useragent = 'live-test-writing'
+          EXCEPT 
+          SELECT
+            operation_id
+          FROM
+              endpoint_coverage
+              WHERE test_hits > 0
+                    ) tested_endpoints
+      ), coverage as (
+        SELECT
+        baseline.test_hits as old_coverage,
+        (baseline.test_hits::int + test.endpoints_hit::int ) as new_coverage
+        from baseline, test
+      )
+      select
+        'test_coverage' as category,
+        baseline.total_endpoints,
+        coverage.old_coverage,
+        coverage.new_coverage,
+        (coverage.new_coverage - coverage.old_coverage) as change_in_number
+        from baseline, coverage
+               ;
+   #+END_SRC
+
+** Current Conformance Coverage
+  #+NAME: Conformance Coverage
+  #+begin_src sql-mode
+  select * from stable_endpoint_stats where job != 'live'; 
+  #+end_src
+
+  #+RESULTS: Conformance Coverage
+  #+begin_src sql-mode
+           job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+  ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+   1188637253832806405 | 2019-10-28 |             430 |       167 |       114 |          38.84 |               26.51
+  (1 row)
+
+  #+end_src
+
+** Operations hit by example block
+   #+NAME: operations hit by example block
+   #+begin_src sql-mode
+   select * from endpoints_hit_by_new_test;
+   #+end_src
+
+   #+RESULTS: operations hit by example block
+   #+begin_src sql-mode
+            operation_id          | hit_by_ete | hit_by_new_test 
+   -------------------------------+------------+-----------------
+    listCoreV1PodForAllNamespaces |         32 |               3
+   (1 row)
+
+   #+end_src
+
+** Projected Increase / Decrease in Coverage
+   #+NAME: Projected Increase / Decrease in Coverage (TERMINATOR BOT)  
+   #+begin_src sql-mode
+   select * from projected_change_in_coverage;
+   #+end_src
+
+   #+RESULTS: Projected Increase / Decrease in Coverage (TERMINATOR BOT)
+   #+begin_src sql-mode
+      category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+   ---------------+-----------------+--------------+--------------+------------------
+    test_coverage |             430 |          167 |          167 |                0
+   (1 row)
+
+   #+end_src
+
+   
+* Open Tasks
+  Set any open tasks here, using org-todo
+** DONE Live Your Best Life 
+* Footnotes
+** Load Logs to Help Debug Cluster
+#:PROPERTIES:
+#:header-args:tmate+: :prologue (concat "cd " (file-name-directory buffer-file-name) "../../apisnoop/apps\n. .loadenv\n")
+#:END:
+*** hasura logs
+
+#+BEGIN_SRC tmate :session foo:hasura_logs
+HASURA_POD=$(\
+kubectl get pod --selector=io.apisnoop.graphql=hasura -o name \
+| sed s:pod/::)
+kubectl logs $HASURA_POD -f
+#+END_SRC
+
+*** postgres logs
+
+#+BEGIN_SRC tmate :session foo:postgres_logs
+POSTGRES_POD=$(\
+kubectl get pod --selector=io.apisnoop.db=postgres -o name \
+| sed s:pod/::)
+kubectl logs $POSTGRES_POD -f
+#+END_SRC
+
+** Manually load swagger or audit events
+  If you ran through the full setup, but were getting 0's in the stable_endpint_stats, it means the table migrations were successful, but no data was loaded.
+
+  You can verify data loaded with the below query.  ~bucket_job_swagger~ should have a size around 3600kb and raw_audit_event should have a size around 412mb.  
+  
+  #+NAME: Verify Data Loaded
+  #+begin_src sql-mode
+\dt+
+  #+end_src
+
+  #+RESULTS:
+  #+begin_src sql-mode
+                             List of relations
+   Schema |        Name        | Type  |  Owner   |  Size   | Description 
+  --------+--------------------+-------+----------+---------+-------------
+   public | bucket_job_swagger | table | apisnoop | 3600 kB | 
+   public | raw_audit_event    | table | apisnoop | 412 MB  | 
+  (2 rows)
+
+  #+end_src
+
+If either shows a size of ~8192 bytes~, you'll want to manually load it, refresh materialized views, then check again.
+
+#+NAME: Manually load swaggers
+#+begin_src sql-mode
+  select * from load_bucket_job_swagger_via_curl('ci-kubernetes-e2e-gci-gce', '1188637253832806405');
+  -- create an apisnoop/live bucket/job by setting third argument(live) to true.
+  select * from load_bucket_job_swagger_via_curl('ci-kubernetes-e2e-gci-gce', '1188637253832806405', true);
+#+end_src
+
+#+NAME: Manually load audit events
+#+begin_src sql-mode
+  select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1188637253832806405');
+#+end_src
+
+#+NAME: Refresh Materialized Views
+#+begin_src sql-mode
+  REFRESH MATERIALIZED VIEW api_operation_material;
+  REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+#+end_src
+#+PROPERTY: header-args:sql-mode+ :results silent :eval no-export :exports both
+#+PROPERTY: header-args:elisp :eval no-export :exports both
+#+PROPERTY: header-args:emacs-lisp :eval no-export :exports both
+#+PROPERTY: header-args:tmate :eval never-export :exports both
+#+PROPERTY: header-args:shell :eval never-export :exports both
+#+PROPERTY: header-args:go :eval never-export :exports both
