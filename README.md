@@ -17,21 +17,19 @@ kind create cluster --name kind-$USER --config kind-cluster-config.yaml
 Once up, apply APISnoop using our provided yaml 
 
 ```shell
-kubectl apply -f "https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/raiinbow.yaml"
+kubectl apply -f https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/raiinbow.yaml
 ```
 
 APISnoop is built around a set of postgres tables and views, with dta you can explore through queries.
 
 If you want to explore the data using a graphql interface, you can port-forward our hasura frontend:
 ```shell
-export GOOGLE_APPLICATION_CREDENTIALS=$PATH_TO_YOUR_CREDENTIALS
 HASURA_POD=$(kubectl get pod --selector=io.apisnoop.graphql=hasura -o name | sed s:pod/::)
 HASURA_PORT=$(kubectl get pod $HASURA_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
 kubectl port-forward $HASURA_POD --address 0.0.0.0 8080:$HASURA_PORT
 ```
 If you want to explore using direct sql queries, you can port-forward our postgres instance and query using psql:
 ```shell
-export GOOGLE_APPLICATION_CREDENTIALS=$PATH_TO_YOUR_CREDENTIALS
 export K8S_NAMESPACE="kube-system"
 kubectl config set-context $(kubectl config current-context) --namespace=$K8S_NAMESPACE 2>&1 > /dev/null
 POSTGRES_POD=$(kubectl get pod --selector=io.apisnoop.db=postgres -o name | sed s:pod/::)
@@ -53,10 +51,3 @@ env:
 ```
 Simply uncomment and configure this portion in [the raiinbow.yaml](deployment/k8s/raiinbow.yaml).  Then, when building a cluster, apply apisnoop from this local file.
 
-## Walk-thru for Test Writing
-
----
-
-[![Open in Cloud Shell](https://gstatic.com/cloudssh/images/open-btn.png)](https://console.cloud.google.com/cloudshell/open?git_repo=https://github.com/cncf/apisnoop&tutorial=org/google-cloudshell/README.md)
-
----
