@@ -662,7 +662,6 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
             ;
    #+end_src
 
-
 ** Combinee and Except
    
    So now we want to combine these two tables.  We ahve a list of tests that hit a small amount of endpoints, and the endpoints they hit.  We also have a list of endpoints that are hit by a small amount of tests, and the tests they hit.
@@ -717,7 +716,9 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
            audit_event ae on (ae.operation_id = stable_endpoints.operation_id)
            -- WHERE stable_endpoints.operation_id = 'createAuthenticationV1TokenReview'
            WHERE distinct_tests < 5
-            AND ae.useragent like 'e2e.test%')
+            AND ae.useragent like 'e2e.test%'
+            AND ae.useragent not like '%[Conformance]%'
+)
             ;
    #+end_src
 
@@ -848,126 +849,558 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
    
    Beautiful.  It's the same results as before, but we know our combined query is working.  This means we could continue to use this setting various filters as needed.  In the meantime, let's take a look at these tests and see if they are valid for promotion.
    
-* Checking Whether our chosen tests are valid for promotion   
+** Checking Whether our chosen tests are valid for promotion   
   
-  The guide for conformance tests is as follows:
-
-#+BEGIN_QUOTE
-Conformance tests currently test only GA, non-optional features or APIs. More specifically, a test is eligible for promotion to conformance if:
-
-    it tests only GA, non-optional features or APIs (e.g., no alpha or beta endpoints, no feature flags required, no deprecated features)
-    it works for all providers (e.g., no SkipIfProviderIs/SkipUnlessProviderIs calls)
-    it is non-privileged (e.g., does not require root on nodes, access to raw network interfaces, or cluster admin permissions)
-    it works without access to the public internet (short of whatever is required to pre-pull images for conformance tests)
-    it works without non-standard filesystem permissions granted to pods
-    it does not rely on any binaries that would not be required for the linux kernel or kubelet to run (e.g., can't rely on git)
-    where possible, it does not depend on outputs that change based on OS (nslookup, ping, chmod, ls)
-    any container images used within the test support all architectures for which kubernetes releases are built
-    it passes against the appropriate versions of kubernetes as spelled out in the conformance test version skew policy
-    it is stable and runs consistently (e.g., no flakes), and has been running for at least one release cycle
-    new conformance tests or updates to conformance tests for additional scenarios are only allowed before code freeze dates set by the release team to allow enough soak time of the changes and gives folks a chance to kick the tires either in the community CI or their own infrastructure to make sure the tests are robust
-
-Examples of features which are not currently eligible for conformance tests:
-
-    node/platform-reliant features, eg: multiple disk mounts, GPUs, high density, etc.
-    optional features, eg: policy enforcement
-    cloud-provider-specific features, eg: GCE monitoring, S3 Bucketing, etc.
-    anything that requires a non-default admission plugin
-
-Conformance tests are intended to be stable and backwards compatible according to the standard API deprecation policies. Therefore any test that relies on specific output that is not subject to the deprecation policy cannot be promoted to conformance. Examples of tests which are not eligible to conformance:
-
-    anything that checks specific Events are generated, as we make no guarantees about the contents of events, nor their delivery
-        If a test depends on events it is recommended to change the test to use an informer pattern and watch specific resource changes instead.
-    anything that checks optional Condition fields, such as Reason or Message, as these may change over time (however it is reasonable to verify these fields exist or are non-empty)
-        If the test is checking for specific conditions or reasons, it is considered overly specific and it is recommended to simply look for pass/failure criteria where possible, and output the condition/reason for debugging purposes only.
-
-Examples of areas we may want to relax these requirements once we have a sufficient corpus of tests that define out of the box functionality in all reasonable production worthy environments:
-
-    tests may need to create or set objects or fields that are alpha or beta that bypass policies that are not yet GA, but which may reasonably be enabled on a conformant cluster (e.g., pod security policy, non-GA scheduler annotations)
-#+END_QUOTE
-  
-I want to break this quote into todo's, and see how many we can confirm here before investigating the test itself.
-
-** [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"
+   The guide for conformance tests is as follows:
    
-*** PASSED it tests only GA, non-optional features or APIs (e.g., no alpha or beta endpoints, no feature flags required, no deprecated features)
-    We can check this using our api queries.  We'll run through all op_id's that our test touches, and check their properties and parameters. 
-    If any op_id is alpha or beta, or deprecated, then the test is not a candidate for promotion.
-    If any op_id has a required parameter that is turned on with a feature gate, it is also not a candidate for promotion.
+ #+BEGIN_QUOTE
+ Conformance tests currently test only GA, non-optional features or APIs. More specifically, a test is eligible for promotion to conformance if:
+
+     it tests only GA, non-optional features or APIs (e.g., no alpha or beta endpoints, no feature flags required, no deprecated features)
+     it works for all providers (e.g., no SkipIfProviderIs/SkipUnlessProviderIs calls)
+     it is non-privileged (e.g., does not require root on nodes, access to raw network interfaces, or cluster admin permissions)
+     it works without access to the public internet (short of whatever is required to pre-pull images for conformance tests)
+     it works without non-standard filesystem permissions granted to pods
+     it does not rely on any binaries that would not be required for the linux kernel or kubelet to run (e.g., can't rely on git)
+     where possible, it does not depend on outputs that change based on OS (nslookup, ping, chmod, ls)
+     any container images used within the test support all architectures for which kubernetes releases are built
+     it passes against the appropriate versions of kubernetes as spelled out in the conformance test version skew policy
+     it is stable and runs consistently (e.g., no flakes), and has been running for at least one release cycle
+     new conformance tests or updates to conformance tests for additional scenarios are only allowed before code freeze dates set by the release team to allow enough soak time of the changes and gives folks a chance to kick the tires either in the community CI or their own infrastructure to make sure the tests are robust
+
+ Examples of features which are not currently eligible for conformance tests:
+
+     node/platform-reliant features, eg: multiple disk mounts, GPUs, high density, etc.
+     optional features, eg: policy enforcement
+     cloud-provider-specific features, eg: GCE monitoring, S3 Bucketing, etc.
+     anything that requires a non-default admission plugin
+
+ Conformance tests are intended to be stable and backwards compatible according to the standard API deprecation policies. Therefore any test that relies on specific output that is not subject to the deprecation policy cannot be promoted to conformance. Examples of tests which are not eligible to conformance:
+
+     anything that checks specific Events are generated, as we make no guarantees about the contents of events, nor their delivery
+         If a test depends on events it is recommended to change the test to use an informer pattern and watch specific resource changes instead.
+     anything that checks optional Condition fields, such as Reason or Message, as these may change over time (however it is reasonable to verify these fields exist or are non-empty)
+         If the test is checking for specific conditions or reasons, it is considered overly specific and it is recommended to simply look for pass/failure criteria where possible, and output the condition/reason for debugging purposes only.
+
+ Examples of areas we may want to relax these requirements once we have a sufficient corpus of tests that define out of the box functionality in all reasonable production worthy environments:
+
+     tests may need to create or set objects or fields that are alpha or beta that bypass policies that are not yet GA, but which may reasonably be enabled on a conformant cluster (e.g., pod security policy, non-GA scheduler annotations)
+ #+END_QUOTE
+  
+ I want to break this quote into todo's, and see how many we can confirm here before investigating the test itself.
+ 
+*** [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"
+**** PASSED it tests only GA, non-optional features or APIs (e.g., no alpha or beta endpoints, no feature flags required, no deprecated features)
+     We can check this using our api queries.  We'll run through all op_id's that our test touches, and check their properties and parameters. 
+     If any op_id is alpha or beta, or deprecated, then the test is not a candidate for promotion.
+     If any op_id has a required parameter that is turned on with a feature gate, it is also not a candidate for promotion.
     
-    #+NAME: Tests only GA, non opt features or APIs
+     #+NAME: Tests only GA, non opt features or APIs
+     #+begin_src sql-mode
+       SELECT DISTINCT
+         ae.operation_id,
+         ao.level,
+         ao.deprecated,
+         ap.param_name,
+         ap.required,
+         CASE
+             WHEN (ap.param_description ~ 'feature gate') then true
+         ELSE false
+             END as feature_gate
+         FROM audit_event ae
+                JOIN api_operation_material ao on (ae.operation_id = ao.operation_id)
+                JOIN api_operation_parameter_material ap on (ae.operation_id = ap.param_op)
+        WHERE
+          ae.useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"'
+          ;
+     #+end_src
+
+     #+RESULTS: Tests only GA, non opt features or APIs
+     #+begin_src sql-mode
+             operation_id         | level  | deprecated |     param_name      | required | feature_gate 
+     -----------------------------+--------+------------+---------------------+----------+--------------
+      listCoreV1NamespacedService | stable | f          | allowWatchBookmarks | f        | t
+      listCoreV1NamespacedService | stable | f          | continue            | f        | f
+      listCoreV1NamespacedService | stable | f          | fieldSelector       | f        | f
+      listCoreV1NamespacedService | stable | f          | labelSelector       | f        | f
+      listCoreV1NamespacedService | stable | f          | limit               | f        | f
+      listCoreV1NamespacedService | stable | f          | resourceVersion     | f        | f
+      listCoreV1NamespacedService | stable | f          | timeoutSeconds      | f        | f
+      listCoreV1NamespacedService | stable | f          | watch               | f        | f
+      listCoreV1Node              | stable | f          | allowWatchBookmarks | f        | t
+      listCoreV1Node              | stable | f          | continue            | f        | f
+      listCoreV1Node              | stable | f          | fieldSelector       | f        | f
+      listCoreV1Node              | stable | f          | labelSelector       | f        | f
+      listCoreV1Node              | stable | f          | limit               | f        | f
+      listCoreV1Node              | stable | f          | resourceVersion     | f        | f
+      listCoreV1Node              | stable | f          | timeoutSeconds      | f        | f
+      listCoreV1Node              | stable | f          | watch               | f        | f
+      readCoreV1NamespacedService | stable | f          | exact               | f        | f
+      readCoreV1NamespacedService | stable | f          | export              | f        | f
+     (18 rows)
+
+     #+end_src
+    
+     So far so good!
+
+**** TESTING it is stable and runs consistently (e.g., no flakes), and has been running for at least one release cycle
+     We can check this using test grid.
+    
+     Checking if flaky
+
+ - Navigate to [[https://testgrid.k8s.io/sig-release-master-blocking#gce-cos-master-default][this filter]on testgrid.k8s.io.
+ - Find the test using "Include Filter by Regex" under the "Options" drop-down menu
+ - Once the test is isolated then select "Super Compact" under the "Size" drop-down menu
+ - What you want to see is all green on the right. (If there are some gaps, that is okay.)
+
+ Check if  Slow
+
+ - Continuing from above, turn on the "test-duration-minutes" graph under the "Graph" drop-down menu
+ - If you don't see any changes then refresh the page
+ - Now there should be a graph showing how long the test took to run.
+ - 5 minutes is the threshold for a Slow test
+
+**** TEST it passes against the appropriate versions of kubernetes as spelled out in the conformance test version skew policy
+**** TEST it works for all providers (e.g., no SkipIfProviderIs/SkipUnlessProviderIs calls)
+**** TEST it is non-privileged (e.g., does not require root on nodes, access to raw network interfaces, or cluster admin permissions)
+**** TEST it works without access to the public internet (short of whatever is required to pre-pull images for conformance tests)
+**** TEST it works without non-standard filesystem permissions granted to pods
+**** TEST it does not rely on any binaries that would not be required for the linux kernel or kubelet to run (e.g., can't rely on git)
+**** TEST where possible, it does not depend on outputs that change based on OS (nslookup, ping, chmod, ls)
+**** TEST any container images used within the test support all architectures for which kubernetes releases are built
+** Bringing Open PR's into the database
+   One of the first important questions to ask on promotion is "is someone else already doing this?"  With backlog, there may already be an open PR for promoting the tests you're looking at, and you don't want to spend time doing already done work.  However, I was finding it difficult navigating quickly through the issues to see whether or not a PR was made.  The ieal, I think, would be to look for open PR's tagged area/conformance whose files changed include the test you are looking at.  This would give a high indication that it deals with promotion.  This is not something you can do easily with the advanced search or the api of github, but it _is_ somethign we could do with a postgres database.
+   
+   And so, let's bring github into our db! (or at least a lil portion).
+*** Create Python function for fetching from github.   
+    #+NAME: ping github api with python
+    #+begin_src python :results output
+      import requests
+      import json
+
+      query = """
+      query{
+        search(query: "repo:kubernetes/kubernetes label:area/conformance state:open type:pr in:title Promote" type: ISSUE, first: 100) {
+          nodes {
+            ...on PullRequest {
+              state
+              title
+              id
+              files(first: 100) {
+                edges {
+                  node {
+                    path
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      """
+
+      GH_TOKEN = "d31d95980fbc9e8cef5b848a60e79452975da04c"
+      headers = {'Authorization': 'token ' + GH_TOKEN}
+      url = 'https://api.github.com/graphql'
+
+      r = requests.post(url, json={'query': query}, headers=headers)
+      raw_data = json.loads(r.text)['data']['search']['nodes']
+      data = [entry for entry in raw_data if 'title' in entry]
+      for entry in data:
+        print(map(lambda x: x['node']['path'], entry['files']['edges']))
+    #+end_src
+
+    #+RESULTS: ping github api with python
+    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/scheduling/preemption.go']
+    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/apps/disruption.go']
+    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/common/expansion.go']
+    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/common/container_probe.go']
+    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/scheduling/preemption.go']
+    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/scheduling/predicates.go']
+    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/network/service.go']
+    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/storage/csi_mock_volume.go']
+
+ Great, this will get us all open area/conformacne pull requests.  We mcan work to expand this to be all pull requests and such, but we are going to hit rate limiting issues. the results we want. 
+
+ Now we want a table we can insert this into, following the same style as our `load_bucket_job_swagger`
+
+*** Create PR Table
+    #+NAME: open_pull_requests
     #+begin_src sql-mode
-      SELECT DISTINCT
-        ae.operation_id,
-        ao.level,
-        ao.deprecated,
-        ap.param_name,
-        ap.required,
-        CASE
-            WHEN (ap.param_description ~ 'feature gate') then true
-        ELSE false
-            END as feature_gate
-        FROM audit_event ae
-               JOIN api_operation_material ao on (ae.operation_id = ao.operation_id)
-               JOIN api_operation_parameter_material ap on (ae.operation_id = ap.param_op)
+      CREATE TABLE open_pull_requests(
+        title text,
+        id text unique,
+        changed_files text[],
+        PRIMARY KEY(id)
+       ); 
+    #+end_src
+
+    #+RESULTS: open_pull_requests
+    #+begin_src sql-mode
+    ERROR:  relation "open_pull_requests" already exists
+    #+end_src
+
+*** Function to insert PR's into table
+    #+NAME: load_open_pull_requests.py
+    #+begin_src python
+      try:
+          import requests
+          import json
+          from string import Template
+
+          query = """
+               query{
+             search(query: "repo:kubernetes/kubernetes label:area/conformance state:open type:pr in:title Promote" type: ISSUE, first: 100) {
+               nodes {
+                 ...on PullRequest {
+                   state
+                   title
+                   id
+                   files(first: 100) {
+                     edges {
+                       node {
+                         path
+                       }
+                     }
+                   }
+                 }
+               }
+             }
+           }
+          """
+
+          GH_TOKEN = "d31d95980fbc9e8cef5b848a60e79452975da04c"
+          headers = {'Authorization': 'token ' + GH_TOKEN}
+          url = 'https://api.github.com/graphql'
+
+          r = requests.post(url, json={'query': query}, headers=headers)
+          raw_data = json.loads(r.text)['data']['search']['nodes']
+          data = [entry for entry in raw_data if 'title' in entry]
+          for entry in data:
+             files_changed = list(map(lambda x: x['node']['path'], entry['files']['edges']))
+             sql = """
+             INSERT INTO open_pull_requests(
+             title,
+             id,
+             changed_files
+             )
+             SELECT
+             $1 as title,
+             $2 as id,
+             $3 as changed_files
+             """
+             plan = plpy.prepare(sql, ['text','text', 'text[]'])
+             rv = plpy.execute(plan, [
+                 entry['title'],
+                 entry['id'],
+                 files_changed
+             ])
+          return 'successfully added some pull requests!'
+      except Exception as err:
+          return Template("something went wrong, likely this: ${error}").substitute(error = err)
+    #+end_src
+
+   
+    #+NAME: load_pull_requests.sql
+    #+begin_src sql-mode
+      set role dba;
+      CREATE OR REPLACE FUNCTION load_open_pull_requests()
+      RETURNS text AS $$
+      <<load_open_pull_requests.py>>
+      $$ LANGUAGE plpython3u ;
+      reset role;
+    #+end_src
+
+    #+RESULTS: load_pull_requests.sql
+    #+begin_src sql-mode
+    SET
+    apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# CREATE FUNCTION
+    RESET
+    #+end_src
+
+    #+begin_src sql-mode
+      select * from load_open_pull_requests();
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src sql-mode
+      load_open_pull_requests                                           
+      -------------------------------------------------------------------------------------------------------------
+       something went wrong, likely this: duplicate key value violates unique constraint "open_pull_requests_pkey"
+      (1 row)
+
+    #+end_src
+   
+    #+begin_src sql-mode
+    select id, changed_files from open_pull_requests;
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src sql-mode
+                    id                |                                  changed_files                                  
+    ----------------------------------+---------------------------------------------------------------------------------
+     MDExOlB1bGxSZXF1ZXN0MzIzNDkyNTY4 | {test/conformance/testdata/conformance.txt,test/e2e/scheduling/preemption.go}
+     MDExOlB1bGxSZXF1ZXN0MzM2NDE0Mzc2 | {test/conformance/testdata/conformance.txt,test/e2e/apps/disruption.go}
+     MDExOlB1bGxSZXF1ZXN0MzM5ODI3Njky | {test/conformance/testdata/conformance.txt,test/e2e/common/expansion.go}
+     MDExOlB1bGxSZXF1ZXN0MzQzNzAyMzA2 | {test/conformance/testdata/conformance.txt,test/e2e/common/container_probe.go}
+     MDExOlB1bGxSZXF1ZXN0MzAwOTMzMTYz | {test/conformance/testdata/conformance.txt,test/e2e/scheduling/preemption.go}
+     MDExOlB1bGxSZXF1ZXN0MzI2MDQ2MDg5 | {test/conformance/testdata/conformance.txt,test/e2e/scheduling/predicates.go}
+     MDExOlB1bGxSZXF1ZXN0MjY5NjEyMjky | {test/conformance/testdata/conformance.txt,test/e2e/network/service.go}
+     MDExOlB1bGxSZXF1ZXN0MzQwMTg1NjI5 | {test/conformance/testdata/conformance.txt,test/e2e/storage/csi_mock_volume.go}
+    (8 rows)
+
+    #+end_src
+   
+    With this, we can run a query like the one below, to check whether there's any open conformance pr's that involve the test file:
+    
+    #+NAME: Confirmed File IS IN open PR's
+    #+begin_src sql-mode
+      SELECT
+        title,
+        id,
+        changed_files
+        FROM
+            open_pull_requests
        WHERE
-         ae.useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"'
+         'test/e2e/scheduling/preemption.go' = ANY(changed_files)
          ;
     #+end_src
-
-    #+RESULTS: Tests only GA, non opt features or APIs
+    
+    Based on our list of id's and files, the above query should return 2 results.
+    
+    #+RESULTS: Confirmed File IS IN open PR's
     #+begin_src sql-mode
-            operation_id         | level  | deprecated |     param_name      | required | feature_gate 
-    -----------------------------+--------+------------+---------------------+----------+--------------
-     listCoreV1NamespacedService | stable | f          | allowWatchBookmarks | f        | t
-     listCoreV1NamespacedService | stable | f          | continue            | f        | f
-     listCoreV1NamespacedService | stable | f          | fieldSelector       | f        | f
-     listCoreV1NamespacedService | stable | f          | labelSelector       | f        | f
-     listCoreV1NamespacedService | stable | f          | limit               | f        | f
-     listCoreV1NamespacedService | stable | f          | resourceVersion     | f        | f
-     listCoreV1NamespacedService | stable | f          | timeoutSeconds      | f        | f
-     listCoreV1NamespacedService | stable | f          | watch               | f        | f
-     listCoreV1Node              | stable | f          | allowWatchBookmarks | f        | t
-     listCoreV1Node              | stable | f          | continue            | f        | f
-     listCoreV1Node              | stable | f          | fieldSelector       | f        | f
-     listCoreV1Node              | stable | f          | labelSelector       | f        | f
-     listCoreV1Node              | stable | f          | limit               | f        | f
-     listCoreV1Node              | stable | f          | resourceVersion     | f        | f
-     listCoreV1Node              | stable | f          | timeoutSeconds      | f        | f
-     listCoreV1Node              | stable | f          | watch               | f        | f
-     readCoreV1NamespacedService | stable | f          | exact               | f        | f
-     readCoreV1NamespacedService | stable | f          | export              | f        | f
-    (18 rows)
+                        title                    |                id                |                                 changed_files                                 
+    ---------------------------------------------+----------------------------------+-------------------------------------------------------------------------------
+     Promote pod preemption verification         | MDExOlB1bGxSZXF1ZXN0MzIzNDkyNTY4 | {test/conformance/testdata/conformance.txt,test/e2e/scheduling/preemption.go}
+     Promote preemption e2e tests to Conformance | MDExOlB1bGxSZXF1ZXN0MzAwOTMzMTYz | {test/conformance/testdata/conformance.txt,test/e2e/scheduling/preemption.go}
+    (2 rows)
 
     #+end_src
+   
+** Bringing All PR's into the database
+   So we know we can bring in PR's using the v4 api.  Now, we want to extend this to include _all area/test pull requests_.  this would include open and merged.  This would let us see when a test was added to e2e, easily checking off one of the conformance requirements.  It'd also let us see if there's a current PR for it to be promoted, which would potentiallys ave a lot of wassted work.
+   
+   So what we want then is a loop.  We grab the results, and if 'HasNextPage' is true, we recurse with the same function but now with the end cursor adjusted.
+*** Create PR Table
+    #+NAME: pull_requests
+    #+begin_src sql-mode
+      CREATE TABLE pull_requests(
+        title text,
+        id text unique,
+        changed_files text[],
+        PRIMARY KEY(id)
+       ); 
+    #+end_src
+
+    #+RESULTS: pull_requests
+    #+begin_src sql-mode
+    CREATE TABLE
+    #+end_src
+
+*** Function to insert PR's into table
+    #+NAME: load_pull_requests.py
+    #+begin_src python
+      import requests
+      import json
+      from string import Template
+
+      GH_TOKEN = "d31d95980fbc9e8cef5b848a60e79452975da04c"
+      headers = {'Authorization': 'token ' + GH_TOKEN}
+      url = 'https://api.github.com/graphql'
+
+      def insert_requests (pull_requests):
+          for entry in pull_requests:
+             files_changed = list(map(lambda x: x['node']['path'], entry['files']['edges']))
+             sql = """
+             INSERT INTO open_pull_requests(
+             title,
+             id,
+             changed_files
+             )
+             SELECT
+             $1 as title,
+             $2 as id,
+             $3 as changed_files
+             """
+             plan = plpy.prepare(sql, ['text','text', 'text[]'])
+             rv = plpy.execute(plan, [
+                 entry['title'],
+                 entry['id'],
+                 files_changed
+             ])
+             return 'pr batch inserted'
+
+      def fetch_next_requests (cursor):
+          if cursor is None:
+              query = """
+              query{
+                  search(query: "repo:kubernetes/kubernetes label:area/test type:pr", type: ISSUE, first: 100) {
+                      pageInfo {
+                      hasNextPage
+                      endCursor
+                      }
+                      edges {
+                      node {
+                          ... on PullRequest {
+                          title
+                          id
+                          state
+                          merged
+                          mergedAt
+                          labels(first: 50) {
+                              edges {
+                              node {
+                                  name
+                              }
+                              }
+                          }
+                          files(first: 100) {
+                              edges {
+                              node {
+                                  path
+                              }
+                              }
+                          }
+                          }
+                      }
+                      }
+                  }
+              }
+              """
+          else:
+              query = Template("""
+              query{
+                  search(query: "repo:kubernetes/kubernetes label:area/test type:pr", type: ISSUE, first: 100, after: $cursor) {
+                      pageInfo {
+                      hasNextPage
+                      endCursor
+                      }
+                      edges {
+                      node {
+                          ... on PullRequest {
+                          title
+                          id
+                          state
+                          merged
+                          mergedAt
+                          labels(first: 50) {
+                              edges {
+                              node {
+                                  name
+                              }
+                              }
+                          }
+                          files(first: 100) {
+                              edges {
+                              node {
+                                  path
+                              }
+                              }
+                          }
+                          }
+                      }
+                      }
+                  }
+              }
+              """).substitute(cursor=cursor)
+
+          r = requests.post(url, json={'query': query}, headers=headers)
+          # plpy.warning(pp r)
+          raw_data = json.loads(r.text)['data']['search']
+          has_next_page = raw_data['pageInfo']['hasNextPage']
+          end_cursor = raw_data['pageInfo']['endCursor']
+          edges = raw_data['edges']
+          pull_requests = [node for node in edges if 'title' in node]
+          insert_requests(pull_requests)
+
+          if has_next_page is False:
+              return 'all prs inserted to db'
+          else:
+              fetch_next_requests(end_cursor)
+
+      try:
+          fetch_next_requests(None)
+      except Exception as err:
+          raise err
+          # return Template("something went wrong, likely this: ${error}").substitute(error = err)
+    #+end_src
+
+    #+RESULTS: load_pull_requests.py
+    : something went wrong, likely this: 'data'
+
+    ,
+    #+NAME: new load_pull_requests.sql
+    #+begin_src sql-mode :results silent
+      set role dba;
+      CREATE OR REPLACE FUNCTION load_pull_requests()
+      RETURNS text AS $$
+      <<load_pull_requests.py>>
+      $$ LANGUAGE plpython3u ;
+      reset role;
+    #+end_src
+
+
+    #+begin_src sql-mode
+      select * from load_pull_requests();
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src sql-mode
+    ERROR:  KeyError: 'data'
+    CONTEXT:  Traceback (most recent call last):
+      PL/Python function "load_pull_requests", line 122, in <module>
+        raise err
+      PL/Python function "load_pull_requests", line 120, in __plpython_procedure_load_pull_requests_32046
+        fetch_next_requests(None)
+      PL/Python function "load_pull_requests", line 117, in fetch_next_requests
+        fetch_next_requests(end_cursor)
+      PL/Python function "load_pull_requests", line 107, in fetch_next_requests
+        raw_data = json.loads(r.text)['data']['search']
+    PL/Python function "load_pull_requests"
+    #+end_src
+
+
+   
+    #+begin_src sql-mode
+    select id, changed_files from pull_requests limit 10;
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src sql-mode
+     id | changed_files 
+    ----+---------------
+    (0 rows)
+
+    #+end_src
+   
+    With this, we can run a query like the one below, to check whether there's any open conformance pr's that involve the test file:
     
-    So far so good!
-
-*** TESTING it is stable and runs consistently (e.g., no flakes), and has been running for at least one release cycle
-    We can check this using test grid.
+    #+NAME: Confirmed File IS IN open PR's
+    #+begin_src sql-mode
+      SELECT
+        title,
+        id
+        FROM
+            open_pull_requests
+       WHERE
+         'test/e2e/scheduling/preemption.go' = ANY(changed_files)
+         ;
+    #+end_src
     
-    Checking if flaky
+    Based on our list of id's and files, the above query should return 2 results.
+    
+    #+RESULTS: Confirmed File IS IN open PR's
+    #+begin_src sql-mode
+                        title                    |                id                
+    ---------------------------------------------+----------------------------------
+     Promote pod preemption verification         | MDExOlB1bGxSZXF1ZXN0MzIzNDkyNTY4
+     Promote preemption e2e tests to Conformance | MDExOlB1bGxSZXF1ZXN0MzAwOTMzMTYz
+    (2 rows)
 
-- Navigate to [[https://testgrid.k8s.io/sig-release-master-blocking#gce-cos-master-default][this filter]on testgrid.k8s.io.
-- Find the test using "Include Filter by Regex" under the "Options" drop-down menu
-- Once the test is isolated then select "Super Compact" under the "Size" drop-down menu
-- What you want to see is all green on the right. (If there are some gaps, that is okay.)
-
-Check if  Slow
-
-- Continuing from above, turn on the "test-duration-minutes" graph under the "Graph" drop-down menu
-- If you don't see any changes then refresh the page
-- Now there should be a graph showing how long the test took to run.
-- 5 minutes is the threshold for a Slow test
-
-*** TEST it works for all providers (e.g., no SkipIfProviderIs/SkipUnlessProviderIs calls)
-*** TEST it is non-privileged (e.g., does not require root on nodes, access to raw network interfaces, or cluster admin permissions)
-*** TEST it works without access to the public internet (short of whatever is required to pre-pull images for conformance tests)
-*** TEST it works without non-standard filesystem permissions granted to pods
-*** TEST it does not rely on any binaries that would not be required for the linux kernel or kubelet to run (e.g., can't rely on git)
-*** TEST where possible, it does not depend on outputs that change based on OS (nslookup, ping, chmod, ls)
-*** TEST any container images used within the test support all architectures for which kubernetes releases are built
-*** TEST it passes against the appropriate versions of kubernetes as spelled out in the conformance test version skew policy
+    #+end_src
+   
+    
 * Conclusions | Next Steps
 * Footnotes
 
@@ -1008,3 +1441,5 @@ Check if  Slow
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/260_view_api_schema_field.up.sql
   :END:
 *** Create
+
+    
