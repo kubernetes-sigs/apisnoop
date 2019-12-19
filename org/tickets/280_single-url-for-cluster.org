@@ -1,3 +1,4 @@
+# -*- iimode: cool -*-
 #+TITLE: 280, a single url for the cluster
 #+AUTHOR: Zach Mandeville
 #+AUTHOR: Caleb Woodbine
@@ -188,9 +189,10 @@ There are three options we see:
 We found a proxy library called [[https://github.com/wunderlist/moxy][moxy]] that seemed to match what we were looking for, but wondered if there'd be an even simpler way.  For our development, we are using kind and so pinged the kind channel to see if they had a recommended method.
 
 There also appears to be [[https://github.com/kubernetes-sigs/kind/blob/master/site/content/docs/user/ingress.md][Kind ingress documentation]].
-*** Kind cluster config to allow ingress
+** DONE Adjust Kind cluster config to allow ingress
+   CLOSED: [2019-12-18 Wed 21:25]
   By default, Kind doesn't expose any ports, as such services running in the cluster cannot be accessed from the host on which it runs.
- #+begin_src yaml
+ #+begin_src yaml :tangle ../../deployment/k8s/kind-config-test.yaml
 # kind-cluster-config.yaml
 # #+NAME: kind kubeadm DynamicAuditing configuration
 
@@ -218,28 +220,16 @@ nodes:
          node-labels: "ingress-ready=true"
          authorization-mode: "AlwaysAllow"
    extraPortMappings:
-   - containerPort: 80
-     hostPort: 80
-   - containerPort: 443
-     hostPort: 443 
+   - containerPort: 30000
+     hostPort: 30000
  #+end_src
  
-** Setup docker proxy to nginx proxy
-  This is the first step to having a isngle portforward and all the services we need accessible by url.
-** Basic NGINX config for proxing a single service
-   #+begin_src nginx
-server {
-  listen 8080;
-  location / {
-    proxy_pass http://localhost:8081;
-  }
-}   
-   #+end_src
-
-** Add the webclient
-We have it available at raiinbow, and so could get it set up just enough to ensure that all our services are running when we apply our yaml ot the cluster.
-
-So the new yaml would look like so:
+** TODO Setup docker proxy to nginx proxy for testing
+  This is the first step to having a single portforward and all the services we need accessible by url.
+  
+  We had a go at building a custom and minimal golang app to reverse proxy the services, however there were issues with the implementation.
+  There was realisation that nginx is able to perform what we were wanted to implement, with configuration instead of code.
+** TODO Add webclient to our deployment yaml
 #+NAME: yaml with webclient
    #+begin_src yaml
   # raiinbow.yaml
@@ -409,25 +399,23 @@ So the new yaml would look like so:
         spec:
           containers:
             - name: apisnoop-webapp
-              image: "raiinbow/auditlogger:latest"
+              image: "raiinbow/webapp:latest"
               #command:
               #  - "sleep"
               #args: 
               #  - "+Inf"
               ports:
-                - containerPort: 9911
+                - containerPort: 3000
   - apiVersion: v1
     kind: Service
     metadata:
       name: apisnoop-webclient
     spec:
       ports:
-        - port: 9911
-          targetPort: 9911
+        - port: 3000
+          targetPort: 3000
       selector:
         app: apisnoop-webclient
-      clusterIP: 10.96.96.96
-      type: ClusterIP
   - apiVersion: auditregistration.k8s.io/v1alpha1
     metadata:
       name: webclient
@@ -441,3 +429,512 @@ So the new yaml would look like so:
           qps: 10
           burst: 15
    #+end_src
+   
+** TODO develop Basic NGINX config to be mounted to our nginx conf
+The following is the data for a ConfigMap to mount into /etc/nginx/conf.d/default.conf.
+   #+begin_src nginx
+server {
+  listen 5555;
+  location ^~ /explorer {
+    proxy_pass http://hasura:n;
+  }
+  location ^~ / {
+    proxy_pass http://webapp:n;
+  }
+}   
+   #+end_src
+** TODO Add nginx config map to our deployment yaml
+   so now we have our webapp and updated ports, next is to ensure our nginx setup is added to this deployment 
+   We will save this to our deployments as raiinbow-test.yaml for testing.
+   
+   #+NAME: yaml with webclient
+   #+begin_src yaml :tangle ../../deployment/k8s/raiinbow-test.yaml
+     # raiinbow.yaml
+
+     apiVersion: v1
+     kind: List
+     metadata: {}
+     items:
+     - apiVersion: v1
+       kind: Service
+       metadata:
+         name: apisnoop-hasura
+       spec:
+         type: ClusterIP
+         clusterIP: None
+         selector:
+           io.apisnoop.graphql: apisnoop-hasura
+         ports:
+         - name: "8080"
+           port: 8080
+           targetPort: 8080
+     - apiVersion: v1
+       kind: Service
+       metadata:
+         name: apisnoop-postgres
+       spec:
+         selector:
+           io.apisnoop.db: apisnoop-postgres
+         ports:
+         - name: "5432"
+           port: 5432
+           targetPort: 5432
+     - apiVersion: apps/v1
+       kind: Deployment
+       metadata:
+         name: apisnoop-hasura
+       spec:
+         replicas: 1
+         selector:
+           matchLabels:
+             io.apisnoop.graphql: apisnoop-hasura
+         template:
+           metadata:
+             labels:
+               io.apisnoop.graphql: apisnoop-hasura
+           spec:
+             restartPolicy: Always
+             containers:
+             - name: apisnoop-hasura
+               image: "raiinbow/hasura:2019-12-08-21-00"
+               ports:
+               - containerPort: 8080
+               env:
+               - name: HASURA_GRAPHQL_DATABASE_URL
+                 value: "postgres://apisnoop:s3cretsauc3@apisnoop-postgres:5432/apisnoop"
+               - name: HASURA_GRAPHQL_ENABLE_CONSOLE
+                 value: "true"
+     - apiVersion: apps/v1
+       kind: Deployment
+       metadata:
+         name: apisnoop-postgres
+       spec:
+         replicas: 1
+         selector:
+           matchLabels:
+             io.apisnoop.db: apisnoop-postgres
+         template:
+           metadata:
+             labels:
+               io.apisnoop.db: apisnoop-postgres
+           spec:
+             restartPolicy: Always
+             containers:
+             - name: apisnoop-postgres
+               image: "raiinbow/postgres:2019-12-03-14-19"
+               ports:
+               - containerPort: 5432
+               livenessProbe:
+                 exec:
+                   command:
+                   - "pg_isready"
+                   - "-U"
+                   - "apisnoop"
+                 failureThreshold: 5
+                 periodSeconds: 10
+                 timeoutSeconds: 5
+               env:
+               - name: POSTGRES_DB
+                 value: apisnoop
+               - name: POSTGRES_USER
+                 value: apisnoop
+               - name: POSTGRES_PASSWORD
+                 value: s3cretsauc3
+               - name: PGDATABASE
+                 value: apisnoop
+               - name: PGUSER
+                 value: apisnoop
+               # - name: APISNOOP_BASELINE_BUCKET
+               #   value: ci-kubernetes-e2e-gce-cos-k8sbeta-default
+               # - name: APISNOOP_BASELINE_JOB
+               #   value: 1141312231231223
+     - apiVersion: apps/v1
+       kind: Deployment
+       metadata:
+         name: apisnoop-auditlogger
+       spec:
+         replicas: 1
+         selector:
+           matchLabels:
+             app: apisnoop-auditlogger
+         template:
+           metadata:
+             labels:
+               app: apisnoop-auditlogger
+           spec:
+             containers:
+               - name: apisnoop-auditlogger
+                 image: "raiinbow/auditlogger:2019-12-08-31"
+                 #command:
+                 #  - "sleep"
+                 #args: 
+                 #  - "+Inf"
+                 ports:
+                   - containerPort: 9900
+                 env:
+                   - name: PG_CONNECTION_STRING
+                     value: postgres://apisnoop:s3cretsauc3@apisnoop-postgres:5432/apisnoop
+     - apiVersion: v1
+       kind: Service
+       metadata:
+         name: apisnoop-auditlogger
+       spec:
+         ports:
+           - port: 9900
+             targetPort: 9900
+         selector:
+           app: apisnoop-auditlogger
+         clusterIP: 10.96.96.96
+         type: ClusterIP
+     - apiVersion: auditregistration.k8s.io/v1alpha1
+       kind: AuditSink
+       metadata:
+         name: apisnoop-auditlogger
+       spec:
+         policy:
+           level: Metadata
+           stages:
+           - ResponseComplete
+         webhook:
+           throttle:
+             qps: 10
+             burst: 15
+           clientConfig:
+             #url: "http://apisnoop-auditlogger.kube-system.svc.cluster.local:9900/events"
+             # svc cluster ip of apisnoop-auditlogger
+             url: "http://10.96.96.96:9900/events"
+     - apiVersion: apps/v1
+       kind: Deployment
+       metadata:
+         name: apisnoop-webapp
+       spec:
+         replicas: 1
+         selector:
+           matchLabels:
+             app: apisnoop-webapp
+         template:
+           metadata:
+             labels:
+               app: apisnoop-webapp
+           spec:
+             containers:
+               - name: apisnoop-webapp
+                 image: "raiinbow/webapp:latest"
+                 #command:
+                 #  - "sleep"
+                 #args: 
+                 #  - "+Inf"
+                 ports:
+                   - containerPort: 3000
+     - apiVersion: v1
+       kind: Service
+       metadata:
+         name: apisnoop-webapp
+       spec:
+         ports:
+           - port: 3000
+             targetPort: 3000
+         selector:
+           app: apisnoop-webapp
+     - apiVersion: apps/v1
+       kind: Deployment
+       metadata:
+         name: apisnoop-nginx-proxy
+       spec:
+         replicas: 1
+         selector:
+           matchLabels:
+             app: apisnoop-nginx-proxy
+         template:
+           metadata:
+             labels:
+               app: apisnoop-nginx-proxy
+           spec:
+             containers:
+             - name: apisnoop-nginx-proxy
+               image: docker.io/nginx
+               imagePullPolicy: Always
+               ports:
+                 - containerPort: 30000
+               env:
+                 - name: TZ
+                   value: "Pacific/Auckland"
+               volumeMounts:
+                 - name: apisnoop-nginx-proxy-data
+                   mountPath: /etc/nginx/conf.d
+               readinessProbe:
+                 tcpSocket:
+                   port: 30000
+                 initialDelaySeconds: 2
+                 periodSeconds: 10
+               livenessProbe:
+                 tcpSocket:
+                   port: 30000
+                 initialDelaySeconds: 1
+                 periodSeconds: 20
+             volumes:
+               - name: apisnoop-nginx-proxy-data
+                 configMap:
+                   name: apisnoop-nginx-proxy-data
+                   items:
+                     - key: default.conf
+                       path: default.conf
+     - apiVersion: v1
+       kind: Service
+       metadata:
+         name: apisnoop-nginx-proxy
+       spec:
+         type: NodePort
+         ports:
+         - port: 30000
+           nodePort: 30000
+         selector:
+           app: apisnoop-nginx-proxy
+     - apiVersion: v1
+       kind: ConfigMap
+       metadata:
+         name: apisnoop-nginx-proxy-data
+       data:
+         default.conf: |
+           server {
+             listen 30000;
+             #location ^~ /explorer {
+             #  proxy_pass http://apisnoop-hasura:8080;
+             #}
+             location ^~ / {
+               proxy_pass http://apisnoop-webapp:3000;
+             }
+           }   
+
+   #+end_src
+   
+** TODO Adjust apollo client configuration in webapp to point to hasura api endpoint.
+We have it available at raiinbow, and so could get it set up just enough to ensure that all our services are running when we apply our yaml ot the cluster.
+
+So the new yaml would look like so:
+** TODO ensure we can go to localhost:N and see some sorta data.
+* Footnotes   
+:PROPERTIES: 
+:CUSTOM_ID: footnotes 
+:END: 
+** DONE [0%] Cluster Setup
+   :PROPERTIES:
+   :LOGGING:  nil
+   :END:
+*** Check your user is correct and we are attached to right eye.
+    /bonus: this also ensures code blocks are working!/
+
+    #+begin_src tmate :results silent :eval never-export
+      echo "You are connected, $USER and also caleb!"
+    #+end_src
+
+*** Create a K8s cluster using KIND
+    NOTE: You can build from source or use KIND's upstream images:
+    https://hub.docker.com/r/kindest/node/tags
+
+    #+BEGIN_SRC tmate :eval never-export :session foo:cluster
+      # Uncomment the next line if you want to clean up a previously created cluster.
+      kind delete cluster --name=kind-$USER
+      kind create cluster --name kind-$USER --config ~/ii/apisnoop/deployment/k8s/kind-config-test.yaml
+    #+END_SRC
+*** Grab cluster info, to ensure it is up.
+
+    #+BEGIN_SRC shell :results silent
+      kubectl cluster-info
+    #+END_SRC
+
+    The results shown in your minibuffer should look something like:
+    : Kubernetes master is running at https://127.0.0.1:40067
+    : KubeDNS is running at https://127.0.0.1:40067/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+    : To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+*** Our Kubectl Apply
+    #+begin_src shell
+      kubectl apply -f ~/ii/apisnoop/deployment/k8s/raiinbow-test.yaml 
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src shell
+    service/apisnoop-hasura unchanged
+    service/apisnoop-postgres unchanged
+    deployment.apps/apisnoop-hasura unchanged
+    deployment.apps/apisnoop-postgres unchanged
+    deployment.apps/apisnoop-auditlogger unchanged
+    service/apisnoop-auditlogger unchanged
+    auditsink.auditregistration.k8s.io/apisnoop-auditlogger unchanged
+    deployment.apps/apisnoop-webapp created
+    service/apisnoop-webapp unchanged
+    deployment.apps/apisnoop-nginx-proxy unchanged
+    service/apisnoop-nginx-proxy unchanged
+    configmap/apisnoop-nginx-proxy-data unchanged
+    #+end_src
+
+*** Verify Pods Running
+    !ATTENTION!: Wait for all pods to have a "Running" status before proceeding
+    past this step.
+
+    #+begin_src shell
+      kubectl get pods
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src shell
+    NAME                                    READY   STATUS    RESTARTS   AGE
+    apisnoop-auditlogger-85f59dcb6f-nbhff   1/1     Running   3          14h
+    apisnoop-hasura-6c95cbcc4b-2hr28        1/1     Running   1          14h
+    apisnoop-nginx-proxy-868557b4d8-j92m6   1/1     Running   0          14h
+    apisnoop-postgres-856947bc8c-bxl25      1/1     Running   0          14h
+    apisnoop-webapp-76f6c4b75c-ntkdm        1/1     Running   0          14h
+    #+end_src
+   
+*** Setup Port-Forwarding from us to sharing to the cluster
+
+    We'll setup port-forwarding for postgres, to let us easily send queries from within our org file.
+    You can check the status of the port-forward in your right eye.
+    #+BEGIN_SRC tmate :eval never-export :session foo:postgres
+      POSTGRES_POD=$(kubectl get pod --selector=io.apisnoop.db=apisnoop-postgres -o name | sed s:pod/::)
+      POSTGRES_PORT=$(kubectl get pod $POSTGRES_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+      kubectl port-forward $POSTGRES_POD $(id -u)1:$POSTGRES_PORT
+    #+END_SRC
+
+    Then we'll setup a port-forward for hasura, so our web app can query it directly.
+    #+BEGIN_SRC tmate :eval never-export :session foo:hasura
+      HASURA_POD=$(kubectl get pod --selector=io.apisnoop.graphql=hasura -o name | sed s:pod/::)
+      HASURA_PORT=$(kubectl get pod $HASURA_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+      kubectl port-forward $HASURA_POD --address 0.0.0.0 8080:$HASURA_PORT
+    #+END_SRC
+*** Connect Org to our apisnoop db
+    #+NAME: ReConnect org to postgres
+    #+BEGIN_SRC emacs-lisp :results silent
+      (if (get-buffer "*SQL: postgres:none*")
+          (with-current-buffer "*SQL: postgres:none*"
+            (kill-buffer)))
+      (sql-connect "apisnoop" (concat "*SQL: postgres:none*"))
+    #+END_SRC
+*** Check it all worked
+
+    Once the postgres pod has been up for at least three minutes, you can check if it all works.
+
+    Running ~\d+~ will list all the tables and views in your db, and their size.
+    First,you want to ensure that relations _are_ found.  IF not, something happened with postgres and you should check the logs (check out [[#footnotes]] for more info.)
+
+    There should be about a dozen views, and two tables.  The table ~bucket_job_swagger~ should be about 3712kb.  The table ~raw_audit_event~ should be about 416mb.  If either show as 8192 bytes, it means no data loaded.  Check the Hasura logs in this case, to see if there was an issue with the migration.
+
+    #+begin_src sql-mode :results silent
+      \d+
+    #+end_src
+
+    #+NAME: example results
+    #+begin_example sql-mode
+                                              List of relations
+       Schema |               Name               |       Type        |  Owner   |  Size   | Description
+      --------+----------------------------------+-------------------+----------+---------+-------------
+       public | api_operation_material           | materialized view | apisnoop | 3688 kB |
+       public | api_operation_parameter_material | materialized view | apisnoop | 6016 kB |
+       public | audit_event                      | view              | apisnoop | 0 bytes |
+       public | bucket_job_swagger               | table             | apisnoop | 3712 kB |
+       public | change_in_coverage               | view              | apisnoop | 0 bytes |
+       public | change_in_tests                  | view              | apisnoop | 0 bytes |
+       public | endpoint_coverage                | view              | apisnoop | 0 bytes |
+       public | endpoints_hit_by_new_test        | view              | apisnoop | 0 bytes |
+       public | projected_change_in_coverage     | view              | apisnoop | 0 bytes |
+       public | raw_audit_event                  | table             | apisnoop | 419 MB  |
+       public | stable_endpoint_stats            | view              | apisnoop | 0 bytes |
+       public | untested_stable_core_endpoints   | view              | apisnoop | 0 bytes |
+      (12 rows)
+
+    #+end_example
+*** Check current coverage
+    It can be useful to see the current level of testing according to your baseline audit log (by default the last successful test run on master).
+
+    You can view this with the query:
+    #+NAME: stable endpoint stats
+    #+begin_src sql-mode
+      select * from stable_endpoint_stats where job != 'live';
+    #+end_src
+
+    #+RESULTS: stable endpoint stats
+    #+begin_SRC example
+             job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+    ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+     1206727790053822466 | 2019-12-17 |             438 |       181 |       129 |          41.32 |               29.45
+    (1 row)
+
+    #+end_SRC
+
+
+*** TODO Stand up, Stretch, and get a glass of water
+    You did it! By hydration and pauses are important.  Take some you time, and drink a full glass of water!
+    
+** Maintaining and Debugging Cluster 
+** Load Logs to Help Debug Cluster
+    #:PROPERTIES:
+    #:header-args:tmate+: :prologue (concat "cd " (file-name-directory buffer-file-name) "../../apisnoop/apps\n. .loadenv\n")
+    #:END:
+**** hasura logs
+
+     #+BEGIN_SRC tmate :eval never-export :session foo:hasura_logs
+       HASURA_POD=$(\
+                    kubectl get pod --selector=io.apisnoop.graphql=hasura -o name \
+                        | sed s:pod/::)
+       kubectl logs $HASURA_POD -f
+     #+END_SRC
+
+**** postgres logs
+
+     #+BEGIN_SRC tmate :eval never-export :session foo:postgres_logs
+       POSTGRES_POD=$(\
+                      kubectl get pod --selector=io.apisnoop.db=postgres -o name \
+                          | sed s:pod/::)
+       kubectl logs $POSTGRES_POD -f
+     #+END_SRC
+
+*** Manually load swagger or audit events
+    If you ran through the full setup, but were getting 0's in the stable_endpint_stats, it means the table migrations were successful, but no data was loaded.
+
+    You can verify data loaded with the below query.  ~bucket_job_swagger~ should have a size around 3600kb and raw_audit_event should have a size around 412mb.
+
+    #+NAME: Verify Data Loaded
+    #+begin_src sql-mode
+      \dt+
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src sql-mode
+      List of relations
+        Schema |        Name        | Type  |  Owner   |  Size   | Description
+        --------+--------------------+-------+----------+---------+-------------
+        public | bucket_job_swagger | table | apisnoop | 3600 kB |
+        public | raw_audit_event    | table | apisnoop | 412 MB  |
+        (2 rows)
+
+    #+end_src
+
+    If either shows a size of ~8192 bytes~, you'll want to manually load it, refresh materialized views, then check again.
+
+    if you want to load a particular bucket or job, you can name them as the first and second argument of these functions.
+    e.g
+    : select * from load)swagger('ci-kubernetes-beta', 1122334344);
+    will load that specific bucket/job combo.
+    : select * from load_swagger('ci-kubernetes-beta');
+    will load the latest successful test run for ~ci-kubernetes-beta~
+    : select * from load_swagger('ci-kubernetes-beta', null, true);
+    will load the latest successful test run for ~ci-kubernetes-beta~, but with bucket and job set to 'apisnoop/live' (used for testing).
+    #+NAME: Manually load swaggers
+    #+begin_src sql-mode
+      select * from load_swagger();
+      select * from load_swagger(null, null, true);
+    #+end_src
+
+    #+NAME: Manually load audit events
+    #+begin_src sql-mode
+      select * from load_audit_events();
+    #+end_src
+
+    #+NAME: Refresh Materialized Views
+    #+begin_src sql-mode
+      REFRESH MATERIALIZED VIEW api_operation_material;
+      REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+    #+end_src
+
+    
