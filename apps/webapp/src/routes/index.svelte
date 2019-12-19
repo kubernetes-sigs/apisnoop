@@ -34,7 +34,7 @@
     <title>APISnoop</title>
 </svelte:head>
 
-<h1>Test Writing Helper</h1>
+<h1>APISNOOOOOOOOP</h1>
 {#await $projection}
     loading stats...
 {:then results}
