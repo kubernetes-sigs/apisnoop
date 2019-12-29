@@ -1,33 +1,24 @@
 <script context="module">
     import client from "../apollo.js";
     import { gql } from "apollo-boost";
+    import { ENDPOINTS } from '../queries';
 
-    const PROJECTED_CHANGE = gql`
-        query stats {
-            projected_change_in_coverage {
-                new_coverage
-                old_coverage
-            }
-            endpoints_hit_by_new_test{
-                operation_id
-                hit_by_ete
-                hit_by_new_test
-            }
-        }
-    `;
     export async function preload() {
     return {
-    cache: await client.query({query: PROJECTED_CHANGE})
+        cache: await client.query({query: ENDPOINTS})
     };
     }
 </script>
 
 <script>
- import { query } from 'svelte-apollo';
- import ProjectedCoverage from '../components/Projected-Coverage.svelte';
- import EndpointsHitByTest from '../components/Endpoints-Hit-By-Test.svelte';
+ import { restore, query } from 'svelte-apollo';
+ import { endpoints, opIDs } from '../stores';
+ import { afterUpdate } from 'svelte';
+ export let cache;
 
- const projection = query(client, {query: PROJECTED_CHANGE})
+ restore(client, ENDPOINTS, cache.data);
+ const endpointsFromQuery = query(client, {query: ENDPOINTS})
+ endpoints.set($endpointsFromQuery.data.endpoint_coverage);
 </script>
 
 <svelte:head>
@@ -35,13 +26,24 @@
 </svelte:head>
 
 <h1>APISNOOOOOOOOP</h1>
-{#await $projection}
-    loading stats...
-{:then results}
-    <ProjectedCoverage results={results.data.projected_change_in_coverage[0]} />
-    <EndpointsHitByTest results={results.data.endpoints_hit_by_new_test} />
+{#if ($opIDs.length > 0)}
+    <ul>
+        {#each $opIDs as opID}
+            <li>opeartion: {opID}</li>
+        {/each}
+    </ul>
+{/if}
+{#await $endpointsFromQuery}
+    <em>loading</em>
+    {:then result} 
+        <ul>
+        {#each result.data.endpoint_coverage as ep}
+            <li>{ep.level}</li>
+        {/each}
+        </ul>
+    {:catch error}
+    <p>ERROR: {error}</p>
 {/await}
-
 
 
 <style>

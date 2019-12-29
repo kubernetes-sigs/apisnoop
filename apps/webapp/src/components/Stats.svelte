@@ -1,6 +1,14 @@
-import ApolloClient from 'apollo-boost';
-import fetch from 'node-fetch';
+<script>
+ export let stats;
 
-const GQL_ENDPOINT = 'http://147.75.84.193:8080/v1/graphql';
+ $: totalEndpoints = stats.total_endpoints;
+ $: testHits = stats.test_hits;
+ $: confHits = stats.conf_hits;
+</script>
 
-export default new ApolloClient({uri: GQL_ENDPOINT, fetch: fetch});
+<h2>Stats</h2>
+<ul>
+    <li>{totalEndpoints} total endpoints</li>
+    <li>{testHits} test hits</li>
+    <li>{confHits} conformance test hits</li>
+</ul>
