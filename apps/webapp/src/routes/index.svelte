@@ -13,7 +13,12 @@
 <script>
  import { isEmpty } from 'lodash-es';
  import { restore, query } from 'svelte-apollo';
- import { endpoints, opIDs } from '../stores';
+ import {
+     endpoints,
+     groupedEndpoints,
+     opIDs,
+     sunburst
+ } from '../stores';
  import { afterUpdate } from 'svelte';
  export let cache;
 
@@ -21,7 +26,7 @@
  const endpointsFromQuery = query(client, {query: ENDPOINTS})
  endpoints.set($endpointsFromQuery.data.endpoint_coverage);
 
- afterUpdate(() => console.log({ops: $opIDs}));
+ afterUpdate(() => console.log({ops: $opIDs, gep: $groupedEndpoints, sunburst: $sunburst}));
 </script>
 
 <svelte:head>
