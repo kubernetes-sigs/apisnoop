@@ -11,6 +11,7 @@
 </script>
 
 <script>
+ import { isEmpty } from 'lodash-es';
  import { restore, query } from 'svelte-apollo';
  import { endpoints, opIDs } from '../stores';
  import { afterUpdate } from 'svelte';
@@ -19,6 +20,8 @@
  restore(client, ENDPOINTS, cache.data);
  const endpointsFromQuery = query(client, {query: ENDPOINTS})
  endpoints.set($endpointsFromQuery.data.endpoint_coverage);
+
+ afterUpdate(() => console.log({ops: $opIDs}));
 </script>
 
 <svelte:head>
@@ -26,10 +29,10 @@
 </svelte:head>
 
 <h1>APISNOOOOOOOOP</h1>
-{#if ($opIDs.length > 0)}
+{#if !isEmpty($opIDs)}
     <ul>
-        {#each $opIDs as opID}
-            <li>opeartion: {opID}</li>
+        {#each Object.keys($opIDs) as opID}
+            <li>opeartion: {$opIDs[opID]['operation_id']}</li>
         {/each}
     </ul>
 {/if}
