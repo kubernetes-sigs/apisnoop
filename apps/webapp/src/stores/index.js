@@ -15,7 +15,6 @@ import {
     endpointColour
 } from '../lib/colours.js';
 
-
 export const endpoints = writable([]);
 
 export const opIDs = derived(endpoints, ($ep, set) => {
