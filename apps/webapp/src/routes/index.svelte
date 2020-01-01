@@ -20,6 +20,8 @@
      sunburst
  } from '../stores';
  import { afterUpdate } from 'svelte';
+ import Sunburst from '../components/Sunburst.svelte';
+
  export let cache;
 
  restore(client, ENDPOINTS, cache.data);
@@ -33,11 +35,12 @@
     <title>APISnoop</title>
 </svelte:head>
 
-<h1>APISNOOOOOOOOP</h1>
+
+<Sunburst />
 {#if !isEmpty($opIDs)}
     <ul>
         {#each Object.keys($opIDs) as opID}
-            <li>opeartion: {$opIDs[opID]['operation_id']}</li>
+            <li>operation: {$opIDs[opID]['operation_id']}</li>
         {/each}
     </ul>
 {/if}
@@ -55,22 +58,9 @@
 
 
 <style>
- h1, p {
+ p {
      text-align: center;
      margin: 0 auto;
- }
-
- h1 {
-     font-size: 1.8em;
-     text-transform: uppercase;
-     font-weight: 700;
-     margin: 0 0 0.5em 0;
- }
-
- @media (min-width: 480px) {
-     h1 {
-        font-size: 2em;
-     }
  }
 </style>
 
