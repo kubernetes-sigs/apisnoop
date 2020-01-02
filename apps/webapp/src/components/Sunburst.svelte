@@ -3,6 +3,7 @@
  import { sunburst } from '../stores';
  import { onMount, afterUpdate } from 'svelte';
 
+ let sequence;
  let chart;
 
  let data = $sunburst;
@@ -20,6 +21,10 @@
          .outerRadius(d => Math.max(d.y0 * radius, d.y1 * radius - 1))
 
 
+
+
+
+
 onMount(()  => {
      const partition = data => {
          const root = d3.hierarchy(data)
@@ -30,7 +35,6 @@ onMount(()  => {
          (root);
      }
   const root = partition(data);
-     
   root.each(d => d.current = d);
 
   const svg = d3.create("svg")
@@ -65,18 +69,18 @@ onMount(()  => {
       .attr("dy", "0.35em")
       .attr("fill-opacity", d => +labelVisible(d.current))
       .attr("transform", d => labelTransform(d.current))
-      .text(d => d.data.name);
+      .text(d => d.children ? d.data.name : '');
 
   const parent = g.append("circle")
       .datum(root)
       .attr("r", radius)
-      .attr("fill", "none")
+      .attr("fill", root.data.color)
       .attr("pointer-events", "all")
       .on("click", clicked);
 
   function clicked(p) {
     parent.datum(p.parent || root);
-
+    parent.attr("fill", p.data.color);
     root.each(d => d.target = {
       x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
       x1: Math.max(0, Math.min(1, (d.x1 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
@@ -128,5 +132,5 @@ onMount(()  => {
 
 </script>
 
-<div bind:this={chart}>
-</div>
+<div bind:this={sequence} class="sequence"></div>
+<div bind:this={chart} class="chart"></div>
