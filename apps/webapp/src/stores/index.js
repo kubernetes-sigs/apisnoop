@@ -34,7 +34,8 @@ export const groupedEndpoints = derived(endpoints, ($ep, set) => {
                 return endpointsInCategory.map (endpoint => {
                     return {
                         ...endpoint,
-                        size: 1,
+                        name: endpoint.operation_id,
+                        value: 1,
                         color: endpointColour(endpoint)
                     };
                 });
@@ -58,7 +59,7 @@ export const sunburst = derived(groupedEndpoints, ($gep, set) => {
                     children: map(endpointsByCategoryAndOpID, (endpointsByOpID, category) => {
                         return {
                             name: category,
-                            color: categoryColours['category'] ||  'rgba(183, 28, 28, 1)', // basic color so things compile right.
+                            color: categoryColours[category] ||  'rgba(183, 28, 28, 1)', // basic color so things compile right.
                             children: sortBy(endpointsByOpID, [
                                 (endpoint) => endpoint.testHits > 0,
                                 (endpoint) => endpoint.conformanceHits > 0

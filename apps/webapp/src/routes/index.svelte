@@ -19,7 +19,6 @@
      opIDs,
      sunburst
  } from '../stores';
- import { afterUpdate } from 'svelte';
  import Sunburst from '../components/Sunburst.svelte';
 
  export let cache;
@@ -28,7 +27,6 @@
  const endpointsFromQuery = query(client, {query: ENDPOINTS})
  endpoints.set($endpointsFromQuery.data.endpoint_coverage);
 
- afterUpdate(() => console.log({ops: $opIDs, gep: $groupedEndpoints, sunburst: $sunburst}));
 </script>
 
 <svelte:head>
