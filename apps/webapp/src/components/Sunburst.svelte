@@ -31,7 +31,9 @@
      const partition = data => {
          const root = d3.hierarchy(data)
                         .sum(d => d.value)
-                        .sort((a, b) => b.data.test_hits - a.data.test_hits);
+                        .sort((a, b) => (b.data.test_hits - a.data.test_hits))
+                        .sort((a, b) => (b.data.conf_hits - a.data.conf_hits));
+
          return d3.partition()
                   .size([2 * Math.PI, root.height + 1])
          (root);
@@ -41,7 +43,7 @@
 
      const svg = d3.create("svg")
                    .attr("viewBox", [0, 0, width, width])
-                   .style("font", "10px sans-serif");
+                   .style("font", "12px sans-serif");
 
      const g = svg.append("g")
                   .attr("transform", `translate(${width / 2},${width / 2})`);
@@ -104,7 +106,7 @@
              .filter(function(d) {
                  return +this.getAttribute("fill-opacity") || arcVisible(d.target);
              })
-             .attr("fill-opacity", d => arcVisible(d.target) ? (d.children ? 0.6 : 0.4) : 0)
+             .attr("fill-opacity", d => arcVisible(d.target) ? 1 : 0)
              .attrTween("d", d => () => arc(d.current));
 
          label.filter(function(d) {
@@ -132,8 +134,7 @@
 
      function mouseover(d) {
 
-         var sequenceArray = d.ancestors().reverse();
-         sequenceArray.shift(); // remove root node from the array
+         let sequenceArray = d.ancestors().reverse().slice(1);
          updateBreadcrumbs(sequenceArray);
 
          // Fade all the segments.
@@ -141,10 +142,8 @@
            .style("opacity", 0.3);
 
          // Then highlight only those that are an ancestor of the current segment.
-         chart.selectAll("path")
-            .filter(function(node) {
-                return (sequenceArray.indexOf(node) >= 0);
-            })
+         d3.selectAll("path")
+            .filter((node) => (sequenceArray.indexOf(node) >= 0))
             .style("opacity", 1);
      }
 
