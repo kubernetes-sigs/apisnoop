@@ -33,7 +33,6 @@
                         .sum(d => d.value)
                         .sort((a, b) => (b.data.test_hits - a.data.test_hits))
                         .sort((a, b) => (b.data.conf_hits - a.data.conf_hits));
-
          return d3.partition()
                   .size([2 * Math.PI, root.height + 1])
          (root);
@@ -181,11 +180,12 @@
 
      // Generate a string that describes the points of a breadcrumb polygon.
      function breadcrumbPoints(d, i) {
+         let textWidth = (d.data.name.length * 7)
          var points = [];
          points.push("0,0");
-         points.push(b.w + ",0");
-         points.push(b.w + b.t + "," + (b.h / 2));
-         points.push(b.w + "," + b.h);
+         points.push(b.w + textWidth + ",0");
+         points.push(b.w + b.t + textWidth + "," + (b.h / 2));
+         points.push(b.w + textWidth + "," + b.h);
          points.push("0," + b.h);
          if (i > 0) { // Leftmost breadcrumb; don't include 6th vertex.
                     points.push(b.t + "," + (b.h / 2));
@@ -212,15 +212,15 @@
                  .style("fill", function(d) { return d.data.color; });
 
          entering.append("svg:text")
-                 .attr("x", (b.w + b.t) / 2)
+                 .attr("x", (d) => ((b.w + b.t - d.data.name.length) / 2))
                  .attr("y", b.h / 2)
                  .attr("dy", "0.35em")
-                 .attr("text-anchor", "middle")
+                 .attr("text-anchor", "start")
                  .text(function(d) { return d.data.name; });
 
          // Merge enter and update selections; set position for all nodes.
          entering.merge(trail).attr("transform", function(d, i) {
-             return "translate(" + i * (b.w + b.s) + ", 0)";
+             return "translate(" + i * (b.w + b.s + (d.parent.data.name.length * 3)) + ", 0)";
          });
 
          // Make the breadcrumb trail visible, if it's hidden.
