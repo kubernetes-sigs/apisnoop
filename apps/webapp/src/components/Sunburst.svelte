@@ -5,8 +5,8 @@
 
  let sequence;
  let chart;
-
  let data = $sunburst;
+ $: sunburstLoaded = false;
 
  const format = d3.format(",d")
  const width = 932
@@ -249,11 +249,14 @@
      chart.append(svg.node());
      d3.select(chart).on("mouseleave", mouseleave);
      initializeBreadcrumbTrail();
+     sunburstLoaded = true;
  })
 
- console.log({data, sunburst: $sunburst});
-
 </script>
+
+{#if !sunburstLoaded}
+    <p>loading...</p>
+{/if}
 
 <div bind:this={sequence} class="sequence"></div>
 <div bind:this={chart} class="chart">
