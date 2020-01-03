@@ -10,5 +10,10 @@ export const ENDPOINTS = gql`
     test_hits
     other_hits
   }
+  bucket_job_swagger(where: {bucket: {_neq: "apisnoop"}}) {
+    bucket
+    job
+    job_timestamp
+  }
 }
 `

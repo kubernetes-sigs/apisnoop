@@ -16,6 +16,23 @@ import {
 } from '../lib/colours.js';
 
 export const endpoints = writable([]);
+export const rawMetadata = writable([]);
+
+export const metadata = derived(rawMetadata, ($rm, set) => {
+    if (!isEmpty($rm)) {
+        set({
+            bucket: $rm[0].bucket,
+            job: $rm[0].job,
+            timestamp: $rm[0].job_timestamp
+        });
+    } else {
+        set({
+            bucket: '',
+            job: '',
+            timestamp: ''
+        });
+    }
+});
 
 export const opIDs = derived(endpoints, ($ep, set) => {
     if ($ep.length > 0) {

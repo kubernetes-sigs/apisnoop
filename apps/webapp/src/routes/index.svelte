@@ -11,14 +11,14 @@
 </script>
 
 <script>
- import { isEmpty } from 'lodash-es';
+ import { afterUpdate } from 'svelte';
  import { restore, query } from 'svelte-apollo';
  import {
      endpoints,
-     groupedEndpoints,
-     opIDs,
-     sunburst
+     rawMetadata,
+     metadata
  } from '../stores';
+ import Header from '../components/Header.svelte';
  import Sunburst from '../components/Sunburst.svelte';
 
  export let cache;
@@ -26,7 +26,9 @@
  restore(client, ENDPOINTS, cache.data);
  const endpointsFromQuery = query(client, {query: ENDPOINTS})
  endpoints.set($endpointsFromQuery.data.endpoint_coverage);
+ rawMetadata.set($endpointsFromQuery.data.bucket_job_swagger);
 
+ afterUpdate(() => console.log({metadata: $metadata, raw: $rawMetadata, query: $endpointsFromQuery.data}));
 </script>
 
 <svelte:head>
@@ -34,31 +36,5 @@
 </svelte:head>
 
 
+<Header />
 <Sunburst />
-{#if !isEmpty($opIDs)}
-    <ul>
-        {#each Object.keys($opIDs) as opID}
-            <li>operation: {$opIDs[opID]['operation_id']}</li>
-        {/each}
-    </ul>
-{/if}
-{#await $endpointsFromQuery}
-    <em>loading</em>
-    {:then result} 
-        <ul>
-        {#each result.data.endpoint_coverage as ep}
-            <li>{ep.level}</li>
-        {/each}
-        </ul>
-    {:catch error}
-    <p>ERROR: {error}</p>
-{/await}
-
-
-<style>
- p {
-     text-align: center;
-     margin: 0 auto;
- }
-</style>
-
