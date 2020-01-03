@@ -80,9 +80,11 @@
                      .attr("r", radius)
                      .attr("fill", root.data.color)
                      .attr("pointer-events", "all")
-                     .on("click", clicked);
+                     .on("click", clicked)
+
 
      function clicked(p) {
+         console.log({p});
          parent.datum(p.parent || root);
          parent.attr("fill", p.data.color);
          root.each(d => d.target = {
@@ -113,7 +115,21 @@
          }).transition(t)
               .attr("fill-opacity", d => +labelVisible(d.target))
               .attrTween("transform", d => () => labelTransform(d.current));
+
+         setInnerText(p);
      }
+
+     function setInnerText (p) {
+         let level = d3.select("#level")
+         let category = d3.select("#category")
+         if (p.parent !== null) {
+             level.text(p.parent.data.name === "root" ? p.data.name : p.parent.data.name)
+             category.text(p.parent.data.name === "root" ? "" : p.data.name)
+         } else {
+             level.text("")
+             category.text("")
+         }
+     };
 
      function arcVisible(d) {
          return d.y1 <= 4 && d.y0 >= 1 && d.x1 > d.x0;
@@ -142,8 +158,8 @@
 
          // Then highlight only those that are an ancestor of the current segment.
          d3.selectAll("path")
-            .filter((node) => (sequenceArray.indexOf(node) >= 0))
-            .style("opacity", 1);
+           .filter((node) => (sequenceArray.indexOf(node) >= 0))
+           .style("opacity", 1);
      }
 
      // Restore everything to full opacity when moving off the visualization.
@@ -180,6 +196,7 @@
 
      // Generate a string that describes the points of a breadcrumb polygon.
      function breadcrumbPoints(d, i) {
+         // Stretch breadcrumb to fit variable node name.  7 is arbitrary, based on what looked good with our longer names.
          let textWidth = (d.data.name.length * 7)
          var points = [];
          points.push("0,0");
@@ -239,4 +256,45 @@
 </script>
 
 <div bind:this={sequence} class="sequence"></div>
-<div bind:this={chart} class="chart"></div>
+<div bind:this={chart} class="chart">
+    <div id="explanation">
+        <p id="level"></p>
+        <p id="category"></p>
+    </div>
+</div>
+
+
+<style>
+ .chart {
+     position: relative;
+ }
+
+ .chart path {
+     stroke: #fff;
+ }
+
+ #explanation {
+     position: absolute;
+     top: calc(932px / 2.5);
+     left: calc(932px / 2.95);
+     width: 200px;
+     text-align: center;
+     color: #eeeeee;
+     z-index: 2;
+     display: flex;
+     flex-flow: column;
+     justify-content: center;
+     align-items: center;
+ }
+
+ #level , #category {
+     margin: 0;
+     padding: 0;
+ }
+ #level {
+     font-size: 1.5em;
+ }
+ #category {
+     font-size: 1.25em;
+ }
+</style>
