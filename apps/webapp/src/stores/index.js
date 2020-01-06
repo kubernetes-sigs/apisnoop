@@ -18,6 +18,45 @@ import {
 export const endpoints = writable([]);
 export const rawMetadata = writable([]);
 
+
+export const bucketsAndJobs = derived(rawMetadata, ($rm, set) => {
+    // group by buckets and their jobs, noting the most recent job for each bucket.
+    if (isEmpty($rm)) {
+        set({});
+    } else {
+        let buckets = groupBy($rm, 'bucket');
+        let bj = mapValues(buckets, (allJobs) => {
+            let [latestJob] = allJobs
+                .sort((a,b) => new Date(b.job_timestamp) > new Date(a.job_timestamp))
+                .map(j => j.job);
+
+            let jobs = allJobs.map(j => ({job: j.job, timestamp: j.job_timestamp}));
+
+            return {
+                latestJob,
+                jobs
+            };
+        });
+        set(bj);
+    }
+});
+
+export const defaultBucketAndJob = derived(bucketsAndJobs, ($bj, set) => {
+    if (isEmpty($bj))  {
+        set({})
+    } else {
+        let releaseBlocking = 'ci-kubernetes-e2e-gci-gce';
+        let defaultBucket = Object.keys($bj).includes(releaseBlocking)
+            ? releaseBlocking
+            : Object.keys($bj)[0];
+
+        set({
+            bucket: defaultBucket,
+            job: $bj[defaultBucket].latestJob
+        });
+    }
+});
+
 export const metadata = derived(rawMetadata, ($rm, set) => {
     if (!isEmpty($rm)) {
         set({
