@@ -1,38 +1,35 @@
 <script context="module">
- import client from "../apollo.js";
- import { gql } from "apollo-boost";
- import { ENDPOINTS } from '../queries';
+ import client from "../../apollo.js";
+ import { ENDPOINTS } from '../../queries';
+ import { get } from 'svelte/store';
+ import { defaultBucketAndJob } from '../../stores';
 
- export async function preload() {
-     return {
-         cache: await client.query({query: ENDPOINTS})
-     };
+ export async function preload (page, session) {
+     let {bucket, job} = get(defaultBucketAndJob);
+     let endpointsFromQuery = await client.query({query: ENDPOINTS, variables: {bucket, job}});
+     return { bucket, job, endpointsFromQuery };
  }
 </script>
 
 <script>
- import { afterUpdate } from 'svelte';
- import { restore, query } from 'svelte-apollo';
+ import { isEmpty } from 'lodash-es';
  import {
      endpoints,
-     rawMetadata,
-     metadata
- } from '../stores';
- import Header from '../components/Header.svelte';
- import Sunburst from '../components/Sunburst.svelte';
+     activeBucketAndJob,
+ } from '../../stores';
+ import Sunburst from '../../components/Sunburst.svelte';
 
- export let cache;
+ export let bucket;
+ export let job;
+ export let endpointsFromQuery;
 
- restore(client, ENDPOINTS, cache.data);
- const endpointsFromQuery = query(client, {query: ENDPOINTS})
- endpoints.set($endpointsFromQuery.data.endpoint_coverage);
- rawMetadata.set($endpointsFromQuery.data.bucket_job_swagger);
+ activeBucketAndJob.set({bucket, job});
+ endpoints.set(endpointsFromQuery.data.endpoint_coverage);
 </script>
 
-<svelte:head>
-    <title>APISnoop</title>
-</svelte:head>
-
-
-<Header />
-<p>Coverage over time will go here</p>
+{#if isEmpty($endpoints)}
+    <p>loading...</p>
+{:else}
+<Sunburst />
+<a href='coverage/fun'>fun</a>
+{/if}
