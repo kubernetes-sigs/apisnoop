@@ -44,9 +44,9 @@ export const categoryColours = {
 
 export function endpointColour (endpoint) {
     let endpointColor = categoryColours[endpoint.category]
-    if (endpoint.test_hits === 0) {
+    if (!endpoint.tested) {
         return GRAY;
-    } else if (endpoint.conf_hits === 0) {
+    } else if (!endpoint.conf_tested) {
         return fadeColour(endpointColor, 0.75);
     } else {
         return endpointColor;

@@ -31,8 +31,8 @@
      const partition = data => {
          const root = d3.hierarchy(data)
                         .sum(d => d.value)
-                        .sort((a, b) => (b.data.test_hits - a.data.test_hits))
-                        .sort((a, b) => (b.data.conf_hits - a.data.conf_hits));
+                        .sort((a, b) => (b.data.tested - a.data.tested))
+                        .sort((a, b) => (b.data.conf_tested - a.data.tested));
          return d3.partition()
                   .size([2 * Math.PI, root.height + 1])
          (root);

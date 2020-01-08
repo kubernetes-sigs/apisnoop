@@ -1,19 +1,14 @@
 import { gql } from 'apollo-boost';
 
 export const ENDPOINTS = gql`
-  {
-  endpoint_coverage(where: {bucket: {_neq: "apisnoop"}}) {
+  query ENDPOINTS ($bucket: String!, $job: String!){
+  endpoint_coverage(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
     operation_id
     level
     category
-    conf_hits
-    test_hits
-    other_hits
-  }
-  bucket_job_swagger(where: {bucket: {_neq: "apisnoop"}}) {
-    bucket
-    job
-    job_timestamp
+    conf_tested
+    tested
+    hit
   }
 }
 `

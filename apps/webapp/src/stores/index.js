@@ -1,4 +1,7 @@
 import { writable, derived } from 'svelte/store';
+import client from '../apollo.js';
+import { ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../queries';
+
 import {
     isEmpty,
     groupBy,
@@ -15,9 +18,12 @@ import {
     endpointColour
 } from '../lib/colours.js';
 
-export const endpoints = writable([]);
 export const rawMetadata = writable([]);
 
+async function fetchBucketsAndJobs () {
+    let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
+    rawMetadata.set(metadata.data.bucket_job_swagger)
+}
 
 export const bucketsAndJobs = derived(rawMetadata, ($rm, set) => {
     // group by buckets and their jobs, noting the most recent job for each bucket.
@@ -57,21 +63,9 @@ export const defaultBucketAndJob = derived(bucketsAndJobs, ($bj, set) => {
     }
 });
 
-export const metadata = derived(rawMetadata, ($rm, set) => {
-    if (!isEmpty($rm)) {
-        set({
-            bucket: $rm[0].bucket,
-            job: $rm[0].job,
-            timestamp: $rm[0].job_timestamp
-        });
-    } else {
-        set({
-            bucket: '',
-            job: '',
-            timestamp: ''
-        });
-    }
-});
+export const activeBucketAndJob = writable({});
+
+export const endpoints = writable([]);
 
 export const opIDs = derived(endpoints, ($ep, set) => {
     if ($ep.length > 0) {
@@ -131,3 +125,5 @@ export const sunburst = derived(groupedEndpoints, ($gep, set) => {
         set({})
     }
 });
+
+fetchBucketsAndJobs();
