@@ -1,6 +1,3 @@
--- Create
---     #+NAME: view audit_event
-
 CREATE OR REPLACE VIEW "public"."audit_event" AS
   SELECT (raw.data ->> 'auditID') as audit_id,
          raw.bucket,

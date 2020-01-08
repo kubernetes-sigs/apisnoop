@@ -1,7 +1,3 @@
-
-
--- #+NAME: regex_from_path.sql
-
 set role dba;
 CREATE OR REPLACE FUNCTION regex_from_path(path text)
 RETURNS text AS $$
@@ -21,10 +17,6 @@ else:
 return path_regex
 $$ LANGUAGE plpython3u ;
 reset role;
-
--- Create
-    
--- #+NAME: api_operation_material
 
 CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
   SELECT

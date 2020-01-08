@@ -668,22 +668,24 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
 *** Index
 #+NAME: index the api_operation_material
 #+BEGIN_SRC sql-mode :tangle ../apps/hasura/migrations/201_view_api_operation_material.up.sql :results silent
-    CREATE INDEX api_operation_materialized_event_verb  ON api_operation_material            (event_verb);
-    CREATE INDEX api_operation_materialized_k8s_action  ON api_operation_material            (k8s_action);
-    CREATE INDEX api_operation_materialized_k8s_group   ON api_operation_material            (k8s_group);
-    CREATE INDEX api_operation_materialized_k8s_version ON api_operation_material            (k8s_version);
-    CREATE INDEX api_operation_materialized_k8s_kind    ON api_operation_material            (k8s_kind);
-    CREATE INDEX api_operation_materialized_tags        ON api_operation_material            (tags);
-    CREATE INDEX api_operation_materialized_schemes     ON api_operation_material            (schemes);
-    CREATE INDEX api_operation_materialized_regex_gist  ON api_operation_material USING GIST (regex gist_trgm_ops);
-    CREATE INDEX api_operation_materialized_regex_gin   ON api_operation_material USING GIN  (regex gin_trgm_ops);
-    CREATE INDEX api_operation_materialized_consumes_ops   ON api_operation_material USING GIN  (consumes jsonb_ops);
-    CREATE INDEX api_operation_materialized_consumes_path  ON api_operation_material USING GIN  (consumes jsonb_path_ops);
-    CREATE INDEX api_operation_materialized_parameters_ops   ON api_operation_material USING GIN  (parameters jsonb_ops);
-    CREATE INDEX api_operation_materialized_parameters_path  ON api_operation_material USING GIN  (parameters jsonb_path_ops);
-    CREATE INDEX api_operation_materialized_responses_ops   ON api_operation_material USING GIN  (responses jsonb_ops);
-    CREATE INDEX api_operation_materialized_responses_path  ON api_operation_material USING GIN  (responses jsonb_path_ops);
+  CREATE INDEX api_operation_materialized_bucket      ON api_operation_material            (bucket);
+  CREATE INDEX api_operation_materialized_event_verb  ON api_operation_material            (event_verb);
+  CREATE INDEX api_operation_materialized_k8s_action  ON api_operation_material            (k8s_action);
+  CREATE INDEX api_operation_materialized_k8s_group   ON api_operation_material            (k8s_group);
+  CREATE INDEX api_operation_materialized_k8s_version ON api_operation_material            (k8s_version);
+  CREATE INDEX api_operation_materialized_k8s_kind    ON api_operation_material            (k8s_kind);
+  CREATE INDEX api_operation_materialized_tags        ON api_operation_material            (tags);
+  CREATE INDEX api_operation_materialized_schemes     ON api_operation_material            (schemes);
+  CREATE INDEX api_operation_materialized_regex_gist  ON api_operation_material USING GIST (regex gist_trgm_ops);
+  CREATE INDEX api_operation_materialized_regex_gin   ON api_operation_material USING GIN  (regex gin_trgm_ops);
+  CREATE INDEX api_operation_materialized_consumes_ops   ON api_operation_material USING GIN  (consumes jsonb_ops);
+  CREATE INDEX api_operation_materialized_consumes_path  ON api_operation_material USING GIN  (consumes jsonb_path_ops);
+  CREATE INDEX api_operation_materialized_parameters_ops   ON api_operation_material USING GIN  (parameters jsonb_ops);
+  CREATE INDEX api_operation_materialized_parameters_path  ON api_operation_material USING GIN  (parameters jsonb_path_ops);
+  CREATE INDEX api_operation_materialized_responses_ops   ON api_operation_material USING GIN  (responses jsonb_ops);
+  CREATE INDEX api_operation_materialized_responses_path  ON api_operation_material USING GIN  (responses jsonb_path_ops);
 #+END_SRC
+
 ** 220: api_operation_parameter_material
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/220_view_api_operation_parameter_material.up.sql
@@ -775,16 +777,16 @@ Using our api_operation_material view, look into the parameters field in each on
    :PROPERTIES:
    :header-args:sql-mode+: :results silent
    :END:
-** 500: Endpoint Coverage View
+** 500: Endpoint Coverage Material View
    :PROPERTIES:
-   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/500_view_endpoint_coverage.up.sql
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/500_view_endpoint_coverage_material.up.sql
    :END:
-   
    developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]] 
+   improved in [[file:explorations/speedup_endpoint_coverage.org][exploration: speed up endpoint coverage]]  
    
-   #+NAME: Endpoint Coverage View
-   #+BEGIN_SRC sql-mode
-     CREATE OR REPLACE VIEW "public"."endpoint_coverage" AS
+    #+NAME: endpoint_coverage_material
+    #+BEGIN_SRC sql-mode
+     CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
       SELECT DISTINCT
         bjs.job_timestamp::date as date,
         ao.bucket as bucket,
@@ -795,22 +797,60 @@ Using our api_operation_material view, look into the parameters field in each on
         ao.k8s_group as group,
         ao.k8s_kind as kind,
         ao.k8s_version as version,
-        count(*) filter (where ae.useragent like 'e2e.test%') as test_hits,
-        count(*) filter (where ae.useragent like 'e2e.test%' AND useragent like '%[Conformance]%') as conf_hits,
-        count(*) filter (where ae.useragent not like 'e2e.test%') as other_hits,
-        count(ae.useragent) total_hits
+        EXISTS (
+          select *
+            from audit_event
+           where audit_event.operation_id = ao.operation_id
+             AND audit_event.bucket = ao.bucket
+             AND audit_event.job = ao.job
+             AND audit_event.useragent like 'e2e.test%') as tested,
+        EXISTS (
+          select *
+            from audit_event
+           where audit_event.operation_id = ao.operation_id
+             AND audit_event.bucket = ao.bucket
+             AND audit_event.job = ao.job
+             AND audit_event.useragent like '%[Conformance]%') as conf_tested,
+        EXISTS (
+          select *
+            from audit_event
+           where audit_event.operation_id = ao.operation_id
+             AND audit_event.bucket = ao.bucket
+             AND audit_event.job = ao.job) as hit
         FROM api_operation_material ao
                LEFT JOIN audit_event ae ON (ao.operation_id = ae.operation_id AND ao.bucket = ae.bucket AND ao.job = ae.job)
                LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
           WHERE ao.deprecated IS False
         GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
-   #+END_SRC
-
+    #+END_SRC
+   
+*** Index
+   #+NAME: Add indexes 
+   #+begin_src sql-mode :results silent
+  CREATE INDEX idx_endpoint_coverage_material_bucket             ON endpoint_coverage_material                       (bucket);
+  CREATE INDEX idx_endpoint_coverage_material_job                ON endpoint_coverage_material                          (job);
+  CREATE INDEX idx_endpoint_coverage_material_operation_id       ON endpoint_coverage_material                 (operation_id);
+   #+end_src
+   
+** 510: Endpoint Coverage Material View
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/510_view_endpoint_coverage.up.sql
+   :END:
+    #+NAME: endpoint_coverage_material
+    #+BEGIN_SRC sql-mode
+      CREATE OR REPLACE VIEW "public"."endpoint_coverage" AS
+      SELECT
+        ,*
+        FROM
+            endpoint_coverage_material;
+    #+END_SRC
+   
 ** 520: stable endpoint_stats_view
    :PROPERTIES:
    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/520_view_stable_endpoint_stats.up.sql
    :END:
    Based on the update we give to dan, developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]] 
+   
    #+NAME: Endpoint Stats View
    #+BEGIN_SRC sql-mode
      CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS
@@ -818,14 +858,15 @@ Using our api_operation_material view, look into the parameters field in each on
        ec.job,
        ec.date,
        COUNT(1) as total_endpoints,
-       COUNT(1) filter(WHERE test_hits > 0) as test_hits,
-       COUNT(1) filter(WHERE conf_hits > 0) as conf_hits,
-       ROUND(((count(*) filter(WHERE test_hits > 0)) * 100 )::numeric / count(*), 2) as percent_tested,
-       ROUND(((count(*) filter(WHERE conf_hits > 0)) * 100 )::numeric / count(*), 2) as percent_conf_tested
+       COUNT(1) filter(WHERE tested is true) as test_hits,
+       COUNT(1) filter(WHERE conf_tested is true) as conf_hits,
+       ROUND(((count(*) filter(WHERE tested is true)) * 100 )::numeric / count(*), 2) as percent_tested,
+       ROUND(((count(*) filter(WHERE conf_tested is true)) * 100 )::numeric / count(*), 2) as percent_conf_tested
        FROM endpoint_coverage ec
          WHERE ec.level = 'stable'
       GROUP BY ec.date, ec.job;
    #+END_SRC
+   
 ** 530: Change in Coverage 
    :PROPERTIES:
    :header-args:sql-mode+: :notangle ../apps/hasura/migrations/530_view_change_in_coverage.up.sql
@@ -878,7 +919,7 @@ Using our api_operation_material view, look into the parameters field in each on
          )
          ;
    #+END_SRC
-   
+
 ** 540: Change in Tests 
    :PROPERTIES:
    :header-args:sql-mode+: :notangle ../apps/hasura/migrations/540_view_change_in_tests.up.sql
@@ -981,10 +1022,10 @@ Using our api_operation_material view, look into the parameters field in each on
              api_operation_material ao ON (ec.bucket = ao.bucket AND ec.job = ao.job AND ec.operation_id = ao.operation_id)
      WHERE ec.level = 'stable'
        AND ec.category = 'core'
-       AND test_hits = 0
+       AND tested is false
        AND ao.deprecated IS false
        AND ec.job != 'live'
-     ORDER BY other_hits desc
+     ORDER BY hit desc
               ;
 #+end_src
 
@@ -1006,15 +1047,15 @@ Using our api_operation_material view, look into the parameters field in each on
       ), baseline AS  (
         SELECT DISTINCT
           operation_id,
-          test_hits,
-          conf_hits
+          tested,
+          conf_tested
           FROM endpoint_coverage
          WHERE bucket != 'apisnoop'
       )
       SELECT DISTINCT
         lte.useragent,
         lte.operation_id,
-        b.test_hits as hit_by_ete,
+        b.tested as hit_by_ete,
         lte.hits as hit_by_new_test
         FROM live_testing_endpoints lte
                JOIN baseline b ON (b.operation_id = lte.operation_id);
@@ -1046,7 +1087,7 @@ Using our api_operation_material view, look into the parameters field in each on
             operation_id
           FROM
               endpoint_coverage
-              WHERE test_hits > 0
+              WHERE tested is true
                     ) tested_endpoints
       ), coverage AS (
         SELECT
@@ -1063,7 +1104,7 @@ Using our api_operation_material view, look into the parameters field in each on
         FROM baseline, coverage
                ;
    #+END_SRC
-   
+
 * 900: Tracking and Population
 ** 910: Populate Swaggers Up
   :PROPERTIES:
@@ -1193,10 +1234,9 @@ Using our api_operation_material view, look into the parameters field in each on
       COMMENT ON COLUMN endpoint_coverage.group IS 'kubernetes group this operation_id belongs to';
       COMMENT ON COLUMN endpoint_coverage.version IS 'kubernetes version (e.g alpha or beta or stable)';
       COMMENT ON COLUMN endpoint_coverage.kind IS 'kubernetes kind';
-      COMMENT ON COLUMN endpoint_coverage.test_hits IS 'number of events with an e2e.useragent that hit this endpoint';
-      COMMENT ON COLUMN endpoint_coverage.conf_hits IS 'number of test hits where the test named included [Conformance]';
-      COMMENT ON COLUMN endpoint_coverage.other_hits IS 'number of event hits where useragent was not an e2e.test';
-      COMMENT ON COLUMN endpoint_coverage.total_hits IS 'the sum of test_hits and other_hits';
+      COMMENT ON COLUMN endpoint_coverage.tested IS 'boolean on whether any e2e. useragent hits this endpoint';
+      COMMENT ON COLUMN endpoint_coverage.conf_tested IS 'boolean on whether any useragent with [Conformance] in name hits endpoint';
+      COMMENT ON COLUMN endpoint_coverage.hit IS 'boolean whether endpoint hit by any useragent';
     #+end_src
     
 *** 520: stable_endpoint_stats
@@ -1223,10 +1263,6 @@ Using our api_operation_material view, look into the parameters field in each on
       COMMENT ON COLUMN untested_stable_core_endpoints.group IS 'kubernetes group this operation_id belongs to';
       COMMENT ON COLUMN untested_stable_core_endpoints.version IS 'kubernetes version (e.g alpha or beta or stable)';
       COMMENT ON COLUMN untested_stable_core_endpoints.kind IS 'kubernetes kind';
-      COMMENT ON COLUMN untested_stable_core_endpoints.test_hits IS 'number of events with an e2e.useragent that hit this endpoint';
-      COMMENT ON COLUMN untested_stable_core_endpoints.conf_hits IS 'number of test hits where the test named included [Conformance]';
-      COMMENT ON COLUMN untested_stable_core_endpoints.other_hits IS 'number of event hits where useragent was not an e2e.test';
-      COMMENT ON COLUMN untested_stable_core_endpoints.total_hits IS 'the sum of test_hits and other_hits';
       COMMENT ON COLUMN untested_stable_core_endpoints.description IS 'description of operation_id';
       COMMENT ON COLUMN untested_stable_core_endpoints.http_method IS 'http equivalent for operation, e.g. GET, POST, DELETE';
       COMMENT ON COLUMN untested_stable_core_endpoints.k8s_action IS 'the k8s analog for the http_method';

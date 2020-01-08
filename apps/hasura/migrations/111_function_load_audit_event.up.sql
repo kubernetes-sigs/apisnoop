@@ -1,6 +1,3 @@
--- Create
--- #+NAME: load_audit_events.sql
-
 set role dba;
 CREATE OR REPLACE FUNCTION load_audit_events(
 custom_bucket text default null, 

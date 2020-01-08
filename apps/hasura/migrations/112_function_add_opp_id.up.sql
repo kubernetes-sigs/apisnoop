@@ -1,6 +1,3 @@
--- Create
--- #+NAME: add_opp_id.sql
-
 set role dba;
 CREATE FUNCTION add_op_id() RETURNS TRIGGER as $$
 import json

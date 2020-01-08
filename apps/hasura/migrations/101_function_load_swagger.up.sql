@@ -1,10 +1,3 @@
--- 101: Function to Load Swagger 
---   :PROPERTIES:
---   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/101_function_load_swagger.up.sql
---   :END:
-  
---    #+NAME: load_swagger.sql
-
 set role dba;
 DROP FUNCTION IF EXISTS load_swagger;
 CREATE OR REPLACE FUNCTION load_swagger(
