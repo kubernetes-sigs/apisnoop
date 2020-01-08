@@ -1,5 +1,5 @@
 <script>
- import { metadata } from '../stores';
+ import { defaultBucketAndJob as metadata} from '../stores';
 </script>
 
 <header>
