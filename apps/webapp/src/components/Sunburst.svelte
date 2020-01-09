@@ -2,6 +2,7 @@
  import * as d3 from 'd3';
  import { sunburst } from '../stores';
  import { onMount, afterUpdate } from 'svelte';
+ import { find, head, tail } from 'lodash-es';
 
  let sequence;
  let chart;
@@ -27,7 +28,40 @@
      t: 10
  };
 
+ function cleanSegments (data, segments, clean) {
+     // given an array of url segments and data with nested children
+     // check whether segment matches the name of at least one of the children at respective depth.
+     // returning only valid segments.
+     if (segments.length === 0 || !data.children) {
+         return clean
+     } else  {
+         let children = data.children.map(child => child.name);
+         let isValid = children.includes(head(segments));
+         if (!isValid) {
+             return clean
+         } else {
+             data = data.children.find(o => o.name === head(segments));
+             clean = clean.concat(head(segments));
+             segments= tail(segments);
+             return cleanSegments(data, segments, clean);
+         }
+     }
+ };
+
+ function filterDataBySegments (data, segments) {
+     // given an array of url segments, filter tree data where
+     // each child object matches the name for its respective segment.
+     if (segments.length === 0) {
+         return data;
+     } else {
+         data = data.children.find(o => o.name === head(segments))
+         return filterDataBySegments(data, tail(segments))
+     }
+ };
+
  onMount(()  => {
+     let validSegments = cleanSegments(data, segments, []);
+     data = filterDataBySegments(data, validSegments);
      const partition = data => {
          const root = d3.hierarchy(data)
                         .sum(d => d.value)
@@ -84,8 +118,8 @@
 
 
      function clicked(p) {
-         console.log({p});
          parent.datum(p.parent || root);
+         console.log({p, parent: parent.datum(), root});
          parent.attr("fill", p.data.color);
          root.each(d => d.target = {
              x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
@@ -126,7 +160,7 @@
              level.text(p.parent.data.name === "root" ? p.data.name : p.parent.data.name)
              category.text(p.parent.data.name === "root" ? "" : p.data.name)
          } else {
-             level.text("")
+             level.text(p.data.name === "root" ? '' : p.data.name)
              category.text("")
          }
      };
