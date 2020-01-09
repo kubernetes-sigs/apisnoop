@@ -18,7 +18,7 @@
      }
      let job = bjs[activeBucket]['latestJob']
      let endpointsFromQuery = await client.query({query: ENDPOINTS, variables: {bucket: activeBucket, job}});
-     return { endpointsFromQuery, invalidBucket, activeBucket };
+     return { endpointsFromQuery, invalidBucket, activeBucket, job };
  }
 </script>
 
@@ -30,6 +30,7 @@
  export let endpointsFromQuery;
  export let invalidBucket;
  export let activeBucket;
+ export let job;
  endpoints.set(endpointsFromQuery.data.endpoint_coverage);
 </script>
 
@@ -39,6 +40,6 @@
         <p><strong>Note: </strong><em>Could not find data for <code>{invalidBucket}</code>. Displaying latest job for {activeBucket} instead.</em></p>
     {/if}
 
-    <Sunburst />
+    <Sunburst bucket={activeBucket} job={job}/>
 
 {/if}

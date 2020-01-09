@@ -60,5 +60,5 @@
     {#if invalidJob}
     <p><strong>Note: </strong><em>Could not find job <code>{invalidJob}</code> from <code>{activeBucket}</code>.  Displaying latest job instead.</em></p>
     {/if}
-<Sunburst />
+<Sunburst bucket={activeBucket} job={activeJob}/>
 {/if}

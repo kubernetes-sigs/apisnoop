@@ -30,6 +30,6 @@
 {#if isEmpty($endpoints)}
     <p>loading...</p>
 {:else}
-<Sunburst />
+<Sunburst {bucket} {job}/>
 <a href='coverage/fun'>fun</a>
 {/if}

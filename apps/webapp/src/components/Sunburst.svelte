@@ -2,11 +2,20 @@
  import * as d3 from 'd3';
  import { sunburst } from '../stores';
  import { onMount, afterUpdate } from 'svelte';
- import { find, head, tail } from 'lodash-es';
+ import { dropRight, last, split, join, find, head, tail, reverse } from 'lodash-es';
+ import { goto, stores } from '@sapper/app';
 
+ const { page } = stores();
  let sequence;
  let chart;
  let data = $sunburst;
+ export let bucket;
+ export let job;
+ export let level = '';
+ export let category = '';
+ export let endpoint = '';
+ let segments = [level, category];
+
  $: sunburstLoaded = false;
 
  const format = d3.format(",d")
@@ -60,6 +69,7 @@
  };
 
  onMount(()  => {
+     console.log({segments});
      let validSegments = cleanSegments(data, segments, []);
      data = filterDataBySegments(data, validSegments);
      const partition = data => {
@@ -150,7 +160,30 @@
               .attr("fill-opacity", d => +labelVisible(d.target))
               .attrTween("transform", d => () => labelTransform(d.current));
 
+         let nodeSegment = (node, segs) => {
+             if (!node.parent) {
+                 segs = node.data.name === 'root' ? segs : segs.concat(node.data.name);
+                 return reverse(segs);
+             } else {
+                 segs = segs.concat(node.data.name);
+                 return nodeSegment(node.parent, segs);
+                 }
+             };
+         function determineRoute (page, segment) {
+             console.log({data: data.name});
+             let route;
+             if (last(segment) === data.name) {
+                 route = dropRight(page.path.split('/')).join('/')
+             } else {
+                 route = join(['coverage', bucket, job, ...nodeSegments], '/');
+                 }
+             return route;
+         }
+
          setInnerText(p);
+         let nodeSegments = nodeSegment(p, []);
+         let urlPath = determineRoute($page, nodeSegments);
+         goto(urlPath);
      }
 
      function setInnerText (p) {
@@ -295,8 +328,8 @@
 <div bind:this={sequence} class="sequence"></div>
 <div bind:this={chart} class="chart">
     <div id="explanation">
-        <p id="level"></p>
-        <p id="category"></p>
+        <p id="level">{level}</p>
+        <p id="category">{category}</p>
     </div>
 </div>
 
