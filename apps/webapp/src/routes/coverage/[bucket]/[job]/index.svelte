@@ -12,6 +12,9 @@
      let invalidBucket;
      let invalidJob;
 
+     // Check whether url params give a bucket that exists in our db
+     // If so, pass it along.  Otherwise, use the default bucket.
+     // invalid bucket is so we can put in a  notice on the page.
      if (Object.keys(bjs).includes(bucket)) {
          activeBucket = bucket;
      } else {
@@ -19,6 +22,8 @@
          activeBucket = get(defaultBucketAndJob)['bucket'];
      };
 
+     // Do for jobs what we just did for bucket.
+     //  If invalid, use the latest job for the activeBucket.
      if (bjs[activeBucket]['jobs'].map(j=> j.job).includes(job)) {
          activeJob = job;
      } else {
@@ -40,7 +45,6 @@
 <script>
  import { endpoints } from '../../../../stores';
  import { isEmpty } from 'lodash-es';
- import { afterUpdate } from 'svelte';
  import Sunburst from '../../../../components/Sunburst.svelte';
 
  export let activeBucket;
@@ -50,7 +54,6 @@
  export let endpointsFromQuery;
 
  endpoints.set(endpointsFromQuery.data.endpoint_coverage);
- afterUpdate(() => console.log({endpointsFromQuery, activeJob, activeBucket, endpoints: $endpoints }));
 </script>
 
 {#if !isEmpty($endpoints)}

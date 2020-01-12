@@ -14,6 +14,7 @@
  export let level = '';
  export let category = '';
  export let endpoint = '';
+
  let segments = [level, category];
 
  $: sunburstLoaded = false;
@@ -170,8 +171,8 @@
                  }
              };
          function determineRoute (page, segment) {
-             console.log({data: data.name});
              let route;
+             // Check whether  they've clicked the center node and zoom out a level if so.
              if (last(segment) === data.name) {
                  route = dropRight(page.path.split('/')).join('/')
              } else {
