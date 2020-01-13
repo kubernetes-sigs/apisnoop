@@ -2,7 +2,16 @@
  import * as d3 from 'd3';
  import { sunburst } from '../stores';
  import { onMount, afterUpdate } from 'svelte';
- import { dropRight, last, split, join, find, head, tail, reverse } from 'lodash-es';
+ import {
+     dropRight,
+     last,
+     split,
+     join,
+     find,
+     head,
+     tail,
+     reverse
+ } from 'lodash-es';
  import { goto, stores } from '@sapper/app';
 
  const { page } = stores();
@@ -15,7 +24,7 @@
  export let category = '';
  export let endpoint = '';
 
- let segments = [level, category];
+ let segments = [level, category, endpoint];
 
  $: sunburstLoaded = false;
 
@@ -30,6 +39,7 @@
                .innerRadius(d => d.y0 * radius)
                .outerRadius(d => Math.max(d.y0 * radius, d.y1 * radius - 1))
 
+ afterUpdate(() => console.log({endpoint}));
  // for our breadcrumb sequence
  var b = {
      w: 75,
@@ -64,13 +74,15 @@
      if (segments.length === 0) {
          return data;
      } else {
-         data = data.children.find(o => o.name === head(segments))
+         let nextLevel = data.children.find(o => o.name === head(segments))
+         data = nextLevel.children
+              ? nextLevel
+              : data
          return filterDataBySegments(data, tail(segments))
      }
  };
 
  onMount(()  => {
-     console.log({segments});
      let validSegments = cleanSegments(data, segments, []);
      data = filterDataBySegments(data, validSegments);
      const partition = data => {
@@ -97,13 +109,27 @@
                    .data(root.descendants().slice(1))
                    .join("path")
                    .attr("fill", d => d.data.color)
-                   .attr("fill-opacity", d => arcVisible(d.current) ? 1 : 0)
+                   .attr("fill-opacity", d => {
+                       if (!arcVisible(d.current)) {
+                           return 0;
+                       } else {
+                           if (endpoint !== '') {
+                               return d.current.data.name === endpoint ? 1 : 0.3
+                           } else {
+                               return 1;
+                           }
+                       }
+                   })
                    .attr("d", d => arc(d.current))
                    .on("mouseover", mouseover);
 
      path.filter(d => d.children)
          .style("cursor", "pointer")
          .on("click", clicked);
+
+     path.filter(d => !d.children)
+         .style("cursor", "pointer")
+         .on("click", endpointClicked);
 
      path.append("title")
          .text(d => `${d.ancestors().map(d => d.data.name).reverse().join("/")}\n${format(d.value)}`);
@@ -127,6 +153,13 @@
                      .attr("pointer-events", "all")
                      .on("click", clicked)
 
+     function endpointClicked (p) {
+         let ep = p.data;
+         let urlPath = join(['coverage', bucket, job, ep.level, ep.category, ep.name], '/');
+         path.filter(d => !d.children)
+             .attr("fill-opacity", (d) => d.data.name === p.data.name ? 1 : 0.3);
+         goto(urlPath);
+     };
 
      function clicked(p) {
          parent.datum(p.parent || root);
