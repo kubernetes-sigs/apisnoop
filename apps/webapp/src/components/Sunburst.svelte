@@ -16,10 +16,9 @@
 
  import { activeBucketAndJob, currentDepth } from '../stores';
  const { page } = stores();
- let sequence;
  let chart;
- let data = $sunburst;
 
+ $: data = $sunburst;
  $: bucket = $activeBucketAndJob.bucket;
  $: job = $activeBucketAndJob.job;
 
@@ -42,12 +41,18 @@
                .innerRadius(d => d.y0 * radius)
                .outerRadius(d => Math.max(d.y0 * radius, d.y1 * radius - 1))
 
+ function determineDepth (node, depth) {
+     return node.depth === 0
+          ? depth
+          : determineDepth(node.parent, [node.data.name, ...depth]);
+ };
+
  function cleanSegments (data, segments, clean) {
      // given an array of url segments and data with nested children
      // check whether segment matches the name of at least one of the children at respective depth.
      // returning only valid segments.
-     if (segments.length === 0 || !data.children) {
-         return clean
+     if (segments.length === 0) {
+         return clean;
      } else  {
          let children = data.children.map(child => child.name);
          let isValid = children.includes(head(segments));
@@ -62,32 +67,19 @@
      }
  };
 
- function filterDataBySegments (data, segments) {
-     // given an array of url segments, filter tree data where
-     // each child object matches the name for its respective segment.
-     if (segments.length === 0) {
-         return data;
-     } else {
-         let nextLevel = data.children.find(o => o.name === head(segments))
-         data = nextLevel.children
-              ? nextLevel
-              : data
-         return filterDataBySegments(data, tail(segments))
-     }
- };
-
  function findNodeAtCurrentDepth (segments, data) {
-     if (segments.length === 0 || !data.children) {
+     if (segments.length === 0 ) {
          return data;
      } else {
-         let nextDepth = data.children.find(child => child.data.name === head(segments));
+         let nextDepth = data.children
+                       ? data.children.find(child => child.data.name === head(segments))
+                       : data.data.name;
          return findNodeAtCurrentDepth(tail(segments), nextDepth);
      }
  };
 
  onMount(()  => {
      let validSegments = cleanSegments(data, segments, []);
-     /* data = filterDataBySegments(data, validSegments); */
      const partition = data => {
          const root = d3.hierarchy(data)
                         .sum(d => d.value)
@@ -163,18 +155,21 @@
          let urlPath = join(['coverage', bucket, job, ep.level, ep.category, ep.name], '/');
          path.filter(d => !d.children)
              .attr("fill-opacity", (d) => d.data.name === p.data.name ? 1 : 0.3);
+         currentDepth.set(determineDepth(p, []));
          goto(urlPath);
      };
 
      function zoomToCurrentDepth(p) {
-         parent.datum(p.parent || root);
-         console.log({p, parent: parent.datum(), root});
-         parent.attr("fill", p.data.color);
+         // if currentDepth is an endpoint, we want to zoom into its
+         // parent category and no further.
+         let node = p.children ? p : p.parent;
+         parent.datum(node.parent || root);
+         parent.attr("fill", node.data.color);
          root.each(d => d.target = {
-             x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
-             x1: Math.max(0, Math.min(1, (d.x1 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
-             y0: Math.max(0, d.y0 - p.depth),
-             y1: Math.max(0, d.y1 - p.depth)
+             x0: Math.max(0, Math.min(1, (d.x0 - node.x0) / (node.x1 - node.x0))) * 2 * Math.PI,
+             x1: Math.max(0, Math.min(1, (d.x1 - node.x0) / (node.x1 - node.x0))) * 2 * Math.PI,
+             y0: Math.max(0, d.y0 - node.depth),
+             y1: Math.max(0, d.y1 - node.depth)
          });
 
          const t = g.transition().duration(750);
@@ -190,7 +185,15 @@
              .filter(function(d) {
                  return +this.getAttribute("fill-opacity") || arcVisible(d.target);
              })
-             .attr("fill-opacity", d => arcVisible(d.target) ? 1 : 0)
+             .attr("fill-opacity", d => {
+                 // check if d is an endpoint, if so check if currentDepth is endpoint.
+                 // if so, fade all endpoints that are not currentDepth
+                 if (d.children || p.children) {
+                     return arcVisible(d.target) ? 1 : 0;
+                 } else {
+                     return d.data.name === p.data.name ? 1 : 0.3;
+                 }
+             })
              .attrTween("d", d => () => arc(d.current));
 
          label.filter(function(d) {
@@ -215,11 +218,6 @@
                  }
              };
 
-         function determineDepth (node, depth) {
-             return node.depth === 0
-                  ? depth
-                  : determineDepth(node.parent, [node.data.name, ...depth]);
-         };
 
          function determineRoute (page, segment) {
              let route;
@@ -236,7 +234,6 @@
          let nodeSegments = segmentNode(p, []);
          let urlPath = determineRoute($page, nodeSegments);
          currentDepth.set(determineDepth(p, []));
-         console.log({depth: determineDepth(p, []) , currentDepth: $currentDepth})
          goto(urlPath);
      }
 
@@ -278,6 +275,7 @@
          d3.selectAll("path")
            .filter((node) => (sequenceArray.indexOf(node) >= 0))
            .style("opacity", 1);
+         currentDepth.set(determineDepth(d, []));
      }
 
      // Restore everything to full opacity when moving off the visualization.
