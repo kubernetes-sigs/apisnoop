@@ -14,7 +14,7 @@
 
 <main>
     <h2>{bucket}</h2>
-    <p>Job {job}, from {date}</p>
+    <p>Job {job}, run {date}</p>
     <Breadcrumb />
     <Sunburst />
     <CoverageStats />
