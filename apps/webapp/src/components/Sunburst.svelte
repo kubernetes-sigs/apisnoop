@@ -14,17 +14,20 @@
  } from 'lodash-es';
  import { goto, stores } from '@sapper/app';
 
+ import { activeBucketAndJob, currentDepth } from '../stores';
  const { page } = stores();
  let sequence;
  let chart;
  let data = $sunburst;
- export let bucket;
- export let job;
- export let level = '';
- export let category = '';
- export let endpoint = '';
 
- let segments = [level, category, endpoint];
+ $: bucket = $activeBucketAndJob.bucket;
+ $: job = $activeBucketAndJob.job;
+
+ $: level = $currentDepth[0] || '';
+ $: category = $currentDepth[1] || '';
+ $: endpoint = $currentDepth[2] || '';
+
+ $: segments = [level, category, endpoint];
 
  $: sunburstLoaded = false;
 
@@ -38,15 +41,6 @@
                .padRadius(radius * 1.5)
                .innerRadius(d => d.y0 * radius)
                .outerRadius(d => Math.max(d.y0 * radius, d.y1 * radius - 1))
-
- afterUpdate(() => console.log({endpoint}));
- // for our breadcrumb sequence
- var b = {
-     w: 75,
-     h: 30,
-     s: 3,
-     t: 10
- };
 
  function cleanSegments (data, segments, clean) {
      // given an array of url segments and data with nested children
@@ -82,9 +76,18 @@
      }
  };
 
+ function findNodeAtCurrentDepth (segments, data) {
+     if (segments.length === 0 || !data.children) {
+         return data;
+     } else {
+         let nextDepth = data.children.find(child => child.data.name === head(segments));
+         return findNodeAtCurrentDepth(tail(segments), nextDepth);
+     }
+ };
+
  onMount(()  => {
      let validSegments = cleanSegments(data, segments, []);
-     data = filterDataBySegments(data, validSegments);
+     /* data = filterDataBySegments(data, validSegments); */
      const partition = data => {
          const root = d3.hierarchy(data)
                         .sum(d => d.value)
@@ -96,6 +99,8 @@
      }
      const root = partition(data);
      root.each(d => d.current = d);
+     let cleanCurrentDepth = cleanSegments(data, $currentDepth, []);
+     let nodeAtCurrentDepth = findNodeAtCurrentDepth(cleanCurrentDepth, root);
 
      const svg = d3.create("svg")
                    .attr("viewBox", [0, 0, width, width])
@@ -161,7 +166,7 @@
          goto(urlPath);
      };
 
-     function clicked(p) {
+     function zoomToCurrentDepth(p) {
          parent.datum(p.parent || root);
          console.log({p, parent: parent.datum(), root});
          parent.attr("fill", p.data.color);
@@ -193,16 +198,29 @@
          }).transition(t)
               .attr("fill-opacity", d => +labelVisible(d.target))
               .attrTween("transform", d => () => labelTransform(d.current));
+     };
 
-         let nodeSegment = (node, segs) => {
+
+     function clicked(p) {
+         zoomToCurrentDepth(p);
+         function segmentNode (node, segments) {
              if (!node.parent) {
-                 segs = node.data.name === 'root' ? segs : segs.concat(node.data.name);
-                 return reverse(segs);
+                 segments = node.data.name === 'root'
+                          ? segments
+                          : segments.concat(node.data.name);
+                 return reverse(segments);
              } else {
-                 segs = segs.concat(node.data.name);
-                 return nodeSegment(node.parent, segs);
+                 segments = segments.concat(node.data.name);
+                 return segmentNode(node.parent, segments);
                  }
              };
+
+         function determineDepth (node, depth) {
+             return node.depth === 0
+                  ? depth
+                  : determineDepth(node.parent, [node.data.name, ...depth]);
+         };
+
          function determineRoute (page, segment) {
              let route;
              // Check whether  they've clicked the center node and zoom out a level if so.
@@ -215,8 +233,10 @@
          }
 
          setInnerText(p);
-         let nodeSegments = nodeSegment(p, []);
+         let nodeSegments = segmentNode(p, []);
          let urlPath = determineRoute($page, nodeSegments);
+         currentDepth.set(determineDepth(p, []));
+         console.log({depth: determineDepth(p, []) , currentDepth: $currentDepth})
          goto(urlPath);
      }
 
@@ -249,10 +269,7 @@
      // Thank you, Kerry Rodan
 
      function mouseover(d) {
-
          let sequenceArray = d.ancestors().reverse().slice(1);
-         updateBreadcrumbs(sequenceArray);
-
          // Fade all the segments.
          d3.selectAll("path")
            .style("opacity", 0.3);
@@ -265,11 +282,6 @@
 
      // Restore everything to full opacity when moving off the visualization.
      function mouseleave(d) {
-
-         // Hide the breadcrumb trail
-         d3.select("#trail")
-           .style("visibility", "hidden");
-
          // Deactivate all segments during transition.
          d3.selectAll("path").on("mouseover", null);
 
@@ -283,74 +295,10 @@
            });
      }
 
-     function initializeBreadcrumbTrail() {
-         // Add the svg area.
-         var trail = d3.select(sequence).append("svg:svg")
-                       .attr("width", width)
-                       .attr("height", 50)
-                       .attr("id", "trail");
-         // Add the label at the end, for the percentage.
-         trail.append("svg:text")
-              .attr("id", "endlabel")
-              .style("fill", "#000");
-     }
-
-     // Generate a string that describes the points of a breadcrumb polygon.
-     function breadcrumbPoints(d, i) {
-         // Stretch breadcrumb to fit variable node name.  7 is arbitrary, based on what looked good with our longer names.
-         let textWidth = (d.data.name.length * 7)
-         var points = [];
-         points.push("0,0");
-         points.push(b.w + textWidth + ",0");
-         points.push(b.w + b.t + textWidth + "," + (b.h / 2));
-         points.push(b.w + textWidth + "," + b.h);
-         points.push("0," + b.h);
-         if (i > 0) { // Leftmost breadcrumb; don't include 6th vertex.
-                    points.push(b.t + "," + (b.h / 2));
-                    }
-         return points.join(" ");
-     }
-
-     // Update the breadcrumb trail to show the current sequence and percentage.
-     function updateBreadcrumbs(nodeArray) {
-
-         // Data join; key function combines name and depth (= position in sequence).
-         var trail = d3.select("#trail")
-                       .selectAll("g")
-                       .data(nodeArray, function(d) { return d.data.name + d.depth; });
-
-         // Remove exiting nodes.
-         trail.exit().remove();
-
-         // Add breadcrumb and label for entering nodes.
-         var entering = trail.enter().append("svg:g");
-
-         entering.append("svg:polygon")
-                 .attr("points", breadcrumbPoints)
-                 .style("fill", function(d) { return d.data.color; });
-
-         entering.append("svg:text")
-                 .attr("x", (d) => ((b.w + b.t - d.data.name.length) / 2))
-                 .attr("y", b.h / 2)
-                 .attr("dy", "0.35em")
-                 .attr("text-anchor", "start")
-                 .text(function(d) { return d.data.name; });
-
-         // Merge enter and update selections; set position for all nodes.
-         entering.merge(trail).attr("transform", function(d, i) {
-             return "translate(" + i * (b.w + b.s + (d.parent.data.name.length * 3)) + ", 0)";
-         });
-
-         // Make the breadcrumb trail visible, if it's hidden.
-         d3.select("#trail")
-           .style("visibility", "");
-
-     }
-
      chart.append(svg.node());
      d3.select(chart).on("mouseleave", mouseleave);
-     initializeBreadcrumbTrail();
      sunburstLoaded = true;
+     zoomToCurrentDepth(nodeAtCurrentDepth);
  })
 
 </script>
@@ -359,7 +307,6 @@
     <p>loading...</p>
 {/if}
 
-<div bind:this={sequence} class="sequence"></div>
 <div bind:this={chart} class="chart">
     <div id="explanation">
         <p id="level">{level}</p>
@@ -373,15 +320,11 @@
      position: relative;
  }
 
- .chart path {
-     stroke: #fff;
- }
-
  #explanation {
      position: absolute;
-     top: calc(932px / 2.5);
-     left: calc(932px / 2.95);
-     width: 200px;
+     top: calc(100% / 2.25);
+     left: 0;
+     width: 100%;
      text-align: center;
      color: #eeeeee;
      z-index: 2;
@@ -389,6 +332,12 @@
      flex-flow: column;
      justify-content: center;
      align-items: center;
+ }
+
+ @media(max-width: 667px) {
+     #explanation {
+    font-size: 0.75em;
+    }
  }
 
  #level , #category {
