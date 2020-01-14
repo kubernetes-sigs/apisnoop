@@ -3,13 +3,15 @@ import client from '../apollo.js';
 import { ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../queries';
 
 import {
+    concat,
     isEmpty,
     groupBy,
     keyBy,
     map,
     mapValues,
     orderBy,
-    sortBy
+    sortBy,
+    take
 } from 'lodash-es';
 
 import {
@@ -130,11 +132,15 @@ export const sunburst = derived(groupedEndpoints, ($gep, set) => {
 // Based on the url params, the exact [level, category, endpoint] we are zoomed into
 export const currentDepth = writable([]);
 
-// Based on mousing over sunburst, the full path of the node we have moused over.
-export const activePath = writable([]);
-
-export const breadcrumb = derived([currentDepth, activePath],
-                                  ([$currentDepth, $activePath]) => $currentDepth.concat($activePath));
+export const breadcrumb = derived(
+    [currentDepth],
+    ($currentDepth) => {
+        // We want breadcrumb to be an array of [level, category, method]
+        // even if currentDepth is only set to level or category. so we fill empty spots with ''
+        let filler = ['','',''];
+        let bc = $currentDepth[0].concat(filler);
+        return take(bc, 3);
+    });
 
 export const coverageAtDepth = derived([currentDepth, endpoints], ([$cd, $eps], set) => {
     let eps;
@@ -148,7 +154,7 @@ export const coverageAtDepth = derived([currentDepth, endpoints], ([$cd, $eps], 
     } else if ($cd.length === 2) {
         eps = $eps.filter(ep => ep.level === $cd[0] && ep.category === $cd[1])
     } else if ($cd.length === 3) {
-        eps = $eps.filter(ep => ep.level === $cd[0] && ep.category === $cd[1] && ep.operationId === $cd[2])
+        eps = $eps.filter(ep => ep.level === $cd[0] && ep.category === $cd[1] && ep.operation_id === $cd[2])
     }
 
     let totalEndpoints = eps.length;
