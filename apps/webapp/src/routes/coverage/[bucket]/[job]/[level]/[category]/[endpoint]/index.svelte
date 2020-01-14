@@ -6,7 +6,7 @@
 
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
-     const { bucket, job, level, category } = page.params;
+     const { bucket, job, level, category, endpoint } = page.params;
 
      // Check whether url params give a bucket that exists in our db
      // If so, pass it along.  Otherwise, use the default bucket.
@@ -38,7 +38,8 @@
          invalidBucket,
          invalidJob,
          level,
-         category
+         category,
+         endpoint
      };
  };
 </script>
@@ -59,7 +60,7 @@
  export let endpointsFromQuery;
 
  endpoints.set(endpointsFromQuery.data.endpoint_coverage);
- currentDepth.set([level, category]);
+ currentDepth.set([level, category, endpoint]);
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
 </script>
 
