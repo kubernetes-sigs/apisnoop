@@ -17,7 +17,7 @@
      endpoints,
      activeBucketAndJob,
  } from '../../stores';
- import Sunburst from '../../components/Sunburst.svelte';
+ import CoverageContainer from '../../components/CoverageContainer.svelte';
 
  export let bucket;
  export let job;
@@ -27,9 +27,4 @@
  endpoints.set(endpointsFromQuery.data.endpoint_coverage);
 </script>
 
-{#if isEmpty($endpoints)}
-    <p>loading...</p>
-{:else}
-<Sunburst {bucket} {job}/>
-<a href='coverage/fun'>fun</a>
-{/if}
+<CoverageContainer />

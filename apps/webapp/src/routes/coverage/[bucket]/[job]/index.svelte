@@ -7,29 +7,28 @@
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
      const { bucket, job } = page.params;
-     let activeBucket;
-     let activeJob;
-     let invalidBucket;
-     let invalidJob;
 
      // Check whether url params give a bucket that exists in our db
      // If so, pass it along.  Otherwise, use the default bucket.
      // invalid bucket is so we can put in a  notice on the page.
-     if (Object.keys(bjs).includes(bucket)) {
-         activeBucket = bucket;
-     } else {
-         invalidBucket = bucket;
-         activeBucket = get(defaultBucketAndJob)['bucket'];
-     };
+     let bucketIsValid = (bucket) => Object.keys(bjs).includes(bucket);
+     let jobIsValid = (bucket, job) => bucket['jobs'].map(j => j.job).includes(job);
 
-     // Do for jobs what we just did for bucket.
-     //  If invalid, use the latest job for the activeBucket.
-     if (bjs[activeBucket]['jobs'].map(j=> j.job).includes(job)) {
-         activeJob = job;
-     } else {
-         invalidJob = job;
-         activeJob = bjs[activeBucket]['latestJob'];
-     };
+     let activeBucket = bucketIsValid(bucket)
+                      ? bucket
+                      : get(defaultBucketAndJob)['bucket'];
+
+     let invalidBucket = bucketIsValid(bucket)
+                       ? null
+                       : bucket;
+
+     let activeJob = jobIsValid(bjs[activeBucket], job)
+                   ? job
+                   : bjs[activeBucket]['latestJob'].job;
+
+     let invalidJob = jobIsValid(bjs[activeBucket], job)
+                    ? null
+                    : job;
 
      let endpointsFromQuery = await client.query({query: ENDPOINTS, variables: {bucket: activeBucket, job: activeJob}});
      return {
@@ -43,9 +42,9 @@
 </script>
 
 <script>
- import { endpoints } from '../../../../stores';
+ import { endpoints, activeBucketAndJob } from '../../../../stores';
  import { isEmpty } from 'lodash-es';
- import Sunburst from '../../../../components/Sunburst.svelte';
+ import CoverageContainer from '../../../../components/CoverageContainer.svelte';
 
  export let activeBucket;
  export let activeJob;
@@ -53,15 +52,16 @@
  export let invalidJob;
  export let endpointsFromQuery;
 
+ activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
  endpoints.set(endpointsFromQuery.data.endpoint_coverage);
 </script>
 
-{#if !isEmpty($endpoints)}
-    {#if invalidBucket}
-        <p><strong>Note: </strong><em>Could not find data for <code>{invalidBucket}</code>. Fetching for <code>{activeBucket}</code> instead.</em></p>
-    {/if}
-    {#if invalidJob}
-    <p><strong>Note: </strong><em>Could not find job <code>{invalidJob}</code> from <code>{activeBucket}</code>.  Displaying latest job instead.</em></p>
-    {/if}
-<Sunburst bucket={activeBucket} job={activeJob}/>
+{#if invalidBucket}
+    <p><strong>Note: </strong><em>Could not find data for <code>{invalidBucket}</code>. Fetching for <code>{activeBucket}</code> instead.</em></p>
 {/if}
+
+{#if invalidJob}
+    <p><strong>Note: </strong><em>Could not find job <code>{invalidJob}</code> from <code>{activeBucket}</code>.  Displaying latest job instead.</em></p>
+{/if}
+
+<CoverageContainer />
