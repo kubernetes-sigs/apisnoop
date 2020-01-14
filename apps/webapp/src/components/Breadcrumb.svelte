@@ -1,10 +1,6 @@
 <script>
- import { breadcrumb } from '../stores';
-
- $: level = $breadcrumb[0] || '';
- $: category = $breadcrumb[1] || '';
- $: endpoint = $breadcrumb[2] || '';
-
+ import { currentDepth, breadcrumb } from '../stores';
+ $: [level , category , endpoint] = $breadcrumb;
 </script>
 
 <p>{level} {category} {endpoint}</p>
