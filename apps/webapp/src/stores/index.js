@@ -57,16 +57,27 @@ export const defaultBucketAndJob = derived(bucketsAndJobs, ($bj, set) => {
         let defaultBucket = Object.keys($bj).includes(releaseBlocking)
             ? releaseBlocking
             : Object.keys($bj)[0];
-
         set({
             bucket: defaultBucket,
             job: $bj[defaultBucket].latestJob.job,
-            timestamp: $bj[defaultBucket].latestJob.timestamp
+            timestamp: $bj[defaultBucket].latestJob.job_timestamp
         });
     }
 });
 
 export const activeBucketAndJob = writable({});
+
+export const bucketAndJobMetadata = derived([bucketsAndJobs, activeBucketAndJob], ([$bjs, $abj], set) => {
+    if (isEmpty($bjs)) {
+        set({bucket: '', job: '', timestamp: ''})
+    } else {
+        set({
+            bucket: $abj.bucket,
+            job: $abj.job,
+            timestamp: $bjs[$abj.bucket].jobs.find(j => j.job === $abj.job).timestamp
+        });
+    };
+});
 
 export const endpoints = writable([]);
 

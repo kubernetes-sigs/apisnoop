@@ -9,6 +9,12 @@ export const ENDPOINTS = gql`
     conf_tested
     tested
     hit
+    details {
+      description
+      path
+      k8s_group
+      k8s_kind
+    }
   }
 }
 `
