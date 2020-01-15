@@ -178,4 +178,46 @@ export const coverageAtDepth = derived([currentDepth, endpoints], ([$cd, $eps], 
     });
 });
 
+export const endpointCoverage = derived([currentDepth, endpoints], ([$cd, $eps], set) => {
+    let endpoint;
+    let opId;
+    if (isEmpty($eps) || $cd[2] === '') {
+        set({
+            tested: '',
+            operation_id : '',
+            conf_tested: '',
+            description: '',
+            path: '',
+            group: '',
+            version: '',
+            kind: ''
+        });
+    } else {
+        opId = $cd[2]
+        endpoint = $eps.find(ep => ep.operation_id === opId)
+        let {
+            tested,
+            conf_tested,
+            operation_id,
+            details : {
+                path,
+                description,
+                k8s_group: group,
+                k8s_version: version,
+                k8s_kind: kind
+            }
+        } = endpoint;
+    set({
+        tested,
+        conf_tested,
+        operation_id,
+        path,
+        description,
+        group,
+        version,
+        kind
+    });
+    }
+});
+
 fetchBucketsAndJobs();

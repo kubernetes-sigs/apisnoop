@@ -27,7 +27,6 @@
  $: endpoint = $currentDepth[2] || '';
 
  $: segments = [level, category, endpoint];
-
  $: sunburstLoaded = false;
 
  const format = d3.format(",d")
@@ -291,7 +290,7 @@
            .on("end", function() {
                d3.select(this).on("mouseover", mouseover);
            });
-         currentDepth.set(cleanCurrentDepth);
+         currentDepth.set(cleanSegments([page.level, page.category,page.endpoint]));
      }
 
      chart.append(svg.node());
