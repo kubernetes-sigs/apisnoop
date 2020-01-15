@@ -234,7 +234,7 @@
          let nodeSegments = segmentNode(p, []);
          let urlPath = determineRoute($page, nodeSegments);
          currentDepth.set(determineDepth(p, []));
-         goto(urlPath);
+         goto(urlPath, {replaceState: true});
      }
 
      function setInnerText (p) {
@@ -291,6 +291,7 @@
            .on("end", function() {
                d3.select(this).on("mouseover", mouseover);
            });
+         currentDepth.set(cleanCurrentDepth);
      }
 
      chart.append(svg.node());
