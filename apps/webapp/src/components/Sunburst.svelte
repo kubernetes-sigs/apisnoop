@@ -14,7 +14,7 @@
  } from 'lodash-es';
  import { goto, stores } from '@sapper/app';
 
- import { activeBucketAndJob, currentDepth } from '../stores';
+ import { activeBucketAndJob, activePath, breadcrumb } from '../stores';
  const { page } = stores();
  let chart;
 
@@ -22,9 +22,7 @@
  $: bucket = $activeBucketAndJob.bucket;
  $: job = $activeBucketAndJob.job;
 
- $: level = $currentDepth[0] || '';
- $: category = $currentDepth[1] || '';
- $: endpoint = $currentDepth[2] || '';
+ $: ([level, category, endpoint] = $breadcrumb);
 
  $: segments = [level, category, endpoint];
  $: sunburstLoaded = false;
@@ -90,7 +88,7 @@
      }
      const root = partition(data);
      root.each(d => d.current = d);
-     let cleanCurrentDepth = cleanSegments(data, $currentDepth, []);
+     let cleanCurrentDepth = cleanSegments(data, $activePath, []);
      let nodeAtCurrentDepth = findNodeAtCurrentDepth(cleanCurrentDepth, root);
 
      const svg = d3.create("svg")
@@ -154,12 +152,12 @@
          let urlPath = join(['coverage', bucket, job, ep.level, ep.category, ep.name], '/');
          path.filter(d => !d.children)
              .attr("fill-opacity", (d) => d.data.name === p.data.name ? 1 : 0.3);
-         currentDepth.set(determineDepth(p, []));
+         activePath.set(determineDepth(p, []));
          goto(urlPath);
      };
 
      function zoomToCurrentDepth(p) {
-         // if currentDepth is an endpoint, we want to zoom into its
+         // if present path, p, is an endpoint, we want to zoom into its
          // parent category and no further.
          let node = p.children ? p : p.parent;
          parent.datum(node.parent || root);
@@ -185,8 +183,8 @@
                  return +this.getAttribute("fill-opacity") || arcVisible(d.target);
              })
              .attr("fill-opacity", d => {
-                 // check if d is an endpoint, if so check if currentDepth is endpoint.
-                 // if so, fade all endpoints that are not currentDepth
+                 // check if d is an endpoint, if so check if p is endpoint.
+                 // if so, fade all endpoints that are not p
                  if (d.children || p.children) {
                      return arcVisible(d.target) ? 1 : 0;
                  } else {
@@ -232,7 +230,7 @@
          setInnerText(p);
          let nodeSegments = segmentNode(p, []);
          let urlPath = determineRoute($page, nodeSegments);
-         currentDepth.set(determineDepth(p, []));
+         activePath.set(determineDepth(p, []));
          goto(urlPath, {replaceState: true});
      }
 
@@ -274,7 +272,7 @@
          d3.selectAll("path")
            .filter((node) => (sequenceArray.indexOf(node) >= 0))
            .style("opacity", 1);
-         currentDepth.set(determineDepth(d, []));
+         activePath.set(determineDepth(d, []));
      }
 
      // Restore everything to full opacity when moving off the visualization.
@@ -290,7 +288,7 @@
            .on("end", function() {
                d3.select(this).on("mouseover", mouseover);
            });
-         currentDepth.set(cleanSegments([page.level, page.category,page.endpoint]));
+         activePath.set(cleanSegments(data, [$page.params.level, $page.params.category, $page.params.endpoint], []));
      }
 
      chart.append(svg.node());

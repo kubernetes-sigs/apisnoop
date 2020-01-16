@@ -1,31 +1,30 @@
 <script>
  import EndpointCoverageStats from './EndpointCoverageStats.svelte';
  import { isEmpty } from 'lodash-es';
- import { currentDepth, coverageAtDepth } from '../stores';
+ import { currentDepth, breadcrumb, coverageAtDepth } from '../stores';
+
  let percentage = (sum, total) => ((sum / total) * 100).toFixed(2);
  $: total = $coverageAtDepth.totalEndpoints;
  $: tested = $coverageAtDepth.testedEndpoints;
  $: confTested = $coverageAtDepth.confTestedEndpoints;
  $: percentTested = `${percentage(tested,total)}%`;
  $: percentConfTested = `${percentage(confTested, total)}%`;
- $: [level, category, endpoint ] = $currentDepth;
+ $: [level, category, endpoint ] = $breadcrumb;
 
 </script>
 
-{#if !endpoint || endpoint === ""}
-<div id='coverage-stats'>
-    {#if level && category}
-    <p>{level} {category}</p>
-    {/if}
-    <h2> Coverage</h2>
-    <ul>
-        <li><strong>{total}</strong> total endpoints</li>
-        <li> <strong>{percentTested}</strong> tested ({tested} endpoints)</li>
-        <li><strong>{percentConfTested}</strong> conformance tested ({confTested} endpoints)</li>
-    </ul>
-</div>
+{#if $currentDepth === 'endpoint'}
+    <EndpointCoverageStats />
 {:else}
-<EndpointCoverageStats />
+    <div id='coverage-stats'>
+        <p>{level} {category}</p>
+        <h2> Coverage</h2>
+        <ul>
+            <li><strong>{total}</strong> total endpoints</li>
+            <li> <strong>{percentTested}</strong> tested ({tested} endpoints)</li>
+            <li><strong>{percentConfTested}</strong> conformance tested ({confTested} endpoints)</li>
+        </ul>
+    </div>
 {/if}
 
 

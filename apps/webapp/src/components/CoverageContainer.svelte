@@ -16,7 +16,7 @@
 <style>
  section {
      display: grid;
-     grid-template-columns: minmax(min-content, 700px) 1fr;
+     grid-template-columns: 700px 1fr;
  }
 </style>
 
