@@ -44,7 +44,7 @@
 </script>
 
 <script>
- import { endpoints, activeBucketAndJob, currentDepth } from '../../../../../../stores';
+ import { endpoints, activeBucketAndJob, activePath } from '../../../../../../stores';
  import { isEmpty } from 'lodash-es';
  import { afterUpdate } from 'svelte';
  import CoverageContainer from '../../../../../../components/CoverageContainer.svelte';
@@ -59,7 +59,7 @@
 
  endpoints.set(endpointsFromQuery.data.endpoint_coverage);
  console.log({level, category});
- currentDepth.set([level, category]);
+ activePath.set([level, category]);
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
  endpoints.set(endpointsFromQuery.data.endpoint_coverage);
 </script>

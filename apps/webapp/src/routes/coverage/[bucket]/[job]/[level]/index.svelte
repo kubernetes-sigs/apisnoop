@@ -45,7 +45,7 @@
 <script>
  import { endpoints,
         activeBucketAndJob,
-        currentDepth } from '../../../../../stores';
+        activePath } from '../../../../../stores';
  import CoverageContainer from '../../../../../components/CoverageContainer.svelte';
 
  export let level;
@@ -55,7 +55,7 @@
  export let invalidJob;
  export let endpointsFromQuery;
 
- currentDepth.set([level]);
+ activePath.set([level]);
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
  endpoints.set(endpointsFromQuery.data.endpoint_coverage);
 </script>

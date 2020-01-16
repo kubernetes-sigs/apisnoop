@@ -140,32 +140,38 @@ export const sunburst = derived(groupedEndpoints, ($gep, set) => {
     }
 });
 
-// Based on the url params, the exact [level, category, endpoint] we are zoomed into
-export const currentDepth = writable([]);
+// Based on the url params o, the exact [level, category, endpoint] we are focused on.
+export const activePath = writable([]);
+
+export const currentDepth = derived(activePath, ($ap, set) => {
+    let depths = ['root', 'level', 'category', 'endpoint']
+    let depth = $ap.length;
+    set(depths[depth])
+});
 
 export const breadcrumb = derived(
-    [currentDepth],
-    ($currentDepth) => {
+    [activePath],
+    ($ap) => {
         // We want breadcrumb to be an array of [level, category, method]
-        // even if currentDepth is only set to level or category. so we fill empty spots with ''
+        // so we fill out any empty position in activPath with ''
         let filler = ['','',''];
-        let bc = $currentDepth[0].concat(filler);
+        let bc = $ap[0].concat(filler);
         return take(bc, 3);
     });
 
-export const coverageAtDepth = derived([currentDepth, endpoints], ([$cd, $eps], set) => {
+export const coverageAtDepth = derived([activePath, currentDepth, endpoints], ([$ap, $cd, $eps], set) => {
     let eps;
     if (isEmpty($eps)) {
         set({})
         return;
-    } else if ($cd.length === 0) {
+    } else if ($cd === 'root') {
         eps = $eps;
-    } else if ($cd.length === 1) {
-        eps = $eps.filter(ep => ep.level === $cd[0])
-    } else if ($cd.length === 2) {
-        eps = $eps.filter(ep => ep.level === $cd[0] && ep.category === $cd[1])
-    } else if ($cd.length === 3) {
-        eps = $eps.filter(ep => ep.level === $cd[0] && ep.category === $cd[1] && ep.operation_id === $cd[2])
+    } else if ($cd === 'level') {
+        eps = $eps.filter(ep => ep.level === $ap[0])
+    } else if ($cd === 'category') {
+        eps = $eps.filter(ep => ep.level === $ap[0] && ep.category === $ap[1])
+    } else if ($cd === 'endpoint') {
+        eps = $eps.filter(ep => ep.level === $ap[0] && ep.category === $ap[1] && ep.operation_id === $ap[2])
     }
 
     let totalEndpoints = eps.length;
@@ -178,26 +184,27 @@ export const coverageAtDepth = derived([currentDepth, endpoints], ([$cd, $eps], 
     });
 });
 
-export const endpointCoverage = derived([currentDepth, endpoints], ([$cd, $eps], set) => {
+export const endpointCoverage = derived([activePath, currentDepth, endpoints], ([$ap, $cd, $eps], set) => {
     let endpoint;
     let opId;
-    if (isEmpty($eps) || $cd[2] === '') {
-        set({
-            tested: '',
-            operation_id : '',
-            conf_tested: '',
-            description: '',
-            path: '',
-            group: '',
-            version: '',
-            kind: ''
-        });
+    let defaultCoverage = {
+        tested: '',
+        operation_id : '',
+        confTested: '',
+        description: '',
+        path: '',
+        group: '',
+        version: '',
+        kind: ''
+    };
+    if (isEmpty($eps) || $cd !== 'endpoint') {
+        set(defaultCoverage);
     } else {
-        opId = $cd[2]
+        opId = $ap[2]
         endpoint = $eps.find(ep => ep.operation_id === opId)
         let {
             tested,
-            conf_tested,
+            conf_tested: confTested,
             operation_id,
             details : {
                 path,
@@ -207,16 +214,16 @@ export const endpointCoverage = derived([currentDepth, endpoints], ([$cd, $eps],
                 k8s_kind: kind
             }
         } = endpoint;
-    set({
-        tested,
-        conf_tested,
-        operation_id,
-        path,
-        description,
-        group,
-        version,
-        kind
-    });
+        set({
+            tested,
+            confTested,
+            operation_id,
+            path,
+            description,
+            group,
+            version,
+            kind
+        });
     }
 });
 
