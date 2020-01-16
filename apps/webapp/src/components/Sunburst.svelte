@@ -147,6 +147,20 @@
                      .attr("pointer-events", "all")
                      .on("click", clicked)
 
+     const levelLabel = g.append("text")
+                         .text(level)
+                         .attr("text-anchor", "middle")
+                         .attr("font-size", "2em")
+                         .attr("fill", "white")
+                         .attr("transform", () => category.length > 0 ? "translate(0, -15)" : "")
+
+     const categoryLabel = g.append("text")
+                         .text(category)
+                         .attr("text-anchor", "middle")
+                         .attr("font-size", "2em")
+                         .attr("fill", "white")
+                         .attr("transform", "translate(0, 15)")
+
      function endpointClicked (p) {
          let ep = p.data;
          let urlPath = join(['coverage', bucket, job, ep.level, ep.category, ep.name], '/');
@@ -304,10 +318,10 @@
 {/if}
 
 <div bind:this={chart} class="chart">
-    <div id="explanation">
-        <p id="level">{level}</p>
-        <p id="category">{category}</p>
-    </div>
+    <!-- <div id="explanation"> -->
+    <!-- <p id="level">{level}</p> -->
+    <!-- <p id="category">{category}</p> -->
+    <!-- </div> -->
 </div>
 
 
