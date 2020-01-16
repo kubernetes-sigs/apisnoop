@@ -227,4 +227,6 @@ export const endpointCoverage = derived([activePath, currentDepth, endpoints], (
     }
 });
 
+export const testsAndTagsForEndpoint = writable({});
+
 fetchBucketsAndJobs();

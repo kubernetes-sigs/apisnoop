@@ -2,6 +2,7 @@
  import { endpointCoverage } from '../stores';
  import Icon from 'fa-svelte';
  import { faCheckCircle } from '@fortawesome/free-solid-svg-icons/faCheckCircle';
+ import TestTagsList from './TestTagsList.svelte';
 
  let checkmark = faCheckCircle;
 
@@ -41,6 +42,7 @@
         <p class='stat'> <span><Icon class='check fail' icon={checkmark} /></span> No Conformance Tests</p>
     {/if}
 
+    <TestTagsList />
 </div>
 
 <style>
