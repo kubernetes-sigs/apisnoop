@@ -5,13 +5,15 @@ import { ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../queries';
 import {
     concat,
     isEmpty,
+    flattenDeep,
     groupBy,
     keyBy,
     map,
     mapValues,
     orderBy,
     sortBy,
-    take
+    take,
+    uniq
 } from 'lodash-es';
 
 import {
@@ -227,6 +229,37 @@ export const endpointCoverage = derived([activePath, currentDepth, endpoints], (
     }
 });
 
-export const testsAndTagsForEndpoint = writable({});
+export const allTestsAndTags = writable({});
+
+export const testsForEndpoint = derived(
+    [allTestsAndTags, activePath, currentDepth],
+    ([$tt, $ap, $cd], set) => {
+        if (isEmpty($tt) || $cd !== 'endpoint') {
+            set([]);
+        } else {
+            let opID = $ap[2];
+            let tests = $tt
+                .filter(t => t.operation_ids.includes(opID))
+                .map(t => t.test);
+            set(tests);
+        }
+    }
+);
+
+export const testTagsForEndpoint = derived(
+    [allTestsAndTags, activePath, currentDepth],
+    ([$tt, $ap, $cd], set) => {
+        if (isEmpty($tt) || $cd !== 'endpoint') {
+            set([]);
+        } else {
+            let opID = $ap[2];
+            let testTags = $tt
+                .filter(t => t.operation_ids.includes(opID))
+                .map(t => t.test_tags);
+            let testTagsUniq = uniq(flattenDeep(testTags))
+            set(testTagsUniq);
+        }
+    }
+);
 
 fetchBucketsAndJobs();

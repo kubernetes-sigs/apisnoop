@@ -100,6 +100,7 @@
      display: grid;
      font-size: 0.85em;
      grid-template-columns: 5rem 1fr;
+     grid-template-rows: 1fr 1fr 1fr;
      width: 90%;
  }
 

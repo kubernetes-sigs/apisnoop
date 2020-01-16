@@ -1,25 +1,27 @@
 <script>
- import { testsAndTagsForEndpoint } from '../stores';
+ import {
+     testsForEndpoint,
+     testTagsForEndpoint
+ } from '../stores';
  import { uniq } from 'lodash-es';
  import { afterUpdate } from 'svelte'
- $: testTags = uniq($testsAndTagsForEndpoint[0].tests.map(tt => tt.test_tag));
- $: tests = uniq($testsAndTagsForEndpoint[0].tests.map(tt => tt.test));
 
- afterUpdate(()=>console.log({tt: $testsAndTagsForEndpoint, testTags}));
+
+ afterUpdate(()=>console.log({tt: $testsForEndpoint}));
 </script>
 
 
-{#if testTags.length > 0}
+{#if $testTagsForEndpoint.length > 0}
     <div id='test-tags'>
         <ul>
-            {#each testTags as testTag}
+            {#each $testTagsForEndpoint as testTag}
                 <li>{testTag}</li>
             {/each}
         </ul>
     </div>
     <div id='tests'>
         <ul>
-            {#each tests as test}
+            {#each $testsForEndpoint as test}
                 <li>{test}</li>
             {/each}
         </ul>
