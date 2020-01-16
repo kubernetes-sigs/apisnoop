@@ -1,7 +1,7 @@
 import { gql } from 'apollo-boost';
 
-export const ENDPOINTS = gql`
-  query ENDPOINTS ($bucket: String!, $job: String!){
+export const ENDPOINTS_AND_TESTS = gql`
+query ENDPOINTS_AND_TESTS($bucket: String, $job: String) {
   endpoint_coverage(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
     operation_id
     level
@@ -16,8 +16,15 @@ export const ENDPOINTS = gql`
       k8s_kind
     }
   }
+  tests(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
+    test
+    test_tags
+    operation_ids
+  }
 }
+
 `
+
 
 // All buckets and jobs available in db that are not 'live'
 export const ALL_BUCKETS_AND_JOBS_SANS_LIVE = gql`
@@ -26,17 +33,6 @@ export const ALL_BUCKETS_AND_JOBS_SANS_LIVE = gql`
     bucket
     job
     job_timestamp
-  }
-}
-`
-// All tests for endpoint, where test includes test.name and test.tag
-export const ALL_TESTS_FOR_ENDPOINT = gql`
-query ALL_TESTS_FOR_ENDPOINT ($bucket: String!, $job: String!, $operation_id: String!){
-  endpoint_coverage(where: {bucket: {_eq: $bucket}, job: {_eq: $job}, operation_id: {_eq: $operation_id}}) {
-    tests {
-      test
-      test_tag
-    }
   }
 }
 `

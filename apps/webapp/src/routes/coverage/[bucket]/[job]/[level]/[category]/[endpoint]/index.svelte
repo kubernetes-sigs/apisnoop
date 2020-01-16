@@ -1,8 +1,12 @@
 <script context='module'>
- import { defaultBucketAndJob, bucketsAndJobs } from '../../../../../../../stores';
+ import {
+     defaultBucketAndJob,
+     bucketsAndJobs } from '../../../../../../../stores';
  import { get } from 'svelte/store';
  import client from "../../../../../../../apollo.js";
- import { ENDPOINTS, ALL_TESTS_FOR_ENDPOINT } from '../../../../../../../queries';
+ import {
+     ENDPOINTS_AND_TESTS
+    } from '../../../../../../../queries';
 
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
@@ -30,40 +34,42 @@
                     ? null
                     : job;
 
-     let endpointsFromQuery = await client.query({query: ENDPOINTS, variables: {bucket: activeBucket, job: activeJob}});
-     let testsForEndpoint = await client.query({query: ALL_TESTS_FOR_ENDPOINT, variables: {bucket: activeBucket, job: activeJob, operation_id: endpoint}});
+     let endpointsAndTestsFromQuery = await client.query({query: ENDPOINTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
      return {
-         endpointsFromQuery ,
+         endpointsAndTestsFromQuery ,
          activeBucket,
          activeJob,
          invalidBucket,
          invalidJob,
          level,
          category,
-         endpoint,
-         testsForEndpoint
+         endpoint
      };
  };
 </script>
 
 <script>
- import { endpoints, activePath, activeBucketAndJob, testsAndTagsForEndpoint } from '../../../../../../../stores';
+ import {
+        activeBucketAndJob,
+        activePath,
+        allTestsAndTags,
+        endpoints,
+        } from '../../../../../../../stores';
  import { isEmpty } from 'lodash-es';
  import { afterUpdate } from 'svelte';
  import CoverageContainer from '../../../../../../../components/CoverageContainer.svelte';
 
  export let level;
- export let testsForEndpoint;
  export let category;
  export let endpoint;
  export let activeBucket;
  export let activeJob;
  export let invalidBucket;
  export let invalidJob;
- export let endpointsFromQuery;
+ export let endpointsAndTestsFromQuery;
 
- testsAndTagsForEndpoint.set(testsForEndpoint.data.endpoint_coverage); 
- endpoints.set(endpointsFromQuery.data.endpoint_coverage);
+ endpoints.set(endpointsAndTestsFromQuery.data.endpoint_coverage);
+ allTestsAndTags.set(endpointsAndTestsFromQuery.data.tests);
  activePath.set([level, category, endpoint]);
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
 </script>

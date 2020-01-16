@@ -2,7 +2,7 @@
  import { defaultBucketAndJob, bucketsAndJobs } from '../../../stores';
  import { get } from 'svelte/store';
  import client from "../../../apollo.js";
- import { ENDPOINTS } from '../../../queries';
+ import { ENDPOINTS_AND_TESTS, ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../../../queries';
 
  export async function preload (page, session) {
      const { bucket } = page.params; 
@@ -21,25 +21,27 @@
 
      let job = bjs[activeBucket]['latestJob'].job
 
-     let endpointsFromQuery = await client.query({query: ENDPOINTS, variables: {bucket: activeBucket, job}});
+     let endpointsAndTestsFromQuery = await client.query({query: ENDPOINTS_AND_TAGS, variables: {bucket: activeBucket, job}});
 
-     return { endpointsFromQuery, invalidBucket, activeBucket, job };
+     return { endpointsAndTestsFromQuery, invalidBucket, activeBucket, job };
  }
 </script>
 
 <script>
  import { isEmpty } from 'lodash-es';
  import { endpoints,
+          allTestsAndTags,
         activeBucketAndJob } from '../../../stores';
  import CoverageContainer from '../../../components/CoverageContainer.svelte';
 
- export let endpointsFromQuery;
+ export let endpointsAndTestsFromQuery;
  export let invalidBucket;
  export let activeBucket;
  export let job;
 
+ allTestsAndTags.set(endpointsAndTestsFromQuery.data.tests)
  activeBucketAndJob.set({bucket: activeBucket, job});
- endpoints.set(endpointsFromQuery.data.endpoint_coverage);
+ endpoints.set(endpointsAndTestsFromQuery.data.endpoint_coverage);
 </script>
 
 
