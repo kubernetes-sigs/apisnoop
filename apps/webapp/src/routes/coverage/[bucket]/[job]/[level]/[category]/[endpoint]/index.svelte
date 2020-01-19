@@ -11,6 +11,7 @@
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
      const { bucket, job, level, category, endpoint } = page.params;
+     const { test_tags } = page.query;
 
      // Check whether url params give a bucket that exists in our db
      // If so, pass it along.  Otherwise, use the default bucket.
@@ -35,6 +36,7 @@
                     : job;
 
      let endpointsAndTestsFromQuery = await client.query({query: ENDPOINTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
+
      return {
          endpointsAndTestsFromQuery ,
          activeBucket,
@@ -43,7 +45,8 @@
          invalidJob,
          level,
          category,
-         endpoint
+         endpoint,
+         test_tags
      };
  };
 </script>
@@ -51,11 +54,12 @@
 <script>
  import {
         activeBucketAndJob,
+        activeFilters,
         activePath,
         allTestsAndTags,
         endpoints,
         } from '../../../../../../../stores';
- import { isEmpty } from 'lodash-es';
+ import { isEmpty, flatten } from 'lodash-es';
  import { afterUpdate } from 'svelte';
  import CoverageContainer from '../../../../../../../components/CoverageContainer.svelte';
 
@@ -67,7 +71,9 @@
  export let invalidBucket;
  export let invalidJob;
  export let endpointsAndTestsFromQuery;
+ export let test_tags = [];
 
+ /* activeFilters.update($af => ({...$af, test_tags: flatten([test_tags])})); */
  endpoints.set(endpointsAndTestsFromQuery.data.endpoint_coverage);
  allTestsAndTags.set(endpointsAndTestsFromQuery.data.tests);
  activePath.set([level, category, endpoint]);
