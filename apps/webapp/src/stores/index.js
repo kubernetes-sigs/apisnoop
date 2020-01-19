@@ -7,6 +7,7 @@ import {
     isEmpty,
     flattenDeep,
     groupBy,
+    intersection,
     keyBy,
     map,
     mapValues,
@@ -145,6 +146,11 @@ export const sunburst = derived(groupedEndpoints, ($gep, set) => {
 // Based on the url params o, the exact [level, category, endpoint] we are focused on.
 export const activePath = writable([]);
 
+// Based on url query params, any filters being set.
+export const activeFilters = writable({
+    test_tags: []
+})
+
 export const currentDepth = derived(activePath, ($ap, set) => {
     let depths = ['root', 'level', 'category', 'endpoint']
     let depth = $ap.length;
@@ -240,7 +246,6 @@ export const testsForEndpoint = derived(
             let opID = $ap[2];
             let tests = $tt
                 .filter(t => t.operation_ids.includes(opID))
-                .map(t => t.test);
             set(tests);
         }
     }
@@ -261,5 +266,30 @@ export const testTagsForEndpoint = derived(
         }
     }
 );
+
+export const validTestTagFilters = derived(
+    [activeFilters, testTagsForEndpoint],
+    ([$af, $tt], set) => {
+        if ($af.test_tags.length === 0 || $tt.length === 0) {
+            set([]);
+        } else {
+            let validFilters = $af.test_tags.filter(f => $tt.includes(f));
+            set(validFilters);
+        }
+    });
+
+export const filteredTests = derived(
+    [testsForEndpoint, validTestTagFilters],
+    ([$t, $vf]) => {
+        let tests;
+        if ($vf.length === 0) {
+            tests = $t; 
+        } else {
+            tests = $t.filter(test => {
+                return intersection(test.test_tags, $vf).length > 0;
+            });
+        }
+        return tests;
+    });
 
 fetchBucketsAndJobs();
