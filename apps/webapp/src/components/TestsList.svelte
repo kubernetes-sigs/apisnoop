@@ -8,6 +8,7 @@
  } from '../stores';
  import { goto, stores } from '@sapper/app';
  import { updateQueryParams } from '../lib/helpers.js';
+ import { isEmpty} from 'lodash-es';
 
  const { page } = stores();
 
@@ -23,16 +24,17 @@
                   : testTags.concat(tag);
      let queryParams = updateQueryParams($page, {test_tags: [...testTags]});
      let url = `${$page.path}${queryParams}#tests`;
+     activeFilters.update(af => ({...af, test_tags: testTags}))
+     document.getElementById('tests').scrollIntoView();
      goto(url)
          .then(() => {
-             activeFilters.update(af => ({...af, test_tags: testTags}))
              document.getElementById('tests').scrollIntoView();
          });
  };
 
 </script>
 
-{#if $testsForEndpoint.length > 0}
+{#if $testsForEndpoint.length > 0 }
     <div id='tests'>
         <h2>Tests for {$breadcrumb[2]}</h2>
         <div class='tag-filter'>

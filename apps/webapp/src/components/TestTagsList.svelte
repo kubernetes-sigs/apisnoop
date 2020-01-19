@@ -11,9 +11,10 @@
  function handleClick (tag) {
      let queryParams = updateQueryParams($page, {test_tags: [tag]});
      let url = `${$page.path}${queryParams}#tests`;
+     activeFilters.update(af => ({...af, test_tags: [tag]}))
+     document.getElementById('tests').scrollIntoView();
      goto(url)
          .then(() => {
-             activeFilters.update(af => ({...af, test_tags: [tag]}))
              document.getElementById('tests').scrollIntoView();
          });
  };
