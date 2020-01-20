@@ -1,6 +1,6 @@
 import { gql } from 'apollo-boost';
 
-export const ENDPOINTS_AND_TESTS = gql`
+export const ENDPOINTS_USERAGENTS_AND_TESTS = gql`
 query ENDPOINTS_AND_TESTS($bucket: String, $job: String) {
   endpoint_coverage(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
     operation_id
@@ -21,8 +21,11 @@ query ENDPOINTS_AND_TESTS($bucket: String, $job: String) {
     test_tags
     operation_ids
   }
+  useragents(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
+    useragent
+    operation_ids
+  }
 }
-
 `
 
 
