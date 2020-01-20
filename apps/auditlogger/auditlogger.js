@@ -69,8 +69,8 @@ function logEventsToDB (req, res, next) {
         res.json({ message: 'operation complete; data inserted' })
         return res.end()
     }).catch(err => {
-        console.log('[error] database: ${err}')
-        requestFailure(req, res, next, '[error] database: ${err}')
+        console.log(`[error] database: ${err}`)
+        requestFailure(req, res, next, `[error] database: ${err}`)
     })
 }
 

@@ -558,8 +558,8 @@ a5f4141a90fb: Pushed
            res.json({ message: 'operation complete; data inserted' })
            return res.end()
        }).catch(err => {
-           console.log('[error] database: ${err}')
-           requestFailure(req, res, next, '[error] database: ${err}')
+           console.log(`[error] database: ${err}`)
+           requestFailure(req, res, next, `[error] database: ${err}`)
        })
    }
 
@@ -612,51 +612,87 @@ a5f4141a90fb: Pushed
 *** Dockerfile
  #+NAME: dockerfile for auditlogger bot
  #+begin_src dockerfile :tangle ../apps/auditlogger/Dockerfile
- FROM node:12.13.0-stretch
- RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
- RUN  echo "deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main" > /etc/apt/sources.list.d/pgdg.list
- RUN apt update && \
-     apt install -y vim postgresql-client-12 netcat
+ FROM node:12.14.1-alpine3.11
+ RUN apk update && \
+     apk add vim postgresql-client netcat-openbsd
+ RUN adduser -D -H -h /opt/apisnoop apisnoop
  WORKDIR /opt/apisnoop
  COPY auditlogger.js .
  COPY package.json .
  RUN npm i
  EXPOSE 9900
+ USER apisnoop
  CMD ["node", "auditlogger.js"]
  #+end_src
 
 #+NAME: build auditlog bot container image
-#+begin_src shell :dir ../apps/hasura
+#+begin_src shell :dir ../apps/auditlogger
   export TAG=$(TZ='Pacific/Auckland'; export TZ ; date +%F-%H-%M)
   docker build -t raiinbow/auditlogger:$TAG .
   docker push raiinbow/auditlogger:$TAG
 #+end_src
 
 #+RESULTS: build auditlog bot container image
-#+begin_EXAMPLE
-Sending build context to Docker daemon   68.1kB
-Step 1/3 : FROM hasura/graphql-engine:v1.0.0-beta.8.cli-migrations
- ---> b24aef502cb9
-Step 2/3 : MAINTAINER Hippie Hacker <hh@ii.coop>
+#+begin_example
+Sending build context to Docker daemon  7.168kB
+Step 1/10 : FROM node:12.14.1-alpine3.11
+ ---> b0dc3a5e5e9e
+Step 2/10 : RUN apk update &&     apk add vim postgresql-client netcat-openbsd
  ---> Using cache
- ---> 82ecaff3a6e8
-Step 3/3 : COPY ./migrations /hasura-migrations
+ ---> 23a992794023
+Step 3/10 : RUN adduser -D -H -h /opt/apisnoop apisnoop
  ---> Using cache
- ---> bb2e8f81a468
-Successfully built bb2e8f81a468
-Successfully tagged raiinbow/auditlogger:2019-12-08-20-49
+ ---> 68d2d4de2e96
+Step 4/10 : WORKDIR /opt/apisnoop
+ ---> Using cache
+ ---> f8c50a302386
+Step 5/10 : COPY auditlogger.js .
+ ---> Using cache
+ ---> 4ac0366a3624
+Step 6/10 : COPY package.json .
+ ---> Using cache
+ ---> 9e66af2e56a5
+Step 7/10 : RUN npm i
+ ---> Using cache
+ ---> 1abf2b3c5328
+Step 8/10 : EXPOSE 9900
+ ---> Using cache
+ ---> 6ed780110077
+Step 9/10 : USER apisnoop
+ ---> Using cache
+ ---> a1be9e8d88ea
+Step 10/10 : CMD ["node", "auditlogger.js"]
+ ---> Using cache
+ ---> 683cb69457df
+Successfully built 683cb69457df
+Successfully tagged raiinbow/auditlogger:2020-01-20-14-30
 The push refers to repository [docker.io/raiinbow/auditlogger]
-4de5b6dfe50f: Preparing
-aa0837a119d4: Preparing
-aa0837a119d4: Preparing
-52b3e4e57c36: Preparing
-3de0b48304b2: Preparing
-3de0b48304b2: Layer already exists
-4de5b6dfe50f: Layer already exists
-52b3e4e57c36: Layer already exists
-aa0837a119d4: Layer already exists
-2019-12-08-20-49: digest: sha256:66833e0081ce1549fbdcedd5c38cf1c769086fde6088336df8db83a778bec37b size: 1368
-#+end_EXAMPLE
+a0ce3a7130b1: Preparing
+5ea1d05f9d0f: Preparing
+339089d0e2ea: Preparing
+deef43923a5f: Preparing
+ad7a6f60849a: Preparing
+439f09af1a5f: Preparing
+5280d2327565: Preparing
+77d806cfa004: Preparing
+930c8bc01816: Preparing
+5216338b40a7: Preparing
+439f09af1a5f: Waiting
+77d806cfa004: Waiting
+930c8bc01816: Waiting
+5280d2327565: Waiting
+ad7a6f60849a: Layer already exists
+339089d0e2ea: Layer already exists
+deef43923a5f: Layer already exists
+a0ce3a7130b1: Layer already exists
+5ea1d05f9d0f: Layer already exists
+5280d2327565: Layer already exists
+439f09af1a5f: Layer already exists
+77d806cfa004: Layer already exists
+5216338b40a7: Layer already exists
+930c8bc01816: Layer already exists
+2020-01-20-14-30: digest: sha256:4d6937de2a7584c939012aaa31869cd43f1593edde300dd1743495f8473f57b8 size: 2411
+#+end_example
 
 ** pgadmin
 *** servers.json
@@ -861,12 +897,15 @@ aa0837a119d4: Layer already exists
          - name: "5432"
            port: 5432
            targetPort: 5432
-     - apiVersion: extensions/v1beta1
+     - apiVersion: apps/v1
        kind: Deployment
        metadata:
          name: hasura
        spec:
          replicas: 1
+         selector:
+           matchLabels:
+             io.apisnoop.graphql: hasura
          template:
            metadata:
              labels:
@@ -875,7 +914,7 @@ aa0837a119d4: Layer already exists
              restartPolicy: Always
              containers:
              - name: hasura
-               image: "raiinbow/hasura:2019-11-14-09-33"
+               image: "raiinbow/hasura:2020-01-09-09-01"
                ports:
                - containerPort: 8080
                env:
@@ -883,12 +922,15 @@ aa0837a119d4: Layer already exists
                  value: "postgres://apisnoop:s3cretsauc3@postgres:5432/apisnoop"
                - name: HASURA_GRAPHQL_ENABLE_CONSOLE
                  value: "true"
-     - apiVersion: extensions/v1beta1
+     - apiVersion: apps/v1
        kind: Deployment
        metadata:
          name: postgres
        spec:
          replicas: 1
+         selector:
+           matchLabels:
+             io.apisnoop.db: postgres
          template:
            metadata:
              labels:
@@ -897,7 +939,7 @@ aa0837a119d4: Layer already exists
              restartPolicy: Always
              containers:
              - name: postgres
-               image: "raiinbow/postgres:2019-11-10-14-36"
+               image: "raiinbow/postgres:2019-12-03-14-19"
                ports:
                - containerPort: 5432
                livenessProbe:
@@ -920,24 +962,27 @@ aa0837a119d4: Layer already exists
                  value: apisnoop
                - name: PGUSER
                  value: apisnoop
+               - name: APISNOOP_BASELINE_BUCKET
+                 value: ci-kubernetes-e2e-gci-gce
+               - name: APISNOOP_BASELINE_JOB
+                 value: "1201280603970867200"
      - apiVersion: apps/v1
        kind: Deployment
        metadata:
          name: apisnoop-auditlogger
-         namespace: kube-system
        spec:
          replicas: 1
          selector:
            matchLabels:
-             app: apisnoop-auditlogger
+             io.apisnoop.auditlogger: apisnoop-auditlogger
          template:
            metadata:
              labels:
-               app: apisnoop-auditlogger
+               io.apisnoop.auditlogger: apisnoop-auditlogger
            spec:
              containers:
                - name: apisnoop-auditlogger
-                 image: "raiinbow/auditlogger:latest"
+                 image: "raiinbow/auditlogger:2020-01-20-14-30"
                  #command:
                  #  - "sleep"
                  #args: 
@@ -948,20 +993,18 @@ aa0837a119d4: Layer already exists
        kind: Service
        metadata:
          name: apisnoop-auditlogger
-         namespace: kube-system
        spec:
          ports:
            - port: 9900
              targetPort: 9900
          selector:
-           app: apisnoop-auditlogger
+           io.apisnoop.auditlogger: apisnoop-auditlogger
          clusterIP: 10.96.96.96
          type: ClusterIP
      - apiVersion: auditregistration.k8s.io/v1alpha1
        kind: AuditSink
        metadata:
          name: auditlogger
-         namespace: kube-system
        spec:
          policy:
            level: Metadata
@@ -1007,6 +1050,7 @@ This allows us to tangle from the emacsclient cli.
 # eval: (setq server-name "apisnoop")
 # eval: (server-force-delete)
 # eval: (server-start)
+# ii: enabled
 # End:
  
  
