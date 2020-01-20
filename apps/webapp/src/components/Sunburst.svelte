@@ -318,10 +318,6 @@
 {/if}
 
 <div bind:this={chart} class="chart">
-    <!-- <div id="explanation"> -->
-    <!-- <p id="level">{level}</p> -->
-    <!-- <p id="category">{category}</p> -->
-    <!-- </div> -->
 </div>
 
 
