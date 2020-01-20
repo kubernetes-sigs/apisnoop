@@ -24,6 +24,11 @@ export const updateQueryParams = (page, query) => {
     return fullQueryString;
 };
 
+export const toBoolean = (str) => {
+    str = str.toString().toLowerCase();
+    let truths = ["true", "t", "yes", "1", "truth"]
+    return truths.includes(str)
+}
 
 export const isValidRegex = (regex) => {
     try {
@@ -34,11 +39,21 @@ export const isValidRegex = (regex) => {
     return true;
 };
 
-export const hitByMatchingUseragent = (useragents, regex, endpoint) => {
-    // return true if endpoint is hit by any useragent
-    // in array of useragents, filtered by a regex match.
+export const hitByMatchingItems = (items, key,  regex, endpoint) => {
+    // given an array of objects, items, a key to compare, and the regex to match.
+    // return true if endpoint is hit by any item whose key value matches the regex.
     regex = new RegExp(regex);
-    let matchingUseragents = useragents.filter(ua => regex.test(ua.useragent));
-    let endpointsHitByUseragents = uniq(flatten(matchingUseragents.map(ua => ua.operation_ids)));
-    return endpointsHitByUseragents.includes(endpoint.operation_id);
+    let matchingItems = items.filter(ua => regex.test(ua[key]));
+    let endpointsHitByItems = uniq(flatten(matchingItems.map(item => item.operation_ids)));
+    return endpointsHitByItems.includes(endpoint.operation_id);
+};
+
+export const hitByMatchingTestTags = (tests, regex, endpoint) => {
+    // given an array of tests, each containing an array of test_tags, and the regex to match.
+    // filter tests by those with at least one tag that matches regex filter.
+    // return true if endpoint is hit by any of these filtered tests.
+    regex = new RegExp(regex);
+    let matchingTests = tests.filter(test => test.test_tags.some((tag) => regex.test(tag)));
+    let endpointsHitByTests = uniq(flatten(matchingTests.map(test => test.operation_ids)));
+    return endpointsHitByTests.includes(endpoint.operation_id);
 };
