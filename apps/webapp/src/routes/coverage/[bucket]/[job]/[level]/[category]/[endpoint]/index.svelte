@@ -1,4 +1,5 @@
 <script context='module'>
+ import { isArray, mapValues } from 'lodash-es';
  import {
      defaultBucketAndJob,
      bucketsAndJobs } from '../../../../../../../stores';
@@ -11,7 +12,12 @@
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
      const { bucket, job, level, category, endpoint } = page.params;
-     const { test_tags } = page.query;
+
+     let query = mapValues(page.query, (v, k) => {
+         return isArray(v)
+              ? v
+              : [v];
+         });
 
      // Check whether url params give a bucket that exists in our db
      // If so, pass it along.  Otherwise, use the default bucket.
@@ -36,7 +42,6 @@
                     : job;
 
      let endpointsAndTestsFromQuery = await client.query({query: ENDPOINTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
-
      return {
          endpointsAndTestsFromQuery ,
          activeBucket,
@@ -46,7 +51,7 @@
          level,
          category,
          endpoint,
-         test_tags
+         query
      };
  };
 </script>
@@ -59,8 +64,6 @@
         allTestsAndTags,
         endpoints,
         } from '../../../../../../../stores';
- import { isEmpty, flatten } from 'lodash-es';
- import { afterUpdate } from 'svelte';
  import CoverageContainer from '../../../../../../../components/CoverageContainer.svelte';
 
  export let level;
@@ -68,13 +71,12 @@
  export let endpoint;
  export let activeBucket;
  export let activeJob;
+ export let query;
  export let invalidBucket;
  export let invalidJob;
  export let endpointsAndTestsFromQuery;
- export let test_tags = [];
 
- /* activeFilters.update($af => ({...$af, test_tags: flatten([test_tags])})); */
- endpoints.set(endpointsAndTestsFromQuery.data.endpoint_coverage);
+ activeFilters.update((af) => ({...af, ...query})); endpoints.set(endpointsAndTestsFromQuery.data.endpoint_coverage);
  allTestsAndTags.set(endpointsAndTestsFromQuery.data.tests);
  activePath.set([level, category, endpoint]);
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
