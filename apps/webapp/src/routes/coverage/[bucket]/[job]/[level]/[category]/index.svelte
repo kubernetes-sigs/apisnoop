@@ -2,7 +2,7 @@
  import { defaultBucketAndJob, bucketsAndJobs } from '../../../../../../stores';
  import { get } from 'svelte/store';
  import client from "../../../../../../apollo.js";
- import { ENDPOINTS_AND_TESTS } from '../../../../../../queries';
+ import { ENDPOINTS_USERAGENTS_AND_TESTS } from '../../../../../../queries';
 
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
@@ -30,9 +30,9 @@
                     ? null
                     : job;
 
-     let endpointsAndTagsFromQuery = await client.query({query: ENDPOINTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
+     let endpointsUseragentsAndTagsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
      return {
-         endpointsAndTagsFromQuery ,
+         endpointsUseragentsAndTagsFromQuery ,
          activeBucket,
          activeJob,
          invalidBucket,
@@ -44,8 +44,13 @@
 </script>
 
 <script>
- import { allTestsAndTags, 
-endpoints, activeBucketAndJob, activePath } from '../../../../../../stores';
+ import {
+     allTestsAndTags,
+     endpoints,
+     activeBucketAndJob,
+     activePath,
+     allUseragents
+ } from '../../../../../../stores';
  import { isEmpty } from 'lodash-es';
  import { afterUpdate } from 'svelte';
  import CoverageContainer from '../../../../../../components/CoverageContainer.svelte';
@@ -56,14 +61,13 @@ endpoints, activeBucketAndJob, activePath } from '../../../../../../stores';
  export let activeJob;
  export let invalidBucket;
  export let invalidJob;
- export let endpointsAndTagsFromQuery;
+ export let endpointsUseragentsAndTagsFromQuery;
 
- endpoints.set(endpointsAndTagsFromQuery.data.endpoint_coverage);
- console.log({level, category});
  activePath.set([level, category]);
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
- allTestsAndTags.set(endpointsAndTagsFromQuery.data.tests);
- endpoints.set(endpointsAndTagsFromQuery.data.endpoint_coverage);
+ allTestsAndTags.set(endpointsUseragentsAndTagsFromQuery.data.tests);
+ endpoints.set(endpointsUseragentsAndTagsFromQuery.data.endpoint_coverage);
+ allUseragents.set(endpointsUseragentsAndTagsFromQuery.data.useragents);
 </script>
 
 {#if invalidBucket}

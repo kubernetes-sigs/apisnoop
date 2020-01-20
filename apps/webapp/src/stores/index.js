@@ -24,22 +24,24 @@ import {
     endpointColour
 } from '../lib/colours.js';
 
-export const rawMetadata = writable([]);
-
 async function fetchBucketsAndJobs () {
     let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
     rawMetadata.set(metadata.data.bucket_job_swagger)
 }
 
-// Based on the url params o, the exact [level, category, endpoint] we are focused on.
+export const activeBucketAndJob = writable({});
+export const allTestsAndTags = writable({});
+export const endpoints = writable([]);
+export const rawMetadata = writable([]);
+export const allUseragents = writable({});
+// Based on the url params, the exact [level, category, endpoint] we are focused on.
 export const activePath = writable([]);
-
 // Based on url query params, any filters being set.
 export const activeFilters = writable({
     test_tags: [],
     hide_tested: false,
-    hide_conf_tested: true,
-    hide_untested: true,
+    hide_conf_tested: false,
+    hide_untested: false,
     useragent: ``
 })
 
@@ -81,7 +83,6 @@ export const defaultBucketAndJob = derived(bucketsAndJobs, ($bj, set) => {
     }
 });
 
-export const activeBucketAndJob = writable({});
 
 export const bucketAndJobMetadata = derived([bucketsAndJobs, activeBucketAndJob], ([$bjs, $abj], set) => {
     if (isEmpty($bjs)) {
@@ -95,7 +96,6 @@ export const bucketAndJobMetadata = derived([bucketsAndJobs, activeBucketAndJob]
     };
 });
 
-export const endpoints = writable([]);
 
 export const opIDs = derived(endpoints, ($ep, set) => {
     if ($ep.length > 0) {
@@ -252,7 +252,6 @@ export const endpointCoverage = derived([activePath, currentDepth, filteredEndpo
     }
 });
 
-export const allTestsAndTags = writable({});
 
 export const testsForEndpoint = derived(
     [allTestsAndTags, activePath, currentDepth],
@@ -267,6 +266,7 @@ export const testsForEndpoint = derived(
         }
     }
 );
+
 
 export const testTagsForEndpoint = derived(
     [allTestsAndTags, activePath, currentDepth],

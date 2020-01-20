@@ -5,7 +5,7 @@
  import { get } from 'svelte/store';
  import client from "../../../../../../../apollo.js";
  import {
-     ENDPOINTS_AND_TESTS
+     ENDPOINTS_USERAGENTS_AND_TESTS
     } from '../../../../../../../queries';
 
  export async function preload (page, session) {
@@ -36,9 +36,9 @@
                     ? null
                     : job;
 
-     let endpointsAndTestsFromQuery = await client.query({query: ENDPOINTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
+     let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
      return {
-         endpointsAndTestsFromQuery ,
+         endpointsUseragentsAndTestsFromQuery ,
          activeBucket,
          activeJob,
          invalidBucket,
@@ -53,12 +53,13 @@
 
 <script>
  import {
-        activeBucketAndJob,
-        activeFilters,
-        activePath,
-        allTestsAndTags,
-        endpoints,
-        } from '../../../../../../../stores';
+     activeBucketAndJob,
+     activeFilters,
+     activePath,
+     allTestsAndTags,
+     endpoints,
+     allUseragents
+ } from '../../../../../../../stores';
  import CoverageContainer from '../../../../../../../components/CoverageContainer.svelte';
 
  export let level;
@@ -69,12 +70,14 @@
  export let query;
  export let invalidBucket;
  export let invalidJob;
- export let endpointsAndTestsFromQuery;
+ export let endpointsUseragentsAndTestsFromQuery;
 
- activeFilters.update((af) => ({...af, ...query})); endpoints.set(endpointsAndTestsFromQuery.data.endpoint_coverage);
- allTestsAndTags.set(endpointsAndTestsFromQuery.data.tests);
+ activeFilters.update((af) => ({...af, ...query}));
+ endpoints.set(endpointsUseragentsAndTestsFromQuery.data.endpoint_coverage);
+ allTestsAndTags.set(endpointsUseragentsAndTestsFromQuery.data.tests);
  activePath.set([level, category, endpoint]);
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
+ allUseragents.set(endpointsUseragentsAndTestsFromQuery.data.useragents);
 </script>
 
 {#if invalidBucket}
