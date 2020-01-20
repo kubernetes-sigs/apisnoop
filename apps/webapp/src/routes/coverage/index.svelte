@@ -28,17 +28,13 @@
  export let endpointsUseragentsAndTestsFromQuery;
  export let metadata;
 
- allUseragents.set(endpointsUseragentsAndtestsFromQuery.useragents);
+ allUseragents.set(endpointsUseragentsAndTestsFromQuery.data.useragents);
  rawMetadata.set(metadata.data.bucket_job_swagger)
  activeBucketAndJob.set({bucket, job});
  endpoints.set(endpointsUseragentsAndTestsFromQuery.data.endpoint_coverage);
  allTestsAndTags.set(endpointsUseragentsAndTestsFromQuery.data.tests);
 </script>
 
-
-<h1>
-    what is happening
-</h1>
 <CoverageContainer />
 
 
