@@ -1,7 +1,12 @@
 import { writable, derived } from 'svelte/store';
 import client from '../apollo.js';
 import { ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../queries';
-import { hitByMatchingUseragent, isValidRegex } from '../lib/helpers.js';
+import {
+    hitByMatchingItems,
+    hitByMatchingTestTags,
+    isValidRegex,
+    toBoolean
+} from '../lib/helpers.js';
 
 import {
     concat,
@@ -40,10 +45,12 @@ export const activePath = writable([]);
 // Based on url query params, any filters being set.
 export const activeFilters = writable({
     test_tags: [],
-    hide_tested: false,
-    hide_conf_tested: false,
-    hide_untested: false,
-    useragent: 'kube-*'
+    hide_tested: "true",
+    hide_conf_tested: "false",
+    hide_untested: "false",
+    useragent: '',
+    tests_match: '',
+    test_tags_match: ''
 })
 
 export const bucketsAndJobs = derived(rawMetadata, ($rm, set) => {
@@ -106,16 +113,24 @@ export const opIDs = derived(endpoints, ($ep, set) => {
     }
 });
 
-export const filteredEndpoints = derived([activeFilters, endpoints, allUseragents], ([$af, $ep, $ua], set) => {
+export const filteredEndpoints = derived(
+    [activeFilters, endpoints, allUseragents, allTestsAndTags],
+    ([$af, $ep, $ua, $tt], set) => {
     if ($ep.length === 0) {
         set([]);
     } else {
         let endpoints = $ep
-            .filter(ep => $af.hide_tested ? ep.tested === false : ep)
-            .filter(ep => $af.hide_conf_tested ? ep.conf_tested === false : ep)
-            .filter(ep => $af.hide_untested ? ep.tested === true : ep)
+            .filter(ep => toBoolean($af.hide_tested) ? ep.tested === false : ep)
+            .filter(ep => toBoolean($af.hide_conf_tested) ? ep.conf_tested === false : ep)
+            .filter(ep => toBoolean($af.hide_untested) ? ep.tested === true : ep)
             .filter(ep => ($af.useragent.length > 0 && isValidRegex($af.useragent) && $ua)
-                    ? hitByMatchingUseragent($ua, $af.useragent, ep)
+                    ? hitByMatchingItems($ua, 'useragent', $af.useragent, ep)
+                    : ep)
+            .filter(ep => ($af.tests_match.length > 0 && isValidRegex($af.tests_match) && $tt)
+                    ? hitByMatchingItems($tt, 'test', $af.tests_match, ep)
+                    : ep)
+            .filter(ep => ($af.test_tags_match.length > 0 && isValidRegex($af.test_tags_match) && $tt)
+                    ? hitByMatchingTestTags($tt, $af.test_tags_match, ep)
                     : ep);
         set(endpoints)
     }
