@@ -1,6 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import client from '../apollo.js';
 import { ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../queries';
+import { hitByMatchingUseragent, isValidRegex } from '../lib/helpers.js';
 
 import {
     concat,
@@ -33,7 +34,7 @@ export const activeBucketAndJob = writable({});
 export const allTestsAndTags = writable({});
 export const endpoints = writable([]);
 export const rawMetadata = writable([]);
-export const allUseragents = writable({});
+export const allUseragents = writable([]);
 // Based on the url params, the exact [level, category, endpoint] we are focused on.
 export const activePath = writable([]);
 // Based on url query params, any filters being set.
@@ -42,7 +43,7 @@ export const activeFilters = writable({
     hide_tested: false,
     hide_conf_tested: false,
     hide_untested: false,
-    useragent: ``
+    useragent: 'kube-*'
 })
 
 export const bucketsAndJobs = derived(rawMetadata, ($rm, set) => {
@@ -105,14 +106,17 @@ export const opIDs = derived(endpoints, ($ep, set) => {
     }
 });
 
-export const filteredEndpoints = derived([activeFilters, endpoints], ([$af, $ep], set) => {
+export const filteredEndpoints = derived([activeFilters, endpoints, allUseragents], ([$af, $ep, $ua], set) => {
     if ($ep.length === 0) {
         set([]);
     } else {
         let endpoints = $ep
             .filter(ep => $af.hide_tested ? ep.tested === false : ep)
             .filter(ep => $af.hide_conf_tested ? ep.conf_tested === false : ep)
-            .filter(ep => $af.hide_untested ? ep.tested === true : ep);
+            .filter(ep => $af.hide_untested ? ep.tested === true : ep)
+            .filter(ep => ($af.useragent.length > 0 && isValidRegex($af.useragent) && $ua)
+                    ? hitByMatchingUseragent($ua, $af.useragent, ep)
+                    : ep);
         set(endpoints)
     }
 });
