@@ -1,11 +1,46 @@
-#+TITLE: Focused Tests
-#+TODO: TEST TESTING PASSED | FAILED
+#+TITLE: An Approach to Promotions
+#+TODOs: TEST TESTING PASSED | FAILED
 
-* Purpose
- Investigate tests based on the number of distinct endpionts they hit.  Tests that are only hitting a small proprotion of endpoints are likely written with a focus on them, instead of doing blanket hits.   From here, we can look at tests tat are not conformance, that are hitting stable/core endpoints that are _also_ not hit by any conformance test.  These would likely be good tests to investigate for promotion
+* Goal
+ My goal is familiar: increase conformance coverage.  Since the metric for coverage is the number of endpoints hit by conformance tests, then a simple strategy would be to promote the tests hitting endpoints that are not yet conformance-tested.
+ 
+ However, we want these endpoints to be _meaningfully_ tested-- if an endpoint is hit as a side effect of a test, this is not meaningful.  Similarly, if a test is hitting every endpoint, it likely isn't written with enough focus and wouldn't be a good promotion candidate.  I also do not want to create chaff in our pull requests, and want to be able to suggest a test with as much confidence as possible before seeking the help of experts.
+
+ **AND SO**, I looked to create a query that would tests that hit a small number of endpoints, endpoints hit by a small number of tests, and where these two intersect.  My hypothesis is that these tests are likely well-focused, and will be easier to reason if they are good promotion candidates.  
+
+**ALSO**, I wanted a simple way to work through the test, and check if it's a good canidate, including to make sure this is one not already up for promotion.
+
+This is a document of my research and work.
+
 * Process
+** Our audit event set
+   When APISnoop is applied to a cluster, it adds the latest set of audit events from master, and the same results tagged as 'apisnoop|live'.  The latter is meant to be updated and added to as we work through our tests, while the former servers as an immutable baseline.
+   
+  Here is the bucket and job  we will be working with throughout this article 
+  #+NAME: bucket and job
+  #+begin_src sql-mode
+    SELECT
+      bucket,
+      job,
+      job_timestamp
+      FROM
+          bucket_job_swagger;
+  #+end_src
+
+  #+RESULTS: bucket and job
+  #+begin_src sql-mode
+            bucket           |         job         |    job_timestamp    
+  ---------------------------+---------------------+---------------------
+   ci-kubernetes-e2e-gci-gce | 1206727790053822466 | 2019-12-17 00:44:21
+   apisnoop                  | live                | 2019-12-17 00:44:21
+  (2 rows)
+
+  #+end_src
+
 ** Take a look at tests and the unique endpoints they hit
-   Our audit event view has all the useragents, we can reduce these down to just those that start with `e2e` to grab our tests.
+   
+
+   Our audit events view has all the useragents.  We can reduce these down to just those that start with `e2e` to grab our tests.
    
    #+NAME: Number of tests
    #+begin_src sql-mode
@@ -19,6 +54,15 @@
         ;
    #+end_src
 
+   #+RESULTS: Number of tests
+   #+begin_src sql-mode
+    count 
+   -------
+      823
+   (1 row)
+
+   #+end_src
+
    IF we look at a sampling of this, we can see how the useragent is structured.  The test is always given after '--'.
    
    #+NAME: Test Sample
@@ -30,7 +74,7 @@
       WHERE
              useragent LIKE 'e2e.test%'
          AND job != 'live'
-      LIMIT 25
+      LIMIT 10
             ;
    #+end_src
 
@@ -38,36 +82,21 @@
    #+begin_src sql-mode
                                                                                                                                             useragent                                                                                                                                         
    -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart exec hook properly [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart http hook properly [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop exec hook properly [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop http hook properly [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] as empty when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from file when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from log output if TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] if TerminationMessagePath is set as non-root user and at a non-default path [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] if TerminationMessagePath is set [NodeConformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Runtime blackbox test when running a container with a new image should be able to pull from private registry with secret [NodeConformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Runtime blackbox test when running a container with a new image should be able to pull image [NodeConformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Runtime blackbox test when running a container with a new image should not be able to pull from private registry without secret [NodeConformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Runtime blackbox test when running a container with a new image should not be able to pull image from invalid registry [NodeConformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Container Runtime blackbox test when starting a container that exits should run with the expected status [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Docker Containers should be able to override the image's default arguments (docker cmd) [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Docker Containers should be able to override the image's default command and arguments [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Docker Containers should be able to override the image's default command (docker entrypoint) [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Docker Containers should use the image defaults if command and args are blank [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] InitContainer [NodeConformance] should invoke init containers on a RestartAlways pod [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] InitContainer [NodeConformance] should invoke init containers on a RestartNever pod [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] InitContainer [NodeConformance] should not start app containers and fail the pod if init containers fail on a RestartNever pod [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] InitContainer [NodeConformance] should not start app containers if init containers fail on a RestartAlways pod [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] KubeletManagedEtcHosts should test kubelet managed /etc/hosts file [LinuxOnly] [NodeConformance] [Conformance]
-    e2e.test/v1.18.0 (linux/amd64) kubernetes/af1baaa -- [k8s.io] Kubelet when scheduling a busybox command in a pod should print the output to logs [NodeConformance] [Conformance]
-   (25 rows)
+    e2e.test/v1.18.0 (linux/amd64) kubernetes/a13ddd5
+    e2e.test/v1.18.0 (linux/amd64) kubernetes/a13ddd5 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart exec hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.18.0 (linux/amd64) kubernetes/a13ddd5 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart http hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.18.0 (linux/amd64) kubernetes/a13ddd5 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop exec hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.18.0 (linux/amd64) kubernetes/a13ddd5 -- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop http hook properly [NodeConformance] [Conformance]
+    e2e.test/v1.18.0 (linux/amd64) kubernetes/a13ddd5 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] as empty when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+    e2e.test/v1.18.0 (linux/amd64) kubernetes/a13ddd5 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from file when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+    e2e.test/v1.18.0 (linux/amd64) kubernetes/a13ddd5 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from log output if TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+    e2e.test/v1.18.0 (linux/amd64) kubernetes/a13ddd5 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] if TerminationMessagePath is set as non-root user and at a non-default path [NodeConformance] [Conformance]
+    e2e.test/v1.18.0 (linux/amd64) kubernetes/a13ddd5 -- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] if TerminationMessagePath is set [NodeConformance]
+   (10 rows)
 
    #+end_src
 
- This means we can user postgres' split_part on useragent to get just the test name.
+ This means we can user postgres' ~split_part~ function to get just the test name.
  
    #+NAME: Test Name Sample
    #+begin_src sql-mode
@@ -100,12 +129,11 @@
 
    #+end_src
    
-   Sweet, we have cleanly displayed tests.  Next is to see how many endpoints these tests hit.
-   
-** See if there are already focused tests.
-   
-   For each test, I want a count of the distinct endpoints it hits.  We can do this with a postgres count filter.
-   
+  Sweet, we have a simple way to list our tests.  Next is to see how many endpoints these tests hit.
+
+** Count the distinct endpoints each test hits
+   We can do a distinct count using postgres' count filter option.
+
    Ordering by count, descending, will give us the tests that hit the _most_ endpoints.
    #+NAME: Test and Count, Highest 
    #+begin_src sql-mode
@@ -156,7 +184,8 @@
 
    #+end_src
    
-   Then the tests that hit the _least_
+   Next, the tests that hit the _least_
+   
    #+NAME: Test and Count, Lowest
    #+begin_src sql-mode
      SELECT DISTINCT
@@ -194,14 +223,14 @@
                      7 |  [sig-cli] Kubectl client Kubectl cluster-info should check if Kubernetes master services is included in cluster-info  [Conformance]
                      7 |  [sig-cli] Kubectl client Kubectl create quota should reject quota with invalid scopes
                      7 |  [sig-cli] Kubectl client Kubectl get componentstatuses should get componentstatuses
+                     7 |  [sig-cli] Kubectl client Kubectl version should check is all data is printed  [Conformance]
                      7 |  [sig-cli] Kubectl client Proxy server should support 
                      7 |  [sig-cli] Kubectl client Proxy server should support proxy with 
                      7 |  [sig-instrumentation] MetricsGrabber should grab all metrics from API server.
-                     7 |  [sig-network] [sig-windows] Networking Granular Checks: Pods should function for intra-pod communication: http
-                     7 |  [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: http
-                     7 |  [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: udp
                      7 |  [sig-scheduling] Multi-AZ Clusters should spread the pods of a replication controller across zones
                      7 |  [sig-scheduling] Multi-AZ Clusters should spread the pods of a service across zones
+                     7 |  [sig-scheduling] Multi-AZ Cluster Volumes [sig-storage] should only be allowed to provision PDs in zones where nodes exist
+                     7 |  [sig-scheduling] Multi-AZ Cluster Volumes [sig-storage] should schedule pods in the same zones as statically provisioned PVs
    (25 rows)
 
    #+end_src
@@ -244,7 +273,7 @@ And one with 7:
            where useragent like '%[sig-scheduling] Multi-AZ Clusters should spread the pods of a replication controller across zones'
                  and job != 'live'
                  ;
-     -- records returns should be 3
+     -- records returns should be 7
    #+end_src
 
    #+RESULTS: Test with distinct_endpoint count of 7
@@ -262,11 +291,11 @@ And one with 7:
 
    #+end_src
 
-   The numbers match, and the logic is simple enough, that I feel confident in the approach.
+   The numbers match, and the logic is simple enough, that I felt confident in the approach.
 ** Check out Distribution of distinct endpoints
    
-   I am curious  on the distribution in the tests, if there's a common number of endpoints that are hit.  I want to start focusing on just stable endpoints, as these will be the onees with highest priority of becoming conformant.  I'll run some postgres averages on the above query.
-   
+   I was curious  on the distribution in the tests, if there's a common number of endpoints that are hit.   I'll use the query above, then select some basic calcs from it.  From this point forward, though, I'll only look at stable endpoints, since it's only these we are concerned about for conformance.
+
    #+NAME: stats for tests that hit stable|core endpoints
    #+begin_src sql-mode
      select
@@ -292,23 +321,24 @@ And one with 7:
             ;
    #+end_src
 
-   #+RESULTS: stats for tests that hit stable endpoints
+   #+RESULTS: stats for tests that hit stable|core endpoints
    #+begin_src sql-mode
     total_tests | max_endpoints_hit_by_test | min_endpoints_hit_by_test | avg_endpoints_hit_by_test 
    -------------+---------------------------+---------------------------+---------------------------
-            828 |                        80 |                         3 |       14.0374396135265700
+            823 |                        80 |                         3 |       14.0534629404617254
    (1 row)
 
    #+end_src
 
-   There is more we can do with distribution and means and such, but I'd say looking at tests that hit 14 or less endpoints would be useful.
+
+   There is more we can do with distribution and means and such, but I'd say looking at tests that hit 14 or less endpoints would be a useful filter.
    
-   Now, let's run similar queries on our endpoins.
    
+   Then, I ran a similar query for endopints.
 ** Check out low-tested endpoints.  
    
-   For these, I'll also focus on just stable endpoints.
-   
+   This is the same basic logic that we used for tests.  There's only a bit over a hundred stable endpoints, so I listed all to better see the pattern of distribution.
+  
    #+NAME: Low Tested Endpoints
    #+begin_src sql-mode
      SELECT
@@ -516,7 +546,7 @@ And one with 7:
    (183 rows)
 
    #+end_src
-   
+*** Sanity Check   
    And another sanity check.
    #+NAME: distinct tests hitting endpoint, should be 9
    #+begin_src sql-mode
@@ -569,11 +599,13 @@ And one with 7:
 
    #+end_src
    
-   Feel good with this.
+   This feels good. There's a good number of endpoints that are only hit by 1 or 2 tests, so less than 5 would likely be a good filter. 
 
 ** List the focused tests
-   This is to create a query of tests we can join with our list of endpoints, to start to find some focused test\endpoint pariings.  Here we want to list all tests that hit less than 10 endpoints, and the distinct endpoints they hit.  This will end up being a long query, as it will show all possible pairs, and so I will not run its results.
-   
+   Next, I wanted a query of focused test/endpoint pairings.  To do this, we'd need tests and the endpoints they hit and vice versa.
+
+   First, I can list all test/endpoint pairs.  This will end up being a long query, and so will not publish the results.
+
    #+NAME: focused tests 
    #+begin_src sql-mode
      WITH tests as (
@@ -595,7 +627,7 @@ And one with 7:
        FROM tests
          JOIN
          audit_event on (audit_event.useragent = tests.useragent)
-      WHERE distinct_endpoints < 10
+      WHERE distinct_endpoints < 14
        ORDER BY distinct_endpoints asc, test
             ;
    #+end_src
@@ -603,36 +635,8 @@ And one with 7:
 ** List distinct endpoints
 Similarly, we want to list the endpoints and the tests that hit them.
 
-Both of these lists will become CTE's in our larger postgres query, but it's good to define them now explicitly here.
+Both of these lists will become CTE's in our larger postgres query, they are being defined for context here.
 
-   #+NAME: List Low Tested Endpoints
-   #+begin_src sql-mode
-     WITH stable_endpoints AS (
-     SELECT DISTINCT 
-          COUNT(distinct ae.useragent) FILTER(where ae.operation_id = ae.operation_id) as distinct_tests,
-            ae.operation_id
-            FROM
-            audit_event ae
-            JOIN endpoint_coverage ec on (ae.operation_id = ec.operation_id)
-            WHERE
-            useragent LIKE 'e2e.test%'
-            AND ae.job != 'live'
-            AND ec.level = 'stable'
-      GROUP BY ae.operation_id
-      ORDER BY operation_id
-     )       
-     SELECT
-       operation_id
-       FROM
-           stable_endpoints
-           WHERE distinct_tests < 5
-         ;
-
-   #+end_src
-
-   
-   Now we will list the same # of distinctly tested endpoints, but grabbing the test that hits them.  We cannot do it in the above query, because it will create too many duplicate rows.  We also wanna limit the audit events we look at, so we are not seeing any general hit.
-   
    #+NAME: List Low Tested Endpoints
    #+begin_src sql-mode
      WITH stable_endpoints AS (
@@ -662,64 +666,64 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
             ;
    #+end_src
 
-** Combinee and Except
+** Combine our queries together
    
-   So now we want to combine these two tables.  We ahve a list of tests that hit a small amount of endpoints, and the endpoints they hit.  We also have a list of endpoints that are hit by a small amount of tests, and the tests they hit.
-   
-   We can just select tests from the top and do an intersect clause for the endpoints at the bottom.  This would return the rows that are in the top and bottom.
-   
-   In the main intersect clause, we can set whatever numbers we want for the where clause, to expand or focus our net as needed.  I am also filtering the tests to only non-conformance ones  as the purpose of the view is to promote tests.
+   With the smaller parts in place, I could now combine the two tables. We can select focused tests, then intersect it with focused endpoints.  This would return the rows that are in both the top and bottom, or the pairings of focused tests and their focused endpoints.
 
-  To start, I want to look at the pairing of tests that hit less than 5 endpoints, and the endpoints they hit that hit by less than 5 tests.  5 is slightly arbitrary, except I know from the distribution above that there will be test results, but not that many.
-   
+   We can adjust the results returned by setting different numbers in the where clause of either of our selections.  I wanted to start very narrow, looking at tests that hit less than 5 endpoints, and the endpoints hit by less than 5 tests.
+
+I added an additional filter for the endpoints.  Since we want to increase coverage, we aren't concerned with endpoints that are already hit by conformance tests.  So I will remove any endpoints whose useragent includes ~[Conformance]~.
+
    #+NAME: focused tests and endpoints
    #+begin_src sql-mode
-     WITH tests as (
-       SELECT DISTINCT
-         COUNT(distinct operation_id) FILTER(where useragent = audit_event.useragent) as distinct_endpoints,
-         split_part(useragent, '--', 2) as test,
-         useragent
-         FROM
-             audit_event
-        WHERE
-              useragent LIKE 'e2e.test%'
-          AND job != 'live'
-        GROUP BY useragent
-     ), stable_endpoints AS (
-     SELECT
-          COUNT(distinct ae.useragent) FILTER(where ae.operation_id = ae.operation_id) as distinct_tests,
-            ae.operation_id
-            FROM
-            audit_event ae
-            JOIN endpoint_coverage ec on (ae.operation_id = ec.operation_id)
-            WHERE
-            useragent LIKE 'e2e.test%'
-            AND ae.job != 'live'
-            AND ec.level = 'stable'
-            GROUP BY ae.operation_id
-     )
-    
-     (SELECT DISTINCT
-       audit_event.operation_id,
-       test
-       FROM tests
-         JOIN
-         audit_event on (audit_event.useragent = tests.useragent)
-      WHERE distinct_endpoints < 6)
-       INTERSECT
-     (SELECT DISTINCT
-       stable_endpoints.operation_id,
-       split_part(ae.useragent, '--', 2) as test
-       FROM
-           stable_endpoints
-           JOIN
-           audit_event ae on (ae.operation_id = stable_endpoints.operation_id)
-           -- WHERE stable_endpoints.operation_id = 'createAuthenticationV1TokenReview'
-           WHERE distinct_tests < 5
-            AND ae.useragent like 'e2e.test%'
-            AND ae.useragent not like '%[Conformance]%'
-)
-            ;
+     -- setup the tests
+           WITH tests as (
+             SELECT DISTINCT
+               COUNT(distinct operation_id) FILTER(where useragent = audit_event.useragent) as distinct_endpoints,
+               split_part(useragent, '--', 2) as test,
+               useragent
+               FROM
+                   audit_event
+              WHERE
+                    useragent LIKE 'e2e.test%'
+                AND job != 'live'
+              GROUP BY useragent
+           )
+     -- setup the endpoints
+               , stable_endpoints AS (
+           SELECT
+                COUNT(distinct ae.useragent) FILTER(where ae.operation_id = ae.operation_id) as distinct_tests,
+                  ae.operation_id
+                  FROM
+                  audit_event ae
+                  JOIN endpoint_coverage ec on (ae.operation_id = ec.operation_id)
+                  WHERE
+                  useragent LIKE 'e2e.test%'
+                  AND ae.job != 'live'
+                  AND ec.level = 'stable'
+                  GROUP BY ae.operation_id
+           )
+     -- select focused tests.
+           (SELECT DISTINCT
+             audit_event.operation_id,
+             test
+             FROM tests
+               JOIN
+               audit_event on (audit_event.useragent = tests.useragent)
+            WHERE distinct_endpoints < 5) --adjust to narrow or widen filter.
+             INTERSECT
+     --select focused endpoints.
+           (SELECT DISTINCT
+             stable_endpoints.operation_id,
+             split_part(ae.useragent, '--', 2) as test
+             FROM
+                 stable_endpoints
+                 JOIN
+                 audit_event ae on (ae.operation_id = stable_endpoints.operation_id)
+                 WHERE distinct_tests < 5 -- adjust to narrow or widen filter.
+                  AND ae.useragent not like '%[Conformance]%'
+      )
+                  ;
    #+end_src
 
    #+RESULTS: focused tests and endpoints
@@ -728,246 +732,435 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
    -----------------------------+--------------------------------------------------------------------------------------------------------------------------------------------
     listCoreV1NamespacedService |  [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"
     listCoreV1NamespacedService |  [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json,application/vnd.kubernetes.protobuf"
-    listCoreV1NamespacedService |  [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf,application/json"
     listCoreV1NamespacedService |  [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf"
+    listCoreV1NamespacedService |  [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf,application/json"
    (4 rows)
 
    #+end_src
+
+
+*** Verify Results
+    This result is as expected on the tests side, since our distribution showed only a few tests that hit 3 endpoints...with the next set of tests being 6 or 7 endpoints.
    
-   Great, we have 4 tests that all hit a single endpoint, and judging from their description are thematically connected.  As a bonus, these tests are not yet conformant (we'll write a query below that filters to non-cofnor.  To doulbe-check our query though, let's look through each one and make sure they are hitting less than 5 endpoints each.
+    This query is a bit tangly, and the results low enough, that I could do a blunt check for each test to ensure they are hitting 5 or less endpoints including ~listCoreV1NamespacedService~.  I would expecct each of them to only hit 3 endpoints.
+ 
+    #+NAME: Investigating test 1
+    #+begin_src sql-mode
+      SELECT DISTINCT
+        operation_id
+        FROM audit_event
+       WHERE
+         useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"'
+    ;
+    #+end_src
+
+    #+RESULTS: Investigating test 1
+    #+begin_src sql-mode
+            operation_id         
+    -----------------------------
+     listCoreV1NamespacedService
+     listCoreV1Node
+     readCoreV1NamespacedService
+    (3 rows)
+
+    #+end_src
    
-   #+NAME: Investigating test 1
+    #+NAME: Investigating test 2
+    #+begin_src sql-mode
+      SELECT DISTINCT
+        operation_id
+        FROM audit_event
+       WHERE
+         useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json,application/vnd.kubernetes.protobuf"'
+    ;
+    #+end_src
+
+    #+RESULTS: Investigating test 2
+    #+begin_src sql-mode
+            operation_id         
+    -----------------------------
+     listCoreV1NamespacedService
+     listCoreV1Node
+     readCoreV1NamespacedService
+    (3 rows)
+
+    #+end_src
+   
+    I have a feeling they are all gonna be three, and the same three. but let's be explicit.
+   
+    #+NAME: Investigating test 3
+    #+begin_src sql-mode
+        SELECT DISTINCT
+          operation_id
+          FROM audit_event
+         WHERE
+           useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf,application/json"'
+      ;
+    #+end_src
+
+    #+RESULTS: Investigating test 3
+    #+begin_src sql-mode
+            operation_id         
+    -----------------------------
+     listCoreV1NamespacedService
+     listCoreV1Node
+     readCoreV1NamespacedService
+    (3 rows)
+
+    #+end_src
+   
+    #+NAME: Investigating test 4
+    #+begin_src sql-mode
+        SELECT DISTINCT
+          operation_id
+          FROM audit_event
+         WHERE
+           useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf"'
+      ;
+    #+end_src
+
+    #+RESULTS: Investigating test 4
+    #+begin_src sql-mode
+            operation_id         
+    -----------------------------
+     listCoreV1NamespacedService
+     listCoreV1Node
+     readCoreV1NamespacedService
+    (3 rows)
+
+    #+end_src
+   
+    As we expected!  Similarly, we want to make sure ~listCoreV1NamespacedService~ is hit by less than 5 tests.
+   
+    #+NAME: Investigating endpoint
+    #+begin_src sql-mode
+        SELECT DISTINCT
+          split_part(ae.useragent, '--',2) as test
+          FROM audit_event ae
+         WHERE
+           ae.operation_id = 'listCoreV1NamespacedService'
+           AND useragent like 'e2e.test%'
+      ;
+    #+end_src
+
+    #+RESULTS: Investigating endpoint
+    #+begin_src sql-mode
+                                                                        test                                                                    
+    --------------------------------------------------------------------------------------------------------------------------------------------
+      [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"
+      [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json,application/vnd.kubernetes.protobuf"
+      [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf"
+      [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf,application/json"
+    (4 rows)
+
+    #+end_src
+   
+    Beautiful.  It's the same results as before, of course, but it let us know our combined query was working.  
+
+** Listing A larger set of Focused Tests and Endpoints
+   What does it look like when I set wider filters?  For example, tests that hit less than 14 endpoints (the average).  
+   
+   #+NAME: Test that hit less than 14 endpoints
    #+begin_src sql-mode
-     SELECT DISTINCT
-       operation_id
-       FROM audit_event
-      WHERE
-        useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"'
-   ;
+     -- setup the tests
+           WITH tests as (
+             SELECT DISTINCT
+               COUNT(distinct operation_id) FILTER(where useragent = audit_event.useragent) as distinct_endpoints,
+               split_part(useragent, '--', 2) as test,
+               useragent
+               FROM
+                   audit_event
+              WHERE
+                    useragent LIKE 'e2e.test%'
+                AND job != 'live'
+              GROUP BY useragent
+           )
+     -- setup the endpoints
+               , stable_endpoints AS (
+           SELECT
+                COUNT(distinct ae.useragent) FILTER(where ae.operation_id = ae.operation_id) as distinct_tests,
+                  ae.operation_id
+                  FROM
+                  audit_event ae
+                  JOIN endpoint_coverage ec on (ae.operation_id = ec.operation_id)
+                  WHERE
+                  useragent LIKE 'e2e.test%'
+                  AND ae.job != 'live'
+                  AND ec.level = 'stable'
+                  GROUP BY ae.operation_id
+           )
+     -- select focused tests.
+           (SELECT DISTINCT
+             audit_event.operation_id,
+             test
+             FROM tests
+               JOIN
+               audit_event on (audit_event.useragent = tests.useragent)
+            WHERE distinct_endpoints < 14) --adjust to narrow or widen filter.
+             INTERSECT
+     --select focused endpoints.
+           (SELECT DISTINCT
+             stable_endpoints.operation_id,
+             split_part(ae.useragent, '--', 2) as test
+             FROM
+                 stable_endpoints
+                 JOIN
+                 audit_event ae on (ae.operation_id = stable_endpoints.operation_id)
+                 WHERE distinct_tests < 5 -- adjust to narrow or widen filter.
+                  AND ae.useragent not like '%[Conformance]%'
+      )
+               ORDER BY test
+                  ;
    #+end_src
 
-   #+RESULTS: Investigating test 1
+   #+RESULTS: Test that hit less than 14 endpoints
    #+begin_src sql-mode
-           operation_id         
-   -----------------------------
-    listCoreV1NamespacedService
-    listCoreV1Node
-    readCoreV1NamespacedService
-   (3 rows)
+                  operation_id               |                                                                    test                                                                    
+   ------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------
+    listAppsV1NamespacedDaemonSet            | 
+    listCoordinationV1NamespacedLease        |  [k8s.io] NodeLease when the NodeLease feature is enabled should have OwnerReferences set
+    readCoordinationV1NamespacedLease        |  [k8s.io] NodeLease when the NodeLease feature is enabled the kubelet should create and update a lease in the kube-node-lease namespace
+    readCoordinationV1NamespacedLease        |  [k8s.io] NodeLease when the NodeLease feature is enabled the kubelet should report node status infrequently
+    patchCoreV1NamespacedPodStatus           |  [k8s.io] Pods should support pod readiness gates [NodeFeature:PodReadinessGate]
+    listCoreV1PodForAllNamespaces            |  [k8s.io] [sig-node] NodeProblemDetector [DisabledForLargeClusters] should run without error
+    listCoreV1NamespacedService              |  [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"
+    listCoreV1NamespacedService              |  [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json,application/vnd.kubernetes.protobuf"
+    listCoreV1NamespacedService              |  [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf"
+    listCoreV1NamespacedService              |  [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf,application/json"
+    listBatchV1NamespacedJob                 |  [sig-api-machinery] Garbage collector should delete jobs and pods created by cronjob
+    createCoreV1NamespacedPodTemplate        |  [sig-api-machinery] Servers with support for API chunking should return chunks of results for list calls
+    listCoreV1NamespacedPodTemplate          |  [sig-api-machinery] Servers with support for API chunking should return chunks of results for list calls
+    createCoreV1NamespacedPodTemplate        |  [sig-api-machinery] Servers with support for Table transformation should return chunks of table results for list calls
+    listCoreV1NamespacedPodTemplate          |  [sig-api-machinery] Servers with support for Table transformation should return chunks of table results for list calls
+    listBatchV1NamespacedJob                 |  [sig-apps] CronJob should not emit unexpected warnings
+    listBatchV1NamespacedJob                 |  [sig-apps] CronJob should replace jobs when ReplaceConcurrent
+    listBatchV1NamespacedJob                 |  [sig-apps] CronJob should schedule multiple jobs concurrently
+    replaceAppsV1NamespacedReplicaSet        |  [sig-apps] ReplicaSet should surface a failure condition on a common issue like exceeded quota
+    readAppsV1NamespacedReplicaSet           |  [sig-apps] ReplicaSet should surface a failure condition on a common issue like exceeded quota
+    replaceCoreV1NamespacedServiceAccount    |  [sig-auth] ServiceAccounts should ensure a single API token exists
+    readCoreV1NamespacedServiceAccount       |  [sig-auth] ServiceAccounts should ensure a single API token exists
+    connectCoreV1GetNamespacedPodPortforward |  [sig-cli] Kubectl Port forwarding With a server listening on 0.0.0.0 should support forwarding over websockets
+    connectCoreV1GetNamespacedPodPortforward |  [sig-cli] Kubectl Port forwarding With a server listening on localhost should support forwarding over websockets
+    getCoreAPIVersions                       |  [sig-network] Networking should provide unchanging, static URL paths for kubernetes api services
+    logFileListHandler                       |  [sig-network] Networking should provide unchanging, static URL paths for kubernetes api services
+   (26 rows)
 
    #+end_src
    
-   #+NAME: Investigating test 2
-   #+begin_src sql-mode
-     SELECT DISTINCT
-       operation_id
-       FROM audit_event
-      WHERE
-        useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json,application/vnd.kubernetes.protobuf"'
-   ;
-   #+end_src
+   A decent number of results.  I am interested in what people who knows these tests well think of a selection like this, and whether they're likely well-focused tests or if it's random.
 
-   #+RESULTS: Investigating test 2
-   #+begin_src sql-mode
-           operation_id         
-   -----------------------------
-    listCoreV1NamespacedService
-    listCoreV1Node
-    readCoreV1NamespacedService
-   (3 rows)
-
-   #+end_src
-   
-   I have a feeling they are all gonna be three, and the same three. but let's be explicit.
-   
-   #+NAME: Investigating test 3
-   #+begin_src sql-mode
-       SELECT DISTINCT
-         operation_id
-         FROM audit_event
-        WHERE
-          useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf,application/json"'
-     ;
-   #+end_src
-
-   #+RESULTS: Investigating test 3
-   #+begin_src sql-mode
-           operation_id         
-   -----------------------------
-    listCoreV1NamespacedService
-    listCoreV1Node
-    readCoreV1NamespacedService
-   (3 rows)
-
-   #+end_src
-   
-   #+NAME: Investigating test 4
-   #+begin_src sql-mode
-       SELECT DISTINCT
-         operation_id
-         FROM audit_event
-        WHERE
-          useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf"'
-     ;
-   #+end_src
-
-   #+RESULTS: Investigating test 4
-   #+begin_src sql-mode
-           operation_id         
-   -----------------------------
-    listCoreV1NamespacedService
-    listCoreV1Node
-    readCoreV1NamespacedService
-   (3 rows)
-
-   #+end_src
-   
-   As expected.  Now, we want to make sure listCorev1NamespacedService is _also_ only hit by less than 5 tests.
-   
-   #+NAME: Investigating endpoint
-   #+begin_src sql-mode
-       SELECT DISTINCT
-         split_part(ae.useragent, '--',2) as test
-         FROM audit_event ae
-        WHERE
-          ae.operation_id = 'listCoreV1NamespacedService'
-          AND useragent like 'e2e.test%'
-     ;
-   #+end_src
-
-   #+RESULTS: Investigating endpoint
-   #+begin_src sql-mode
-                                                                       test                                                                    
-   --------------------------------------------------------------------------------------------------------------------------------------------
-     [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"
-     [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json,application/vnd.kubernetes.protobuf"
-     [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf"
-     [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/vnd.kubernetes.protobuf,application/json"
-   (4 rows)
-
-   #+end_src
-   
-   Beautiful.  It's the same results as before, but we know our combined query is working.  This means we could continue to use this setting various filters as needed.  In the meantime, let's take a look at these tests and see if they are valid for promotion.
-   
 ** Checking Whether our chosen tests are valid for promotion   
   
-   The guide for conformance tests is as follows:
    
- #+BEGIN_QUOTE
- Conformance tests currently test only GA, non-optional features or APIs. More specifically, a test is eligible for promotion to conformance if:
+   So let's say we pick a test from the selection above.  Is there a rigorous way we could check if it's a good candidate for promotion?
 
-     it tests only GA, non-optional features or APIs (e.g., no alpha or beta endpoints, no feature flags required, no deprecated features)
-     it works for all providers (e.g., no SkipIfProviderIs/SkipUnlessProviderIs calls)
-     it is non-privileged (e.g., does not require root on nodes, access to raw network interfaces, or cluster admin permissions)
-     it works without access to the public internet (short of whatever is required to pre-pull images for conformance tests)
-     it works without non-standard filesystem permissions granted to pods
-     it does not rely on any binaries that would not be required for the linux kernel or kubelet to run (e.g., can't rely on git)
-     where possible, it does not depend on outputs that change based on OS (nslookup, ping, chmod, ls)
-     any container images used within the test support all architectures for which kubernetes releases are built
-     it passes against the appropriate versions of kubernetes as spelled out in the conformance test version skew policy
-     it is stable and runs consistently (e.g., no flakes), and has been running for at least one release cycle
-     new conformance tests or updates to conformance tests for additional scenarios are only allowed before code freeze dates set by the release team to allow enough soak time of the changes and gives folks a chance to kick the tires either in the community CI or their own infrastructure to make sure the tests are robust
+   
+   The k8s community provides[[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md#conformance-test-requirements][ A guide for Conformance Tests]], which is (as of 20 December):
+   
+   #+begin_quote
+   Conformance tests currently test only GA, non-optional features or APIs. More specifically, a test is eligible for promotion to conformance if:
 
- Examples of features which are not currently eligible for conformance tests:
+    it tests only GA, non-optional features or APIs (e.g., no alpha or beta endpoints, no feature flags required, no deprecated features)
+    it does not require direct access to kubelet's API to pass (nor does it require indirect access via the API server node proxy endpoint); it MAY use the kubelet API for debugging purposes upon failure
+    it works for all providers (e.g., no SkipIfProviderIs/SkipUnlessProviderIs calls)
+    it is non-privileged (e.g., does not require root on nodes, access to raw network interfaces, or cluster admin permissions)
+    it works without access to the public internet (short of whatever is required to pre-pull images for conformance tests)
+    it works without non-standard filesystem permissions granted to pods
+    it does not rely on any binaries that would not be required for the linux kernel or kubelet to run (e.g., can't rely on git)
+    where possible, it does not depend on outputs that change based on OS (nslookup, ping, chmod, ls)
+    any container images used within the test support all architectures for which kubernetes releases are built
+    it passes against the appropriate versions of kubernetes as spelled out in the conformance test version skew policy
+    it is stable and runs consistently (e.g., no flakes), and has been running for at least two weeks
+    new conformance tests or updates to conformance tests for additional scenarios are only allowed before code freeze dates set by the release team to allow enough soak time of the changes and gives folks a chance to kick the tires either in the community CI or their own infrastructure to make sure the tests are robust
+    it has a name that is a literal string
 
-     node/platform-reliant features, eg: multiple disk mounts, GPUs, high density, etc.
-     optional features, eg: policy enforcement
-     cloud-provider-specific features, eg: GCE monitoring, S3 Bucketing, etc.
-     anything that requires a non-default admission plugin
+Examples of features which are not currently eligible for conformance tests:
 
- Conformance tests are intended to be stable and backwards compatible according to the standard API deprecation policies. Therefore any test that relies on specific output that is not subject to the deprecation policy cannot be promoted to conformance. Examples of tests which are not eligible to conformance:
+    node/platform-reliant features, eg: multiple disk mounts, GPUs, high density, etc.
+    optional features, eg: policy enforcement
+    cloud-provider-specific features, eg: GCE monitoring, S3 Bucketing, etc.
+    anything that requires a non-default admission plugin
 
-     anything that checks specific Events are generated, as we make no guarantees about the contents of events, nor their delivery
-         If a test depends on events it is recommended to change the test to use an informer pattern and watch specific resource changes instead.
-     anything that checks optional Condition fields, such as Reason or Message, as these may change over time (however it is reasonable to verify these fields exist or are non-empty)
-         If the test is checking for specific conditions or reasons, it is considered overly specific and it is recommended to simply look for pass/failure criteria where possible, and output the condition/reason for debugging purposes only.
+Conformance tests are intended to be stable and backwards compatible according to the standard API deprecation policies. Therefore any test that relies on specific output that is not subject to the deprecation policy cannot be promoted to conformance. Examples of tests which are not eligible to conformance:
 
- Examples of areas we may want to relax these requirements once we have a sufficient corpus of tests that define out of the box functionality in all reasonable production worthy environments:
+    anything that checks specific Events are generated, as we make no guarantees about the contents of events, nor their delivery
+        If a test depends on events it is recommended to change the test to use an informer pattern and watch specific resource changes instead.
+    anything that checks optional Condition fields, such as Reason or Message, as these may change over time (however it is reasonable to verify these fields exist or are non-empty)
+        If the test is checking for specific conditions or reasons, it is considered overly specific and it is recommended to simply look for pass/failure criteria where possible, and output the condition/reason for debugging purposes only.
 
-     tests may need to create or set objects or fields that are alpha or beta that bypass policies that are not yet GA, but which may reasonably be enabled on a conformant cluster (e.g., pod security policy, non-GA scheduler annotations)
- #+END_QUOTE
-  
- I want to break this quote into todo's, and see how many we can confirm here before investigating the test itself.
- 
-*** [sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"
-**** PASSED it tests only GA, non-optional features or APIs (e.g., no alpha or beta endpoints, no feature flags required, no deprecated features)
-     We can check this using our api queries.  We'll run through all op_id's that our test touches, and check their properties and parameters. 
-     If any op_id is alpha or beta, or deprecated, then the test is not a candidate for promotion.
-     If any op_id has a required parameter that is turned on with a feature gate, it is also not a candidate for promotion.
+Examples of areas we may want to relax these requirements once we have a sufficient corpus of tests that define out of the box functionality in all reasonable production worthy environments:
+
+    tests may need to create or set objects or fields that are alpha or beta that bypass policies that are not yet GA, but which may reasonably be enabled on a conformant cluster (e.g., pod security policy, non-GA scheduler annotations)
+
+   #+end_quote
+   
+   We could break these requirements into a TODO checklist, to ensure we are going through the full guide with each test.
+   
+   For an example, let's look at the test from our highly focused query: 
+   : [sig-api-machinery] client-go should negotiate watch and report errors with accept *
+   The test is written in ~test/e2e/apimachinery/protocol.go~ 
+   This file is as follows:
+   #+NAME: protocol.go
+   #+begin_quote go
+  /*
+Copyright 2019 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package apimachinery
+
+import (
+	"fmt"
+	"strconv"
+
+	g "github.com/onsi/ginkgo"
+	o "github.com/onsi/gomega"
+
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+
+	"k8s.io/kubernetes/test/e2e/framework"
+)
+
+var _ = SIGDescribe("client-go should negotiate", func() {
+	f := framework.NewDefaultFramework("protocol")
+	f.SkipNamespaceCreation = true
+
+	for _, s := range []string{
+		"application/json",
+		"application/vnd.kubernetes.protobuf",
+		"application/vnd.kubernetes.protobuf,application/json",
+		"application/json,application/vnd.kubernetes.protobuf",
+	} {
+		accept := s
+		g.It(fmt.Sprintf("watch and report errors with accept %q", accept), func() {
+			cfg, err := framework.LoadConfig()
+			framework.ExpectNoError(err)
+
+			cfg.AcceptContentTypes = accept
+
+			c := kubernetes.NewForConfigOrDie(cfg)
+			svcs, err := c.CoreV1().Services("default").Get("kubernetes", metav1.GetOptions{})
+			framework.ExpectNoError(err)
+			rv, err := strconv.Atoi(svcs.ResourceVersion)
+			framework.ExpectNoError(err)
+			w, err := c.CoreV1().Services("default").Watch(metav1.ListOptions{ResourceVersion: strconv.Itoa(rv - 1)})
+			framework.ExpectNoError(err)
+			defer w.Stop()
+
+			evt, ok := <-w.ResultChan()
+			o.Expect(ok).To(o.BeTrue())
+			switch evt.Type {
+			case watch.Added, watch.Modified:
+				// this is allowed
+			case watch.Error:
+				err := errors.FromObject(evt.Object)
+				if errors.IsGone(err) {
+					// this is allowed, since the kubernetes object could be very old
+					break
+				}
+				if errors.IsUnexpectedObjectError(err) {
+					g.Fail(fmt.Sprintf("unexpected object, wanted v1.Status: %#v", evt.Object))
+				}
+				g.Fail(fmt.Sprintf("unexpected error: %#v", evt.Object))
+			default:
+				g.Fail(fmt.Sprintf("unexpected type %s: %#v", evt.Type, evt.Object))
+			}
+		})
+	}
+})
+   #+end_quote
+   
+*** PASSED it tests only GA, non-optional features or APIs (e.g., no alpha or beta endpoints, no feature flags required, no deprecated features)
+    We can check this using our api queries.  We'll run through all op_id's that our test touches, and check their properties and parameters. 
+    If any op_id is alpha or beta, or deprecated, then the test is not a candidate for promotion.
+    If any op_id has a required parameter that is turned on with a feature gate, it is also not a candidate for promotion.
     
-     #+NAME: Tests only GA, non opt features or APIs
-     #+begin_src sql-mode
-       SELECT DISTINCT
-         ae.operation_id,
-         ao.level,
-         ao.deprecated,
-         ap.param_name,
-         ap.required,
-         CASE
-             WHEN (ap.param_description ~ 'feature gate') then true
-         ELSE false
-             END as feature_gate
-         FROM audit_event ae
-                JOIN api_operation_material ao on (ae.operation_id = ao.operation_id)
-                JOIN api_operation_parameter_material ap on (ae.operation_id = ap.param_op)
-        WHERE
-          ae.useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"'
-          ;
-     #+end_src
+    #+NAME: Tests only GA, non opt features or APIs
+    #+begin_src sql-mode
+      SELECT DISTINCT
+        ae.operation_id,
+        ao.level,
+        ao.deprecated,
+        ap.param_name,
+        ap.required,
+        CASE
+            WHEN (ap.param_description ~ 'feature gate') then true
+        ELSE false
+            END as feature_gate
+        FROM audit_event ae
+               JOIN api_operation_material ao on (ae.operation_id = ao.operation_id)
+               JOIN api_operation_parameter_material ap on (ae.operation_id = ap.param_op)
+       WHERE
+         ae.useragent like '%[sig-api-machinery] client-go should negotiate watch and report errors with accept "application/json"'
+         ;
+    #+end_src
 
-     #+RESULTS: Tests only GA, non opt features or APIs
-     #+begin_src sql-mode
-             operation_id         | level  | deprecated |     param_name      | required | feature_gate 
-     -----------------------------+--------+------------+---------------------+----------+--------------
-      listCoreV1NamespacedService | stable | f          | allowWatchBookmarks | f        | t
-      listCoreV1NamespacedService | stable | f          | continue            | f        | f
-      listCoreV1NamespacedService | stable | f          | fieldSelector       | f        | f
-      listCoreV1NamespacedService | stable | f          | labelSelector       | f        | f
-      listCoreV1NamespacedService | stable | f          | limit               | f        | f
-      listCoreV1NamespacedService | stable | f          | resourceVersion     | f        | f
-      listCoreV1NamespacedService | stable | f          | timeoutSeconds      | f        | f
-      listCoreV1NamespacedService | stable | f          | watch               | f        | f
-      listCoreV1Node              | stable | f          | allowWatchBookmarks | f        | t
-      listCoreV1Node              | stable | f          | continue            | f        | f
-      listCoreV1Node              | stable | f          | fieldSelector       | f        | f
-      listCoreV1Node              | stable | f          | labelSelector       | f        | f
-      listCoreV1Node              | stable | f          | limit               | f        | f
-      listCoreV1Node              | stable | f          | resourceVersion     | f        | f
-      listCoreV1Node              | stable | f          | timeoutSeconds      | f        | f
-      listCoreV1Node              | stable | f          | watch               | f        | f
-      readCoreV1NamespacedService | stable | f          | exact               | f        | f
-      readCoreV1NamespacedService | stable | f          | export              | f        | f
-     (18 rows)
+    #+RESULTS: Tests only GA, non opt features or APIs
+    #+begin_src sql-mode
+            operation_id         | level  | deprecated |     param_name      | required | feature_gate 
+    -----------------------------+--------+------------+---------------------+----------+--------------
+     listCoreV1NamespacedService | stable | f          | allowWatchBookmarks | f        | t
+     listCoreV1NamespacedService | stable | f          | continue            | f        | f
+     listCoreV1NamespacedService | stable | f          | fieldSelector       | f        | f
+     listCoreV1NamespacedService | stable | f          | labelSelector       | f        | f
+     listCoreV1NamespacedService | stable | f          | limit               | f        | f
+     listCoreV1NamespacedService | stable | f          | resourceVersion     | f        | f
+     listCoreV1NamespacedService | stable | f          | timeoutSeconds      | f        | f
+     listCoreV1NamespacedService | stable | f          | watch               | f        | f
+     listCoreV1Node              | stable | f          | allowWatchBookmarks | f        | t
+     listCoreV1Node              | stable | f          | continue            | f        | f
+     listCoreV1Node              | stable | f          | fieldSelector       | f        | f
+     listCoreV1Node              | stable | f          | labelSelector       | f        | f
+     listCoreV1Node              | stable | f          | limit               | f        | f
+     listCoreV1Node              | stable | f          | resourceVersion     | f        | f
+     listCoreV1Node              | stable | f          | timeoutSeconds      | f        | f
+     listCoreV1Node              | stable | f          | watch               | f        | f
+     readCoreV1NamespacedService | stable | f          | exact               | f        | f
+     readCoreV1NamespacedService | stable | f          | export              | f        | f
+    (18 rows)
 
-     #+end_src
+    #+end_src
+     
+    It all looks good with the only question being allowWatchBookmarks, which is a non-required feature_gate.  In the [[https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-gates][k8s guide to feature gates]], we can see that watchBookmarks has a default set to true as of v. 1.17.  So it looks like allowWatchBookmarks would be a parameter by default, and the test does not require the enabling of a feature gate.  
     
-     So far so good!
-
-**** TESTING it is stable and runs consistently (e.g., no flakes), and has been running for at least one release cycle
-     We can check this using test grid.
+    From this perspective, it looks like the test would pass.
+*** PASSED it has a name that is a literal string
+    We can see this from the fact that it shows correctly in our query.
+*** PASSED it is stable and runs consistently (e.g., no flakes), and has been running for at least two weeks
+    For this, we will want to use a combination of github and testgrid.  Github will help us see when the test was added to e2e, based on when its file was merged into the codebase.
+     
+    Looking at the file in github, it was merged over a month ago, and so has been a part of e2e for over two weeks.
+     
+    If we take a look at the test in testgrid, it is solid green and does not appear to be flaky.
+     
+    It looks like it'd pass for this too.
+*** PASSED it works for all providers (e.g., no SkipIfProviderIs/SkipUnlessProviderIs calls)
+    We can verify this reading through the code quoted above.
+*** TEST it does not require direct access to kubelet's API to pass (nor does it require indirect access via the API server node proxy endpoint); it MAY use the kubelet API for debugging purposes upon failure
+*** TEST it is non-privileged (e.g., does not require root on nodes, access to raw network interfaces, or cluster admin permissions)
+*** TEST it works without access to the public internet (short of whatever is required to pre-pull images for conformance tests)
+*** TEST it works without non-standard filesystem permissions granted to pods
+*** TEST it does not rely on any binaries that would not be required for the linux kernel or kubelet to run (e.g., can't rely on git)
+*** TEST where possible, it does not depend on outputs that change based on OS (nslookup, ping, chmod, ls)
+*** TEST any container images used within the test support all architectures for which kubernetes releases are built
+*** TEST it passes against the appropriate versions of kubernetes as spelled out in the conformance test version skew policy
     
-     Checking if flaky
-
- - Navigate to [[https://testgrid.k8s.io/sig-release-master-blocking#gce-cos-master-default][this filter]on testgrid.k8s.io.
- - Find the test using "Include Filter by Regex" under the "Options" drop-down menu
- - Once the test is isolated then select "Super Compact" under the "Size" drop-down menu
- - What you want to see is all green on the right. (If there are some gaps, that is okay.)
-
- Check if  Slow
-
- - Continuing from above, turn on the "test-duration-minutes" graph under the "Graph" drop-down menu
- - If you don't see any changes then refresh the page
- - Now there should be a graph showing how long the test took to run.
- - 5 minutes is the threshold for a Slow test
-
-**** TEST it passes against the appropriate versions of kubernetes as spelled out in the conformance test version skew policy
-**** TEST it works for all providers (e.g., no SkipIfProviderIs/SkipUnlessProviderIs calls)
-**** TEST it is non-privileged (e.g., does not require root on nodes, access to raw network interfaces, or cluster admin permissions)
-**** TEST it works without access to the public internet (short of whatever is required to pre-pull images for conformance tests)
-**** TEST it works without non-standard filesystem permissions granted to pods
-**** TEST it does not rely on any binaries that would not be required for the linux kernel or kubelet to run (e.g., can't rely on git)
-**** TEST where possible, it does not depend on outputs that change based on OS (nslookup, ping, chmod, ls)
-**** TEST any container images used within the test support all architectures for which kubernetes releases are built
+* Conclusions | Next Steps
+* Footnotes
 ** Bringing Open PR's into the database
    One of the first important questions to ask on promotion is "is someone else already doing this?"  With backlog, there may already be an open PR for promoting the tests you're looking at, and you don't want to spend time doing already done work.  However, I was finding it difficult navigating quickly through the issues to see whether or not a PR was made.  The ieal, I think, would be to look for open PR's tagged area/conformance whose files changed include the test you are looking at.  This would give a high indication that it deals with promotion.  This is not something you can do easily with the advanced search or the api of github, but it _is_ somethign we could do with a postgres database.
    
@@ -1011,14 +1204,8 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
     #+end_src
 
     #+RESULTS: ping github api with python
-    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/scheduling/preemption.go']
-    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/apps/disruption.go']
-    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/common/expansion.go']
-    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/common/container_probe.go']
-    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/scheduling/preemption.go']
-    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/scheduling/predicates.go']
-    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/network/service.go']
-    : [u'test/conformance/testdata/conformance.txt', u'test/e2e/storage/csi_mock_volume.go']
+    #+begin_src python
+    #+end_src
 
  Great, this will get us all open area/conformacne pull requests.  We mcan work to expand this to be all pull requests and such, but we are going to hit rate limiting issues. the results we want. 
 
@@ -1189,6 +1376,8 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
       CREATE TABLE pull_requests(
         title text,
         id text unique,
+        number text,
+        permalink text,
         changed_files text[],
         PRIMARY KEY(id)
        ); 
@@ -1196,41 +1385,68 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
 
     #+RESULTS: pull_requests
     #+begin_src sql-mode
+    DROP TABLE
     CREATE TABLE
     #+end_src
 
 *** Function to insert PR's into table
-    #+NAME: load_pull_requests.py
-    #+begin_src python
-      import requests
-      import json
-      from string import Template
-
-      GH_TOKEN = "d31d95980fbc9e8cef5b848a60e79452975da04c"
-      headers = {'Authorization': 'token ' + GH_TOKEN}
-      url = 'https://api.github.com/graphql'
-
-      def insert_requests (pull_requests):
-          for entry in pull_requests:
+   #+NAME: insert_requests 
+   #+begin_src python
+     def insert_requests (pull_requests):
+         for entry in pull_requests:
              files_changed = list(map(lambda x: x['node']['path'], entry['files']['edges']))
              sql = """
-             INSERT INTO open_pull_requests(
-             title,
-             id,
-             changed_files
-             )
-             SELECT
-             $1 as title,
-             $2 as id,
-             $3 as changed_files
-             """
+            INSERT INTO open_pull_requests(
+            title,
+            id,
+            changed_files
+            )
+            SELECT
+            $1 as title,
+            $2 as id,
+            $3 as changed_files
+            """
              plan = plpy.prepare(sql, ['text','text', 'text[]'])
              rv = plpy.execute(plan, [
                  entry['title'],
                  entry['id'],
                  files_changed
              ])
-             return 'pr batch inserted'
+            return 'pr batch inserted'
+   #+end_src
+    
+    #+NAME: load_pull_requests.py
+    #+begin_src python :results output
+      import requests
+      import json
+      from string import Template
+
+      GH_TOKEN = "9becb9617f00d34e4cc49f582dc0b47a5c5d1e02"
+      headers = {'Authorization': 'token ' + GH_TOKEN}
+      url = 'https://api.github.com/graphql'
+
+      def insert_requests (pull_requests):
+          for entry in pull_requests:
+              files_changed = list(map(lambda x: x['node']['path'], entry['files']['edges']))
+              sql = """
+          INSERT INTO open_pull_requests(
+          title,
+          id,
+          changed_files
+          )
+          SELECT
+          $1 as title,
+          $2 as id,
+          $3 as changed_files
+          """
+              plan = plpy.prepare(sql, ['text','text', 'text[]'])
+              rv = plpy.execute(plan, [
+                  entry['title'],
+                  entry['id'],
+                  files_changed
+              ])
+          return 'pr batch inserted'
+
 
       def fetch_next_requests (cursor):
           if cursor is None:
@@ -1272,7 +1488,7 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
           else:
               query = Template("""
               query{
-                  search(query: "repo:kubernetes/kubernetes label:area/test type:pr", type: ISSUE, first: 100, after: $cursor) {
+                  search(query: "repo:kubernetes/kubernetes label:area/test type:pr", type: ISSUE, first: 100, after: "$cursor") {
                       pageInfo {
                       hasNextPage
                       endCursor
@@ -1305,9 +1521,9 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
                   }
               }
               """).substitute(cursor=cursor)
+              print('query', query)
 
           r = requests.post(url, json={'query': query}, headers=headers)
-          # plpy.warning(pp r)
           raw_data = json.loads(r.text)['data']['search']
           has_next_page = raw_data['pageInfo']['hasNextPage']
           end_cursor = raw_data['pageInfo']['endCursor']
@@ -1319,18 +1535,17 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
               return 'all prs inserted to db'
           else:
               fetch_next_requests(end_cursor)
-
       try:
           fetch_next_requests(None)
       except Exception as err:
           raise err
-          # return Template("something went wrong, likely this: ${error}").substitute(error = err)
     #+end_src
 
     #+RESULTS: load_pull_requests.py
-    : something went wrong, likely this: 'data'
+    #+begin_src python
+    #+end_src
 
-    ,
+
     #+NAME: new load_pull_requests.sql
     #+begin_src sql-mode :results silent
       set role dba;
@@ -1348,19 +1563,34 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
 
     #+RESULTS:
     #+begin_src sql-mode
-    ERROR:  KeyError: 'data'
+    ERROR:  TypeError: 'NoneType' object is not subscriptable
     CONTEXT:  Traceback (most recent call last):
-      PL/Python function "load_pull_requests", line 122, in <module>
+      PL/Python function "load_pull_requests", line 123, in <module>
         raise err
-      PL/Python function "load_pull_requests", line 120, in __plpython_procedure_load_pull_requests_32046
+      PL/Python function "load_pull_requests", line 121, in __plpython_procedure_load_pull_requests_31993
         fetch_next_requests(None)
-      PL/Python function "load_pull_requests", line 117, in fetch_next_requests
+      PL/Python function "load_pull_requests", line 119, in fetch_next_requests
         fetch_next_requests(end_cursor)
-      PL/Python function "load_pull_requests", line 107, in fetch_next_requests
+      PL/Python function "load_pull_requests", line 119, in fetch_next_requests
+        fetch_next_requests(end_cursor)
+      PL/Python function "load_pull_requests", line 119, in fetch_next_requests
+        fetch_next_requests(end_cursor)
+      PL/Python function "load_pull_requests", line 119, in fetch_next_requests
+        fetch_next_requests(end_cursor)
+      PL/Python function "load_pull_requests", line 119, in fetch_next_requests
+        fetch_next_requests(end_cursor)
+      PL/Python function "load_pull_requests", line 119, in fetch_next_requests
+        fetch_next_requests(end_cursor)
+      PL/Python function "load_pull_requests", line 119, in fetch_next_requests
+        fetch_next_requests(end_cursor)
+      PL/Python function "load_pull_requests", line 119, in fetch_next_requests
+        fetch_next_requests(end_cursor)
+      PL/Python function "load_pull_requests", line 119, in fetch_next_requests
+        fetch_next_requests(end_cursor)
+      PL/Python function "load_pull_requests", line 109, in fetch_next_requests
         raw_data = json.loads(r.text)['data']['search']
     PL/Python function "load_pull_requests"
     #+end_src
-
 
    
     #+begin_src sql-mode
@@ -1401,9 +1631,6 @@ Both of these lists will become CTE's in our larger postgres query, but it's goo
 
     #+end_src
    
-    
-* Conclusions | Next Steps
-* Footnotes
 
 
 ** 250: api_schema view

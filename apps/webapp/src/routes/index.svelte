@@ -1,66 +1,40 @@
 <script context="module">
     import client from "../apollo.js";
     import { gql } from "apollo-boost";
+    import { ENDPOINTS } from '../queries';
 
-    const PROJECTED_CHANGE = gql`
-        query stats {
-            projected_change_in_coverage {
-                new_coverage
-                old_coverage
-            }
-            endpoints_hit_by_new_test{
-                operation_id
-                hit_by_ete
-                hit_by_new_test
-            }
-        }
-    `;
     export async function preload() {
     return {
-    cache: await client.query({query: PROJECTED_CHANGE})
+        cache: await client.query({query: ENDPOINTS})
     };
     }
 </script>
 
 <script>
- import { query } from 'svelte-apollo';
- import ProjectedCoverage from '../components/Projected-Coverage.svelte';
- import EndpointsHitByTest from '../components/Endpoints-Hit-By-Test.svelte';
+ import { afterUpdate } from 'svelte';
+ import { restore, query } from 'svelte-apollo';
+ import {
+     endpoints,
+     rawMetadata,
+     metadata
+ } from '../stores';
+ import Header from '../components/Header.svelte';
+ import Sunburst from '../components/Sunburst.svelte';
 
- const projection = query(client, {query: PROJECTED_CHANGE})
+ export let cache;
+
+ restore(client, ENDPOINTS, cache.data);
+ const endpointsFromQuery = query(client, {query: ENDPOINTS})
+ endpoints.set($endpointsFromQuery.data.endpoint_coverage);
+ rawMetadata.set($endpointsFromQuery.data.bucket_job_swagger);
+
+ afterUpdate(() => console.log({metadata: $metadata, raw: $rawMetadata, query: $endpointsFromQuery.data}));
 </script>
 
 <svelte:head>
     <title>APISnoop</title>
 </svelte:head>
 
-<h1>Test Writing Helper</h1>
-{#await $projection}
-    loading stats...
-{:then results}
-    <ProjectedCoverage results={results.data.projected_change_in_coverage[0]} />
-    <EndpointsHitByTest results={results.data.endpoints_hit_by_new_test} />
-{/await}
 
-
-
-<style>
- h1, p {
-     text-align: center;
-     margin: 0 auto;
- }
-
- h1 {
-     font-size: 1.8em;
-     text-transform: uppercase;
-     font-weight: 700;
-     margin: 0 0 0.5em 0;
- }
-
- @media (min-width: 480px) {
-     h1 {
-        font-size: 2em;
-     }
- }
-</style>
-
+<Header />
+<Sunburst />

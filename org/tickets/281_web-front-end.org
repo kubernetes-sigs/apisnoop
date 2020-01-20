@@ -1,0 +1,330 @@
+# -*- iimode: cool -*-
+#+NAME: 21: New Web Frontend
+#+TODO: TODO(t) IN-PROGRESS(i) BLOCKED(!) | DONE(d)
+* Ticket
+Create a web ront end that pulls from our new data source.
+* Process
+** DONE Get locally accessible hasura endpoint
+   CLOSED: [2019-12-24 Tue 00:05]
+   This is so we can connect our local development to the live data.  We are able to do this with no change in the ymal by simply forwarding the hasura port as instruced in the ~cluster setup~ in our [[#footnotes]].
+   
+   I had two stumbling blocks with this:
+   - the hasura console only works on chrome, for an unknown reason.  On firefox, it only shows the loading screen.
+   - I was getting errors in our python script for the latest version of audit events.  When I went back to an earlier version, there was not an issue.  This makes me think something happened with that particular test run.  If I try tomorrow and there's still an issue, then it likely means a change happened to how testgrid stores these artifats, and we are looking for something that is no longer there.
+
+** DONE Connect apisnoop webapp to hasura endpoint and show data on front page.
+   CLOSED: [2019-12-30 Mon 01:03]
+** DONE develop query for data needed for basic sunburst.
+   CLOSED: [2019-12-30 Mon 01:03]
+   The sunburst is made up of root and children, where the deepest level is operationID.  operationID needs to include level, category, color, and size.  
+   The size is used to determine how big a pie slice for level and category, it is always 1 for opID.  Color is based on whether its tested and conformance tested.  
+
+  So at a minimum we need: 
+  - operationID
+  - level
+  - category
+  - test_hits
+  - conf_hits
+  
+    From the hit count we can determine the color.
+    
+    We can get all this info from our ~endpoint_coverage~, with the query being:
+    
+    #+begin_example graphql
+      query Endpoints {
+        endpoint_coverage(where: {bucket: {_neq: "apisnoop"}}) {
+          operation_id
+          level
+          category
+          conf_hits
+          test_hits
+          other_hits
+        }
+      } 
+    #+end_example
+    
+    In the future, we will want this query called whenever the bucket/job changes.  If we have a route set as ~apisnoop.com/:bucket/:job~, then switching routes will switch the params.  so we can improve this query by putting in vars for bucket and job.  In this initial development there are only two buckets, the live testing one and the baseline, so just filtering one out is fine _for now_.  What tis means,t hough,is that we would want to make the query in the component that sets up the routing.  When the route changes, we call the query again.
+    
+** DONE Derive proper object structure for sunburst
+   CLOSED: [2020-01-01 Wed 21:27]
+
+   With our endpoints from the db, we need to manipulate the data slightly to include color and size, then organize a flat array of endpoints into a child tree.
+   
+   This is implemented in our webapp store: [[file:~/ii/apisnoop/apps/webapp/src/stores/index.js::export%20const%20sunburst%20=%20derived(groupedEndpoints,%20($gep,%20set)%20=>%20{][sunburst function]] 
+   
+*** DONE reduce endpoints so it is array of objs, each key being operationID.
+    CLOSED: [2020-01-01 Wed 21:29]
+*** DONE Add size and color to endpoint object.
+    CLOSED: [2020-01-01 Wed 21:29]
+    Size is easy, color must be determined by our color object.
+
+*** DONE reduce endpoints to be organized by level, category, then opID.
+    CLOSED: [2020-01-01 Wed 21:29]
+*** DONE build tree of root>children, level>children, category>children, endpoints.
+    CLOSED: [2020-01-01 Wed 21:29]
+** DONE [4/4] get basic sunburst showing
+   CLOSED: [2020-01-02 Thu 22:28]
+
+   This will bring in the sunburst from d3, we can build it up level by level.  We will be constructing it with just svelte and d3, which should give us more control over its appearance (and understanding on how its underlying mechanics work).
+   
+   I like the sunburst example of Mike Bostock's https://observablehq.com/@d3/zoomable-sunburst
+   Being able to zoom in will be quite useful, and we can slowly iterate to make it so the root of the zoom is based on the current url path...this would alow us to share all endpoints for just Core, for example.
+   
+   I also still love kerry rodan's example: https://bl.ocks.org/kerryrodden/766f8f6d31f645c39f488a0befa1e3c8
+   especially the breadcrumb and inner info.  I think we can combine the two though to get our ideal. 
+   
+   I am hesitant to use any code from the old visualization because it is slow and feels rushed...
+   
+*** DONE Bring in example data.
+    CLOSED: [2020-01-01 Wed 22:03]
+*** DONE succ through functions from the bottom up in bostock's example, ensuring each one works.
+    CLOSED: [2020-01-02 Thu 01:46]
+*** DONE remake chart to draw directly in the component, instead of 'appending'
+    CLOSED: [2020-01-02 Thu 01:48]
+    Actually we can append onMount, which makes this supremely easy.  Minimum adjustment to the vizualisation needed, beyond making it create the cirlces size base don our data size.
+*** DONE have sunburst work with our data.
+    CLOSED: [2020-01-02 Thu 02:55]
+    all we needed to do was change 'size' to 'value'.  
+    
+** DONE [4/4] Refine sunburst appearance
+   CLOSED: [2020-01-03 Fri 03:22]
+*** DONE bring in breadcrumb
+    CLOSED: [2020-01-03 Fri 00:18]
+*** DONE don't change opacity when zooming in.
+    CLOSED: [2020-01-02 Thu 22:51]
+*** DONE sort by test_hits and conf_hits
+    CLOSED: [2020-01-02 Thu 22:51]
+*** DONE center circle should show current root.
+    CLOSED: [2020-01-03 Fri 03:22]
+** DONE remove dummy data from start of site.  Should show loading instead.
+   CLOSED: [2020-01-03 Fri 03:24]
+** DONE Bring in metadata about test run (bucket, job timestamp).
+   CLOSED: [2020-01-03 Fri 04:23]
+** TODO click to set sunburst in place at current node.
+** TODO show test percentage beneath each node in breadcrumb.
+** TODO remove center padding for site
+** TODO display test information to right of sun burst
+** TODO ensure we can get newest test data from graphql (latest test run works in loading app from new clusteR)
+** TODO fetch endpoint data from url instead of hard coded
+* Footnotes   
+:PROPERTIES: 
+:CUSTOM_ID: footnotes 
+:END: 
+** Cluster Setup
+   :PROPERTIES:
+   :LOGGING:  nil
+   :END:
+*** Check your user is correct and we are attached to right eye.
+    /bonus: this also ensures code blocks are working!/
+
+    #+begin_src tmate :results silent :eval never-export
+      echo "You are connected, $USER and also caleb!"
+    #+end_src
+
+*** Create a K8s cluster using KIND
+    NOTE: You can build from source or use KIND's upstream images:
+    https://hub.docker.com/r/kindest/node/tags
+
+    #+BEGIN_SRC tmate :eval never-export :session foo:cluster
+      # Uncomment the next line if you want to clean up a previously created cluster.
+      kind delete cluster --name=kind-$USER
+      kind create cluster --name kind-$USER --config ~/ii/apisnoop/deployment/k8s/kind-cluster-config.yaml
+    #+END_SRC
+*** Grab cluster info, to ensure it is up.
+
+    #+BEGIN_SRC shell :results silent
+      kubectl cluster-info
+    #+END_SRC
+
+    The results shown in your minibuffer should look something like:
+    : Kubernetes master is running at https://127.0.0.1:40067
+    : KubeDNS is running at https://127.0.0.1:40067/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+    : To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+*** Our Kubectl Apply
+    #+begin_src shell
+      (
+          kubectl apply -f ~/ii/apisnoop/deployment/k8s/raiinbow.yaml
+      )2>&1
+      :
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src shell
+    service/hasura unchanged
+    service/postgres unchanged
+    deployment.apps/hasura unchanged
+    deployment.apps/postgres created
+    deployment.apps/apisnoop-auditlogger unchanged
+    service/apisnoop-auditlogger unchanged
+    auditsink.auditregistration.k8s.io/auditlogger unchanged
+    #+end_src
+
+*** Verify Pods Running
+    !ATTENTION!: Wait for all pods to have a "Running" status before proceeding
+    past this step.
+
+    #+begin_src shell
+      kubectl get pods
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src shell
+    NAME                                    READY   STATUS    RESTARTS   AGE
+    apisnoop-auditlogger-5f6c4cb8c5-2w2bs   1/1     Running   4          10d
+    hasura-5d447cc65d-ccwrg                 1/1     Running   3          10d
+    postgres-b59f6c9c4-zm2xl                1/1     Running   0          10d
+    #+end_src
+   
+*** Setup Port-Forwarding from us to sharing to the cluster
+
+    We'll setup port-forwarding for postgres, to let us easily send queries from within our org file.
+    You can check the status of the port-forward in your right eye.
+    #+BEGIN_SRC tmate :eval never-export :session foo:postgres
+      POSTGRES_POD=$(kubectl get pod --selector=io.apisnoop.db=postgres -o name | sed s:pod/::)
+      POSTGRES_PORT=$(kubectl get pod $POSTGRES_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+      kubectl port-forward $POSTGRES_POD $(id -u)1:$POSTGRES_PORT
+    #+END_SRC
+
+    Then we'll setup a port-forward for hasura, so our web app can query it directly.
+    #+BEGIN_SRC tmate :eval never-export :session foo:hasura
+      HASURA_POD=$(kubectl get pod --selector=io.apisnoop.graphql=hasura -o name | sed s:pod/::)
+      HASURA_PORT=$(kubectl get pod $HASURA_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+      kubectl port-forward $HASURA_POD --address 0.0.0.0 8080:$HASURA_PORT
+    #+END_SRC
+*** Connect Org to our apisnoop db
+    #+NAME: ReConnect org to postgres
+    #+BEGIN_SRC emacs-lisp :results silent
+      (if (get-buffer "*SQL: postgres:none*")
+          (with-current-buffer "*SQL: postgres:none*"
+            (kill-buffer)))
+      (sql-connect "apisnoop" (concat "*SQL: postgres:none*"))
+    #+END_SRC
+*** Check it all worked
+    
+    Once the postgres pod has been up for at least three minutes, you can check if it all works.
+
+    Running ~\d+~ will list all the tables and views in your db, and their size.
+    First,you want to ensure that relations _are_ found.  IF not, something happened with postgres and you should check the logs (check out [[#footnotes]] for more info.)
+
+    There should be about a dozen views, and two tables.  The table ~bucket_job_swagger~ should be about 3712kb.  The table ~raw_audit_event~ should be about 416mb.  If either show as 8192 bytes, it means no data loaded.  Check the Hasura logs in this case, to see if there was an issue with the migration.
+
+    #+begin_src sql-mode :results silent
+      \d+
+    #+end_src
+
+    #+NAME: example results
+    #+begin_example sql-mode
+                                              List of relations
+       Schema |               Name               |       Type        |  Owner   |  Size   | Description
+      --------+----------------------------------+-------------------+----------+---------+-------------
+       public | api_operation_material           | materialized view | apisnoop | 3688 kB |
+       public | api_operation_parameter_material | materialized view | apisnoop | 6016 kB |
+       public | audit_event                      | view              | apisnoop | 0 bytes |
+       public | bucket_job_swagger               | table             | apisnoop | 3712 kB |
+       public | change_in_coverage               | view              | apisnoop | 0 bytes |
+       public | change_in_tests                  | view              | apisnoop | 0 bytes |
+       public | endpoint_coverage                | view              | apisnoop | 0 bytes |
+       public | endpoints_hit_by_new_test        | view              | apisnoop | 0 bytes |
+       public | projected_change_in_coverage     | view              | apisnoop | 0 bytes |
+       public | raw_audit_event                  | table             | apisnoop | 419 MB  |
+       public | stable_endpoint_stats            | view              | apisnoop | 0 bytes |
+       public | untested_stable_core_endpoints   | view              | apisnoop | 0 bytes |
+      (12 rows)
+
+    #+end_example
+*** Check current coverage
+    It can be useful to see the current level of testing according to your baseline audit log (by default the last successful test run on master).
+
+    You can view this with the query:
+    #+NAME: stable endpoint stats
+    #+begin_src sql-mode
+      select * from stable_endpoint_stats where job != 'live';
+    #+end_src
+
+    #+RESULTS: stable endpoint stats
+    #+begin_SRC example
+             job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+    ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+     1201280603970867200 | 2019-12-01 |             438 |       183 |       129 |          41.78 |               29.45
+    (1 row)
+
+    #+end_SRC
+
+
+*** TODO Stand up, Stretch, and get a glass of water
+    You did it! By hydration and pauses are important.  Take some you time, and drink a full glass of water!
+    
+** Load Logs to Help Debug Cluster
+    #:PROPERTIES:
+    #:header-args:tmate+: :prologue (concat "cd " (file-name-directory buffer-file-name) "../../apisnoop/apps\n. .loadenv\n")
+    #:END:
+**** hasura logs
+
+     #+BEGIN_SRC tmate :eval never-export :session foo:hasura_logs
+       HASURA_POD=$(\
+                    kubectl get pod --selector=io.apisnoop.graphql=hasura -o name \
+                        | sed s:pod/::)
+       kubectl logs $HASURA_POD -f
+     #+END_SRC
+
+**** postgres logs
+
+     #+BEGIN_SRC tmate :eval never-export :session foo:postgres_logs
+       POSTGRES_POD=$(\
+                      kubectl get pod --selector=io.apisnoop.db=postgres -o name \
+                          | sed s:pod/::)
+       kubectl logs $POSTGRES_POD -f
+     #+END_SRC
+
+*** Manually load swagger or audit events
+    If you ran through the full setup, but were getting 0's in the stable_endpint_stats, it means the table migrations were successful, but no data was loaded.
+
+    You can verify data loaded with the below query.  ~bucket_job_swagger~ should have a size around 3600kb and raw_audit_event should have a size around 412mb.
+
+    #+NAME: Verify Data Loaded
+    #+begin_src sql-mode
+      \dt+
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src sql-mode
+      List of relations
+        Schema |        Name        | Type  |  Owner   |  Size   | Description
+        --------+--------------------+-------+----------+---------+-------------
+        public | bucket_job_swagger | table | apisnoop | 3600 kB |
+        public | raw_audit_event    | table | apisnoop | 412 MB  |
+        (2 rows)
+
+    #+end_src
+
+    If either shows a size of ~8192 bytes~, you'll want to manually load it, refresh materialized views, then check again.
+
+    if you want to load a particular bucket or job, you can name them as the first and second argument of these functions.
+    e.g
+    : select * from load)swagger('ci-kubernetes-beta', 1122334344);
+    will load that specific bucket/job combo.
+    : select * from load_swagger('ci-kubernetes-beta');
+    will load the latest successful test run for ~ci-kubernetes-beta~
+    : select * from load_swagger('ci-kubernetes-beta', null, true);
+    will load the latest successful test run for ~ci-kubernetes-beta~, but with bucket and job set to 'apisnoop/live' (used for testing).
+    #+NAME: Manually load swaggers
+    #+begin_src sql-mode
+      select * from load_swagger();
+      select * from load_swagger(null, null, true);
+    #+end_src
+
+    #+NAME: Manually load audit events
+    #+begin_src sql-mode
+      select * from load_audit_events();
+    #+end_src
+
+    #+NAME: Refresh Materialized Views
+    #+begin_src sql-mode
+      REFRESH MATERIALIZED VIEW api_operation_material;
+      REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+    #+end_src
+
+    
+    
+    

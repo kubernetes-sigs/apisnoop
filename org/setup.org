@@ -1,0 +1,242 @@
+# -*- iimode: setup -*-
+#+TITLE: Setup for Test Writing
+#+AUTHOR: ii team
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+
+* TODO [80%] Cluster Setup
+  :PROPERTIES:
+  :LOGGING:  nil
+  :END:
+** Reset Org (optional)
+
+   (NOTE: to reduce git noise, when you mark cluster setup as done, run this command to reset the below todo's)
+   #+NAME: Reset Todo's
+   #+begin_src elisp :results silent
+     (org-map-entries (lambda ()
+                        (when
+                            (string=
+                             (nth 2 (org-heading-components)) "DONE")
+                          (org-todo "TODO"))) nil 'tree)
+                          #+end_src
+
+   You'll be using your Right Eye for a decent portion of this setup,
+   so make sure it is up.
+   You can do =spc spc normal-mode= if you need to grab the ssh address again.
+
+** DONE Check your user is correct and we are attached to right eye.
+   /bonus: this also ensures code blocks are working!/
+
+   #+begin_src tmate :results silent :eval never-export
+     echo "You are connected, $USER!"
+   #+end_src
+
+** DONE Create a K8s cluster using KIND
+   NOTE: You can build from source or use KIND's upstream images:
+   https://hub.docker.com/r/kindest/node/tags
+
+   #+BEGIN_SRC tmate :eval never-export :session foo:cluster
+     # Uncomment the next line if you want to clean up a previously created cluster.
+     kind delete cluster --name=kind-$USER
+     curl https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml -o kind-cluster-config.yaml
+     kind create cluster --name kind-$USER --config kind-cluster-config.yaml
+   #+END_SRC
+** DONE Grab cluster info, to ensure it is up.
+
+   #+BEGIN_SRC shell :results silent
+     kubectl cluster-info
+   #+END_SRC
+
+   The results shown in your minibuffer should look something like:
+   : Kubernetes master is running at https://127.0.0.1:40067
+   : KubeDNS is running at https://127.0.0.1:40067/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+   : To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+** DONE Our Kubectl Apply
+   #+begin_src shell
+     kubectl apply -f "https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/raiinbow.yaml"
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src shell
+   service/hasura created
+   service/postgres created
+   deployment.apps/hasura created
+   deployment.apps/postgres created
+   deployment.apps/apisnoop-auditlogger created
+   service/apisnoop-auditlogger created
+   auditsink.auditregistration.k8s.io/auditlogger created
+   #+end_src
+
+** DONE Verify Pods Running
+   !ATTENTION!: Wait for all pods to have a "Running" status before proceeding
+   past this step.
+
+   #+begin_src shell
+     kubectl get pods
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src shell
+   NAME                                    READY   STATUS              RESTARTS   AGE
+   apisnoop-auditlogger-5f6c4cb8c5-gzcqn   0/1     ContainerCreating   0          62s
+   hasura-5d447cc65d-mf9x5                 1/1     Running             1          62s
+   postgres-7b494768d5-vfr4x               1/1     Running             0          62s
+   #+end_src
+   
+** DONE Setup Port-Forwarding from us to sharing to the cluster
+
+   We'll setup port-forwarding for postgres, to let us easily send queries from within our org file.
+   You can check the status of the port-forward in your right eye.
+   #+BEGIN_SRC tmate :eval never-export :session foo:postgres
+     POSTGRES_POD=$(kubectl get pod --selector=io.apisnoop.db=postgres -o name | sed s:pod/::)
+     POSTGRES_PORT=$(kubectl get pod $POSTGRES_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+     kubectl port-forward $POSTGRES_POD $(id -u)1:$POSTGRES_PORT
+   #+END_SRC
+
+   Then we'll setup a port-forward for hasura, so our web app can query it directly.
+   #+BEGIN_SRC tmate :eval never-export :session foo:hasura
+     HASURA_POD=$(kubectl get pod --selector=io.apisnoop.graphql=hasura -o name | sed s:pod/::)
+     HASURA_PORT=$(kubectl get pod $HASURA_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+     kubectl port-forward $HASURA_POD --address 0.0.0.0 8080:$HASURA_PORT
+   #+END_SRC
+** DONE Connect Org to our apisnoop db
+   #+NAME: ReConnect org to postgres
+   #+BEGIN_SRC emacs-lisp :results silent
+     (if (get-buffer "*SQL: postgres:none*")
+         (with-current-buffer "*SQL: postgres:none*"
+           (kill-buffer)))
+     (sql-connect "apisnoop" (concat "*SQL: postgres:none*"))
+   #+END_SRC
+** DONE Check it all worked
+
+   Once the postgres pod has been up for at least three minutes, you can check if it all works.
+
+   Running ~\d+~ will list all the tables and views in your db, and their size.
+   First,you want to ensure that relations _are_ found.  IF not, something happened with postgres and you should check the logs (check out [[#footnotes]] for more info.)
+
+   There should be about a dozen views, and two tables.  The table ~bucket_job_swagger~ should be about 3712kb.  The table ~raw_audit_event~ should be about 416mb.  If either show as 8192 bytes, it means no data loaded.  Check the Hasura logs in this case, to see if there was an issue with the migration.
+
+   #+begin_src sql-mode :results silent
+     \d+
+   #+end_src
+
+   #+NAME: example results
+   #+begin_example sql-mode
+                                             List of relations
+      Schema |               Name               |       Type        |  Owner   |  Size   | Description
+     --------+----------------------------------+-------------------+----------+---------+-------------
+      public | api_operation_material           | materialized view | apisnoop | 3688 kB |
+      public | api_operation_parameter_material | materialized view | apisnoop | 6016 kB |
+      public | audit_event                      | view              | apisnoop | 0 bytes |
+      public | bucket_job_swagger               | table             | apisnoop | 3712 kB |
+      public | change_in_coverage               | view              | apisnoop | 0 bytes |
+      public | change_in_tests                  | view              | apisnoop | 0 bytes |
+      public | endpoint_coverage                | view              | apisnoop | 0 bytes |
+      public | endpoints_hit_by_new_test        | view              | apisnoop | 0 bytes |
+      public | projected_change_in_coverage     | view              | apisnoop | 0 bytes |
+      public | raw_audit_event                  | table             | apisnoop | 419 MB  |
+      public | stable_endpoint_stats            | view              | apisnoop | 0 bytes |
+      public | untested_stable_core_endpoints   | view              | apisnoop | 0 bytes |
+     (12 rows)
+
+   #+end_example
+** TODO Check current coverage
+   It can be useful to see the current level of testing according to your baseline audit log (by default the last successful test run on master).
+
+   You can view this with the query:
+   #+NAME: stable endpoint stats
+   #+begin_src sql-mode
+     select * from stable_endpoint_stats where job != 'live';
+   #+end_src
+
+   #+RESULTS: stable endpoint stats
+   #+begin_SRC example
+            job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+    1206727790053822466 | 2019-12-17 |             438 |       181 |       129 |          41.32 |               29.45
+   (1 row)
+
+   #+end_SRC
+
+
+** TODO Stand up, Stretch, and get a glass of water
+   You did it! By hydration and pauses are important.  Take some you time, and drink a full glass of water!
+* Maintaining and Debugging Cluster
+  :PROPERTIES:
+  :CUSTOM_ID: footnotes
+  :END:
+** Load Logs to Help Debug Cluster
+   #:PROPERTIES:
+   #:header-args:tmate+: :prologue (concat "cd " (file-name-directory buffer-file-name) "../../apisnoop/apps\n. .loadenv\n")
+   #:END:
+*** hasura logs
+
+    #+BEGIN_SRC tmate :eval never-export :session foo:hasura_logs
+      HASURA_POD=$(\
+                   kubectl get pod --selector=io.apisnoop.graphql=hasura -o name \
+                       | sed s:pod/::)
+      kubectl logs $HASURA_POD -f
+    #+END_SRC
+
+*** postgres logs
+
+    #+BEGIN_SRC tmate :eval never-export :session foo:postgres_logs
+      POSTGRES_POD=$(\
+                     kubectl get pod --selector=io.apisnoop.db=postgres -o name \
+                         | sed s:pod/::)
+      kubectl logs $POSTGRES_POD -f
+    #+END_SRC
+
+** Manually load swagger or audit events
+   If you ran through the full setup, but were getting 0's in the stable_endpint_stats, it means the table migrations were successful, but no data was loaded.
+
+   You can verify data loaded with the below query.  ~bucket_job_swagger~ should have a size around 3600kb and raw_audit_event should have a size around 412mb.
+
+   #+NAME: Verify Data Loaded
+   #+begin_src sql-mode
+     \dt+
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src sql-mode
+     List of relations
+       Schema |        Name        | Type  |  Owner   |  Size   | Description
+       --------+--------------------+-------+----------+---------+-------------
+       public | bucket_job_swagger | table | apisnoop | 3600 kB |
+       public | raw_audit_event    | table | apisnoop | 412 MB  |
+       (2 rows)
+
+   #+end_src
+
+   If either shows a size of ~8192 bytes~, you'll want to manually load it, refresh materialized views, then check again.
+
+   if you want to load a particular bucket or job, you can name them as the first and second argument of these functions.
+   e.g
+   : select * from load)swagger('ci-kubernetes-beta', 1122334344);
+   will load that specific bucket/job combo.
+   : select * from load_swagger('ci-kubernetes-beta');
+   will load the latest successful test run for ~ci-kubernetes-beta~
+   : select * from load_swagger('ci-kubernetes-beta', null, true);
+   will load the latest successful test run for ~ci-kubernetes-beta~, but with bucket and job set to 'apisnoop/live' (used for testing).
+   #+NAME: Manually load swaggers
+   #+begin_src sql-mode
+     select * from load_swagger();
+     select * from load_swagger(null, null, true);
+   #+end_src
+
+   #+NAME: Manually load audit events
+   #+begin_src sql-mode
+     select * from load_audit_events();
+   #+end_src
+
+   #+NAME: Refresh Materialized Views
+   #+begin_src sql-mode
+     REFRESH MATERIALIZED VIEW api_operation_material;
+     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+   #+end_src
+
+
+* Footnotes
+# Local Variables:
+# zach: cool
+# End:
