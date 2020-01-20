@@ -45,7 +45,7 @@ export const activePath = writable([]);
 // Based on url query params, any filters being set.
 export const activeFilters = writable({
     test_tags: [],
-    hide_tested: "true",
+    hide_tested: "false",
     hide_conf_tested: "false",
     hide_untested: "false",
     useragent: '',
@@ -120,7 +120,7 @@ export const filteredEndpoints = derived(
         set([]);
     } else {
         let endpoints = $ep
-            .filter(ep => toBoolean($af.hide_tested) ? ep.tested === false : ep)
+            .filter(ep => toBoolean($af.hide_tested) ? (ep.tested === false || ep.conf_tested === true) : ep)
             .filter(ep => toBoolean($af.hide_conf_tested) ? ep.conf_tested === false : ep)
             .filter(ep => toBoolean($af.hide_untested) ? ep.tested === true : ep)
             .filter(ep => ($af.useragent.length > 0 && isValidRegex($af.useragent) && $ua)

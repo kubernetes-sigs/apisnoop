@@ -8,7 +8,8 @@
      let {bucket, job} = get(defaultBucketAndJob);
      let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
      let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket, job}});
-     return { bucket, job, endpointsUseragentsAndTestsFromQuery, metadata };
+     let query = page.query;
+     return { bucket, job, endpointsUseragentsAndTestsFromQuery, metadata, query};
  }
 </script>
 
@@ -17,6 +18,7 @@
  import { isEmpty } from 'lodash-es';
  import {
      activeBucketAndJob,
+     activeFilters,
      allTestsAndTags,
      endpoints,
      rawMetadata,
@@ -27,7 +29,9 @@
  export let job;
  export let endpointsUseragentsAndTestsFromQuery;
  export let metadata;
+ export let query;
 
+ activeFilters.update(af => ({...af, ...query}));
  allUseragents.set(endpointsUseragentsAndTestsFromQuery.data.useragents);
  rawMetadata.set(metadata.data.bucket_job_swagger)
  activeBucketAndJob.set({bucket, job});
