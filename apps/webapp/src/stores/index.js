@@ -4,6 +4,7 @@ import { ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../queries';
 
 import {
     concat,
+    isArray,
     isEmpty,
     flattenDeep,
     groupBy,
@@ -29,6 +30,18 @@ async function fetchBucketsAndJobs () {
     let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
     rawMetadata.set(metadata.data.bucket_job_swagger)
 }
+
+// Based on the url params o, the exact [level, category, endpoint] we are focused on.
+export const activePath = writable([]);
+
+// Based on url query params, any filters being set.
+export const activeFilters = writable({
+    test_tags: [],
+    hide_tested: false,
+    hide_conf_tested: true,
+    hide_untested: true,
+    useragent: ``
+})
 
 export const bucketsAndJobs = derived(rawMetadata, ($rm, set) => {
     // group by buckets and their jobs, noting the most recent job for each bucket.
@@ -92,7 +105,19 @@ export const opIDs = derived(endpoints, ($ep, set) => {
     }
 });
 
-export const groupedEndpoints = derived(endpoints, ($ep, set) => {
+export const filteredEndpoints = derived([activeFilters, endpoints], ([$af, $ep], set) => {
+    if ($ep.length === 0) {
+        set([]);
+    } else {
+        let endpoints = $ep
+            .filter(ep => $af.hide_tested ? ep.tested === false : ep)
+            .filter(ep => $af.hide_conf_tested ? ep.conf_tested === false : ep)
+            .filter(ep => $af.hide_untested ? ep.tested === true : ep);
+        set(endpoints)
+    }
+});
+
+export const groupedEndpoints = derived(filteredEndpoints, ($ep, set) => {
     if ($ep.length > 0) {
         let endpointsByLevel = groupBy($ep, 'level')
         set(mapValues(endpointsByLevel, endpointsInLevel => {
@@ -143,14 +168,6 @@ export const sunburst = derived(groupedEndpoints, ($gep, set) => {
     }
 });
 
-// Based on the url params o, the exact [level, category, endpoint] we are focused on.
-export const activePath = writable([]);
-
-// Based on url query params, any filters being set.
-export const activeFilters = writable({
-    test_tags: []
-})
-
 export const currentDepth = derived(activePath, ($ap, set) => {
     let depths = ['root', 'level', 'category', 'endpoint']
     let depth = $ap.length;
@@ -167,7 +184,7 @@ export const breadcrumb = derived(
         return take(bc, 3);
     });
 
-export const coverageAtDepth = derived([activePath, currentDepth, endpoints], ([$ap, $cd, $eps], set) => {
+export const coverageAtDepth = derived([activePath, currentDepth, filteredEndpoints], ([$ap, $cd, $eps], set) => {
     let eps;
     if (isEmpty($eps)) {
         set({})
@@ -192,7 +209,7 @@ export const coverageAtDepth = derived([activePath, currentDepth, endpoints], ([
     });
 });
 
-export const endpointCoverage = derived([activePath, currentDepth, endpoints], ([$ap, $cd, $eps], set) => {
+export const endpointCoverage = derived([activePath, currentDepth, filteredEndpoints], ([$ap, $cd, $eps], set) => {
     let endpoint;
     let opId;
     let defaultCoverage = {
@@ -273,7 +290,9 @@ export const validTestTagFilters = derived(
         if ($af.test_tags.length === 0 || $tt.length === 0) {
             set([]);
         } else {
-            let validFilters = $af.test_tags.filter(f => $tt.includes(f));
+            let validFilters = isArray($af.test_tags)
+                ? $af.test_tags.filter(f => $tt.includes(f))
+                : [$af.test_tags].filter(f => $tt.includes(f));
             set(validFilters);
         }
     });

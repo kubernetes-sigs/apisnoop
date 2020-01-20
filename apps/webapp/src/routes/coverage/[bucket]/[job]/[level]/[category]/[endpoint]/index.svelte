@@ -1,5 +1,4 @@
 <script context='module'>
- import { isArray, mapValues } from 'lodash-es';
  import {
      defaultBucketAndJob,
      bucketsAndJobs } from '../../../../../../../stores';
@@ -13,11 +12,7 @@
      let bjs = get(bucketsAndJobs);
      const { bucket, job, level, category, endpoint } = page.params;
 
-     let query = mapValues(page.query, (v, k) => {
-         return isArray(v)
-              ? v
-              : [v];
-         });
+     let query = page.query;
 
      // Check whether url params give a bucket that exists in our db
      // If so, pass it along.  Otherwise, use the default bucket.

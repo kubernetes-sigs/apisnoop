@@ -28,7 +28,6 @@
  export let metadata;
 
  rawMetadata.set(metadata.data.bucket_job_swagger)
-
  activeBucketAndJob.set({bucket, job});
  endpoints.set(endpointsAndTestsFromQuery.data.endpoint_coverage);
  allTestsAndTags.set(endpointsAndTestsFromQuery.data.tests);
