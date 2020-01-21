@@ -16,7 +16,7 @@
 <style>
  header {
      margin-bottom: 1.5em;
-     grid-column: 1/3;
+     grid-column: 1;
  }
 
  h1 {

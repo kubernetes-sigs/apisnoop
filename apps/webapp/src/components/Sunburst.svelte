@@ -324,6 +324,7 @@
 <style>
  .chart {
      position: relative;
+     grid-column: 1;
  }
 
  #explanation {

@@ -22,8 +22,8 @@
 <style>
  div{
      height: 3em;
-     grid-column: 1/3;
-     margin-bottom: 0;
+     grid-column: 1/2;
+     margin-bottom: 1em;
  }
  p {
      font-size: 1.3em;
