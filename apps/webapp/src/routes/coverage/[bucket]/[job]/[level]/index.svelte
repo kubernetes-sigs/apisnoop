@@ -7,6 +7,7 @@
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
      const { bucket, job, level } = page.params;
+     const { query } = page;
 
      // Check whether url params give a bucket that exists in our db
      // If so, pass it along.  Otherwise, use the default bucket.
@@ -37,7 +38,8 @@
          activeJob,
          invalidBucket,
          invalidJob,
-         level
+         level,
+         query
      };
  };
 </script>
@@ -47,19 +49,22 @@
      allTestsAndTags,
      endpoints,
      activeBucketAndJob,
+     activeFilters,
      activePath,
      allUseragents
  } from '../../../../../stores';
 
  import CoverageContainer from '../../../../../components/CoverageContainer.svelte';
 
- export let level;
  export let activeBucket;
  export let activeJob;
+ export let endpointsUseragentsAndTagsFromQuery;
  export let invalidBucket;
  export let invalidJob;
- export let endpointsUseragentsAndTagsFromQuery;
+ export let level;
+ export let query;
 
+ activeFilters.update(af => ({...af, ...query}));
  allUseragents.set(endpointsUseragentsAndTagsFromQuery.data.useragents);
  activePath.set([level]);
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});

@@ -7,6 +7,8 @@
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
      const { bucket, job } = page.params;
+     const {query} = page;
+
 
      // Check whether url params give a bucket that exists in our db
      // If so, pass it along.  Otherwise, use the default bucket.
@@ -36,8 +38,8 @@
          activeBucket,
          activeJob,
          invalidBucket,
-         invalidJob
-
+         invalidJob,
+         query
      };
  };
 </script>
@@ -46,6 +48,7 @@
  import {
      allTestsAndTags,
      endpoints,
+     activeFilters,
      activeBucketAndJob,
      allUseragents
  } from '../../../../stores';
@@ -57,7 +60,9 @@
  export let invalidBucket;
  export let invalidJob;
  export let endpointsUseragentsAndTestsFromQuery;
+ export let query;
 
+ activeFilters.update(af => ({...af, ...query}));
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
  endpoints.set(endpointsUseragentsAndTestsFromQuery.data.endpoint_coverage);
  allTestsAndTags.set(endpointsUseragentsAndTestsFromQuery.data.tests);

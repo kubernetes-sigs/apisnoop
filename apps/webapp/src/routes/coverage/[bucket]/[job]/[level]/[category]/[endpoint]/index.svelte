@@ -11,8 +11,7 @@
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
      const { bucket, job, level, category, endpoint } = page.params;
-
-     let query = page.query;
+     const { query } = page;
 
      // Check whether url params give a bucket that exists in our db
      // If so, pass it along.  Otherwise, use the default bucket.

@@ -7,6 +7,7 @@
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
      const { bucket, job, level, category } = page.params;
+     const { query } = page;
 
      // Check whether url params give a bucket that exists in our db
      // If so, pass it along.  Otherwise, use the default bucket.
@@ -32,19 +33,21 @@
 
      let endpointsUseragentsAndTagsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
      return {
-         endpointsUseragentsAndTagsFromQuery ,
          activeBucket,
          activeJob,
+         category,
+         endpointsUseragentsAndTagsFromQuery ,
          invalidBucket,
          invalidJob,
          level,
-         category
+         query
      };
  };
 </script>
 
 <script>
  import {
+     activeFilters,
      allTestsAndTags,
      endpoints,
      activeBucketAndJob,
@@ -55,16 +58,18 @@
  import { afterUpdate } from 'svelte';
  import CoverageContainer from '../../../../../../components/CoverageContainer.svelte';
 
- export let level;
- export let category;
  export let activeBucket;
  export let activeJob;
+ export let category;
+ export let endpointsUseragentsAndTagsFromQuery;
  export let invalidBucket;
  export let invalidJob;
- export let endpointsUseragentsAndTagsFromQuery;
+ export let level;
+ export let query;
 
- activePath.set([level, category]);
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
+ activeFilters.update(af => ({...af, ...query}));
+ activePath.set([level, category]);
  allTestsAndTags.set(endpointsUseragentsAndTagsFromQuery.data.tests);
  endpoints.set(endpointsUseragentsAndTagsFromQuery.data.endpoint_coverage);
  allUseragents.set(endpointsUseragentsAndTagsFromQuery.data.useragents);

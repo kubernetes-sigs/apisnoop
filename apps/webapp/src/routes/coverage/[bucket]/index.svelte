@@ -20,10 +20,17 @@
                        : bucket;
 
      let job = bjs[activeBucket]['latestJob'].job
+     let query = page.query;
 
      let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket: activeBucket, job}});
 
-     return { endpointsUseragentsAndTestsFromQuery, invalidBucket, activeBucket, job };
+     return {
+         endpointsUseragentsAndTestsFromQuery,
+         invalidBucket,
+         activeBucket,
+         job,
+         query
+     };
  }
 </script>
 
@@ -31,6 +38,7 @@
  import { isEmpty } from 'lodash-es';
  import {
      activeBucketAndJob,
+     activeFilters,
      allTestsAndTags,
      endpoints,
      allUseragents
@@ -42,7 +50,9 @@
  export let invalidBucket;
  export let activeBucket;
  export let job;
+ export let query;
 
+ activeFilters.update(af => ({...af, ...query}));
  allUseragents.set(endpointsUseragentsAndtestsFromQuery.useragents);
  allTestsAndTags.set(endpointsUseragentsAndTestsFromQuery.data.tests)
  activeBucketAndJob.set({bucket: activeBucket, job});
