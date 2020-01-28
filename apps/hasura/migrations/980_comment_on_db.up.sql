@@ -102,11 +102,11 @@ COMMENT ON COLUMN endpoint_coverage.category IS 'will either be analogous with t
 COMMENT ON COLUMN endpoint_coverage.group IS 'kubernetes group this operation_id belongs to';
 COMMENT ON COLUMN endpoint_coverage.version IS 'kubernetes version (e.g alpha or beta or stable)';
 COMMENT ON COLUMN endpoint_coverage.kind IS 'kubernetes kind';
-
--- 520: stable_endpoint_stats
 COMMENT ON COLUMN endpoint_coverage.tested IS 'boolean on whether any e2e. useragent hits this endpoint';
 COMMENT ON COLUMN endpoint_coverage.conf_tested IS 'boolean on whether any useragent with [Conformance] in name hits endpoint';
 COMMENT ON COLUMN endpoint_coverage.hit IS 'boolean whether endpoint hit by any useragent';
+
+-- 520: stable_endpoint_stats
 
 COMMENT ON VIEW stable_endpoint_stats IS 'coverage stats for entire test run, looking only at its stable endpoints';
 COMMENT ON COLUMN stable_endpoint_stats.job IS 'The testrun job';

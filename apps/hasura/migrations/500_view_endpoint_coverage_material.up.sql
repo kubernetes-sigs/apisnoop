@@ -1,3 +1,12 @@
+-- 500: Endpoint Coverage Material View
+--    :PROPERTIES:
+--    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/500_view_endpoint_coverage_material.up.sql
+--    :END:
+--    developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]] 
+--    improved in [[file:explorations/speedup_endpoint_coverage.org][exploration: speed up endpoint coverage]]  
+   
+--     #+NAME: endpoint_coverage_material
+
 CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
  SELECT DISTINCT
    bjs.job_timestamp::date as date,
@@ -34,6 +43,9 @@ CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
           LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
      WHERE ao.deprecated IS False
    GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
+
+-- Index
+--    #+NAME: Add indexes 
 
 CREATE INDEX idx_endpoint_coverage_material_bucket             ON endpoint_coverage_material                       (bucket);
 CREATE INDEX idx_endpoint_coverage_material_job                ON endpoint_coverage_material                          (job);

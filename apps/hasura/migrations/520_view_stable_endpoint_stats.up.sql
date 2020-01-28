@@ -3,6 +3,7 @@
 --    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/520_view_stable_endpoint_stats.up.sql
 --    :END:
 --    Based on the update we give to dan, developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]] 
+   
 --    #+NAME: Endpoint Stats View
 
 CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS
