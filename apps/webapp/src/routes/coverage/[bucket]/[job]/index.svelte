@@ -32,6 +32,7 @@
                     ? null
                     : job;
 
+     let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
      let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
      return {
          endpointsUseragentsAndTestsFromQuery ,
@@ -39,6 +40,7 @@
          activeJob,
          invalidBucket,
          invalidJob,
+         metadata,
          query
      };
  };
@@ -50,7 +52,8 @@
      endpoints,
      activeFilters,
      activeBucketAndJob,
-     allUseragents
+     allUseragents,
+     rawMetadata
  } from '../../../../stores';
  import { isEmpty } from 'lodash-es';
  import CoverageContainer from '../../../../components/CoverageContainer.svelte';
@@ -60,8 +63,10 @@
  export let invalidBucket;
  export let invalidJob;
  export let endpointsUseragentsAndTestsFromQuery;
+ export let metadata;
  export let query;
 
+ rawMetadata.set(metadata.data.bucket_job_swagger)
  activeFilters.update(af => ({...af, ...query}));
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
  endpoints.set(endpointsUseragentsAndTestsFromQuery.data.endpoint_coverage);

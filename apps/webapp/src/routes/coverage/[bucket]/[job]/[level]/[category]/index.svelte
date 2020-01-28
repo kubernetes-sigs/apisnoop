@@ -31,6 +31,7 @@
                     ? null
                     : job;
 
+     let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
      let endpointsUseragentsAndTagsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
      return {
          activeBucket,
@@ -40,6 +41,7 @@
          invalidBucket,
          invalidJob,
          level,
+         metadata,
          query
      };
  };
@@ -52,7 +54,8 @@
      endpoints,
      activeBucketAndJob,
      activePath,
-     allUseragents
+     allUseragents,
+     rawMetadata
  } from '../../../../../../stores';
  import { isEmpty } from 'lodash-es';
  import { afterUpdate } from 'svelte';
@@ -65,8 +68,10 @@
  export let invalidBucket;
  export let invalidJob;
  export let level;
+ export let metadata;
  export let query;
 
+ rawMetadata.set(metadata.data.bucket_job_swagger)
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
  activeFilters.update(af => ({...af, ...query}));
  activePath.set([level, category]);
