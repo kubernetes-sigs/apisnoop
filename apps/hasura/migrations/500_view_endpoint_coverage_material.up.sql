@@ -4,7 +4,6 @@
 --    :END:
 
 --    developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]]
-
 --    #+NAME: Endpoint Coverage View
 
 CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
@@ -41,7 +40,7 @@ CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
    FROM api_operation_material ao
           LEFT JOIN audit_event ae ON (ao.operation_id = ae.operation_id AND ao.bucket = ae.bucket AND ao.job = ae.job)
           LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
-     WHERE ao.deprecated IS False
+     WHERE ao.deprecated IS False and ae.job != 'live'
    GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
 
 -- Index
