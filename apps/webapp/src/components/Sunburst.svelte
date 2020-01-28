@@ -2,10 +2,29 @@
  import * as d3 from 'd3';
  import { sunburst } from '../stores';
  import { onMount, afterUpdate } from 'svelte';
+ import {
+     dropRight,
+     last,
+     split,
+     join,
+     find,
+     head,
+     tail,
+     reverse
+ } from 'lodash-es';
+ import { goto, stores } from '@sapper/app';
 
- let sequence;
+ import { activeBucketAndJob, activePath, breadcrumb } from '../stores';
+ const { page } = stores();
  let chart;
- let data = $sunburst;
+
+ $: data = $sunburst;
+ $: bucket = $activeBucketAndJob.bucket;
+ $: job = $activeBucketAndJob.job;
+
+ $: ([level, category, endpoint] = $breadcrumb);
+
+ $: segments = [level, category, endpoint];
  $: sunburstLoaded = false;
 
  const format = d3.format(",d")
@@ -19,26 +38,58 @@
                .innerRadius(d => d.y0 * radius)
                .outerRadius(d => Math.max(d.y0 * radius, d.y1 * radius - 1))
 
- // for our breadcrumb sequence
- var b = {
-     w: 75,
-     h: 30,
-     s: 3,
-     t: 10
+ function determineDepth (node, depth) {
+     return node.depth === 0
+          ? depth
+          : determineDepth(node.parent, [node.data.name, ...depth]);
+ };
+
+ function cleanSegments (data, segments, clean) {
+     // given an array of url segments and data with nested children
+     // check whether segment matches the name of at least one of the children at respective depth.
+     // returning only valid segments.
+     if (segments.length === 0) {
+         return clean;
+     } else  {
+         let children = data.children.map(child => child.name);
+         let isValid = children.includes(head(segments));
+         if (!isValid) {
+             return clean
+         } else {
+             data = data.children.find(o => o.name === head(segments));
+             clean = clean.concat(head(segments));
+             segments= tail(segments);
+             return cleanSegments(data, segments, clean);
+         }
+     }
+ };
+
+ function findNodeAtCurrentDepth (segments, data) {
+     if (segments.length === 0 ) {
+         return data;
+     } else {
+         let nextDepth = data.children
+                       ? data.children.find(child => child.data.name === head(segments))
+                       : data.data.name;
+         return findNodeAtCurrentDepth(tail(segments), nextDepth);
+     }
  };
 
  onMount(()  => {
+     let validSegments = cleanSegments(data, segments, []);
      const partition = data => {
          const root = d3.hierarchy(data)
                         .sum(d => d.value)
-                        .sort((a, b) => (b.data.test_hits - a.data.test_hits))
-                        .sort((a, b) => (b.data.conf_hits - a.data.conf_hits));
+                        .sort((a, b) => (b.data.tested - a.data.tested))
+                        .sort((a, b) => (b.data.conf_tested - a.data.tested));
          return d3.partition()
                   .size([2 * Math.PI, root.height + 1])
          (root);
      }
      const root = partition(data);
      root.each(d => d.current = d);
+     let cleanCurrentDepth = cleanSegments(data, $activePath, []);
+     let nodeAtCurrentDepth = findNodeAtCurrentDepth(cleanCurrentDepth, root);
 
      const svg = d3.create("svg")
                    .attr("viewBox", [0, 0, width, width])
@@ -52,13 +103,27 @@
                    .data(root.descendants().slice(1))
                    .join("path")
                    .attr("fill", d => d.data.color)
-                   .attr("fill-opacity", d => arcVisible(d.current) ? 1 : 0)
+                   .attr("fill-opacity", d => {
+                       if (!arcVisible(d.current)) {
+                           return 0;
+                       } else {
+                           if (endpoint !== '') {
+                               return d.current.data.name === endpoint ? 1 : 0.3
+                           } else {
+                               return 1;
+                           }
+                       }
+                   })
                    .attr("d", d => arc(d.current))
                    .on("mouseover", mouseover);
 
      path.filter(d => d.children)
          .style("cursor", "pointer")
          .on("click", clicked);
+
+     path.filter(d => !d.children)
+         .style("cursor", "pointer")
+         .on("click", endpointClicked);
 
      path.append("title")
          .text(d => `${d.ancestors().map(d => d.data.name).reverse().join("/")}\n${format(d.value)}`);
@@ -82,16 +147,40 @@
                      .attr("pointer-events", "all")
                      .on("click", clicked)
 
+     const levelLabel = g.append("text")
+                         .text(level)
+                         .attr("text-anchor", "middle")
+                         .attr("font-size", "2em")
+                         .attr("fill", "white")
+                         .attr("transform", () => category.length > 0 ? "translate(0, -15)" : "")
 
-     function clicked(p) {
-         console.log({p});
-         parent.datum(p.parent || root);
-         parent.attr("fill", p.data.color);
+     const categoryLabel = g.append("text")
+                         .text(category)
+                         .attr("text-anchor", "middle")
+                         .attr("font-size", "2em")
+                         .attr("fill", "white")
+                         .attr("transform", "translate(0, 15)")
+
+     function endpointClicked (p) {
+         let ep = p.data;
+         let urlPath = join(['coverage', bucket, job, ep.level, ep.category, ep.name], '/');
+         path.filter(d => !d.children)
+             .attr("fill-opacity", (d) => d.data.name === p.data.name ? 1 : 0.3);
+         activePath.set(determineDepth(p, []));
+         goto(urlPath);
+     };
+
+     function zoomToCurrentDepth(p) {
+         // if present path, p, is an endpoint, we want to zoom into its
+         // parent category and no further.
+         let node = p.children ? p : p.parent;
+         parent.datum(node.parent || root);
+         parent.attr("fill", node.data.color);
          root.each(d => d.target = {
-             x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
-             x1: Math.max(0, Math.min(1, (d.x1 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
-             y0: Math.max(0, d.y0 - p.depth),
-             y1: Math.max(0, d.y1 - p.depth)
+             x0: Math.max(0, Math.min(1, (d.x0 - node.x0) / (node.x1 - node.x0))) * 2 * Math.PI,
+             x1: Math.max(0, Math.min(1, (d.x1 - node.x0) / (node.x1 - node.x0))) * 2 * Math.PI,
+             y0: Math.max(0, d.y0 - node.depth),
+             y1: Math.max(0, d.y1 - node.depth)
          });
 
          const t = g.transition().duration(750);
@@ -107,7 +196,15 @@
              .filter(function(d) {
                  return +this.getAttribute("fill-opacity") || arcVisible(d.target);
              })
-             .attr("fill-opacity", d => arcVisible(d.target) ? 1 : 0)
+             .attr("fill-opacity", d => {
+                 // check if d is an endpoint, if so check if p is endpoint.
+                 // if so, fade all endpoints that are not p
+                 if (d.children || p.children) {
+                     return arcVisible(d.target) ? 1 : 0;
+                 } else {
+                     return d.data.name === p.data.name ? 1 : 0.3;
+                 }
+             })
              .attrTween("d", d => () => arc(d.current));
 
          label.filter(function(d) {
@@ -115,8 +212,40 @@
          }).transition(t)
               .attr("fill-opacity", d => +labelVisible(d.target))
               .attrTween("transform", d => () => labelTransform(d.current));
+     };
+
+
+     function clicked(p) {
+         zoomToCurrentDepth(p);
+         function segmentNode (node, segments) {
+             if (!node.parent) {
+                 segments = node.data.name === 'root'
+                          ? segments
+                          : segments.concat(node.data.name);
+                 return reverse(segments);
+             } else {
+                 segments = segments.concat(node.data.name);
+                 return segmentNode(node.parent, segments);
+                 }
+             };
+
+
+         function determineRoute (page, segment) {
+             let route;
+             // Check whether  they've clicked the center node and zoom out a level if so.
+             if (last(segment) === data.name) {
+                 route = dropRight(page.path.split('/')).join('/')
+             } else {
+                 route = join(['coverage', bucket, job, ...nodeSegments], '/');
+                 }
+             return route;
+         }
 
          setInnerText(p);
+         let nodeSegments = segmentNode(p, []);
+         let urlPath = determineRoute($page, nodeSegments);
+         activePath.set(determineDepth(p, []));
+         goto(urlPath, {replaceState: true});
      }
 
      function setInnerText (p) {
@@ -126,7 +255,7 @@
              level.text(p.parent.data.name === "root" ? p.data.name : p.parent.data.name)
              category.text(p.parent.data.name === "root" ? "" : p.data.name)
          } else {
-             level.text("")
+             level.text(p.data.name === "root" ? '' : p.data.name)
              category.text("")
          }
      };
@@ -148,10 +277,7 @@
      // Thank you, Kerry Rodan
 
      function mouseover(d) {
-
          let sequenceArray = d.ancestors().reverse().slice(1);
-         updateBreadcrumbs(sequenceArray);
-
          // Fade all the segments.
          d3.selectAll("path")
            .style("opacity", 0.3);
@@ -160,15 +286,11 @@
          d3.selectAll("path")
            .filter((node) => (sequenceArray.indexOf(node) >= 0))
            .style("opacity", 1);
+         activePath.set(determineDepth(d, []));
      }
 
      // Restore everything to full opacity when moving off the visualization.
      function mouseleave(d) {
-
-         // Hide the breadcrumb trail
-         d3.select("#trail")
-           .style("visibility", "hidden");
-
          // Deactivate all segments during transition.
          d3.selectAll("path").on("mouseover", null);
 
@@ -180,76 +302,13 @@
            .on("end", function() {
                d3.select(this).on("mouseover", mouseover);
            });
-     }
-
-     function initializeBreadcrumbTrail() {
-         // Add the svg area.
-         var trail = d3.select(sequence).append("svg:svg")
-                       .attr("width", width)
-                       .attr("height", 50)
-                       .attr("id", "trail");
-         // Add the label at the end, for the percentage.
-         trail.append("svg:text")
-              .attr("id", "endlabel")
-              .style("fill", "#000");
-     }
-
-     // Generate a string that describes the points of a breadcrumb polygon.
-     function breadcrumbPoints(d, i) {
-         // Stretch breadcrumb to fit variable node name.  7 is arbitrary, based on what looked good with our longer names.
-         let textWidth = (d.data.name.length * 7)
-         var points = [];
-         points.push("0,0");
-         points.push(b.w + textWidth + ",0");
-         points.push(b.w + b.t + textWidth + "," + (b.h / 2));
-         points.push(b.w + textWidth + "," + b.h);
-         points.push("0," + b.h);
-         if (i > 0) { // Leftmost breadcrumb; don't include 6th vertex.
-                    points.push(b.t + "," + (b.h / 2));
-                    }
-         return points.join(" ");
-     }
-
-     // Update the breadcrumb trail to show the current sequence and percentage.
-     function updateBreadcrumbs(nodeArray) {
-
-         // Data join; key function combines name and depth (= position in sequence).
-         var trail = d3.select("#trail")
-                       .selectAll("g")
-                       .data(nodeArray, function(d) { return d.data.name + d.depth; });
-
-         // Remove exiting nodes.
-         trail.exit().remove();
-
-         // Add breadcrumb and label for entering nodes.
-         var entering = trail.enter().append("svg:g");
-
-         entering.append("svg:polygon")
-                 .attr("points", breadcrumbPoints)
-                 .style("fill", function(d) { return d.data.color; });
-
-         entering.append("svg:text")
-                 .attr("x", (d) => ((b.w + b.t - d.data.name.length) / 2))
-                 .attr("y", b.h / 2)
-                 .attr("dy", "0.35em")
-                 .attr("text-anchor", "start")
-                 .text(function(d) { return d.data.name; });
-
-         // Merge enter and update selections; set position for all nodes.
-         entering.merge(trail).attr("transform", function(d, i) {
-             return "translate(" + i * (b.w + b.s + (d.parent.data.name.length * 3)) + ", 0)";
-         });
-
-         // Make the breadcrumb trail visible, if it's hidden.
-         d3.select("#trail")
-           .style("visibility", "");
-
+         activePath.set(cleanSegments(data, [$page.params.level, $page.params.category, $page.params.endpoint], []));
      }
 
      chart.append(svg.node());
      d3.select(chart).on("mouseleave", mouseleave);
-     initializeBreadcrumbTrail();
      sunburstLoaded = true;
+     zoomToCurrentDepth(nodeAtCurrentDepth);
  })
 
 </script>
@@ -258,29 +317,21 @@
     <p>loading...</p>
 {/if}
 
-<div bind:this={sequence} class="sequence"></div>
 <div bind:this={chart} class="chart">
-    <div id="explanation">
-        <p id="level"></p>
-        <p id="category"></p>
-    </div>
 </div>
 
 
 <style>
  .chart {
      position: relative;
- }
-
- .chart path {
-     stroke: #fff;
+     grid-column: 1;
  }
 
  #explanation {
      position: absolute;
-     top: calc(932px / 2.5);
-     left: calc(932px / 2.95);
-     width: 200px;
+     top: calc(100% / 2.25);
+     left: 0;
+     width: 100%;
      text-align: center;
      color: #eeeeee;
      z-index: 2;
@@ -288,6 +339,12 @@
      flex-flow: column;
      justify-content: center;
      align-items: center;
+ }
+
+ @media(max-width: 667px) {
+     #explanation {
+    font-size: 0.75em;
+    }
  }
 
  #level , #category {

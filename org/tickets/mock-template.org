@@ -1,0 +1,183 @@
+# -*- ii: apisnoop; -*-
+#+TITLE: Mock Ticket Template
+#+AUTHOR: ii team
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+#+OPTIONS: toc:nil tags:nil todo:nil
+#+EXPORT_SELECT_TAGS: export
+* TODO [0%] In-Cluster Setup                                    :neverexport:
+  :PROPERTIES:
+  :LOGGING:  nil
+  :END:
+** TODO Connect demo to right eye
+
+   #+begin_src tmate :session foo:hello :eval never-export
+     echo "What parts of Kubernetes do you depend on $USER?"
+   #+end_src
+
+** TODO Deploy APISnoop DB/GraphQL                                   :export:
+   
+   #+begin_src shell :eval never-export :wrap "SRC text"
+     kubectl apply -f ~/apisnoop/deployment/k8s/graphql.yaml
+   #+end_src
+
+** TODO Deploy APISnoop AuditSink                                    :export:
+   
+   #+begin_src shell :eval never-export :wrap "SRC text"
+     kubectl apply -f ~/apisnoop/deployment/k8s/audit-sink.yaml
+   #+end_src
+
+** TODO Verify Pods Running
+   #+begin_src shell
+     kubectl get pods
+   #+end_src
+** TODO Check it all worked
+
+   #+begin_src sql-mode :results replace
+     \d+
+   #+end_src
+
+** TODO Check current coverage
+   #+NAME: stable endpoint stats
+   #+begin_src sql-mode
+     select * from stable_endpoint_stats where job != 'live';
+   #+end_src
+
+* Identify an untested feature Using APISnoop                        :export:
+
+According to this APIsnoop query, there are still some remaining ConfigMap endpoints which are untested.
+
+  #+NAME: untested_stable_core_endpoints
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    SELECT
+      operation_id,
+      -- k8s_action,
+      path,
+      description
+      FROM untested_stable_core_endpoints
+      where path not like '%volume%'
+      -- and operation_id ilike '%%'
+     ORDER BY operation_id desc
+     LIMIT 25
+           ;
+  #+end_src
+
+* Use API Reference to Lightly Document the Feature                  :export:
+- [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+- [client-go - MyResourceReplaceMe](https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/resourcename.go)
+
+* The mock test                                                      :export:
+** Test outline
+1. Create a ConfigMap with a static label
+
+2. Patch the ConfigMap with a new Label and updated data
+
+3. Get the ConfigMap to ensure it's patched
+
+4. List all ConfigMaps in all Namespaces
+   find the ConfigMap(1)
+   ensure that the ConfigMap is found and is patched
+
+5. Delete Namespaced ConfigMap(1) via a Collection with a LabelSelector
+
+** Example in Go
+   #+begin_src go  :imports '("fmt" "flag" "os" "k8s.io/apimachinery/pkg/apis/meta/v1" "k8s.io/client-go/kubernetes" "k8s.io/client-go/tools/clientcmd")
+     // uses the current context in kubeconfig
+     kubeconfig := flag.String("kubeconfig",
+       fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"),
+       "(optional) absolute path to the kubeconfig file")
+     flag.Parse()
+     config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+     if err != nil {
+       fmt.Println(err)
+     }
+     // make our work easier to find in the audit_event queries
+     config.UserAgent = "live-test-pod-count"
+     // creates the clientset
+     clientset, _ := kubernetes.NewForConfig(config)
+     // access the API to list pods
+     pods, _ := clientset.CoreV1().Pods("").List(v1.ListOptions{})
+     fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
+     #+end_src
+
+     #+RESULTS:
+     #+begin_src go
+     There are 20 pods in the cluster
+     #+end_src
+
+   #+begin_src go
+     package main
+
+     import (
+       "fmt"
+       "flag"
+       "os"
+       // v1 "k8s.io/api/core/v1"
+       // metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+       "k8s.io/client-go/kubernetes"
+       // "k8s.io/apimachinery/pkg/types"
+       "k8s.io/client-go/tools/clientcmd"
+     )
+
+     func main() {
+       // uses the current context in kubeconfig
+       kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+       flag.Parse()
+       config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+       if err != nil {
+         fmt.Println(err)
+       }
+       // make our work easier to find in the audit_event queries
+       config.UserAgent = "live-test-writing"
+       // creates the clientset
+       ClientSet, _ := kubernetes.NewForConfig(config)
+
+       // write test here
+       fmt.Println("[status] complete")
+
+     }
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
+   #+end_src
+
+* Verify Increase it Coverage with APISnoop                          :export:
+Discover useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+  #+end_src
+
+#+begin_src sql-mode :exports both :session none
+select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+#+end_src
+
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select * from projected_change_in_coverage;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+  ---------------+-----------------+--------------+--------------+------------------
+   test_coverage |             438 |          183 |          183 |                0
+  (1 row)
+
+  #+end_SRC
+
+* Final notes :export:
+If a test with these calls gets merged, **Conformance coverage will go up by 2 points**
+
+-----  
+/sig testing
+ 
+/sig architecture  
+
+/area conformance  
+
+* Open Tasks
+  Set any open tasks here, using org-todo
+** DONE Live Your Best Life
+* Footnotes                                                     :neverexport:
+  :PROPERTIES:
+  :CUSTOM_ID: footnotes
+  :END:

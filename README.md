@@ -18,7 +18,7 @@ Once up, apply APISnoop using our provided yaml
 
 ```shell
 kubectl apply -f https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/raiinbow.yaml
-```
+```4135c96b73e6ad4719b552ed185aa84857091629
 
 APISnoop is built around a set of postgres tables and views, with dta you can explore through queries.
 
@@ -49,5 +49,7 @@ env:
 # - name: APISNOOP_BASELINE_JOB
 #   value: 1141312231231223
 ```
+
 Simply uncomment and configure this portion in [the raiinbow.yaml](deployment/k8s/raiinbow.yaml).  Then, when building a cluster, apply apisnoop from this local file.
 
+ 

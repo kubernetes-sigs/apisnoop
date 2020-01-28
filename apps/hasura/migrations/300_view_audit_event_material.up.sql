@@ -1,7 +1,7 @@
 -- Create
 --     #+NAME: view audit_event
 
-CREATE OR REPLACE VIEW "public"."audit_event" AS
+CREATE MATERIALIZED VIEW "public"."audit_event_material" AS
   SELECT (raw.data ->> 'auditID') as audit_id,
          raw.bucket,
          raw.job,
@@ -35,3 +35,12 @@ CREATE OR REPLACE VIEW "public"."audit_event" AS
               WHERE param_name = 'body'
            ) aop
                ON (raw.operation_id = aop.param_op);
+
+
+
+-- #+NAME: index audit_event
+
+CREATE INDEX audit_event_material_bucket         ON audit_event_material         (bucket);
+CREATE INDEX audit_event_material_job            ON audit_event_material            (job);
+CREATE INDEX audit_event_material_useragent      ON audit_event_material      (useragent);
+CREATE INDEX audit_event_material_operation_id   ON audit_event_material   (operation_id);

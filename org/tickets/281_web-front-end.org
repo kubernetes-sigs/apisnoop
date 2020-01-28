@@ -100,12 +100,419 @@ Create a web ront end that pulls from our new data source.
    CLOSED: [2020-01-03 Fri 03:24]
 ** DONE Bring in metadata about test run (bucket, job timestamp).
    CLOSED: [2020-01-03 Fri 04:23]
-** TODO click to set sunburst in place at current node.
-** TODO show test percentage beneath each node in breadcrumb.
-** TODO remove center padding for site
-** TODO display test information to right of sun burst
-** TODO ensure we can get newest test data from graphql (latest test run works in loading app from new clusteR)
-** TODO fetch endpoint data from url instead of hard coded
+** DONE Debug endpoint coverage
+   CLOSED: [2020-01-08 Wed 20:23]
+   
+    While working on our routes, we tried to add a second job from the same bucket.  After doing this, we can no longer run endpoint_coverage without hanging.
+    
+    If we run any command that doesn't require endpoint_coverage, it returns well enough. Is there an issue with the job that was added?
+    
+    We can see the new job, by comparing the timestamps in bjs
+    
+    
+     #+begin_src sql-mode
+select bucket, job, job_timestamp from bucket_job_swagger;
+     #+end_src
+
+     #+RESULTS:
+     #+begin_SRC example
+               bucket           |         job         |    job_timestamp    
+     ---------------------------+---------------------+---------------------
+      ci-kubernetes-e2e-gci-gce | 1201280603970867200 | 2019-12-01 23:57:32
+      apisnoop                  | live                | 2019-12-01 23:57:32
+      ci-kubernetes-e2e-gci-gce | 1181711701108592640 | 2019-10-09 00:06:22
+     (3 rows)
+
+     #+end_SRC
+     
+     #+begin_src sql-mode
+     \d
+     #+end_src
+
+     #+RESULTS:
+     #+begin_SRC example
+                                                                                List of relations
+      Schema |               Name               |       Type        |  Owner   |  Size   |                                    Description                                    
+     --------+----------------------------------+-------------------+----------+---------+-----------------------------------------------------------------------------------
+      public | api_operation_material           | materialized view | apisnoop | 5504 kB | details on each operation_id as taken from the openAPI spec
+      public | api_operation_parameter_material | materialized view | apisnoop | 9032 kB | the parameters for each operation_id in open API spec
+      public | audit_event                      | view              | apisnoop | 0 bytes | a record for each audit event in an audit log
+      public | bucket_job_swagger               | table             | apisnoop | 5560 kB | metadata for audit events  and their respective swagger.json
+      public | endpoint_coverage                | view              | apisnoop | 0 bytes | the test hits and conformance test hits per operation_id & other useful details
+      public | endpoints_hit_by_new_test        | view              | apisnoop | 0 bytes | list endpoints hit during our live auditing alongside their current test coverage
+      public | projected_change_in_coverage     | view              | apisnoop | 0 bytes | overview of coverage stats if the e2e suite included your tests
+      public | raw_audit_event                  | table             | apisnoop | 11 GB   | a record for each audit event in an audit log
+      public | stable_endpoint_stats            | view              | apisnoop | 0 bytes | coverage stats for entire test run, looking only at its stable endpoints
+      public | untested_stable_core_endpoints   | view              | apisnoop | 0 bytes | list stable core endpoints not hit by any tests, according to their test run
+     (10 rows)
+
+     #+end_SRC
+     
+     #+begin_src sql-mode
+     delete from raw_audit_event where job = '1181711701108592640';
+     #+end_src
+     
+     #+RESULTS:
+     #+begin_SRC example
+     DELETE 551358
+     #+end_SRC
+    
+   #+begin_src  sql-mode
+REFRESH MATERIALIZED VIEW api_operation_parameter_material; 
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   REFRESH MATERIALIZED VIEW
+   #+end_SRC
+
+   #+begin_src sql-mode
+   VACUUM FULL;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   VACUUM
+   #+end_SRC
+   
+   #+begin_src sql-mode
+     explain analyze
+     select count(*) from endpoint_coverage;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+    count 
+   -------
+     2788
+   (1 row)
+
+   #+end_SRC
+   
+   We went through all the worka bove to try to get endpoint_coverage to not hang, and could not do this.  In the end we had to restart the db.
+   One aspect of this is that endpoint_coverage is our longest query.  So I think there is value in making a materialized version of it, with an improved query.  This would make our app faster, since coverage is the main query we use.  So I will hold up on the routing for now to make a new version of hasura with a materialized and indexed endpoint coverage.
+
+** DONE add tracking to endpoint_coverage in our hasura migrations
+   CLOSED: [2020-01-12 Sun 22:14]
+** DONE change gql query to account for new endpoint_coverage style
+   CLOSED: [2020-01-08 Wed 20:35]
+** DONE [10/10] fetch endpoint data from url instead of hard coded
+   CLOSED: [2020-01-08 Wed 22:10]
+*** DONE Add multiple buckets and jobs to db, so we have a good test sample.
+    CLOSED: [2020-01-06 Mon 20:17]
+    Was able to add an older one, but something changed in the audit events so that new ones will not load.  It's throwing an error in our python function, in that there's some array it's expecting and none is returning.
+    
+    I can't take a look  right now, but can bring up at 1.
+    
+    #+begin_src sql-mode
+   select bucket, job, job_timestamp from bucket_job_swagger; 
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+              bucket           |         job         |    job_timestamp    
+    ---------------------------+---------------------+---------------------
+     ci-kubernetes-e2e-gci-gce | 1201280603970867200 | 2019-12-01 23:57:32
+     apisnoop                  | live                | 2019-12-01 23:57:32
+     ci-kubernetes-e2e-gci-gce | 1181711701108592640 | 2019-10-09 00:06:22
+    (3 rows)
+
+    #+end_SRC
+
+*** DONE On page load, fetch metadata from bucket_job_swagger and add to store
+    CLOSED: [2020-01-06 Mon 20:41]
+    this lets us know all the available buckets and jobs.
+*** DONE Derive Latest job for each bucket
+    CLOSED: [2020-01-06 Mon 21:28]
+    this is a full bucketJob store which should be grouped by bucket, have all the jobs, and have a latest job 
+    #+begin_example js
+      bucketsAndJobs =  {
+        'gci-gce': {
+        jobs: [
+          {
+            job: '1111',
+            timestamp: 2019-10-11
+          },
+          {
+            job: '2222'
+            timestamp: 2019-06-06
+          }
+        ],
+        latestJob: '1111'
+        },
+        'gci-default1': {
+          jobs: [
+            {
+              job: '122111',
+              timestamp: 2019-10-30
+            },
+            {
+              job: '2222'
+              timestamp: 2019-06-06
+            }
+          ],
+          latestJob: '122111'
+        }
+      }
+    #+end_example
+     
+*** DONE Derive default bucket/job.
+    CLOSED: [2020-01-06 Mon 21:28]
+    If gci-gce available, then default job is most recent (based on job_timestamp)
+    else, grab first available bucket that is not live, and most recent job.
+*** DONE Switch index page to just say apisnoop
+    CLOSED: [2020-01-06 Mon 21:28]
+*** DONE When you go to coverage, display default bucket/job in sunburst
+    CLOSED: [2020-01-08 Wed 20:35]
+*** DONE When you go to coverage/:bucket display latest job for this bucket
+    CLOSED: [2020-01-08 Wed 20:35]
+*** DONE If bucket in url not available in bucket/jobs....give message and display default bucket/job.
+    CLOSED: [2020-01-08 Wed 22:10]
+*** DONE If job not available in :bucket/:job display latest job for that :bucket
+    CLOSED: [2020-01-08 Wed 22:10]
+*** DONE if :bucket/:job both unavailable display default bucketJob
+    CLOSED: [2020-01-08 Wed 22:10]
+** DONE [5/5] Root of sunburst based on url params
+   CLOSED: [2020-01-12 Sun 22:14]
+*** DONE Add level variable to Sunburst component, that determines root of sunburst.
+    CLOSED: [2020-01-12 Sun 22:13]
+*** DONE Add Category variable to sunburst, that, with level, determines root of sunburst.
+    CLOSED: [2020-01-12 Sun 22:13]
+*** DONE given :bucket/:job/:level, if level is valid, pass it along to Sunburst component.
+    CLOSED: [2020-01-12 Sun 22:13]
+*** DONE given :bucket/:job/:level/:category, if level and category are valid, pass them along to Sunburst component.
+    CLOSED: [2020-01-12 Sun 22:14]
+*** DONE give notice if either level or category are present but invalid.
+    CLOSED: [2020-01-12 Sun 22:14]
+** DONE [3/3] Highlighted Endpoint based on url params
+   CLOSED: [2020-01-13 Mon 01:29]
+*** DONE Put in checks for invalid level, category, and/or endpoint.
+    CLOSED: [2020-01-12 Sun 22:17]
+*** DONE When you click on an endpoint, highlight endpoint and keep it highlighted (locked into place).
+    CLOSED: [2020-01-13 Mon 01:28]
+*** DONE If endpoint variable present, show sunburst with root set to endpoints level and category, and only endpoint path lit up in sunburst.
+    CLOSED: [2020-01-13 Mon 01:28]
+** DONE click to set sunburst in place at current node.
+   CLOSED: [2020-01-13 Mon 01:29]
+** DONE center label stays in center no matter size of window
+   CLOSED: [2020-01-13 Mon 20:21]
+** DONE breadcrumb always shows full path
+   CLOSED: [2020-01-14 Tue 22:03]
+   Our current path is a combination of the current depth of the sunburst plus whatever active node the mouse is on.
+   With this, we can know how to calculate coverage, by filtering our endpoints by the given level, category, endpoint.
+   When you mouse away, you'd clear out the path to only depth.
+   When you are zoomed to an endpoint, and mouseover another endpoint, it should replace as the current path. 
+   
+   The question is what do the ancestors look like when hovering nover a node when zoomed all the way to an endpoint?
+   
+   I adjusted our sunburst component so that the current level|category|endpoint were not held just within the sunburst, but instead a separate store that other components can access. I also separated the click function into its two parts...the part where it zoomsin and the part where it updates the url.  This lets us use the Zoom upon mount, to zoom to the currentDepth without a click action happening yet.
+
+Now we need to adjust our function for currentDepth so that it works correctly when zoomed to an endpoint.
+   
+** DONE adjust endpoint coverage to include details from api_operation
+   CLOSED: [2020-01-14 Tue 22:25]
+this will let us run a query that grabs all the overage info for that bucket job , plus the details about the endpoint like its description and path and so on.
+We can't actually do this, because neither endpoint_coverage or api_operation are tables, and you can only add foreign keys to tables.
+
+Howver, we can manually make this relationship quite simply in the hausra front end.  This will add to the hasura metadata, which we could export and include in the migrations of our container.  I will set it up in the console now, and then explore the migration later to keep focus here.
+
+For example, let's make a new view that shows stuff from endopint coverage and api_operation
+
+#+begin_src sql-mode
+  CREATE OR REPLACE VIEW api_operation AS
+SELECT
+*
+FROM
+api_operation_material;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+CREATE VIEW
+#+end_SRC
+
+** DONE adjust our endpoint query to include details
+   CLOSED: [2020-01-16 Thu 00:15]
+** DONE Coverage stats show summary if on level and category, and detailed endoint coverage if on endpoint.
+   CLOSED: [2020-01-16 Thu 00:15]
+** DONE Show coverage info for current highlighted path to the right of sunburst.
+   CLOSED: [2020-01-16 Thu 00:15]
+** DONE remove center padding for site
+   CLOSED: [2020-01-18 Sat 09:07]
+** DONE [6/6] display test information alongside sun burst
+   CLOSED: [2020-01-18 Sat 09:09]
+*** DONE Write a tests view with bucket, job, name, test tags, operation_id, timestamp?, conformance
+    CLOSED: [2020-01-18 Sat 09:07]
+    We are interested in the distinct test/operation_id combos.  and we can pull this from our audit_event view.
+    #+NAME: tests
+    #+begin_src sql-mode
+    CREATE OR REPLACE VIEW tests AS
+      SELECT DISTINCT
+        operation_id as operation_id,
+        bucket,
+        job,
+        array_to_string(regexp_matches(useragent, '\[[a-zA-Z0-9\.\-:]*\]', 'g'), ',') as test_tag,
+        split_part(useragent, '--', 2) as test
+        FROM
+            audit_event
+       WHERE
+        useragent LIKE 'e2e.test%'
+        AND job != 'live'
+             ;
+    #+end_src
+
+    #+RESULTS: tests
+    #+begin_SRC example
+    ERROR:  syntax error at or near "operation_id"
+    LINE 2:   operation_id as operation_id,
+              ^
+    #+end_SRC
+    
+    #+begin_src sql-mode
+    select count(1) from tests;
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+     count 
+    -------
+     20527
+    (1 row)
+
+    #+end_SRC
+    
+    #+begin_src sql-mode
+DROP VIEW tests;
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+    DROP VIEW
+    #+end_SRC
+    
+    #+NAME: tests take 2
+    #+begin_src sql-mode
+    CREATE OR REPLACE VIEW "public"."tests" AS
+      with raw_tests as (
+      SELECT
+        operation_id as operation_id,
+        bucket,
+        job,
+        array_to_string(regexp_matches(useragent, '\[[a-zA-Z0-9\.\-:]*\]', 'g'), ',') as test_tag,
+        split_part(useragent, '--', 2) as test
+        FROM
+            audit_event
+       WHERE
+        useragent LIKE 'e2e.test%'
+        AND job != 'live'
+      )
+      SELECT distinct
+        bucket,
+        job,
+        test,
+        array_agg(DISTINCT operation_id) as operation_ids,
+        array_agg(DISTINCT test_tag) as test_tags
+        FROM
+            raw_tests
+      group by test, bucket, job
+            ;
+    #+end_src
+
+    #+RESULTS: tests take 2
+    #+begin_SRC example
+    CREATE VIEW
+    #+end_SRC
+
+    #+begin_src sql-mode
+    select  count(1) from tests;
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+     count 
+    -------
+       827
+    (1 row)
+
+    #+end_SRC
+    
+    I much prefer 800 lines to 20,0000 and will be easier to do the front load.
+
+*** DONE Write a hasura array relationship so each endpoint has a tests section that shows all tests that are hit by it.
+    CLOSED: [2020-01-18 Sat 09:08]
+    I remade this instead to just be a tests view with an operation_ids array and a test_tags array.  this lets us bring them in quickly, then use our webapp's params to decide how this should be filtered.
+*** DONE Write a test_tags view with bucket, job, name, operation_id.
+    CLOSED: [2020-01-18 Sat 09:08]
+*** DONE Write a hasura query for all the test tags of an endpoint.
+    CLOSED: [2020-01-18 Sat 09:08]
+*** DONE Display all tests for an endpoint below sunburst.
+    CLOSED: [2020-01-19 Sun 19:48]
+*** DONE Filter tests by test_tags query param.
+    CLOSED: [2020-01-19 Sun 22:53]
+    
+** DONE improve aesthetics for when you load up a url with set query parameter 
+   CLOSED: [2020-01-20 Mon 02:21]
+   We want to make sure the tests are filtered correctly and the right tag is lit blue.  I think this is an issue with the preload for the endpoint, and not the component itself.
+   
+   I did this by setting the activeFilters in the route itself.
+** TODO [4/6] Add endpoints filter that reduces number of endpoints in sunburst
+   regex filter for:
+   - useragent
+   - testtag
+   - test
+   - conformant
+   - tested
+   - untested.
+   - links to preset filters.
+*** DONE extend activeFilters store
+    CLOSED: [2020-01-20 Mon 02:22]
+*** DONE [6/6] create filteredEndpoints store.
+    CLOSED: [2020-01-20 Mon 23:32]
+**** DONE filter by is_tested
+     CLOSED: [2020-01-20 Mon 02:23]
+**** DONE filter by is_conf_tested
+     CLOSED: [2020-01-20 Mon 02:23]
+**** DONE filter by is_untested
+     CLOSED: [2020-01-20 Mon 02:23]
+**** DONE filter by whether it is hit by a useragent matching regex.
+     CLOSED: [2020-01-20 Mon 22:00]
+     I have a filter, but it seems like it'd show tested always.  I am wondering if we need to change our useragent view or logic.  
+     The question is: are there endpoints in our data samples that are hit by useragents that are not also tested?
+     it turns out I accidentally filtered our useragents view to only show ones that started with e2e.  silly!
+**** DONE filter on whether it's hit by test matching regex
+     CLOSED: [2020-01-20 Mon 23:31]
+**** DONE filter on wheter its hit by test with test_tag that matches regex
+     CLOSED: [2020-01-20 Mon 23:31]
+*** DONE endopoints that make up sunburst based on filteredEndpoints
+    CLOSED: [2020-01-20 Mon 23:32]
+*** DONE coverage stats based on filtered endpoints
+    CLOSED: [2020-01-20 Mon 23:32]
+*** TODO pass along query params to each route, to filter endpoints
+*** TODO build ui for choosing filters.
+** TODO move the fetch for defaultbucketandjob to preload for coverage.
+** DONE Better understand goto, to maintain query params on link click.
+   CLOSED: [2020-01-20 Mon 02:20]
+   this may involve building out a helper f8unction.
+   it also requires a promise.  I've put in some questions into the svelte chat to see the best way of handling the goto, especially when the link is an anchor link.  For now, I am doing some slightly verbose code but it overall works.
+** TODO Figure out why endpoint is loading so slowly on first load.
+** TODO ensure we can get newest test data from graphql (latest test run works in loading app from new cluster)
+** TODO Build Bucket/Job picker UI
+*** TODO ensure we can load multiple data sets.
+*** TODO Click change bucket button, and see a list of available buckets.
+*** TODO click on bucket and see list of available jobs, sorted by data.
+*** TODO click on job and be brought to sunburst for this bucket/job
+** TODO [0/3] Create query for coverage over time.
+*** TODO ensure we can load multiple datasets.
+*** TODO determine data points needed
+*** TODO build out postgres view for coverage over time and track in hasura.
+** TODO [0/3] Create Coverage over time page.
+*** TODO ensure view is available
+*** TODO determine visual we are wanting.
+*** TODO build out visual for default bucket
+** TODO Add hasura relationship metadata to migrations of our hasura app.
+   https://docs.hasura.io/1.0/graphql/manual/migrations/manage-metadata.html#exporting-hasura-metadata
+** TODO make audit events a materialized view, with indices, to improve speed.
+** TODO group the endpoints by tested/conf_tested/group/kind/alphabetical.
 * Footnotes   
 :PROPERTIES: 
 :CUSTOM_ID: footnotes 
@@ -151,13 +558,13 @@ Create a web ront end that pulls from our new data source.
 
     #+RESULTS:
     #+begin_src shell
-    service/hasura unchanged
-    service/postgres unchanged
-    deployment.apps/hasura unchanged
+    service/hasura created
+    service/postgres created
+    deployment.apps/hasura created
     deployment.apps/postgres created
-    deployment.apps/apisnoop-auditlogger unchanged
-    service/apisnoop-auditlogger unchanged
-    auditsink.auditregistration.k8s.io/auditlogger unchanged
+    deployment.apps/apisnoop-auditlogger created
+    service/apisnoop-auditlogger created
+    auditsink.auditregistration.k8s.io/auditlogger created
     #+end_src
 
 *** Verify Pods Running
@@ -171,9 +578,9 @@ Create a web ront end that pulls from our new data source.
     #+RESULTS:
     #+begin_src shell
     NAME                                    READY   STATUS    RESTARTS   AGE
-    apisnoop-auditlogger-5f6c4cb8c5-2w2bs   1/1     Running   4          10d
-    hasura-5d447cc65d-ccwrg                 1/1     Running   3          10d
-    postgres-b59f6c9c4-zm2xl                1/1     Running   0          10d
+    apisnoop-auditlogger-5f6c4cb8c5-ljkss   1/1     Running   0          8d
+    hasura-777765b7d4-spkrt                 1/1     Running   0          8d
+    postgres-b59f6c9c4-mpdrv                1/1     Running   0          8d
     #+end_src
    
 *** Setup Port-Forwarding from us to sharing to the cluster
@@ -277,54 +684,93 @@ Create a web ront end that pulls from our new data source.
        kubectl logs $POSTGRES_POD -f
      #+END_SRC
 
-*** Manually load swagger or audit events
-    If you ran through the full setup, but were getting 0's in the stable_endpint_stats, it means the table migrations were successful, but no data was loaded.
+** Manually load swagger or audit events
+   If you ran through the full setup, but were getting 0's in the stable_endpint_stats, it means the table migrations were successful, but no data was loaded.
 
-    You can verify data loaded with the below query.  ~bucket_job_swagger~ should have a size around 3600kb and raw_audit_event should have a size around 412mb.
+   You can verify data loaded with the below query.  ~bucket_job_swagger~ should have a size around 3600kb and raw_audit_event should have a size around 412mb.
 
-    #+NAME: Verify Data Loaded
-    #+begin_src sql-mode
-      \dt+
-    #+end_src
+   #+NAME: Verify Data Loaded
+   #+begin_src sql-mode
+     \dt+
+   #+end_src
 
-    #+RESULTS:
-    #+begin_src sql-mode
-      List of relations
-        Schema |        Name        | Type  |  Owner   |  Size   | Description
-        --------+--------------------+-------+----------+---------+-------------
-        public | bucket_job_swagger | table | apisnoop | 3600 kB |
-        public | raw_audit_event    | table | apisnoop | 412 MB  |
-        (2 rows)
+   #+RESULTS: Verify Data Loaded
+   #+begin_SRC example
+                                                       List of relations
+    Schema |        Name        | Type  |  Owner   |  Size   |                         Description                          
+   --------+--------------------+-------+----------+---------+--------------------------------------------------------------
+    public | bucket_job_swagger | table | apisnoop | 5560 kB | metadata for audit events  and their respective swagger.json
+    public | raw_audit_event    | table | apisnoop | 11 GB   | a record for each audit event in an audit log
+   (2 rows)
 
-    #+end_src
+   #+end_SRC
 
-    If either shows a size of ~8192 bytes~, you'll want to manually load it, refresh materialized views, then check again.
+   If either shows a size of ~8192 bytes~, you'll want to manually load it, refresh materialized views, then check again.
 
-    if you want to load a particular bucket or job, you can name them as the first and second argument of these functions.
-    e.g
-    : select * from load)swagger('ci-kubernetes-beta', 1122334344);
-    will load that specific bucket/job combo.
-    : select * from load_swagger('ci-kubernetes-beta');
-    will load the latest successful test run for ~ci-kubernetes-beta~
-    : select * from load_swagger('ci-kubernetes-beta', null, true);
-    will load the latest successful test run for ~ci-kubernetes-beta~, but with bucket and job set to 'apisnoop/live' (used for testing).
-    #+NAME: Manually load swaggers
-    #+begin_src sql-mode
-      select * from load_swagger();
-      select * from load_swagger(null, null, true);
-    #+end_src
+   if you want to load a particular bucket or job, you can name them as the first and second argument of these functions.
+   e.g
+   : select * from load)swagger('ci-kubernetes-beta', 1122334344);
+   will load that specific bucket/job combo.
+   : select * from load_swagger('ci-kubernetes-beta');
+   will load the latest successful test run for ~ci-kubernetes-beta~
+   : select * from load_swagger('ci-kubernetes-beta', null, true);
+   will load the latest successful test run for ~ci-kubernetes-beta~, but with bucket and job set to 'apisnoop/live' (used for testing).
+   #+NAME: Manually load swaggers
+   #+begin_src sql-mode
+     select * from load_swagger(null, '1190091811532574720');
+   #+end_src
 
-    #+NAME: Manually load audit events
-    #+begin_src sql-mode
-      select * from load_audit_events();
-    #+end_src
+   #+RESULTS: Manually load swaggers
+   #+begin_SRC example
+                                            load_swagger                                          
+   -----------------------------------------------------------------------------------------------
+    Success!  Added the swagger for job 1190091811532574720 from bucket ci-kubernetes-e2e-gci-gce
+   (1 row)
 
-    #+NAME: Refresh Materialized Views
-    #+begin_src sql-mode
-      REFRESH MATERIALIZED VIEW api_operation_material;
-      REFRESH MATERIALIZED VIEW api_operation_parameter_material;
-    #+end_src
+   #+end_SRC
+   
 
-    
-    
-    
+   
+   #+begin_src sql-mode
+   select * from load_audit_events(null, '1190091811532574720'); 
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+    load_audit_events 
+   -------------------
+
+   (1 row)
+
+   #+end_SRC
+   
+   #+NAME: Refresh Materialized Views
+   #+begin_src sql-mode
+     REFRESH MATERIALIZED VIEW api_operation_material;
+   #+end_src
+
+   #+RESULTS: Refresh Materialized Views
+   #+begin_SRC example
+   REFRESH MATERIALIZED VIEW
+   #+end_SRC
+
+   #+begin_src sql-mode
+     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   REFRESH MATERIALIZED VIEW
+   #+end_SRC
+
+   #+begin_src sql-mode
+     REFRESH MATERIALIZED VIEW endpoint_coverage_material;
+   #+end_src
+
+     
+   
+   #+begin_src sql-mode
+   select * from stable_endpoint_stats;
+   #+end_src
+   
+   
