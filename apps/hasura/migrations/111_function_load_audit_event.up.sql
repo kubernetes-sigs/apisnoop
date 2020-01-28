@@ -123,6 +123,10 @@ def find_operation_id(openapi_spec, event):
     elif idx == part_count-1:
       if part == 'metrics':
         return None
+      if part == 'readyz':
+        return None
+      if part == 'livez':
+        return None
       #   elif part == '': # The last V
       #     current_level = last_level
       #       else:
