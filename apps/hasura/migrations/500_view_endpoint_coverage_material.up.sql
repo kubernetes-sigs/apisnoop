@@ -2,10 +2,10 @@
 --    :PROPERTIES:
 --    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/500_view_endpoint_coverage_material.up.sql
 --    :END:
---    developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]] 
---    improved in [[file:explorations/speedup_endpoint_coverage.org][exploration: speed up endpoint coverage]]  
-   
---     #+NAME: endpoint_coverage_material
+
+--    developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]]
+
+--    #+NAME: Endpoint Coverage View
 
 CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
  SELECT DISTINCT

@@ -2,7 +2,7 @@
 --    :PROPERTIES:
 --    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/600_view_untested_stable_core_endpoints.up.sql
 --    :END:
-   
+
 -- #+NAME: untested endpoints
 
 CREATE OR REPLACE VIEW "public"."untested_stable_core_endpoints" AS

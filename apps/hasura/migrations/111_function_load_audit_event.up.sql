@@ -3,7 +3,7 @@
 
 set role dba;
 CREATE OR REPLACE FUNCTION load_audit_events(
-custom_bucket text default null, 
+custom_bucket text default null,
 custom_job text default null)
 RETURNS text AS $$
 #!/usr/bin/env python3
@@ -137,7 +137,7 @@ def find_operation_id(openapi_spec, event):
       current_level = current_level[next_level] # variable part is final part
     else:
       next_part = uri_parts[idx+1]
-      variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}  
+      variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}
       if not variable_levels: # there is no match
         if 'example.com' in part:
           return None
@@ -199,7 +199,7 @@ bucket =  baseline_bucket if custom_bucket is None else custom_bucket
 testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
 latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
 
-#establish job 
+#establish job
 baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
 job = baseline_job if custom_job is None else custom_job
 
@@ -280,7 +280,7 @@ SELECT '${bucket}', '${job}',
        (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
        (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
        (raw.data ->> 'operationId'),
-       raw.data 
+       raw.data
   FROM raw_audit_event_import raw;
         """).substitute(
             audit_logfile = outfilepath,

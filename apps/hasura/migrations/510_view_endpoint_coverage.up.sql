@@ -1,4 +1,4 @@
--- 510: Endpoint Coverage Material View
+-- 510: Endpoint Coverage View
 --    :PROPERTIES:
 --    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/510_view_endpoint_coverage.up.sql
 --    :END:

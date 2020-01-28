@@ -23,10 +23,10 @@ $$ LANGUAGE plpython3u ;
 reset role;
 
 -- Create
-    
+
 -- #+NAME: api_operation_material
 
-CREATE MATERIALIZED VIEW "public"."api_operation_material" AS 
+CREATE MATERIALIZED VIEW "public"."api_operation_material" AS
   SELECT
     (d.value ->> 'operationId'::text) AS operation_id,
     CASE

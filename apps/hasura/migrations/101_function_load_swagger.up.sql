@@ -1,8 +1,8 @@
--- 101: Function to Load Swagger 
+-- 101: Function to Load Swagger
 --   :PROPERTIES:
 --   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/101_function_load_swagger.up.sql
 --   :END:
-  
+
 --    #+NAME: load_swagger.sql
 
 set role dba;
@@ -32,20 +32,20 @@ try:
     testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
     latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
 
-    #establish job 
+    #establish job
     baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
     job = baseline_job if custom_job is None else custom_job
 
     metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
     metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
     commit_hash = metadata["version"].split("+")[1]
-    swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json']) 
+    swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json'])
     swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
     sql = """
  INSERT INTO bucket_job_swagger(
            bucket,
            job,
-           commit_hash, 
+           commit_hash,
            passed,
            job_result,
            pod,

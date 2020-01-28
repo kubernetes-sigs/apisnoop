@@ -142,7 +142,7 @@ COMMENT ON COLUMN endpoints_hit_by_new_test.operation_id IS 'the operation_id hi
 COMMENT ON COLUMN endpoints_hit_by_new_test.hit_by_ete IS 'number of times this endpoint is hit, according to latest test run';
 COMMENT ON COLUMN endpoints_hit_by_new_test.hit_by_new_test IS 'number of times the useragent hit this endpoint, according to apisnoop';
 
--- 620: projected_change_in_coverage 
+-- 620: projected_change_in_coverage
 
 COMMENT ON VIEW projected_change_in_coverage IS 'overview of coverage stats if the e2e suite included your tests';
 COMMENT ON COLUMN projected_change_in_coverage.total_endpoints IS 'number of stable, core endpoints as of the latest test run';

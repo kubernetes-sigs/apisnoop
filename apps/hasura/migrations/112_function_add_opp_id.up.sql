@@ -136,7 +136,7 @@ def find_operation_id(openapi_spec, event):
       current_level = current_level[next_level] # variable part is final part
     else:
       next_part = uri_parts[idx+1]
-      variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}  
+      variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}
       if not variable_levels: # there is no match
         if 'example.com' in part:
           return None

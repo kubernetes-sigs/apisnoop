@@ -1,8 +1,8 @@
 -- Create
--- Using our api_operation_material view, look into the parameters field in each one.     
+-- Using our api_operation_material view, look into the parameters field in each one.
 -- #+NAME: api_operation_parameter_material view
 
-CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS 
+CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS
   SELECT ao.operation_id AS param_op,
   (param.entry ->> 'name'::text) AS param_name,
          -- for resource:
@@ -10,7 +10,7 @@ CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS
          -- otherwise, take its type
          replace(
            CASE
-           WHEN ((param.entry ->> 'in'::text) = 'body'::text) 
+           WHEN ((param.entry ->> 'in'::text) = 'body'::text)
             AND ((param.entry -> 'schema'::text) is not null)
              THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
            ELSE (param.entry ->> 'type'::text)
