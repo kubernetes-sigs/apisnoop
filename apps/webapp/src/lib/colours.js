@@ -4,13 +4,13 @@ import {
     words
 } from 'lodash-es';
 
-export const GRAY = 'rgba(255, 255, 255, 1)';
+export const GRAY = 'rgba(244, 244, 244, 1)';
 
 export const levelColours = {
     alpha: 'rgba(230, 25, 75, 1)',
     beta: 'rgba(0, 130, 200, 1)',
     stable: 'rgba(60, 180, 75, 1)',
-    unused: 'rgba(255, 255, 255, 1)'
+    unused: 'rgba(244, 244, 244, 1)'
 };
 
 
@@ -36,7 +36,7 @@ export const categoryColours = {
     rbacAuthorization: 'rgba(244, 67, 54, 1)',
     scheduling: 'rgba(103, 58, 183, 1)',
     settings: 'rgba(3, 169, 244, 1)',
-    storage: 'rgba(76, 175, 80, 1)',
+    storage: 'rgba(255, 215, 0, 1)',
     version: 'rgba(255, 235, 59, 1)',
     auditregistration: 'rgba(255, 87, 34, 1)',
     coordination: 'rgba(74, 20, 140, 1)'
@@ -44,9 +44,9 @@ export const categoryColours = {
 
 export function endpointColour (endpoint) {
     let endpointColor = categoryColours[endpoint.category]
-    if (endpoint.test_hits === 0) {
+    if (!endpoint.tested) {
         return GRAY;
-    } else if (endpoint.conf_hits === 0) {
+    } else if (!endpoint.conf_tested) {
         return fadeColour(endpointColor, 0.75);
     } else {
         return endpointColor;
@@ -59,10 +59,10 @@ export function fadeColour (colour, desiredOpacity) {
     let opacityIsValid = inRange(parseInt(desiredOpacity), 0, 1.1);
     if (!rgbaIsValid) {
         console.log('color given to fadeColour does not match rgba pattern: ', colour);
-        return `rgba(255,255,255,1)`
+        return `rgba(244,244,244,1)`
     } else if (!opacityIsValid) {
         console.log('opacity is not valid: ', desiredOpacity);
-        return `rgba(255,255,255,1)`
+        return `rgba(244,244,244,1)`
     } else {
         let rgba = words(colour);
         let c = {

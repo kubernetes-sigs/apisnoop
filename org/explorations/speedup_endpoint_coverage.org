@@ -1,0 +1,597 @@
+# -*- iimode: cool -*-
+#+TITLE: Speed Up Endpoint Coverage
+
+* Purpose
+  Track the creation of a faster, better endpoint_coverage view
+** Remake and Analyze Current View
+   The current view is defined in our table and views bot here:
+   [[file:~/ii/apisnoop/org/tables_and_views_bot.org::*500:%20Endpoint%20Coverage%20View][500: Endpoint Coverage View]] 
+  
+   We'll Remake it here to better test performance.
+  
+    #+NAME: Original Endpoint Coverage View
+    #+BEGIN_SRC sql-mode
+      CREATE OR REPLACE VIEW "public"."original_endpoint_coverage" AS
+       SELECT DISTINCT
+         bjs.job_timestamp::date as date,
+         ao.bucket as bucket,
+         ao.job as job,
+         ao.operation_id as operation_id,
+         ao.level,
+         ao.category,
+         ao.k8s_group as group,
+         ao.k8s_kind as kind,
+         ao.k8s_version as version,
+         count(*) filter (where ae.useragent like 'e2e.test%') as test_hits,
+         count(*) filter (where ae.useragent like 'e2e.test%' AND useragent like '%[Conformance]%') as conf_hits,
+         count(*) filter (where ae.useragent not like 'e2e.test%') as other_hits,
+         count(ae.useragent) total_hits
+         FROM api_operation_material ao
+                LEFT JOIN audit_event ae ON (ao.operation_id = ae.operation_id AND ao.bucket = ae.bucket AND ao.job = ae.job)
+                LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
+           WHERE ao.deprecated IS False
+         GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
+    #+END_SRC
+
+    #+RESULTS: Original Endpoint Coverage View
+    #+begin_SRC example
+    CREATE VIEW
+    #+end_SRC
+   
+   
+    If we explain/analyze the view, we'll get a stat of its run time.
+    #+NAME: Explain and Analyze original_endpoint_coverage
+    #+begin_src sql-mode
+      EXPLAIN ANALYZE
+        SELECT *
+        FROM
+        original_endpoint_coverage
+        ;
+    #+end_src
+
+    #+RESULTS: Explain and Analyze original_endpoint_coverage # 1
+    #+begin_SRC example
+                                                                                                                                                                                                                                                              QUERY PLAN                                                                                                                                                                                                                                                          
+    ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+     Unique  (cost=292175.70..297638.57 rows=156082 width=150) (actual time=5939.075..5939.923 rows=1878 loops=1)
+       ->  Sort  (cost=292175.70..292565.91 rows=156082 width=150) (actual time=5939.074..5939.191 rows=1878 loops=1)
+             Sort Key: ((bjs.job_timestamp)::date), ao.bucket, ao.job, ao.operation_id, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version, (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text))), (count(*) FILTER (WHERE (((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text) AND ((raw.data ->> 'userAgent'::text) ~~ '%[Conformance]%'::text)))), (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) !~~ 'e2e.test%'::text))), (count((raw.data ->> 'userAgent'::text)))
+             Sort Method: quicksort  Memory: 528kB
+             ->  GroupAggregate  (cost=256047.37..266973.11 rows=156082 width=150) (actual time=3164.399..5928.878 rows=1878 loops=1)
+                   Group Key: ao.operation_id, ao.bucket, ao.job, ((bjs.job_timestamp)::date), ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version
+                   ->  Sort  (cost=256047.37..256437.58 rows=156082 width=1248) (actual time=3164.368..3683.361 rows=376216 loops=1)
+                         Sort Key: ao.operation_id, ao.bucket, ao.job, ((bjs.job_timestamp)::date), ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version
+                         Sort Method: external merge  Disk: 466200kB
+                         ->  Hash Left Join  (cost=1207.39..72931.78 rows=156082 width=1248) (actual time=53.303..682.704 rows=376216 loops=1)
+                               Hash Cond: (raw.operation_id = api_operation_parameter_material.param_op)
+                               ->  Hash Left Join  (cost=401.09..66070.64 rows=117252 width=1285) (actual time=47.510..566.417 rows=294504 loops=1)
+                                     Hash Cond: ((ao.bucket = bjs.bucket) AND (ao.job = bjs.job))
+                                     ->  Hash Right Join  (cost=386.09..65440.03 rows=117252 width=1277) (actual time=47.482..462.156 rows=294504 loops=1)
+                                           Hash Cond: ((raw.operation_id = ao.operation_id) AND (raw.bucket = ao.bucket) AND (raw.job = ao.job))
+                                           ->  Seq Scan on raw_audit_event raw  (cost=0.00..59067.37 rows=320937 width=1205) (actual time=0.024..206.826 rows=322996 loops=1)
+                                           ->  Hash  (cost=353.22..353.22 rows=1878 width=114) (actual time=47.440..47.441 rows=1878 loops=1)
+                                                 Buckets: 2048  Batches: 1  Memory Usage: 287kB
+                                                 ->  Seq Scan on api_operation_material ao  (cost=0.00..353.22 rows=1878 width=114) (actual time=43.652..46.681 rows=1878 loops=1)
+                                                       Filter: (deprecated IS FALSE)
+                                                       Rows Removed by Filter: 444
+                                     ->  Hash  (cost=12.00..12.00 rows=200 width=72) (actual time=0.015..0.015 rows=2 loops=1)
+                                           Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                           ->  Seq Scan on bucket_job_swagger bjs  (cost=0.00..12.00 rows=200 width=72) (actual time=0.012..0.012 rows=2 loops=1)
+                               ->  Hash  (cost=792.65..792.65 rows=1092 width=43) (actual time=5.778..5.778 rows=1092 loops=1)
+                                     Buckets: 2048  Batches: 1  Memory Usage: 96kB
+                                     ->  Seq Scan on api_operation_parameter_material  (cost=0.00..792.65 rows=1092 width=43) (actual time=0.011..5.495 rows=1092 loops=1)
+                                           Filter: (param_name = 'body'::text)
+                                           Rows Removed by Filter: 6080
+     Planning Time: 2.736 ms
+     JIT:
+       Functions: 44
+       Options: Inlining false, Optimization false, Expressions true, Deforming true
+       Timing: Generation 5.750 ms, Inlining 0.000 ms, Optimization 1.726 ms, Emission 41.363 ms, Total 48.839 ms
+     Execution Time: 6055.283 ms
+    (35 rows)
+
+    #+end_SRC
+
+    There's a couple spots of improvement that could happen in this view and the ones it draws from:
+    - there's a number of SEQ scans, which are going to be slower than a hash scan.  
+      - If we make indices on the source views for where these seq scans are happening, we could potentially bring the results down
+    - We are running multiple counts
+      - These counts are only used to determine boolean values in other tables.  What if we make them booleans from the start?
+** Add indices to api_operation_material and api_operation_parameter_material 
+   - aop param_name = 'body'
+   - raw.bucket raw.job raw.operation_id
+   - ao.bucket ao.job ao.operation_id deprecation
+   
+     
+   #+NAME: Add indexes 
+   #+begin_src sql-mode :results silent
+  CREATE INDEX api_operation_material_deprecated      ON api_operation_material            (deprecated);
+  CREATE INDEX api_operation_material_job             ON api_operation_material                   (job);
+  CREATE INDEX api_parameters_materialized_name       ON api_operation_parameter_material  (param_name);
+  CREATE INDEX idx_raw_audit_event_bucket             ON raw_audit_event                       (bucket);
+  CREATE INDEX idx_raw_audit_event_job                ON raw_audit_event                          (job);
+  CREATE INDEX idx_raw_audit_event_operation_id       ON raw_audit_event                 (operation_id);
+   #+end_src
+   
+   When you make a change like this you want to vacuum and analyze so the query planner has the updated statistics.  So let's do that.
+
+   #+NAME: Vacuum and analyze tables
+   #+begin_src sql-mode
+   VACUUM FULL ANALYZE;
+   #+end_src
+
+   #+RESULTS: Vacuum and analyze tables
+   #+begin_SRC example
+   VACUUM
+   #+end_SRC
+   
+   
+** Explain analyze again
+   So let's try the query again, see any improvements
+   #+NAME: Analyze Original Query, pt. 2
+   #+begin_src sql-mode
+   EXPLAIN ANALYZE 
+   SELECT *
+   FROM
+   original_endpoint_coverage; 
+   #+end_src
+
+   #+RESULTS: Analyze Original Query, pt. 2
+   #+begin_SRC example
+                                                                                                                                                                                                                                                             QUERY PLAN                                                                                                                                                                                                                                                          
+   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    Unique  (cost=84591.41..84630.57 rows=1119 width=150) (actual time=3214.009..3214.907 rows=1878 loops=1)
+      ->  Sort  (cost=84591.41..84594.21 rows=1119 width=150) (actual time=3214.009..3214.128 rows=1878 loops=1)
+            Sort Key: ((bjs.job_timestamp)::date), ao.bucket, ao.job, ao.operation_id, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version, (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text))), (count(*) FILTER (WHERE (((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text) AND ((raw.data ->> 'userAgent'::text) ~~ '%[Conformance]%'::text)))), (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) !~~ 'e2e.test%'::text))), (count((raw.data ->> 'userAgent'::text)))
+            Sort Method: quicksort  Memory: 528kB
+            ->  HashAggregate  (cost=84520.76..84534.74 rows=1119 width=150) (actual time=3203.607..3204.256 rows=1878 loops=1)
+                  Group Key: ao.operation_id, ao.bucket, ao.job, (bjs.job_timestamp)::date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version
+                  ->  Hash Left Join  (cost=1193.13..75460.77 rows=164727 width=1240) (actual time=5.043..613.040 rows=393949 loops=1)
+                        Hash Cond: (raw.operation_id = api_operation_parameter_material.param_op)
+                        ->  Hash Right Join  (cost=402.75..68263.08 rows=124235 width=1276) (actual time=3.821..476.083 rows=309228 loops=1)
+                              Hash Cond: ((raw.operation_id = ao.operation_id) AND (raw.bucket = ao.bucket) AND (raw.job = ao.job))
+                              ->  Seq Scan on raw_audit_event raw  (cost=0.00..61561.79 rows=337079 width=1194) (actual time=0.007..234.275 rows=337721 loops=1)
+                              ->  Hash  (cost=369.89..369.89 rows=1878 width=122) (actual time=3.794..3.794 rows=1878 loops=1)
+                                    Buckets: 2048  Batches: 1  Memory Usage: 309kB
+                                    ->  Hash Left Join  (cost=1.05..369.89 rows=1878 width=122) (actual time=0.035..2.941 rows=1878 loops=1)
+                                          Hash Cond: ((ao.bucket = bjs.bucket) AND (ao.job = bjs.job))
+                                          ->  Seq Scan on api_operation_material ao  (cost=0.00..353.22 rows=1878 width=114) (actual time=0.014..1.867 rows=1878 loops=1)
+                                                Filter: (deprecated IS FALSE)
+                                                Rows Removed by Filter: 444
+                                          ->  Hash  (cost=1.02..1.02 rows=2 width=37) (actual time=0.005..0.005 rows=2 loops=1)
+                                                Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                                ->  Seq Scan on bucket_job_swagger bjs  (cost=0.00..1.02 rows=2 width=37) (actual time=0.002..0.003 rows=2 loops=1)
+                        ->  Hash  (cost=776.73..776.73 rows=1092 width=43) (actual time=1.209..1.209 rows=1092 loops=1)
+                              Buckets: 2048  Batches: 1  Memory Usage: 96kB
+                              ->  Bitmap Heap Scan on api_operation_parameter_material  (cost=28.75..776.73 rows=1092 width=43) (actual time=0.207..0.948 rows=1092 loops=1)
+                                    Recheck Cond: (param_name = 'body'::text)
+                                    Heap Blocks: exact=485
+                                    ->  Bitmap Index Scan on api_parameters_materialized_name  (cost=0.00..28.47 rows=1092 width=0) (actual time=0.152..0.152 rows=1092 loops=1)
+                                          Index Cond: (param_name = 'body'::text)
+    Planning Time: 3.276 ms
+    Execution Time: 3215.165 ms
+   (30 rows)
+
+   #+end_SRC
+
+   From 6 seconds down to three.  Lovely!
+   We can bring it down likely by removing the counts, then materializing and indexing.  Let's do that now!
+** Rewrite query as countless and materialized
+   #+begin_src sql-mode
+   DROP MATERIALIZED VIEW  endpoint_coverage_material;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   DROP MATERIALIZED VIEW
+   #+end_SRC
+
+   #+NAME: Improved Endpoint Coverage
+    #+BEGIN_SRC sql-mode
+     CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
+      SELECT DISTINCT
+        bjs.job_timestamp::date as date,
+        ao.bucket as bucket,
+        ao.job as job,
+        ao.operation_id as operation_id,
+        ao.level,
+        ao.category,
+        ao.k8s_group as group,
+        ao.k8s_kind as kind,
+        ao.k8s_version as version,
+        EXISTS (
+          select *
+            from audit_event
+           where audit_event.operation_id = ao.operation_id
+             AND audit_event.bucket = ao.bucket
+             AND audit_event.job = ao.job
+             AND audit_event.useragent like 'e2e.test%') as tested,
+        EXISTS (
+          select *
+            from audit_event
+           where audit_event.operation_id = ao.operation_id
+             AND audit_event.bucket = ao.bucket
+             AND audit_event.job = ao.job
+             AND audit_event.useragent like '%[Conformance]%') as conf_tested,
+        EXISTS (
+          select *
+            from audit_event
+           where audit_event.operation_id = ao.operation_id
+             AND audit_event.bucket = ao.bucket
+             AND audit_event.job = ao.job) as hit
+        FROM api_operation_material ao
+               LEFT JOIN audit_event ae ON (ao.operation_id = ae.operation_id AND ao.bucket = ae.bucket AND ao.job = ae.job)
+               LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
+          WHERE ao.deprecated IS False
+        GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
+    #+END_SRC
+
+    #+RESULTS: Improved Endpoint Coverage
+    #+begin_SRC example
+    SELECT 1878
+    #+end_SRC
+
+    #+begin_src sql-mode
+      SELECT
+        count(ecm.operation_id) FILTER (where tested = true) as tested,
+        count(ecm.operation_id) FILTER (where conf_tested = true) as conf_tested,
+        count(ecm.operation_id) FILTER (where hit = true) as hit,
+        count(operation_id) as total
+        FROM
+            endpoint_coverage_material ecm
+       WHERE
+         bucket != 'apisnoop'
+         ;
+    #+end_src
+    
+
+    #+RESULTS:
+    #+begin_SRC example
+     tested | conf_tested | hit | total 
+    --------+-------------+-----+-------
+        237 |         154 | 376 |   939
+    (1 row)
+
+    #+end_SRC
+    
+     #+begin_src sql-mode
+       SELECT
+         count(operation_id) filter (where test_hits > 0) as tested,
+         count(operation_id) filter (where conf_hits > 0) as conf_tested,
+         count(operation_id) filter (where total_hits > 0) as  hit,
+         count(operation_id) as total
+         FROM
+             original_endpoint_coverage
+        WHERE
+          bucket != 'apisnoop'
+       ;
+
+
+     #+end_src
+
+     #+RESULTS:
+     #+begin_SRC example
+      tested | conf_tested | hit | total 
+     --------+-------------+-----+-------
+         237 |         154 | 376 |   939
+     (1 row)
+
+     #+end_SRC
+   
+     Fantastic.  We are getting the same results, but markedly faster for our materialized view.  Next we'll add indexes and explain analyze again.
+     
+** Add indices to new materialized view
+   #+NAME: Add indexes 
+   #+begin_src sql-mode :results silent
+  CREATE INDEX idx_endpoint_coverage_material_bucket             ON endpoint_coverage_material                       (bucket);
+  CREATE INDEX idx_endpoint_coverage_material_job                ON endpoint_coverage_material                          (job);
+  CREATE INDEX idx_endpoint_coverage_material_operation_id       ON endpoint_coverage_material                 (operation_id);
+   #+end_src
+   
+   #+begin_src sql-mode
+   VACUUM ANALYZE endpoint_coverage_material; 
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   VACUUM
+   #+end_SRC
+** Compare Benchmarks
+   So now let's compare the two, and see if we got a speed increase.
+   
+   #+NAME: Benchmark for original
+   #+begin_src sql-mode
+   explain analyze select * from original_endpoint_coverage; 
+   #+end_src
+
+   #+RESULTS: Benchmark for original
+   #+begin_SRC example
+                                                                                                                                                                                                                                                             QUERY PLAN                                                                                                                                                                                                                                                          
+   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    Unique  (cost=87496.89..87536.06 rows=1119 width=150) (actual time=3253.123..3254.021 rows=1878 loops=1)
+      ->  Sort  (cost=87496.89..87499.69 rows=1119 width=150) (actual time=3253.122..3253.239 rows=1878 loops=1)
+            Sort Key: ((bjs.job_timestamp)::date), ao.bucket, ao.job, ao.operation_id, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version, (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text))), (count(*) FILTER (WHERE (((raw.data ->> 'userAgent'::text) ~~ 'e2e.test%'::text) AND ((raw.data ->> 'userAgent'::text) ~~ '%[Conformance]%'::text)))), (count(*) FILTER (WHERE ((raw.data ->> 'userAgent'::text) !~~ 'e2e.test%'::text))), (count((raw.data ->> 'userAgent'::text)))
+            Sort Method: quicksort  Memory: 528kB
+            ->  HashAggregate  (cost=87426.24..87440.23 rows=1119 width=150) (actual time=3242.932..3243.549 rows=1878 loops=1)
+                  Group Key: ao.operation_id, ao.bucket, ao.job, (bjs.job_timestamp)::date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version
+                  ->  Hash Left Join  (cost=1193.13..78050.34 rows=170471 width=1240) (actual time=4.366..625.118 rows=409382 loops=1)
+                        Hash Cond: (raw.operation_id = api_operation_parameter_material.param_op)
+                        ->  Hash Right Join  (cost=402.75..70629.22 rows=128567 width=1276) (actual time=3.266..484.461 rows=322052 loops=1)
+                              Hash Cond: ((raw.operation_id = ao.operation_id) AND (raw.bucket = ao.bucket) AND (raw.job = ao.job))
+                              ->  Seq Scan on raw_audit_event raw  (cost=0.00..63708.32 rows=348832 width=1194) (actual time=0.042..229.833 rows=350545 loops=1)
+                              ->  Hash  (cost=369.89..369.89 rows=1878 width=122) (actual time=3.219..3.219 rows=1878 loops=1)
+                                    Buckets: 2048  Batches: 1  Memory Usage: 309kB
+                                    ->  Hash Left Join  (cost=1.05..369.89 rows=1878 width=122) (actual time=0.018..2.453 rows=1878 loops=1)
+                                          Hash Cond: ((ao.bucket = bjs.bucket) AND (ao.job = bjs.job))
+                                          ->  Seq Scan on api_operation_material ao  (cost=0.00..353.22 rows=1878 width=114) (actual time=0.008..0.900 rows=1878 loops=1)
+                                                Filter: (deprecated IS FALSE)
+                                                Rows Removed by Filter: 444
+                                          ->  Hash  (cost=1.02..1.02 rows=2 width=37) (actual time=0.005..0.006 rows=2 loops=1)
+                                                Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                                ->  Seq Scan on bucket_job_swagger bjs  (cost=0.00..1.02 rows=2 width=37) (actual time=0.002..0.002 rows=2 loops=1)
+                        ->  Hash  (cost=776.73..776.73 rows=1092 width=43) (actual time=1.092..1.092 rows=1092 loops=1)
+                              Buckets: 2048  Batches: 1  Memory Usage: 96kB
+                              ->  Bitmap Heap Scan on api_operation_parameter_material  (cost=28.75..776.73 rows=1092 width=43) (actual time=0.167..0.856 rows=1092 loops=1)
+                                    Recheck Cond: (param_name = 'body'::text)
+                                    Heap Blocks: exact=485
+                                    ->  Bitmap Index Scan on api_parameters_materialized_name  (cost=0.00..28.47 rows=1092 width=0) (actual time=0.112..0.112 rows=1092 loops=1)
+                                          Index Cond: (param_name = 'body'::text)
+    Planning Time: 1.823 ms
+    Execution Time: 3254.194 ms
+   (30 rows)
+
+   #+end_SRC
+   
+   #+NAME: Benchmark for material
+   #+begin_src sql-mode
+   explain analyze select * from endpoint_coverage_material; 
+   #+end_src
+
+   #+RESULTS: Benchmark for material
+   #+begin_SRC example
+                                                            QUERY PLAN                                                          
+   -----------------------------------------------------------------------------------------------------------------------------
+    Seq Scan on endpoint_coverage_material  (cost=0.00..54.78 rows=1878 width=120) (actual time=0.005..0.166 rows=1878 loops=1)
+    Planning Time: 0.204 ms
+    Execution Time: 0.249 ms
+   (3 rows)
+   #+end_SRC
+   
+   Original time was 6 seconds. After indexing it was brought to 3 seconds...but it still does not beat the materialized view's .25 milliseconds.  Beautifulo.
+   
+* Conclusions and Next steps
+  We can incorporate our new materalized view into tables and views bot, but must be mindful of the views that draw from it...as i think they expect a tesT_hits column that's been renamed as tested.
+  let's hope this is simple, as replacing this query feels mandatory.
+  
+  It took a little bit of work getting the rest of the views adjusted to properly handle our new endpoint coverage, and to remember to refresh the materialized view after new items are added, but i have successfully added the new view to hasura and the increase in speed is noticable and impressive.
+  
+* Footnotes   
+:PROPERTIES: 
+:CUSTOM_ID: footnotes 
+:END: 
+** Cluster Setup
+   :PROPERTIES:
+   :LOGGING:  nil
+   :END:
+*** Check your user is correct and we are attached to right eye.
+    /bonus: this also ensures code blocks are working!/
+
+    #+begin_src tmate :results silent :eval never-export
+      echo "You are connected, $USER!"
+    #+end_src
+
+*** Create a K8s cluster using KIND
+    NOTE: You can build from source or use KIND's upstream images:
+    https://hub.docker.com/r/kindest/node/tags
+
+    #+BEGIN_SRC tmate :eval never-export :session foo:cluster
+      # Uncomment the next line if you want to clean up a previously created cluster.
+      kind delete cluster --name=kind-$USER
+      kind create cluster --name kind-$USER --config ~/ii/apisnoop/deployment/k8s/kind-cluster-config.yaml
+    #+END_SRC
+*** Grab cluster info, to ensure it is up.
+
+    #+BEGIN_SRC shell :results silent
+      kubectl cluster-info
+    #+END_SRC
+
+    The results shown in your minibuffer should look something like:
+    : Kubernetes master is running at https://127.0.0.1:40067
+    : KubeDNS is running at https://127.0.0.1:40067/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+    : To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+*** Our Kubectl Apply
+    #+begin_src shell
+      (
+          kubectl apply -f ~/ii/apisnoop/deployment/k8s/raiinbow.yaml
+      )2>&1
+      :
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src shell
+    service/hasura created
+    service/postgres created
+    deployment.apps/hasura created
+    deployment.apps/postgres created
+    deployment.apps/apisnoop-auditlogger created
+    service/apisnoop-auditlogger created
+    auditsink.auditregistration.k8s.io/auditlogger created
+    #+end_src
+
+*** Verify Pods Running
+    !ATTENTION!: Wait for all pods to have a "Running" status before proceeding
+    past this step.
+
+    #+begin_src shell
+      kubectl get pods
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src shell
+    NAME                                    READY   STATUS    RESTARTS   AGE
+    apisnoop-auditlogger-5f6c4cb8c5-ntpnc   1/1     Running   0          9m17s
+    hasura-777765b7d4-s9vdr                 1/1     Running   0          9m17s
+    postgres-b59f6c9c4-kxss9                1/1     Running   0          9m17s
+    #+end_src
+   
+*** Setup Port-Forwarding from us to sharing to the cluster
+    
+    We'll setup port-forwarding for postgres, to let us easily send queries from within our org file.
+    You can check the status of the port-forward in your right eye.
+    #+BEGIN_SRC tmate :eval never-export :session foo:postgres
+      POSTGRES_POD=$(kubectl get pod --selector=io.apisnoop.db=postgres -o name | sed s:pod/::)
+      POSTGRES_PORT=$(kubectl get pod $POSTGRES_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+      kubectl port-forward $POSTGRES_POD $(id -u)1:$POSTGRES_PORT
+    #+END_SRC
+
+    Then we'll setup a port-forward for hasura, so our web app can query it directly.
+    #+BEGIN_SRC tmate :eval never-export :session foo:hasura
+      HASURA_POD=$(kubectl get pod --selector=io.apisnoop.graphql=hasura -o name | sed s:pod/::)
+      HASURA_PORT=$(kubectl get pod $HASURA_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+      kubectl port-forward $HASURA_POD --address 0.0.0.0 8080:$HASURA_PORT
+    #+END_SRC
+*** Connect Org to our apisnoop db
+    #+NAME: ReConnect org to postgres
+    #+BEGIN_SRC emacs-lisp :results silent
+      (if (get-buffer "*SQL: postgres:none*")
+          (with-current-buffer "*SQL: postgres:none*"
+            (kill-buffer)))
+      (sql-connect "apisnoop" (concat "*SQL: postgres:none*"))
+    #+END_SRC
+*** Check it all worked
+    
+    Once the postgres pod has been up for at least three minutes, you can check if it all works.
+
+    Running ~\d+~ will list all the tables and views in your db, and their size.
+    First,you want to ensure that relations _are_ found.  IF not, something happened with postgres and you should check the logs (check out [[#footnotes]] for more info.)
+
+    There should be about a dozen views, and two tables.  The table ~bucket_job_swagger~ should be about 3712kb.  The table ~raw_audit_event~ should be about 416mb.  If either show as 8192 bytes, it means no data loaded.  Check the Hasura logs in this case, to see if there was an issue with the migration.
+
+    #+begin_src sql-mode :results silent
+      \d+
+    #+end_src
+
+    #+NAME: example results
+    #+begin_example sql-mode
+                                              List of relations
+       Schema |               Name               |       Type        |  Owner   |  Size   | Description
+      --------+----------------------------------+-------------------+----------+---------+-------------
+       public | api_operation_material           | materialized view | apisnoop | 3688 kB |
+       public | api_operation_parameter_material | materialized view | apisnoop | 6016 kB |
+       public | audit_event                      | view              | apisnoop | 0 bytes |
+       public | bucket_job_swagger               | table             | apisnoop | 3712 kB |
+       public | change_in_coverage               | view              | apisnoop | 0 bytes |
+       public | change_in_tests                  | view              | apisnoop | 0 bytes |
+       public | endpoint_coverage                | view              | apisnoop | 0 bytes |
+       public | endpoints_hit_by_new_test        | view              | apisnoop | 0 bytes |
+       public | projected_change_in_coverage     | view              | apisnoop | 0 bytes |
+       public | raw_audit_event                  | table             | apisnoop | 419 MB  |
+       public | stable_endpoint_stats            | view              | apisnoop | 0 bytes |
+       public | untested_stable_core_endpoints   | view              | apisnoop | 0 bytes |
+      (12 rows)
+
+    #+end_example
+*** Check current coverage
+    It can be useful to see the current level of testing according to your baseline audit log (by default the last successful test run on master).
+
+    You can view this with the query:
+    
+   #+NAME: stable endpoint stats
+    #+begin_src sql-mode
+      select * from stable_endpoint_stats where job != 'live';
+    #+end_src
+
+    #+RESULTS: stable endpoint stats
+    #+begin_SRC example
+             job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+    ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+     1201280603970867200 | 2019-12-01 |             438 |       183 |       129 |          41.78 |               29.45
+    (1 row)
+
+    #+end_SRC
+
+    
+*** TODO Stand up, Stretch, and get a glass of water
+    You did it! By hydration and pauses are important.  Take some you time, and drink a full glass of water!
+    
+** Load Logs to Help Debug Cluster
+    #:PROPERTIES:
+    #:header-args:tmate+: :prologue (concat "cd " (file-name-directory buffer-file-name) "../../apisnoop/apps\n. .loadenv\n")
+    #:END:
+**** hasura logs
+
+     #+BEGIN_SRC tmate :eval never-export :session foo:hasura_logs
+       HASURA_POD=$(\
+                    kubectl get pod --selector=io.apisnoop.graphql=hasura -o name \
+                        | sed s:pod/::)
+       kubectl logs $HASURA_POD -f
+     #+END_SRC
+
+**** postgres logs
+
+     #+BEGIN_SRC tmate :eval never-export :session foo:postgres_logs
+       POSTGRES_POD=$(\
+                      kubectl get pod --selector=io.apisnoop.db=postgres -o name \
+                          | sed s:pod/::)
+       kubectl logs $POSTGRES_POD -f
+     #+END_SRC
+
+** Manually load swagger or audit events
+   If you ran through the full setup, but were getting 0's in the stable_endpint_stats, it means the table migrations were successful, but no data was loaded.
+
+   You can verify data loaded with the below query.  ~bucket_job_swagger~ should have a size around 3600kb and raw_audit_event should have a size around 412mb.
+
+   #+NAME: Verify Data Loaded
+   #+begin_src sql-mode
+     \dt+
+   #+end_src
+
+   #+RESULTS: Verify Data Loaded
+   #+begin_SRC example
+                                                       List of relations
+    Schema |        Name        | Type  |  Owner   |  Size   |                         Description                          
+   --------+--------------------+-------+----------+---------+--------------------------------------------------------------
+    public | bucket_job_swagger | table | apisnoop | 5560 kB | metadata for audit events  and their respective swagger.json
+    public | raw_audit_event    | table | apisnoop | 11 GB   | a record for each audit event in an audit log
+   (2 rows)
+
+   #+end_SRC
+
+   If either shows a size of ~8192 bytes~, you'll want to manually load it, refresh materialized views, then check again.
+
+   if you want to load a particular bucket or job, you can name them as the first and second argument of these functions.
+   e.g
+   : select * from load)swagger('ci-kubernetes-beta', 1122334344);
+   will load that specific bucket/job combo.
+   : select * from load_swagger('ci-kubernetes-beta');
+   will load the latest successful test run for ~ci-kubernetes-beta~
+   : select * from load_swagger('ci-kubernetes-beta', null, true);
+   will load the latest successful test run for ~ci-kubernetes-beta~, but with bucket and job set to 'apisnoop/live' (used for testing).
+   #+NAME: Manually load swaggers
+   #+begin_src sql-mode
+     select * from load_swagger('ci-kubernetes-e2e-gci-gce', '1181711701108592640');
+   #+end_src
+
+   #+RESULTS: Manually load swaggers
+   #+begin_SRC example
+                            load_swagger                         
+   --------------------------------------------------------------
+    something went wrong, likely this: HTTP Error 404: Not Found
+   (1 row)
+
+   #+end_SRC
+
+          - name: APISNOOP_BASELINE_BUCKET
+            value: ci-kubernetes-e2e-gci-gce
+          - name: APISNOOP_BASELINE_JOB
+            value: '1201280603970867200'
+
+   #+NAME: Refresh Materialized Views
+   #+begin_src sql-mode
+     REFRESH MATERIALIZED VIEW api_operation_material;
+     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+   #+end_src
+
+   
+   

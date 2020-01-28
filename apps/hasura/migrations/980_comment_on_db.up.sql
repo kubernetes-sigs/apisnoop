@@ -102,12 +102,11 @@ COMMENT ON COLUMN endpoint_coverage.category IS 'will either be analogous with t
 COMMENT ON COLUMN endpoint_coverage.group IS 'kubernetes group this operation_id belongs to';
 COMMENT ON COLUMN endpoint_coverage.version IS 'kubernetes version (e.g alpha or beta or stable)';
 COMMENT ON COLUMN endpoint_coverage.kind IS 'kubernetes kind';
-COMMENT ON COLUMN endpoint_coverage.test_hits IS 'number of events with an e2e.useragent that hit this endpoint';
-COMMENT ON COLUMN endpoint_coverage.conf_hits IS 'number of test hits where the test named included [Conformance]';
-COMMENT ON COLUMN endpoint_coverage.other_hits IS 'number of event hits where useragent was not an e2e.test';
-COMMENT ON COLUMN endpoint_coverage.total_hits IS 'the sum of test_hits and other_hits';
 
 -- 520: stable_endpoint_stats
+COMMENT ON COLUMN endpoint_coverage.tested IS 'boolean on whether any e2e. useragent hits this endpoint';
+COMMENT ON COLUMN endpoint_coverage.conf_tested IS 'boolean on whether any useragent with [Conformance] in name hits endpoint';
+COMMENT ON COLUMN endpoint_coverage.hit IS 'boolean whether endpoint hit by any useragent';
 
 COMMENT ON VIEW stable_endpoint_stats IS 'coverage stats for entire test run, looking only at its stable endpoints';
 COMMENT ON COLUMN stable_endpoint_stats.job IS 'The testrun job';
@@ -130,10 +129,6 @@ COMMENT ON COLUMN untested_stable_core_endpoints.category IS 'will either be ana
 COMMENT ON COLUMN untested_stable_core_endpoints.group IS 'kubernetes group this operation_id belongs to';
 COMMENT ON COLUMN untested_stable_core_endpoints.version IS 'kubernetes version (e.g alpha or beta or stable)';
 COMMENT ON COLUMN untested_stable_core_endpoints.kind IS 'kubernetes kind';
-COMMENT ON COLUMN untested_stable_core_endpoints.test_hits IS 'number of events with an e2e.useragent that hit this endpoint';
-COMMENT ON COLUMN untested_stable_core_endpoints.conf_hits IS 'number of test hits where the test named included [Conformance]';
-COMMENT ON COLUMN untested_stable_core_endpoints.other_hits IS 'number of event hits where useragent was not an e2e.test';
-COMMENT ON COLUMN untested_stable_core_endpoints.total_hits IS 'the sum of test_hits and other_hits';
 COMMENT ON COLUMN untested_stable_core_endpoints.description IS 'description of operation_id';
 COMMENT ON COLUMN untested_stable_core_endpoints.http_method IS 'http equivalent for operation, e.g. GET, POST, DELETE';
 COMMENT ON COLUMN untested_stable_core_endpoints.k8s_action IS 'the k8s analog for the http_method';
