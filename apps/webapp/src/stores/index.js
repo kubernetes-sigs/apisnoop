@@ -1,6 +1,5 @@
 import { writable, derived } from 'svelte/store';
 import client from '../apollo.js';
-import { ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../queries';
 import {
     hitByMatchingItems,
     hitByMatchingTestTags,
@@ -29,11 +28,6 @@ import {
     categoryColours,
     endpointColour
 } from '../lib/colours.js';
-
-async function fetchBucketsAndJobs () {
-    let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
-    rawMetadata.set(metadata.data.bucket_job_swagger)
-}
 
 export const activeBucketAndJob = writable({});
 export const allTestsAndTags = writable({});
@@ -77,7 +71,7 @@ export const bucketsAndJobs = derived(rawMetadata, ($rm, set) => {
 
 export const defaultBucketAndJob = derived(bucketsAndJobs, ($bj, set) => {
     if (isEmpty($bj))  {
-        set({})
+        set({bucket: '', job: '', timestamp: ''})
     } else {
         let releaseBlocking = 'ci-kubernetes-e2e-gci-gce';
         let defaultBucket = Object.keys($bj).includes(releaseBlocking)
@@ -329,5 +323,3 @@ export const filteredTests = derived(
         }
         return tests;
     });
-
-fetchBucketsAndJobs();

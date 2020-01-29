@@ -5,6 +5,7 @@
 --    Based on the update we give to dan, developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]]
 --    #+NAME: Endpoint Stats View
 
+CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS
 SELECT
   ec.job,
   ec.date,
@@ -16,4 +17,3 @@ SELECT
   FROM endpoint_coverage ec
     WHERE ec.level = 'stable'
  GROUP BY ec.date, ec.job;
--- CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS

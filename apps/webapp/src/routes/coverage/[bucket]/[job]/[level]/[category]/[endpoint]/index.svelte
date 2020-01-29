@@ -4,9 +4,7 @@
      bucketsAndJobs } from '../../../../../../../stores';
  import { get } from 'svelte/store';
  import client from "../../../../../../../apollo.js";
- import {
-     ENDPOINTS_USERAGENTS_AND_TESTS
-    } from '../../../../../../../queries';
+ import {ENDPOINTS_USERAGENTS_AND_TESTS, ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../../../../../../../queries';
 
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
@@ -35,6 +33,7 @@
                     ? null
                     : job;
 
+     let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE});
      let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
      return {
          endpointsUseragentsAndTestsFromQuery ,
@@ -57,7 +56,8 @@
      activePath,
      allTestsAndTags,
      endpoints,
-     allUseragents
+     allUseragents,
+     rawMetadata
  } from '../../../../../../../stores';
  import CoverageContainer from '../../../../../../../components/CoverageContainer.svelte';
 
@@ -70,7 +70,9 @@
  export let invalidBucket;
  export let invalidJob;
  export let endpointsUseragentsAndTestsFromQuery;
+ export let metadata;
 
+ rawMetadata.set(metadata.data.bucket_job_swagger)
  activeFilters.update((af) => ({...af, ...query}));
  endpoints.set(endpointsUseragentsAndTestsFromQuery.data.endpoint_coverage);
  allTestsAndTags.set(endpointsUseragentsAndTestsFromQuery.data.tests);

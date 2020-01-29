@@ -216,6 +216,7 @@
 
 
      function clicked(p) {
+         d3.event.preventDefault();
          zoomToCurrentDepth(p);
          function segmentNode (node, segments) {
              if (!node.parent) {
@@ -228,7 +229,6 @@
                  return segmentNode(node.parent, segments);
                  }
              };
-
 
          function determineRoute (page, segment) {
              let route;
@@ -245,7 +245,7 @@
          let nodeSegments = segmentNode(p, []);
          let urlPath = determineRoute($page, nodeSegments);
          activePath.set(determineDepth(p, []));
-         goto(urlPath, {replaceState: true});
+         history.pushState({}, '', urlPath);
      }
 
      function setInnerText (p) {

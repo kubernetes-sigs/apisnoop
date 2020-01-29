@@ -1,15 +1,47 @@
 <script context="module">
  import client from "../../apollo.js";
+ import { groupBy, mapValues } from 'lodash-es';
  import { ENDPOINTS_USERAGENTS_AND_TESTS, ALL_BUCKETS_AND_JOBS_SANS_LIVE} from '../../queries';
  import { get } from 'svelte/store';
  import { defaultBucketAndJob } from '../../stores';
 
  export async function preload (page, session) {
-     let {bucket, job} = get(defaultBucketAndJob);
      let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
-     let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket, job}});
+     let buckets = groupBy(metadata.data.bucket_job_swagger, 'bucket');
+     let bj = mapValues(buckets, (allJobs) => {
+         let [latestJob] = allJobs
+             .sort((a,b) => new Date(b.job_timestamp) > new Date(a.job_timestamp))
+             .map(j => ({job: j.job, timestamp: j.job_timestamp}));
+
+         let jobs = allJobs.map(j => ({job: j.job, timestamp: j.job_timestamp}));
+
+         return {
+             latestJob,
+             jobs
+         };
+     });
+     let releaseBlocking = 'ci-kubernetes-e2e-gci-gce';
+     let defaultBucket = Object.keys(bj).includes(releaseBlocking)
+                       ? releaseBlocking
+                       : Object.keys(bj)[0];
+
+     let defaultBucketAndJob = {
+         bucket: defaultBucket,
+         job: bj[defaultBucket].latestJob.job,
+         timestamp: bj[defaultBucket].latestJob.job_timestamp
+     }
+
      let query = page.query;
-     return { bucket, job, endpointsUseragentsAndTestsFromQuery, metadata, query};
+     let {bucket, job} = defaultBucketAndJob;
+     let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket, job}});
+
+     return {
+         bucket,
+         job,
+         endpointsUseragentsAndTestsFromQuery,
+         metadata,
+         query
+     };
  }
 </script>
 

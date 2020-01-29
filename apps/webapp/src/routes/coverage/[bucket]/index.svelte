@@ -21,7 +21,7 @@
 
      let job = bjs[activeBucket]['latestJob'].job
      let query = page.query;
-
+     let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
      let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket: activeBucket, job}});
 
      return {
@@ -29,6 +29,7 @@
          invalidBucket,
          activeBucket,
          job,
+         metadata,
          query
      };
  }
@@ -41,7 +42,8 @@
      activeFilters,
      allTestsAndTags,
      endpoints,
-     allUseragents
+     allUseragents,
+     rawMetadata
  } from '../../../stores';
 
  import CoverageContainer from '../../../components/CoverageContainer.svelte';
@@ -50,8 +52,10 @@
  export let invalidBucket;
  export let activeBucket;
  export let job;
+ export let metadata;
  export let query;
 
+ rawMetadata.set(metadata.data.bucket_job_swagger)
  activeFilters.update(af => ({...af, ...query}));
  allUseragents.set(endpointsUseragentsAndtestsFromQuery.useragents);
  allTestsAndTags.set(endpointsUseragentsAndTestsFromQuery.data.tests)

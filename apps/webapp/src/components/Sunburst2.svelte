@@ -89,11 +89,6 @@
  }
 
  $: root = partition(data);
-
- onMount(()  => {
-     console.log({root});
- })
-
 </script>
 
 <div class="chart">
