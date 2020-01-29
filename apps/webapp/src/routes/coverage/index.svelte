@@ -7,7 +7,7 @@
 
  export async function preload (page, session) {
      let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
-     let buckets = groupBy(metadata, 'bucket');
+     let buckets = groupBy(metadata.data.bucket_job_swagger, 'bucket');
      let bj = mapValues(buckets, (allJobs) => {
          let [latestJob] = allJobs
              .sort((a,b) => new Date(b.job_timestamp) > new Date(a.job_timestamp))

@@ -2,7 +2,7 @@
  import { defaultBucketAndJob, bucketsAndJobs } from '../../../../stores';
  import { get } from 'svelte/store';
  import client from "../../../../apollo.js";
- import { ENDPOINTS_USERAGENTS_AND_TESTS } from '../../../../queries';
+ import { ENDPOINTS_USERAGENTS_AND_TESTS , ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../../../../queries';
 
  export async function preload (page, session) {
      let bjs = get(bucketsAndJobs);
