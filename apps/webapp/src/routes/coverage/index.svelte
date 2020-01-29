@@ -5,11 +5,18 @@
  import { defaultBucketAndJob } from '../../stores';
 
  export async function preload (page, session) {
-     let {bucket, job} = get(defaultBucketAndJob);
      let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
-     let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket, job}});
      let query = page.query;
-     return { bucket, job, endpointsUseragentsAndTestsFromQuery, metadata, query};
+     let {bucket, job} = get(defaultBucketAndJob);
+     let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket, job}});
+
+     return {
+         bucket,
+         job,
+         endpointsUseragentsAndTestsFromQuery,
+         metadata,
+         query
+     };
  }
 </script>
 

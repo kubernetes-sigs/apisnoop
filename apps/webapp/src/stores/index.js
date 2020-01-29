@@ -71,7 +71,7 @@ export const bucketsAndJobs = derived(rawMetadata, ($rm, set) => {
 
 export const defaultBucketAndJob = derived(bucketsAndJobs, ($bj, set) => {
     if (isEmpty($bj))  {
-        set({})
+        set({bucket: '', job: '', timestamp: ''})
     } else {
         let releaseBlocking = 'ci-kubernetes-e2e-gci-gce';
         let defaultBucket = Object.keys($bj).includes(releaseBlocking)
