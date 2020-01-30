@@ -4,40 +4,67 @@
   :PROPERTIES:
   :LOGGING:  nil
   :END:
-** TODO Connect demo to right eye
-
+** TODO Connect to remote machine if wanted
+*** ensure ssh-agent is running
+You can read more about this, but basically ensure you have it working before you connect.
    #+begin_src tmate :session foo:hello :eval never-export
-     echo "This command will run in your right 'eye' after you a command into your terminal."
+     # ssh-add -c ~/.ssh/path-to-my-key
+     # will prompt for use and the following command should list your keys
+     ssh-add -l
    #+end_src
-   
-** TODO Create a K8s cluster using KIND
+*** forwards to the development env
+You will likely leave this up and running just so you can use git push/pull and use a kubectl for the rest of your work.
+   #+begin_src tmate :session foo:hello :eval never-export
+     ssh -A $USER.ii.coop
+   #+end_src
+*** ensure ssh-agent socket is remotely working
+   #+begin_src tmate :session foo:hello :eval never-export
+     ssh-add -l
+   #+end_src
+** TODO Create a K8s cluster Running Kubemacs
 
 [[file:~/cncf/apisnoop/deployment/k8s/kind-cluster-config.yaml::#%20kind-cluster-config.yaml][kind-cluster-config.yaml (enabling Dynamic Audit Logging)]]
-#+begin_src shell
 
-     # Uncomment the next line if you want to clean up a previously created cluster.
-     mkdir -p /tmp/workspace/pvcs/
-     eval $(ssh-agent -a /tmp/workspace/ssh-agent.sock)
-     ssh-add ~/.ssh/myssh.key
-     # pull or build
-     docker build -t gcr.io/apisnoop/kubemacs:0.9.21 ~/ii/kubemacs
-     kind pull gcr.io/apisnoop/kubemacs:0.9.21
-#+end_src
-   #+BEGIN_SRC tmate :eval never-export :session foo:cluster :prologue "cd ~/cncf/apisnoop/\n" :tangle ../setup.sh
-     kind delete cluster --name kind
+   #+BEGIN_SRC tmate :eval never-export :session foo:cluster :tangle ../setup.sh
+     wget https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml
      kind create cluster --name kind \
           --image kindest/node:v1.17.0@sha256:9512edae126da271b66b990b6fff768fbb7cd786c7d39e86bdf55906352fdf62 \
-          --config apisnoop/deployment/k8s/kind-cluster-config.yaml
+          --config kind-cluster-config.yaml
+     # these two commands just ensure our image is cached and available quickly
+     docker pull gcr.io/apisnoop/kubemacs:0.9.23
      kind load docker-image --nodes kind-worker gcr.io/apisnoop/kubemacs:0.9.23
-     kubectl apply -f apisnoop/deployment/k8s/kubemacs.yaml
-     kubectl apply -f apisnoop/deployment/k8s/kubemacs.yaml
+     kubectl create namespace kubemacs
+     kubectl apply -f https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kubemacs.yaml
+     # Careful as this will restart the dev/code writing pod
+     kubectl -n kubemacs set env deployment/kubemacs \
+             GIT_COMMITTER_EMAIL=hh@ii.coop \
+             GIT_COMMITTER_NAME="Hippie Hacker" \
+             GIT_AUTHOR_EMAIL=hh@ii.coop \
+             GIT_AUTHOR_NAME="Hippie Hacker"
    #+END_SRC
 
-   #+begin_src shell
-   # This needs to be run in an OSC52 compatible terminal
-   # like iTerm2, putty or xterm (libvte/gnome-terminals do not work)
-   PODNAME=$(kubectl -n kubemacs get pod --selector=app=kubemacs -o name  | sed s:pod/::)
-kubectl exec -n kubemacs -t -i $PODNAME -- attach
+   #+begin_src tmate :eval never-export :session foo:cluster :tangle ../setup.sh
+     PODNAME=$(kubectl -n kubemacs get pod --selector=app=kubemacs -o name  | sed s:pod/::)
+     kubectl describe -n kubemacs pod/$PODNAME
+     kubectl get -n kubemacs pod/$PODNAME
+   #+end_src
+
+** TODO Connect your local computer to remote computer
+*** configure local .bashrc with merged KUBECONFIG
+   #+begin_src tmate :session ii:local :eval never-export
+      export KUBECONFIG=$KUBECONFIG:~/.kube/config:~/.kube/kind-config
+   #+end_src
+*** copy remote kind KUBECONFIG
+   #+begin_src tmate :session ii:local :eval never-export
+     scp $USER.ii.coop:.kube/config ~/.kube/kind-config
+     kubectl config set clusters.kind-kind.server "https://$USER.ii.coop:6443"
+   #+end_src
+** TODO In a local OSC52 Compatible Terminal
+   This needs to be run in an OSC52 compatible terminal like iTerm2, putty or
+     xterm (libvte/gnome-terminals do not work)
+   #+begin_src shell :eval nevel
+     PODNAME=$(kubectl -n kubemacs get pod --selector=app=kubemacs -o name  | sed s:pod/::)
+     kubectl exec -n kubemacs -t -i $PODNAME -- attach
    #+end_src
 ** TODO Run tilt
    #+BEGIN_SRC tmate :eval never-export :session foo:cluster :dir ".."
