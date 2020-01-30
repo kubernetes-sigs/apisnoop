@@ -52,8 +52,7 @@
      endpoints,
      activeFilters,
      activeBucketAndJob,
-     allUseragents,
-     rawMetadata
+     allUseragents
  } from '../../../../stores';
  import { isEmpty } from 'lodash-es';
  import CoverageContainer from '../../../../components/CoverageContainer.svelte';
@@ -66,7 +65,6 @@
  export let metadata;
  export let query;
 
- rawMetadata.set(metadata.data.bucket_job_swagger)
  activeFilters.update(af => ({...af, ...query}));
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
  endpoints.set(endpointsUseragentsAndTestsFromQuery.data.endpoint_coverage);
