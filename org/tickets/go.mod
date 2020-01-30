@@ -5,7 +5,6 @@ go 1.13
 require (
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
-	github.com/googleapis/gnostic v0.3.1 // indirect
 	github.com/imdario/mergo v0.3.8 // indirect
 	github.com/json-iterator/go v1.1.9 // indirect
 	golang.org/x/crypto v0.0.0-20200117160349-530e935923ad // indirect
