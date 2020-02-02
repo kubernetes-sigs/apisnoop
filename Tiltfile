@@ -1,4 +1,5 @@
 k8s_yaml(['deployment/k8s/graphql.yaml',
+         'deployment/k8s/pgadmin.yaml',
          'deployment/k8s/audit-sink.yaml',
          'deployment/k8s/nginx-mandatory.yaml',
          'deployment/k8s/nginx-kind.yaml',
