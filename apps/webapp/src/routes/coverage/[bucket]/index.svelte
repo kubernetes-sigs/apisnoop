@@ -42,8 +42,7 @@
      activeFilters,
      allTestsAndTags,
      endpoints,
-     allUseragents,
-     rawMetadata
+     allUseragents
  } from '../../../stores';
 
  import CoverageContainer from '../../../components/CoverageContainer.svelte';

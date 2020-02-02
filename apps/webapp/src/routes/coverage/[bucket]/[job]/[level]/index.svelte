@@ -53,8 +53,7 @@
      activeBucketAndJob,
      activeFilters,
      activePath,
-     allUseragents,
-     rawMetadata
+     allUseragents
  } from '../../../../../stores';
 
  import CoverageContainer from '../../../../../components/CoverageContainer.svelte';
@@ -68,7 +67,6 @@
  export let metadata;
  export let query;
 
- rawMetadata.set(metadata.data.bucket_job_swagger)
  activeFilters.update(af => ({...af, ...query}));
  allUseragents.set(endpointsUseragentsAndTagsFromQuery.data.useragents);
  activePath.set([level]);

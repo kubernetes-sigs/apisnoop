@@ -54,8 +54,7 @@
      endpoints,
      activeBucketAndJob,
      activePath,
-     allUseragents,
-     rawMetadata
+     allUseragents
  } from '../../../../../../stores';
  import { isEmpty } from 'lodash-es';
  import { afterUpdate } from 'svelte';
@@ -71,7 +70,6 @@
  export let metadata;
  export let query;
 
- rawMetadata.set(metadata.data.bucket_job_swagger)
  activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
  activeFilters.update(af => ({...af, ...query}));
  activePath.set([level, category]);
