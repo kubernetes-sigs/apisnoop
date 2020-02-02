@@ -7,11 +7,9 @@ k8s_yaml(['deployment/k8s/graphql.yaml',
 )
 docker_build('raiinbow/webapp', 'apps/webapp',
   live_update=[
-    sync('src', '/webapp/src'),
-#     run('go install github.com/windmilleng/tiltdemo/cmd/demoserver1'),
-    restart_container(),
-  ]
-)
+  fall_back_on(['package.json', 'package-lock.json']),
+  sync('apps/webapp','/src')
+  ])
 docker_build('raiinbow/hasura', 'apps/hasura')
 # docker_build('raiinbow/postgres', 'apps/postgres')
 docker_build('raiinbow/auditlogger', 'apps/auditlogger')

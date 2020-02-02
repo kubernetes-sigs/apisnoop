@@ -29,13 +29,6 @@ import {
     endpointColour
 } from '../lib/colours.js';
 
-export const activeBucketAndJob = writable({});
-export const allTestsAndTags = writable({});
-export const endpoints = writable([]);
-export const rawMetadata = writable([]);
-export const allUseragents = writable([]);
-// Based on the url params, the exact [level, category, endpoint] we are focused on.
-export const activePath = writable([]);
 // Based on url query params, any filters being set.
 export const activeFilters = writable({
     test_tags: [],
@@ -44,47 +37,100 @@ export const activeFilters = writable({
     hide_untested: "false",
     useragent: '',
     tests_match: '',
-    test_tags_match: ''
+    test_tags_match: '',
+    bucket: '',
+    job: ''
 })
 
-export const bucketsAndJobs = derived(rawMetadata, ($rm, set) => {
-    // group by buckets and their jobs, noting the most recent job for each bucket.
-    if (isEmpty($rm)) {
-        set({});
-    } else {
-        let buckets = groupBy($rm, 'bucket');
-        let bj = mapValues(buckets, (allJobs) => {
-            let [latestJob] = allJobs
-                .sort((a,b) => new Date(b.job_timestamp) > new Date(a.job_timestamp))
-                .map(j => ({job: j.job, timestamp: j.job_timestamp}));
+// Buckets and Jobs
+export const rawBucketsAndJobs = writable([]);
+export const bucketsAndJobs = derived(
+    rawBucketsAndJobs,
+    ($raw, set) => {
+        if ($raw.length === 0) {
+            set([]);
+        } else {
+            let buckets = groupBy($raw, 'bucket');
+            let bjs = mapValues(buckets, (allJobs) => {
+                let jobs = allJobs
+                    .sort((a,b) => new Date(b.job_timestamp) > new Date(a.job_timestamp))
+                    .map(j => ({
+                        job: j.job,
+                        timestamp: j.job_timestamp
+                    }));
 
-            let jobs = allJobs.map(j => ({job: j.job, timestamp: j.job_timestamp}));
+            let [latestJob] = jobs;
 
             return {
                 latestJob,
                 jobs
             };
-        });
-        set(bj);
+            });
+            set(bjs);
+        };
     }
-});
+);
 
-export const defaultBucketAndJob = derived(bucketsAndJobs, ($bj, set) => {
-    if (isEmpty($bj))  {
-        set({bucket: '', job: '', timestamp: ''})
-    } else {
-        let releaseBlocking = 'ci-kubernetes-e2e-gci-gce';
-        let defaultBucket = Object.keys($bj).includes(releaseBlocking)
-            ? releaseBlocking
-            : Object.keys($bj)[0];
-        set({
-            bucket: defaultBucket,
-            job: $bj[defaultBucket].latestJob.job,
-            timestamp: $bj[defaultBucket].latestJob.job_timestamp
-        });
+export const defaultBucketAndJob = derived(
+    bucketsAndJobs,
+    ($bjs, set) => {
+        if ($bjs.length === 0) {
+            set({
+                bucket: '',
+                job: '',
+                timestamp: ''
+            });
+        } else {
+            let releaseBlocking = 'ci-kubernetes-e2e-gci-gce';
+            let defaultBucket = Object.keys($bjs).includes(releaseBlocking)
+                ? releaseBlocking
+                : Object.keys($bjs)[0];
+
+            set({
+                bucket: defaultBucket,
+                job: $bjs[defaultBucket].latestJob.job,
+                timestamp: $bjs[defaultBucket].latestJob.job_timestamp
+            });
+        };
     }
-});
+);
 
+export const activeBucketAndJob = derived(
+    [activeFilters, defaultBucketAndJob, ],
+    ([$filters, $default], set) => {
+        let base = {
+            bucket: '',
+            job: '',
+            timestamp: '',
+            bucketWarning: '',
+            jobWarning: ''
+        };
+        if ($default.bucket === '') {
+            set({...base});
+        } else if ($filters.bucket === '') {
+            set({
+                ...base,
+                bucket: $default.bucket,
+                job: $default.job,
+                timestamp: $default.timestamp
+            });
+        } else {
+            set({
+                ...base,
+                bucket: $filters.bucket,
+                job: $filters.job,
+                timestamp: $filters.timestamp
+            });
+        };
+    });
+
+// All our data, for the active bucket and job. 
+export const endpointsTestsAndUseragents = writable({endpoints: '', tests: '', useragents: ''});
+export const endpoints = derived(endpointsTestsAndUseragents, $etu => $etu.endpoints);
+export const allTestsAndTags = derived(endpointsTestsAndUseragents, $etu => $etu.tests);
+export const allUseragents = derived(endpointsTestsAndUseragents, $etu => $etu.useragents);
+// Based on the url params, the exact [level, category, endpoint] we are focused on.
+export const activePath = writable([]);
 
 export const bucketAndJobMetadata = derived([bucketsAndJobs, activeBucketAndJob], ([$bjs, $abj], set) => {
     if (isEmpty($bjs)) {

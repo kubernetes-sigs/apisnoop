@@ -1,6 +1,8 @@
 import {
     forEach,
     trimEnd,
+    groupBy,
+    mapValues,
     trimStart,
     flatten,
     uniq
@@ -56,4 +58,30 @@ export const hitByMatchingTestTags = (tests, regex, endpoint) => {
     let matchingTests = tests.filter(test => test.test_tags.some((tag) => regex.test(tag)));
     let endpointsHitByTests = uniq(flatten(matchingTests.map(test => test.operation_ids)));
     return endpointsHitByTests.includes(endpoint.operation_id);
+};
+
+export const determineBucketAndJob = (bucketsAndJobs) => {
+    let buckets = groupBy(bucketsAndJobs, 'bucket');
+    let bj = mapValues(buckets, (allJobs) => {
+        let jobs = allJobs
+            .sort((a,b) => new Date(b.job_timestamp) > new Date(a.job_timestamp))
+            .map(j => ({job: j.job, timestamp: j.job_timestamp}));
+
+        let [latestJob] = allJobs.map(j => ({job: j.job, timestamp: j.job_timestamp}));
+
+        return {
+            latestJob,
+            jobs
+        };
+    });
+
+    let releaseBlocking = 'ci-kubernetes-e2e-gci-gce';
+    let defaultBucket = Object.keys(bj).includes(releaseBlocking)
+        ? releaseBlocking
+        : Object.keys(bj)[0];
+
+    return {
+        bucket: defaultBucket,
+        job: bj[defaultBucket].latestJob.job,
+    };
 };
