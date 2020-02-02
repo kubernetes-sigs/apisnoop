@@ -1,3 +1,6 @@
+// javascript code
+//  #+NAME: auditlogger bot (nodejs)
+
 // apisnoop auditlogger
 const connectionString = typeof process.env.PG_CONNECTION_STRING !== 'undefined' ? process.env.PG_CONNECTION_STRING : 'postgres://apisnoop:s3cretsauc3@postgres/apisnoop?sslmode=disable'
 const express = require('express')
@@ -8,6 +11,8 @@ const knex = require('knex')({
     client: 'pg',
     connection: connectionString
 })
+
+var postgresIsReady = false
 
 console.log(`[status] using connection string: ${connectionString}`)
 
@@ -42,6 +47,15 @@ function checkUserAgent (req, res, next) {
     return next()
 }
 
+function postgresReadyCheck (req, res, next) {
+    if (postgresIsReady === true) {
+        return next()
+    }
+    knex.raw("SELECT to_regclass('raw_audit_event');").then(resp => {
+        postgresIsReady = resp.rows[0].to_regclass !== null
+    })
+}
+
 function logEventsToDB (req, res, next) {
     const requestContent = req.body
     const items = requestContent.items[0]
@@ -51,9 +65,9 @@ function logEventsToDB (req, res, next) {
     console.log('[status] inserting into database')
     var dataToInsert = {
          bucket: 'apisnoop',
-         job: 'live', 
+         job: 'live',
          audit_id: items.auditID,
-         stage: items.stage, 
+         stage: items.stage,
          event_verb: items.verb,
          request_uri: items.requestURI,
         data: JSON.stringify(items)
@@ -83,7 +97,7 @@ app.use(express.json())
 app.use(morgan('combined'))
 
 app.get('/', hello)
-app.post('/events', [checkForBodyContent, checkUserAgent], logEventsToDB)
+app.post('/events', [checkForBodyContent, checkUserAgent, postgresReadyCheck], logEventsToDB)
 
 knex.raw('select 0;').then(() => {
     console.log('[status] connected to database')

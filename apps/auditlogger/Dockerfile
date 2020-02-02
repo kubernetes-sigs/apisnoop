@@ -1,3 +1,6 @@
+# Dockerfile
+#  #+NAME: dockerfile for auditlogger bot
+
 FROM node:12.14.1-alpine3.11
 RUN apk update && \
     apk add vim postgresql-client netcat-openbsd

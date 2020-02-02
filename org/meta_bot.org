@@ -505,6 +505,8 @@ a5f4141a90fb: Pushed
        connection: connectionString
    })
 
+   var postgresIsReady = false
+
    console.log(`[status] using connection string: ${connectionString}`)
 
    function hello (req, res, next) {
@@ -538,6 +540,15 @@ a5f4141a90fb: Pushed
        return next()
    }
 
+   function postgresReadyCheck (req, res, next) {
+       if (postgresIsReady === true) {
+           return next()
+       }
+       knex.raw("SELECT to_regclass('raw_audit_event');").then(resp => {
+           postgresIsReady = resp.rows[0].to_regclass !== null
+       })
+   }
+
    function logEventsToDB (req, res, next) {
        const requestContent = req.body
        const items = requestContent.items[0]
@@ -547,9 +558,9 @@ a5f4141a90fb: Pushed
        console.log('[status] inserting into database')
        var dataToInsert = {
             bucket: 'apisnoop',
-            job: 'live', 
+            job: 'live',
             audit_id: items.auditID,
-            stage: items.stage, 
+            stage: items.stage,
             event_verb: items.verb,
             request_uri: items.requestURI,
            data: JSON.stringify(items)
@@ -579,7 +590,7 @@ a5f4141a90fb: Pushed
    app.use(morgan('combined'))
 
    app.get('/', hello)
-   app.post('/events', [checkForBodyContent, checkUserAgent], logEventsToDB)
+   app.post('/events', [checkForBodyContent, checkUserAgent, postgresReadyCheck], logEventsToDB)
 
    knex.raw('select 0;').then(() => {
        console.log('[status] connected to database')
@@ -591,15 +602,15 @@ a5f4141a90fb: Pushed
        console.log('[error] No database connection found.')
        console.log(err)
        process.exit(1)
-   }) 
+   })
 
  #+end_src
 
  #+NAME: auditlogger bot (nodejs) package
- #+begin_src javascript :tangle ../apps/auditlogger/package.json
+ #+begin_src json :tangle ../apps/auditlogger/package.json :comment no
  {
    "name": "apisnoop-auditlogger",
-   "version": "0.0.1",
+   "version": "0.0.2",
    "description": "AuditLogger for apisnoop",
    "main": "index.js",
    "scripts": {
