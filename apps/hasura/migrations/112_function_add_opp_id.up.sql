@@ -126,6 +126,8 @@ def find_operation_id(openapi_spec, event):
         return None
       if part == 'livez':
         return None
+      if part == 'healthz':
+        return None
       #   elif part == '': # The last V
       #     current_level = last_level
       #       else:
