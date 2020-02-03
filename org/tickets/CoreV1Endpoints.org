@@ -1,0 +1,449 @@
+# -*- ii: apisnoop; -*-
+#+TITLE: Mock Ticket Template
+#+AUTHOR: ii team
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+#+OPTIONS: toc:nil tags:nil todo:nil
+#+EXPORT_SELECT_TAGS: export
+* TODO [0%] In-Cluster Setup                                    :neverexport:
+  :PROPERTIES:
+  :LOGGING:  nil
+  :END:
+** TODO Connect demo to right eye
+
+   #+begin_src tmate :session foo:hello :eval never-export
+     echo "What parts of Kubernetes do you depend on $USER?"
+   #+end_src
+
+** TODO Deploy APISnoop DB/GraphQL                                   :export:
+   
+   #+begin_src shell :eval never-export :wrap "SRC text"
+     kubectl apply -f ~/apisnoop/deployment/k8s/graphql.yaml
+   #+end_src
+
+** TODO Deploy APISnoop AuditSink                                    :export:
+   
+   #+begin_src shell :eval never-export :wrap "SRC text"
+     kubectl apply -f ~/apisnoop/deployment/k8s/audit-sink.yaml
+   #+end_src
+
+** TODO Verify Pods Running
+   #+begin_src shell
+     kubectl get pods
+   #+end_src
+** TODO Check it all worked
+
+   #+begin_src sql-mode :results replace
+     \d+
+   #+end_src
+
+** TODO Check current coverage
+   #+NAME: stable endpoint stats
+   #+begin_src sql-mode
+     select * from stable_endpoint_stats where job != 'live';
+   #+end_src
+
+* Identify an untested feature Using APISnoop                        :export:
+
+According to this APIsnoop query, there are still some remaining Endpoints endpoints which are untested.
+
+  #+NAME: untested_stable_core_endpoints
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    SELECT
+      operation_id,
+      --k8s_action,
+      path,
+      description
+      FROM untested_stable_core_endpoints
+      where path not like '%volume%'
+      and operation_id ilike '%Endpoints%' 
+     ORDER BY operation_id desc
+     --LIMIT 25
+           ;
+  #+end_src
+
+  #+RESULTS: untested_stable_core_endpoints
+  #+begin_SRC example
+                 operation_id                |                      path                       |               description               
+  -------------------------------------------+-------------------------------------------------+-----------------------------------------
+   replaceCoreV1NamespacedEndpoints          | /api/v1/namespaces/{namespace}/endpoints/{name} | replace the specified Endpoints
+   listCoreV1EndpointsForAllNamespaces       | /api/v1/endpoints                               | list or watch objects of kind Endpoints
+   deleteCoreV1CollectionNamespacedEndpoints | /api/v1/namespaces/{namespace}/endpoints        | delete collection of Endpoints
+  (3 rows)
+
+  #+end_SRC
+
+* Use API Reference to Lightly Document the Feature                  :export:
+- [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+- [client-go - Endpoints](https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/endpoints.go)
+
+* The mock test                                                      :export:
+** Test outline
+1. Create a Service in a namespace
+
+2. List all Endpoints in all Namespaces
+   find the created Service(1)
+
+3. Replace the Namespaced Endpoint for the Service(1)
+
+4. Get the Namespaced Endpoint for the Service(1)
+   
+5. Delete Namespaced Endpoint(1) via a Collection with a LabelSelector
+
+** Example in Go
+
+   #+begin_src go
+     package main
+
+     import (
+       "fmt"
+       "flag"
+       "os"
+       v1 "k8s.io/api/core/v1"
+       metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+       "k8s.io/client-go/kubernetes"
+       // "k8s.io/apimachinery/pkg/types"
+       "k8s.io/client-go/tools/clientcmd"
+       "k8s.io/apimachinery/pkg/util/intstr"
+     )
+
+     func main() {
+       // uses the current context in kubeconfig
+       kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+       flag.Parse()
+       config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+       if err != nil {
+         fmt.Println(err)
+       }
+       // make our work easier to find in the audit_event queries
+       config.UserAgent = "live-test-writing"
+       // creates the clientset
+       ClientSet, _ := kubernetes.NewForConfig(config)
+
+       ns := "default"
+       testServiceName := "testservice"
+
+       _, err = ClientSet.CoreV1().Services(ns).Create(&v1.Service{
+         ObjectMeta: metav1.ObjectMeta{
+           Name: testServiceName,
+           Namespace: ns,
+           Labels: map[string]string{
+             "testservice-constant": "true",
+           },
+         },
+         Spec: v1.ServiceSpec{
+           Ports: []v1.ServicePort{{
+             Port: 80,
+             TargetPort: intstr.FromInt(80),
+             Protocol: v1.ProtocolTCP,
+           }},
+           Selector: map[string]string{
+             "testservice-constant": "true",
+           },
+         },
+       })
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       fmt.Println("[status] service created")
+
+       endpointsList, err := ClientSet.CoreV1().Endpoints("").List(metav1.ListOptions{LabelSelector: "testservice-constant=true"})
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       foundEndpointService := false
+       for _, endpoint := range endpointsList.Items {
+         if endpoint.ObjectMeta.Name == testServiceName && endpoint.ObjectMeta.Namespace == ns {
+           foundEndpointService = true
+           break
+         }
+       }
+       if foundEndpointService != true {
+         fmt.Println("[error] unable to find Endpoint Service in list of Endpoints")
+         return
+       }
+       fmt.Println("[status] found Endpoint Service in list of Endpoints")
+
+       err = ClientSet.CoreV1().Endpoints(ns).DeleteCollection(&metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: "testservice-constant=true"})
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       fmt.Println("[status] deleted Endpoint by Collection")
+
+       err = ClientSet.CoreV1().Services(ns).Delete(testServiceName, &metav1.DeleteOptions{})
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       fmt.Println("[status] deleted Service")
+
+       // write test here
+       fmt.Println("[status] complete")
+
+     }
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
+   [status] service created
+   [status] found Endpoint Service in list of Endpoints
+   [status] deleted Endpoint by Collection
+   [status] deleted Service
+   [status] complete
+   #+end_src
+
+* Verify Increase it Coverage with APISnoop                          :export:
+  #+begin_src sql-mode
+select count(*) from endpoint_coverage where job = 'live';
+  #+end_src
+  
+Discover useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+    -- select distinct useragent from raw_audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+    -- select distinct bucket, job from raw_audit_event and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   useragent 
+  -----------
+  (0 rows)
+
+  #+end_SRC
+
+#+begin_src sql-mode :exports both :session none
+select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ useragent | operation_id | hit_by_ete | hit_by_new_test 
+-----------+--------------+------------+-----------------
+(0 rows)
+
+#+end_SRC
+
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select * from projected_change_in_coverage;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+  ---------------+-----------------+--------------+--------------+------------------
+   test_coverage |             287 |          191 |          191 |                0
+  (1 row)
+
+  #+end_SRC
+  #+begin_src sql-mode
+    \df+ add_op_id
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                                                                                                                                                  List of functions
+   Schema |   Name    | Result data type | Argument data types | Type | Volatility | Parallel | Owner | Security | Access privileges |  Language  |                                                                   Source code                                                                    | Description 
+  --------+-----------+------------------+---------------------+------+------------+----------+-------+----------+-------------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------+-------------
+   public | add_op_id | trigger          |                     | func | volatile   | unsafe   | dba   | invoker  |                   | plpython3u |                                                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import json                                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | from urllib.request import urlopen, urlretrieve                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import os                                                                                                                                       +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import re                                                                                                                                       +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | from bs4 import BeautifulSoup                                                                                                                   +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import subprocess                                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import time                                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import glob                                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | from tempfile import mkdtemp                                                                                                                    +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | from string import Template                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | from urllib.parse import urlparse                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import requests                                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import hashlib                                                                                                                                  +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | from collections import defaultdict                                                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import json                                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import csv                                                                                                                                      +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | import sys                                                                                                                                      +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                                                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | from copy import deepcopy                                                                                                                       +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | from functools import reduce                                                                                                                    +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                                                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | def deep_merge(*dicts, update=False):                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     """                                                                                                                                         +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     Merges dicts deeply.                                                                                                                        +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     Parameters                                                                                                                                  +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     ----------                                                                                                                                  +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     dicts : list[dict]                                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         List of dicts.                                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     update : bool                                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         Whether to update the first dict or create a new dict.                                                                                  +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     Returns                                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     -------                                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     merged : dict                                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         Merged dict.                                                                                                                            +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     """                                                                                                                                         +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     def merge_into(d1, d2):                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         for key in d2:                                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |             if key not in d1 or not isinstance(d1[key], dict):                                                                                  +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                 d1[key] = deepcopy(d2[key])                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |             else:                                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                 d1[key] = merge_into(d1[key], d2[key])                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         return d1                                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                                                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     if update:                                                                                                                                  +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         return reduce(merge_into, dicts[1:], dicts[0])                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     else:                                                                                                                                       +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         return reduce(merge_into, dicts, {})                                                                                                    +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                                                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | def load_openapi_spec(url):                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     cache=defaultdict(dict)                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     openapi_spec = {}                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     openapi_spec['hit_cache'] = {}                                                                                                              +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                                                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     swagger = requests.get(url).json()                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     for path in swagger['paths']:                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         path_data = {}                                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         path_parts = path.strip("/").split("/")                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         path_len = len(path_parts)                                                                                                              +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         path_dict = {}                                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         last_part = None                                                                                                                        +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         last_level = None                                                                                                                       +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         current_level = path_dict                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         for part in path_parts:                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |             if part not in current_level:                                                                                                       +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                 current_level[part] = {}                                                                                                        +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |             last_part=part                                                                                                                      +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |             last_level = current_level                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |             current_level = current_level[part]                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         for method, swagger_method in swagger['paths'][path].items():                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |             if method == 'parameters':                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                 next                                                                                                                            +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |             else:                                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                 current_level[method]=swagger_method.get('operationId', '')                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         cache = deep_merge(cache, {path_len:path_dict})                                                                                         +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     openapi_spec['cache'] = cache                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     return openapi_spec                                                                                                                         +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                                                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | def find_operation_id(openapi_spec, event):                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   verb_to_method={                                                                                                                              +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'get': 'get',                                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'list': 'get',                                                                                                                              +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'proxy': 'proxy',                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'create': 'post',                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'post':'post',                                                                                                                              +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'put':'post',                                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'update':'put',                                                                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'patch':'patch',                                                                                                                            +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'connect':'connect',                                                                                                                        +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'delete':'delete',                                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'deletecollection':'delete',                                                                                                                +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     'watch':'get'                                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   }                                                                                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   method=verb_to_method[event['verb']]                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   url = urlparse(event['requestURI'])                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   # 1) Cached seen before results                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   if url.path in openapi_spec['hit_cache']:                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     if method in openapi_spec['hit_cache'][url.path].keys():                                                                                    +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       return openapi_spec['hit_cache'][url.path][method]                                                                                        +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   uri_parts = url.path.strip('/').split('/')                                                                                                    +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   if 'proxy' in uri_parts:                                                                                                                      +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       uri_parts = uri_parts[0:uri_parts.index('proxy')]                                                                                         +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   part_count = len(uri_parts)                                                                                                                   +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   try: # may have more parts... so no match                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       cache = openapi_spec['cache'][part_count]                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   except Exception as e:                                                                                                                        +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     plpy.warning("part_count was:" + part_count)                                                                                                +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     plpy.warning("spec['cache'] keys was:" + openapi_spec['cache'])                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     raise e                                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   last_part = None                                                                                                                              +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   last_level = None                                                                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   current_level = cache                                                                                                                         +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   for idx in range(part_count):                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     part = uri_parts[idx]                                                                                                                       +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     last_level = current_level                                                                                                                  +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     if part in current_level:                                                                                                                   +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       current_level = current_level[part] # part in current_level                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     elif idx == part_count-1:                                                                                                                   +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       if part == 'metrics':                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         return None                                                                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       if part == 'readyz':                                                                                                                      +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         return None                                                                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       if part == 'livez':                                                                                                                       +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         return None                                                                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       if part == 'healthz':                                                                                                                     +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         return None                                                                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       if part == 'discovery.k8s.io':                                                                                                            +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         return None                                                                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       #   elif part == '': # The last V                                                                                                         +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       #     current_level = last_level                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       #       else:                                                                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       if len(variable_levels) > 1:                                                                                                              +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         raise "If we have more than one variable levels... this should never happen."                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       next_level=variable_levels[0] # the var is the next level                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       current_level = current_level[next_level] # variable part is final part                                                                   +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     else:                                                                                                                                       +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       next_part = uri_parts[idx+1]                                                                                                              +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}+| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       if not variable_levels: # there is no match                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         if 'example.com' in part:                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |           return None                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         elif 'kope.io' in part:                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |           return None                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         elif 'snapshot.storage.k8s.io' in part:                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |           return None                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         elif 'discovery.k8s.io' in part:                                                                                                        +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |           return None                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         elif 'metrics.k8s.io' in part:                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |           return None                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         elif 'wardle.k8s.io' in part:                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |           return None                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         elif ['openapi','v2'] == uri_parts: # not part our our spec                                                                             +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |           return None                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |         else:                                                                                                                                   +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |           print(url.path)                                                                                                                       +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |           return None                                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       next_level={v: k for k, v in variable_levels.items()}[True]                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |       current_level = current_level[next_level] #coo                                                                                            +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   try:                                                                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     op_id=current_level[method]                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   except Exception as err:                                                                                                                      +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     plpy.warning("method was:" + method)                                                                                                        +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     plpy.warning("current_level keys:" + current_level.keys())                                                                                  +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     raise err                                                                                                                                   +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   if url.path not in openapi_spec['hit_cache']:                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     openapi_spec['hit_cache'][url.path]={method:op_id}                                                                                          +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   else:                                                                                                                                         +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     openapi_spec['hit_cache'][url.path][method]=op_id                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |   return op_id                                                                                                                                  +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                                                                                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | if "spec" not in GD:                                                                                                                            +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     GD["spec"] = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/7d13dfe3c34f44/api/openapi-spec/swagger.json')      +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | spec = GD["spec"]                                                                                                                               +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | event = json.loads(TD["new"]["data"])                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | if TD["new"]["operation_id"] is None:                                                                                                           +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |     TD["new"]["operation_id"] = find_operation_id(spec, event);                                                                                 +| 
+          |           |                  |                     |      |            |          |       |          |                   |            | return "MODIFY";                                                                                                                                +| 
+          |           |                  |                     |      |            |          |       |          |                   |            |                                                                                                                                                  | 
+  (1 row)
+
+  #+end_SRC
+
+* Final notes :export:
+If a test with these calls gets merged, **Conformance coverage will go up by 2 points**
+
+-----  
+/sig testing
+ 
+/sig architecture  
+
+/area conformance  
+
+* Open Tasks
+  Set any open tasks here, using org-todo
+** DONE Live Your Best Life
+* Footnotes                                                     :neverexport:
+  :PROPERTIES:
+  :CUSTOM_ID: footnotes
+  :END:
