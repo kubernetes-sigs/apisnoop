@@ -1,8 +1,4 @@
 -- Create
-
-DROP FUNCTION add_op_id CASCADE;
-
-
 -- #+NAME: add_opp_id.sql
 
 set role dba;
