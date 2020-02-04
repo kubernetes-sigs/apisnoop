@@ -17,6 +17,11 @@ kind create cluster --config kind-cluster-config.yaml
 Once up, apply APISnoop using our provided yaml 
 
 ```shell
+# create a namespace / set default NS
+DEFAULTNS=ii
+kubectl create ns $DEFAULTNS
+kubectl config set-context $(kubectl config current-context) --namespace=$DEFAULTNS
+
 kubectl apply -k https://github.com/cncf/apisnoop/deployment/k8s/local
 kubectl wait --for=condition=Available deployment/kubemacs
 KUBEMACS_POD=$(kubectl get pod --selector=app=kubemacs -o name  | sed s:pod/::)
@@ -39,5 +44,3 @@ env:
 ```
 
 Simply uncomment and configure this portion in [the raiinbow.yaml](deployment/k8s/raiinbow.yaml).  Then, when building a cluster, apply apisnoop from this local file.
-
- 
