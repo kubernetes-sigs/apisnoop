@@ -80,25 +80,6 @@
      return d.y1 <= 4 && d.y0 >= 1 && d.x1 > d.x0;
  }
 
- function setOpacity (d) {
-     // take node data, d, and determine its opacity based on if its visible and active
-     if (!arcVisible(d.current)) {
-         // fade completely if we zoomed past the node
-         return 0;
-     } else if (sequenceArray.length > 0) {
-         // if we've moused over set opacity based on mouse position
-         return sequenceArray.indexOf(d) >= 0
-              ? 1
-              : 0.3
-     } else if (endpoint !== '') {
-         // if we are zoomed to endpoint, fade all other endpoints but that one
-         return d.current.data.name === endpoint ? 1 : 0.3
-     }else {
-         // otherwise keep default opacity
-         return 1;
-     }
- }
-
  function labelVisible(d) {
      return d.y1 <= 3 && d.y0 >= 1 && (d.y1 - d.y0) * (d.x1 - d.x0) > 0.03;
  }
@@ -115,7 +96,7 @@
 
  function mouseLeave () {
      sequenceArray = [];
-     }
+ }
 
  $: validSegments = cleanSegments(data, segments, []);
  $: partition = data => {
@@ -132,27 +113,20 @@
      .descendants()
      .slice(1)
      .map((node) => {
-         // take node data, d, and determine its opacity based on if its visible and active
+         // take node and determine its opacity based on if its visible and active
          let currentOpacity = 1;
-         if (!arcVisible(node.current)) {
-             currentOpacity = 0;
-             return {...node, currentOpacity};
+         if (endpoint !== '') {
+             currentOpacity = node.current.data.name === endpoint
+                            ? 1
+                            : 0.3
          } else if (sequenceArray.length > 0) {
              currentOpacity = sequenceArray.indexOf(node) >= 0
                             ? 1
                             : 0.3
-             return {...node, currentOpacity};
-         } else if (endpoint !== '') {
-             // if we are zoomed to endpoint, fade all other endpoints but that one
-             currentOpacity = node.current.data.name === endpoint
-                            ? 1
-                            : 0.3
-             return {...node, currentOpacity};
-
-         }else {
-             // otherwise keep default opacity
-             return {...node, currentOpacity}
+         } else if (!arcVisible(node.current)) {
+             currentOpacity = 0;
          }
+         return {...node, currentOpacity}
      })
  $: cleanCurrentDepth = cleanSegments(data, $activePath, []);
  $: nodeAtCurrentDepth = findNodeAtCurrentDepth(cleanCurrentDepth, root);
@@ -186,6 +160,25 @@
                         </text>
                     {/each}
                 </g>
+                <circle
+                    r={radius}
+                    fill={root.data.color}
+                    pointer-events="all" />
+
+                <text
+                    text-anchor='middle'
+                    font-size='2em'
+                    fill='white'
+                    transform={() => category.length > 0 ? "translate(0, -15)" : ""} >
+                    {level}
+                </text>
+                <text
+                    text-anchor='middle'
+                    font-size='2em'
+                    fill='white'
+                    transform="translate(0,15)">
+                    {category}
+                </text>
             </g>
         </svg>
 </div>
