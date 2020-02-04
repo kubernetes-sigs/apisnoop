@@ -12,7 +12,7 @@
     <CoverageHeader />
     <!-- <Filters /> -->
     <Breadcrumb />
-    <Sunburst />
+    <!-- <Sunburst /> -->
     <CoverageStats />
     <Sunburst2 />
     <TestsList />

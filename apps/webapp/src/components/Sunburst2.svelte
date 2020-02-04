@@ -26,7 +26,7 @@
  $: job = $activeBucketAndJob.job;
  $: ([level, category, endpoint] = $breadcrumb);
  $: segments = [level, category, endpoint];
- $: sunburstLoaded = false;
+ $: sequenceArray = [];
 
  const format = d3.format(",d")
  const width = 932
@@ -85,6 +85,11 @@
      if (!arcVisible(d.current)) {
          // fade completely if we zoomed past the node
          return 0;
+     } else if (sequenceArray.length > 0) {
+         // if we've moused over set opacity based on mouse position
+         return sequenceArray.indexOf(d) >= 0
+              ? 1
+              : 0.3
      } else if (endpoint !== '') {
          // if we are zoomed to endpoint, fade all other endpoints but that one
          return d.current.data.name === endpoint ? 1 : 0.3
@@ -104,17 +109,13 @@
      return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
  }
 
- function mouseover(d) {
-     let sequenceArray = d.ancestors().reverse().slice(1);
-     // Fade all the segments.
-     d3.selectAll("path")
-       .style("opacity", 0.3);
-     // Then highlight only those that are an ancestor of the current segment.
-     d3.selectAll("path")
-       .filter((node) => (sequenceArray.indexOf(node) >= 0))
-       .style("opacity", 1);
-     activePath.set(determineDepth(d, [])); // what this for?
+ function mouseOver(d) {
+     sequenceArray = d.ancestors().reverse().slice(1);
  }
+
+ function mouseLeave () {
+     sequenceArray = [];
+     }
 
  $: validSegments = cleanSegments(data, segments, []);
  $: partition = data => {
@@ -127,22 +128,50 @@
      (root);
  }
  $: root = partition(data).each(d=> d.current = d);
- $: nodes = root.descendants().slice(1);
+ $: nodes = root
+     .descendants()
+     .slice(1)
+     .map((node) => {
+         // take node data, d, and determine its opacity based on if its visible and active
+         let currentOpacity = 1;
+         if (!arcVisible(node.current)) {
+             currentOpacity = 0;
+             return {...node, currentOpacity};
+         } else if (sequenceArray.length > 0) {
+             currentOpacity = sequenceArray.indexOf(node) >= 0
+                            ? 1
+                            : 0.3
+             return {...node, currentOpacity};
+         } else if (endpoint !== '') {
+             // if we are zoomed to endpoint, fade all other endpoints but that one
+             currentOpacity = node.current.data.name === endpoint
+                            ? 1
+                            : 0.3
+             return {...node, currentOpacity};
+
+         }else {
+             // otherwise keep default opacity
+             return {...node, currentOpacity}
+         }
+     })
  $: cleanCurrentDepth = cleanSegments(data, $activePath, []);
  $: nodeAtCurrentDepth = findNodeAtCurrentDepth(cleanCurrentDepth, root);
-
 </script>
 
-<div class="chart">
+<div class="chart2">
         <svg viewBox="0,0,932,932" style="font: 12px sans-serif;">
-            <g transform="translate({width/2},{width/2})">
+            <g
+                transform="translate({width/2},{width/2})"
+                on:mouseleave={mouseLeave}>
                 <g>
                 {#each nodes as node}
                     <path
                         fill={node.data.color}
-                        fill-opacity={setOpacity(node)}
+                        fill-opacity={node.currentOpacity}
                         d={arc(node.current)}
-                        on:mouseover={() => mouseover(node)}
+                        on:mouseover={() => mouseOver(node.current)}
+                        style="cursor: pointer;"
+                        on:click={() => node.children ? clicked(node) : endpointClicked(node)}
                         />
                 {/each}
                 </g>
@@ -160,8 +189,6 @@
             </g>
         </svg>
 </div>
-
-
 
 <style>
  .chart {
