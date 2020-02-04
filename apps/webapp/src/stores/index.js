@@ -227,6 +227,23 @@ export const sunburst = derived(groupedEndpoints, ($gep, set) => {
     }
 });
 
+export const zoomedSunburst = derived(
+  [sunburst, activeFilters],
+  ([$sunburst, $filters], set) => {
+    let level = $filters.level;
+    let category = $filters.category
+    if (category) {
+      let sunburstAtLevel = $sunburst.children.find(child => child.name === level);
+      let sunburstAtCategory = sunburstAtLevel.children.find(child => child.name === category);
+      set(sunburstAtCategory);
+    } else if (!category && level) {
+      let sunburstAtLevel = $sunburst.children.find(child => child.name === level);
+      set(sunburstAtLevel);
+    } else {
+      set($sunburst)
+    }
+})
+
 export const currentDepth = derived(activePath, ($ap, set) => {
     let depths = ['root', 'level', 'category', 'endpoint']
     let depth = $ap.length;

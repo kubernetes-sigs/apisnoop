@@ -118,6 +118,8 @@
                    .attr("d", d => arc(d.current))
                    .on("mouseover", mouseover);
 
+    console.log({path});
+
      path.filter(d => d.children)
          .style("cursor", "pointer")
          .on("click", clicked);
@@ -201,8 +203,7 @@
                  // check if d is an endpoint, if so check if p is endpoint.
                  // if so, fade all endpoints that are not p
                  if (d.children || p.children) {
-                     return arcVisible(d.target) ? 1 : 0;
-                 } else {
+                     return arcVisible(d.target) ? 1 : 0;} else {
                      return d.data.name === p.data.name ? 1 : 0.3;
                  }
              })
