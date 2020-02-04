@@ -1,0 +1,322 @@
+# -*- ii: apisnoop; -*-
+#+TITLE: Mock Ticket Template
+#+AUTHOR: ii team
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+#+OPTIONS: toc:nil tags:nil todo:nil
+#+EXPORT_SELECT_TAGS: export
+
+[[https://github.com/kubernetes/kubernetes/issues/87762][Write CoreV1Endpoints mock test - +4 coverage #87762]]
+
+* TODO [0%] In-Cluster Setup                                    :neverexport:
+  :PROPERTIES:
+  :LOGGING:  nil
+  :END:
+** TODO Connect demo to right eye
+
+   #+begin_src tmate :session foo:hello :eval never-export
+     echo "What parts of Kubernetes do you depend on $USER?"
+   #+end_src
+
+** TODO Deploy APISnoop DB/GraphQL                                   :export:
+   
+   #+begin_src shell :eval never-export :wrap "SRC text"
+     kubectl apply -f ~/apisnoop/deployment/k8s/graphql.yaml
+   #+end_src
+
+** TODO Deploy APISnoop AuditSink                                    :export:
+   
+   #+begin_src shell :eval never-export :wrap "SRC text"
+     kubectl apply -f ~/apisnoop/deployment/k8s/audit-sink.yaml
+   #+end_src
+
+** TODO Verify Pods Running
+   #+begin_src shell
+     kubectl get pods
+   #+end_src
+** TODO Check it all worked
+
+   #+begin_src sql-mode :results replace
+     \d+
+   #+end_src
+
+** TODO Check current coverage
+   #+NAME: stable endpoint stats
+   #+begin_src sql-mode
+     select * from stable_endpoint_stats where job != 'live';
+   #+end_src
+
+* Identify an untested feature Using APISnoop                        :export:
+
+According to this APIsnoop query, there are still some remaining Endpoints endpoints which are untested.
+
+  #+NAME: untested_stable_core_endpoints
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    SELECT
+      operation_id,
+      --k8s_action,
+      path,
+      description
+      FROM untested_stable_core_endpoints
+      where path not like '%volume%'
+      and operation_id ilike '%Endpoints%' 
+     ORDER BY operation_id desc
+     --LIMIT 25
+           ;
+  #+end_src
+
+  #+RESULTS: untested_stable_core_endpoints
+  #+begin_SRC example
+                 operation_id                |    k8s_action    |                      path                       |               description                
+  -------------------------------------------+------------------+-------------------------------------------------+------------------------------------------
+   replaceCoreV1NamespacedEndpoints          | put              | /api/v1/namespaces/{namespace}/endpoints/{name} | replace the specified Endpoints
+   patchCoreV1NamespacedEndpoints            | patch            | /api/v1/namespaces/{namespace}/endpoints/{name} | partially update the specified Endpoints
+   listCoreV1EndpointsForAllNamespaces       | list             | /api/v1/endpoints                               | list or watch objects of kind Endpoints
+   deleteCoreV1CollectionNamespacedEndpoints | deletecollection | /api/v1/namespaces/{namespace}/endpoints        | delete collection of Endpoints
+  (4 rows)
+
+  #+end_SRC
+
+* Use API Reference to Lightly Document the Feature                  :export:
+- [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+- [client-go - Endpoints](https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/endpoints.go)
+
+* The mock test                                                      :export:
+** Test outline
+1. Create a Service in a namespace
+
+2. List all Endpoints in all Namespaces
+   find the created Service(1)
+
+3. Replace/update the Namespaced Endpoint for the Service(1)
+
+4. Get the Namespaced Endpoint for the Service(1)
+   
+5. Patch the Namespaced Endpoint for the Service(1)
+
+6. Get the Namespaced Endpoint for the Service(1)
+   
+7. Delete Namespaced Endpoint(1) via a Collection with a LabelSelector
+
+** Example in Go
+
+   #+begin_src go
+     package main
+
+     import (
+       "encoding/json"
+       "fmt"
+       "flag"
+       "os"
+       v1 "k8s.io/api/core/v1"
+       metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+       "k8s.io/client-go/kubernetes"
+       "k8s.io/apimachinery/pkg/types"
+       "k8s.io/client-go/tools/clientcmd"
+       "k8s.io/apimachinery/pkg/util/intstr"
+     )
+
+     func main() {
+       // uses the current context in kubeconfig
+       kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+       flag.Parse()
+       config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+       if err != nil {
+         fmt.Println(err)
+       }
+       // make our work easier to find in the audit_event queries
+       config.UserAgent = "live-test-writing"
+       // creates the clientset
+       ClientSet, _ := kubernetes.NewForConfig(config)
+
+       ns := "default"
+       testServiceName := "testservice"
+
+       _, err = ClientSet.CoreV1().Services(ns).Create(&v1.Service{
+         ObjectMeta: metav1.ObjectMeta{
+           Name: testServiceName,
+           Namespace: ns,
+           Labels: map[string]string{
+             "testservice-constant": "true",
+           },
+         },
+         Spec: v1.ServiceSpec{
+           Ports: []v1.ServicePort{{
+             Port: 80,
+             TargetPort: intstr.FromInt(80),
+             Protocol: v1.ProtocolTCP,
+           }},
+           Selector: map[string]string{
+             "testservice-constant": "true",
+           },
+         },
+       })
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       fmt.Println("[status] service created")
+
+       endpointsList, err := ClientSet.CoreV1().Endpoints("").List(metav1.ListOptions{LabelSelector: "testservice-constant=true"})
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       foundEndpointService := false
+       var foundEndpoint v1.Endpoints
+       for _, endpoint := range endpointsList.Items {
+         if endpoint.ObjectMeta.Name == testServiceName && endpoint.ObjectMeta.Namespace == ns {
+           foundEndpointService = true
+           foundEndpoint = endpoint
+           break
+         }
+       }
+       if foundEndpointService != true {
+         fmt.Println("[error] unable to find Endpoint Service in list of Endpoints")
+         return
+       }
+       fmt.Println("[status] found Endpoint Service in list of Endpoints")
+
+       foundEndpoint.ObjectMeta.Labels["testservice"] = "first-modification"
+       _, err = ClientSet.CoreV1().Endpoints(ns).Update(&foundEndpoint)
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       fmt.Println("[status] updated Endpoint")
+
+       _, err = ClientSet.CoreV1().Endpoints(ns).Get(testServiceName, metav1.GetOptions{})
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       if foundEndpoint.ObjectMeta.Labels["testservice"] != "first-modification" {
+         fmt.Println("[error] failed to update Endpoint with Label")
+         return
+       }
+       fmt.Println("[status] fetched Endpoint to confirm update")
+
+       endpointPatch, err := json.Marshal(map[string]interface{}{
+         "metadata": map[string]interface{}{
+           "labels": map[string]string{
+             "testservice": "second-modification",
+           },
+         },
+       })
+	     if err != nil {
+         fmt.Println(err)
+         return
+       }
+       _, err = ClientSet.CoreV1().Endpoints(ns).Patch(testServiceName, types.StrategicMergePatchType, []byte(endpointPatch))
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       fmt.Println("[status] patched Endpoint")
+
+       _, err = ClientSet.CoreV1().Endpoints(ns).Get(testServiceName, metav1.GetOptions{})
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       if foundEndpoint.ObjectMeta.Labels["testservice"] != "first-modification" {
+         fmt.Println("[error] failed to patch Endpoint with Label")
+         return
+       }
+       fmt.Println("[status] fetched Endpoint to confirm patch")
+
+       err = ClientSet.CoreV1().Endpoints(ns).DeleteCollection(&metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: "testservice-constant=true"})
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       fmt.Println("[status] deleted Endpoint by Collection")
+
+       err = ClientSet.CoreV1().Services(ns).Delete(testServiceName, &metav1.DeleteOptions{})
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       fmt.Println("[status] deleted Service")
+
+       fmt.Println("[status] complete")
+
+     }
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
+   [status] service created
+   [status] found Endpoint Service in list of Endpoints
+   [status] updated Endpoint
+   [status] fetched Endpoint to confirm update
+   [status] patched Endpoint
+   [status] fetched Endpoint to confirm patch
+   [status] deleted Endpoint by Collection
+   [status] deleted Service
+   [status] complete
+   #+end_src
+
+* Verify Increase it Coverage with APISnoop                          :export: 
+Discover useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+       useragent     
+  -------------------
+   live-test-writing
+  (1 row)
+
+  #+end_SRC
+
+#+begin_src sql-mode :exports both :session none
+select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+     useragent     |               operation_id                | hit_by_ete | hit_by_new_test 
+-------------------+-------------------------------------------+------------+-----------------
+ live-test-writing | createCoreV1NamespacedService             | t          |               2
+ live-test-writing | deleteCoreV1CollectionNamespacedEndpoints | f          |               2
+ live-test-writing | deleteCoreV1NamespacedService             | t          |               2
+ live-test-writing | listCoreV1EndpointsForAllNamespaces       | f          |               1
+ live-test-writing | patchCoreV1NamespacedEndpoints            | f          |               2
+ live-test-writing | readCoreV1NamespacedEndpoints             | t          |               2
+ live-test-writing | replaceCoreV1NamespacedEndpoints          | f          |               2
+(7 rows)
+
+#+end_SRC
+
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select * from projected_change_in_coverage;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+  ---------------+-----------------+--------------+--------------+------------------
+   test_coverage |             438 |          191 |          195 |                4
+  (1 row)
+
+  #+end_SRC
+
+* Final notes :export:
+If a test with these calls gets merged, **Conformance coverage will go up by 4 points**
+
+-----  
+/sig testing
+ 
+/sig architecture  
+
+/area conformance  
+
+* Open Tasks
+  Set any open tasks here, using org-todo
+** DONE Live Your Best Life
+* Footnotes                                                     :neverexport:
+  :PROPERTIES:
+  :CUSTOM_ID: footnotes
+  :END:

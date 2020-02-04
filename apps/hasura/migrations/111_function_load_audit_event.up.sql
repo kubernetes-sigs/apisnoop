@@ -127,6 +127,10 @@ def find_operation_id(openapi_spec, event):
         return None
       if part == 'livez':
         return None
+      if part == 'healthz':
+        return None
+      if 'discovery.k8s.io' in uri_parts:
+        return None
       #   elif part == '': # The last V
       #     current_level = last_level
       #       else:
@@ -144,6 +148,8 @@ def find_operation_id(openapi_spec, event):
         elif 'kope.io' in part:
           return None
         elif 'snapshot.storage.k8s.io' in part:
+          return None
+        elif 'discovery.k8s.io' in part:
           return None
         elif 'metrics.k8s.io' in part:
           return None

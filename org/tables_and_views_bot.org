@@ -305,6 +305,10 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
           return None
         if part == 'livez':
           return None
+        if part == 'healthz':
+          return None
+        if 'discovery.k8s.io' in uri_parts:
+          return None
         #   elif part == '': # The last V
         #     current_level = last_level
         #       else:
@@ -322,6 +326,8 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
           elif 'kope.io' in part:
             return None
           elif 'snapshot.storage.k8s.io' in part:
+            return None
+          elif 'discovery.k8s.io' in part:
             return None
           elif 'metrics.k8s.io' in part:
             return None
@@ -748,70 +754,48 @@ Using our api_operation_material view, look into the parameters field in each on
 #+END_SRC
 
 * 300: Audit Event Views
-** 300: Audit Event Material
-  :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/300_view_audit_event_material.up.sql
-  :END:
-*** Create
-    #+NAME: view audit_event
-    #+BEGIN_SRC sql-mode
-      CREATE MATERIALIZED VIEW "public"."audit_event_material" AS
-        SELECT (raw.data ->> 'auditID') as audit_id,
-               raw.bucket,
-               raw.job,
-               raw.data ->> 'level' as event_level,
-               raw.data ->> 'stage' as event_stage,
-               raw.operation_id,
-               aop.param_schema,
-               raw.data ->> 'verb' as event_verb,
-               raw.data ->> 'apiVersion' as api_version,
-               raw.data ->> 'requestURI' as request_uri,
-               -- Always "Event"
-               -- raw.data ->> 'kind' as kind,
-               raw.data ->> 'userAgent' as useragent,
-               raw.data -> 'user' as event_user,
-               raw.data #>> '{objectRef,namespace}' as object_namespace,
-               raw.data #>> '{objectRef,resource}' as object_type,
-               raw.data #>> '{objectRef,apiGroup}' as object_group,
-               raw.data #>> '{objectRef,apiVersion}' as object_ver,
-               raw.data -> 'sourceIPs' as source_ips,
-               raw.data -> 'annotations' as annotations,
-               raw.data -> 'requestObject' as request_object,
-               raw.data -> 'responseObject' as response_object,
-               raw.data -> 'responseStatus' as response_status,
-               raw.data ->> 'stageTimestamp' as stage_timestamp,
-               raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
-               raw.data as data
-          FROM raw_audit_event raw
-                 LEFT JOIN (
-                   select param_op, param_schema
-                     from api_operation_parameter_material
-                    WHERE param_name = 'body'
-                 ) aop
-                     ON (raw.operation_id = aop.param_op);
-    #+END_SRC
-    
-    #+NAME: index audit_event
-    #+begin_src sql-mode
-    CREATE INDEX audit_event_material_bucket         ON audit_event_material         (bucket);
-    CREATE INDEX audit_event_material_job            ON audit_event_material            (job);
-    CREATE INDEX audit_event_material_useragent      ON audit_event_material      (useragent);
-    CREATE INDEX audit_event_material_operation_id   ON audit_event_material   (operation_id);
-    #+end_src
-
-** 310: Audit Events View
+** 300: Audit Event
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/310_view_audit_event.up.sql
   :END:
-*** Create
-    #+NAME: view audit_event
-    #+BEGIN_SRC sql-mode
-      CREATE OR REPLACE VIEW "public"."audit_event" AS
-        SELECT * 
-          FROM 
-              audit_event_material;
-    #+END_SRC
-    
+  
+  #+NAME: view audit_event
+  #+BEGIN_SRC sql-mode
+    CREATE VIEW "public"."audit_event" AS
+      SELECT (raw.data ->> 'auditID') as audit_id,
+              raw.bucket,
+              raw.job,
+              raw.data ->> 'level' as event_level,
+              raw.data ->> 'stage' as event_stage,
+              raw.operation_id,
+              aop.param_schema,
+              raw.data ->> 'verb' as event_verb,
+              raw.data ->> 'apiVersion' as api_version,
+              raw.data ->> 'requestURI' as request_uri,
+              -- Always "Event"
+              -- raw.data ->> 'kind' as kind,
+              raw.data ->> 'userAgent' as useragent,
+              raw.data -> 'user' as event_user,
+              raw.data #>> '{objectRef,namespace}' as object_namespace,
+              raw.data #>> '{objectRef,resource}' as object_type,
+              raw.data #>> '{objectRef,apiGroup}' as object_group,
+              raw.data #>> '{objectRef,apiVersion}' as object_ver,
+              raw.data -> 'sourceIPs' as source_ips,
+              raw.data -> 'annotations' as annotations,
+              raw.data -> 'requestObject' as request_object,
+              raw.data -> 'responseObject' as response_object,
+              raw.data -> 'responseStatus' as response_status,
+              raw.data ->> 'stageTimestamp' as stage_timestamp,
+              raw.data ->> 'requestReceivedTimestamp' as request_received_timestamp,
+              raw.data as data
+        FROM raw_audit_event raw
+                LEFT JOIN (
+                  select param_op, param_schema
+                    from api_operation_parameter_material
+                  WHERE param_name = 'body'
+                ) aop
+                    ON (raw.operation_id = aop.param_op);
+  #+END_SRC
 * 500: Endpoint Coverage Views
    :PROPERTIES:
    :header-args:sql-mode+: :results silent
@@ -1208,7 +1192,6 @@ Using our api_operation_material view, look into the parameters field in each on
     select * from load_audit_events();
     REFRESH MATERIALIZED VIEW api_operation_material;
     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
-    REFRESH MATERIALIZED VIEW audit_event_material;
     REFRESH MATERIALIZED VIEW endpoint_coverage_material;
   #+end_src
 ** 980: Comment on DB
@@ -1373,10 +1356,9 @@ Using our api_operation_material view, look into the parameters field in each on
       COMMENT ON COLUMN projected_change_in_coverage.change_in_number IS 'new_coverage less old_coverage';
     #+end_src
 
-
-** 999: Tracking Tables
+** 998: Tracking Tables
    :PROPERTIES:
-   :header-args:yaml+: :tangle ../apps/hasura/migrations/999_tracking.up.yaml
+   :header-args:yaml+: :tangle ../apps/hasura/migrations/998_tracking.up.yaml
    :header-args:yaml+: :comments org
    :END:
 *** bucket_job_swagger
@@ -1468,6 +1450,17 @@ Using our api_operation_material view, look into the parameters field in each on
      schema: public
      name: useragents
  #+END_SRC
+** 999: replace metadata
+   :PROPERTIES:
+   :header-args:yaml+: :tangle ../apps/hasura/migrations/999_replace_metadata.up.yaml
+   :header-args:yaml+: :comments org
+   :END:
+#+NAME: replace metadata
+#+begin_src yaml
+- type: replace_metadata
+  args: {"functions":[],"remote_schemas":[],"query_collections":[],"allowlist":[],"version":2,"tables":[{"table":"api_operation","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"audit_event","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"bucket_job_swagger","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"endpoint_coverage","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[{"using":{"manual_configuration":{"remote_table":"api_operation","column_mapping":{"bucket":"bucket","operation_id":"operation_id","job":"job"}}},"name":"details","comment":null}],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"endpoints_hit_by_new_test","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"projected_change_in_coverage","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"raw_audit_event","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"stable_endpoint_stats","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"tests","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"untested_stable_core_endpoints","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"useragents","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]}]}
+#+end_src
+
 * OPEN TASKS
 ** TODO remove hardcoded spec from add_opp_id trigger
 ** TODO bucket_job_swagger files based on cluster or sources.yaml, and not hardcoded.

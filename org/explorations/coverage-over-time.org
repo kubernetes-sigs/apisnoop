@@ -1,0 +1,141 @@
+#+TITLE: Coverage Over Time
+
+
+* Purpose
+  First, take a look at what the coverage has been since Oct. 2018 until today.  Then, explore best way to show coverage over time going forward.
+* Coverage so far
+We are interested in the coverage from October 2018, to August 2019, to the last two quarters.
+
+We have stats for October through August from an earlier update to dan:
+
+#+NAME: coverage-over-time-older
+| Month          | Stable Tested | Conformance Tested | notes                             |
+|----------------+---------------+--------------------+-----------------------------------|
+| Oct 2018       |        32.71% |             20.64% | earliest available coverage stats |
+| June 2019      |        35.32% |             21.89% | when Globant stopped              |
+| July 2019      |        36.82% |             23.88% | First Month with ii writing tests |
+| September 2019 |        40.93% |             28.37% |                                   |
+
+We will have coverage for today, by default in our db.  
+
+To add coverage from last quarter, we'll take the eraljiest successful job run on https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce
+since this will be from exactly 3 months ago (gcsweb.k8s.io only keeps 3 months of records).
+** Load Last Quarter Swagger
+ We'll add it to this table using our ~load~ commands.
+
+ first the swagger:
+ #+begin_src sql-mode
+     select * from load_swagger('ci-kubernetes-e2e-gci-gce', '1191408751328890880');
+ #+end_src
+
+
+ #+RESULTS:
+ #+begin_src sql-mode
+                                          load_swagger                                          
+ -----------------------------------------------------------------------------------------------
+  Success!  Added the swagger for job 1191408751328890880 from bucket ci-kubernetes-e2e-gci-gce
+ (1 row)
+
+ #+end_src
+
+ #+begin_src sql-mode
+ select bucket, job, job_timestamp from bucket_job_swagger;
+ #+end_src
+
+ #+RESULTS:
+ #+begin_src sql-mode
+           bucket           |         job         |    job_timestamp    
+ ---------------------------+---------------------+---------------------
+  ci-kubernetes-e2e-gci-gce | 1224073211587596290 | 2020-02-02 21:35:07
+  apisnoop                  | live                | 2020-02-02 21:35:07
+  ci-kubernetes-e2e-gci-gce | 1191408751328890880 | 2019-11-04 18:11:15
+ (3 rows)
+
+ #+end_src
+
+** Load Last Quarter Audit Events
+ and then the audit event
+
+ #+begin_src sql-mode
+     select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1191408751328890880');
+ #+end_src
+
+ #+RESULTS:
+ #+begin_src sql-mode
+  load_audit_events 
+ -------------------
+ 
+ (1 row)
+
+ #+end_src
+
+ check that it worked.
+
+ #+begin_src sql-mode
+ select distinct bucket, job from raw_audit_event;
+ #+end_src
+
+ #+RESULTS:
+ #+begin_src sql-mode
+           bucket           |         job         
+ ---------------------------+---------------------
+  apisnoop                  | live
+  ci-kubernetes-e2e-gci-gce | 1191408751328890880
+  ci-kubernetes-e2e-gci-gce | 1224073211587596290
+ (3 rows)
+
+ #+end_src
+** Refresh our Views
+ And lastly, refresh our materialized views!
+
+ #+begin_src sql-mode :results silent
+     REFRESH MATERIALIZED VIEW api_operation_material;
+ #+end_src
+
+
+ #+begin_src sql-mode :results silent
+     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+ #+end_src
+
+ #+begin_src sql-mode :results silent
+     REFRESH MATERIALIZED VIEW audit_event_material;
+ #+end_src
+
+ #+begin_src sql-mode :results silent
+     REFRESH MATERIALIZED VIEW endpoint_coverage_material;
+ #+end_src
+ 
+* Our Coverage as per apisnoop
+  
+  Now we can run ~stable_endpoint_stats~ and add it to the coverage table.
+
+#+begin_src sql-mode
+select * from stable_endpoint_stats where job != 'live';
+#+end_src
+
+#+RESULTS:
+#+begin_src sql-mode
+         job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+ 1191408751328890880 | 2019-11-04 |             430 |       167 |       114 |          38.84 |               26.51
+ 1224073211587596290 | 2020-02-02 |             438 |       191 |       138 |          43.61 |               31.51
+(2 rows)
+
+#+end_src
+* Conclusion
+Appending this info to our table from before, we have our final result:
+
+#+NAME: coverage-over-time
+| Month          | Stable Tested | Conformance Tested | notes                             |
+|----------------+---------------+--------------------+-----------------------------------|
+| Oct 2018       |        32.71% |             20.64% | earliest available coverage stats |
+| June 2019      |        35.32% |             21.89% | when Globant stopped              |
+| July 2019      |        36.82% |             23.88% | First Month with ii writing tests |
+| September 2019 |        40.93% |             28.37% |                                   |
+| November 2019  |        38.84% |             26.51% |                                   |
+| February 2020  |        43.61% |             31.51% |                                   |
+
+From our earliest recorded date to when Globant stopped (a span of 9 months) conformance coverage went up 1.15% and testing coverage went up 2.61%.
+
+From when ii started to today (a span of 7 months) conformance coverage has gone up 9.62% , and testing coverage went up 8.29%.
+
