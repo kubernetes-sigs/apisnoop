@@ -26,39 +26,34 @@ You will likely leave this up and running just so you can use git push/pull and 
 [[file:~/cncf/apisnoop/deployment/k8s/kind-cluster-config.yaml::#%20kind-cluster-config.yaml][kind-cluster-config.yaml (enabling Dynamic Audit Logging)]]
 
    #+BEGIN_SRC tmate :eval never-export :session foo:cluster :tangle ../setup.sh
-     wget https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml
+     export NS=ii
+     export KUBEMACS_IMAGE=gcr.io/apisnoop/kubemacs:0.9.24
+     # ensure current kind-cluster-config.yaml
+     wget -c https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml
      kind create cluster --name kind \
           --image kindest/node:v1.17.0@sha256:9512edae126da271b66b990b6fff768fbb7cd786c7d39e86bdf55906352fdf62 \
           --config kind-cluster-config.yaml
+     # Populate the kind work node CRIs with the larger images before deployment
+     docker pull $KUBEMACS_IMAGE # cache into docker socket
+     kind load docker-image --nodes kind-worker $KUBEMACS_IMAGE # docker->kind
+     # create a namespace / set default NS
+     kubectl create ns $NS
+     kubectl config set-context $(kubectl config current-context) --namespace=$NS
      # these two commands just ensure our image is cached and available quickly
-     docker pull gcr.io/apisnoop/kubemacs:0.9.23
-     kind load docker-image --nodes kind-worker gcr.io/apisnoop/kubemacs:0.9.23
-     kubectl create namespace kubemacs
-     kubectl apply -f https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kubemacs.yaml
-     # Careful as this will restart the dev/code writing pod
-     kubectl -n kubemacs set env deployment/kubemacs \
-             GIT_COMMITTER_EMAIL=hh@ii.coop \
-             GIT_COMMITTER_NAME="Hippie Hacker" \
-             GIT_AUTHOR_EMAIL=hh@ii.coop \
-             GIT_AUTHOR_NAME="Hippie Hacker"
+     kubectl apply -k https://github.com/cncf/apisnoop/deployment/k8s/local
+     kubectl wait --for=condition=Available deployment/kubemacs
+     KUBEMACS_POD=$(kubectl get pod --selector=app=kubemacs -o name  | sed s:pod/::)
+     kubectl exec -t -i $KUBEMACS_POD -- attach
    #+END_SRC
-
-   #+begin_src tmate :eval never-export :session foo:cluster :tangle ../setup.sh
-     PODNAME=$(kubectl -n kubemacs get pod --selector=app=kubemacs -o name  | sed s:pod/::)
-     kubectl describe -n kubemacs pod/$PODNAME
-     kubectl get -n kubemacs pod/$PODNAME
-   #+end_src
 
 Alternatively the above generates a script that can be run on any kind host:
 
    #+begin_src tmate :eval never-export :session foo:cluster
-     ssh $USER.ii.coop
-     wget https://raw.githubusercontent.com/cncf/apisnoop/master/setup.sh
+     ssh -A $USER.ii.coop
+     wget -c https://raw.githubusercontent.com/cncf/apisnoop/master/setup.sh
      chmod +x setup.sh
      # edit with your email address
      ./setup.sh
-     PODNAME=$(kubectl -n kubemacs get pod --selector=app=kubemacs -o name  | sed s:pod/::)
-     kubectl describe -n kubemacs pod/$PODNAME
    #+end_src
 
 ** TODO Connect your local computer to remote computer
