@@ -76,8 +76,47 @@
      }
  };
 
- $: validSegments = cleanSegments(data, segments, []);
+ function arcVisible(d) {
+     return d.y1 <= 4 && d.y0 >= 1 && d.x1 > d.x0;
+ }
 
+ function setOpacity (d) {
+     // take node data, d, and determine its opacity based on if its visible and active
+     if (!arcVisible(d.current)) {
+         // fade completely if we zoomed past the node
+         return 0;
+     } else if (endpoint !== '') {
+         // if we are zoomed to endpoint, fade all other endpoints but that one
+         return d.current.data.name === endpoint ? 1 : 0.3
+     }else {
+         // otherwise keep default opacity
+         return 1;
+     }
+ }
+
+ function labelVisible(d) {
+     return d.y1 <= 3 && d.y0 >= 1 && (d.y1 - d.y0) * (d.x1 - d.x0) > 0.03;
+ }
+
+ function labelTransform(d) {
+     const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
+     const y = (d.y0 + d.y1) / 2 * radius;
+     return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
+ }
+
+ function mouseover(d) {
+     let sequenceArray = d.ancestors().reverse().slice(1);
+     // Fade all the segments.
+     d3.selectAll("path")
+       .style("opacity", 0.3);
+     // Then highlight only those that are an ancestor of the current segment.
+     d3.selectAll("path")
+       .filter((node) => (sequenceArray.indexOf(node) >= 0))
+       .style("opacity", 1);
+     activePath.set(determineDepth(d, [])); // what this for?
+ }
+
+ $: validSegments = cleanSegments(data, segments, []);
  $: partition = data => {
      const root = d3.hierarchy(data)
                     .sum(d => d.value)
@@ -87,13 +126,37 @@
               .size([2 * Math.PI, root.height + 1])
      (root);
  }
+ $: root = partition(data).each(d=> d.current = d);
+ $: nodes = root.descendants().slice(1);
+ $: cleanCurrentDepth = cleanSegments(data, $activePath, []);
+ $: nodeAtCurrentDepth = findNodeAtCurrentDepth(cleanCurrentDepth, root);
 
- $: root = partition(data);
 </script>
 
 <div class="chart">
         <svg viewBox="0,0,932,932" style="font: 12px sans-serif;">
-            <g transform="translate(466,466)">
+            <g transform="translate({width/2},{width/2})">
+                <g>
+                {#each nodes as node}
+                    <path
+                        fill={node.data.color}
+                        fill-opacity={setOpacity(node)}
+                        d={arc(node.current)}
+                        on:mouseover={() => mouseover(node)}
+                        />
+                {/each}
+                </g>
+                <g pointer-events='none' text-anchor='middle' style='user-select: none;'>
+                    {#each nodes as node}
+                        <text
+                            dy='0.35em'
+                            fill-opacity = {+labelVisible(node.current)}
+                            transform = {labelTransform(node.current)}
+                        >
+                            {node.children ? node.data.name : ''}
+                        </text>
+                    {/each}
+                </g>
             </g>
         </svg>
 </div>

@@ -88,6 +88,7 @@
      }
      const root = partition(data);
      root.each(d => d.current = d);
+     console.log('first root', root);
      let cleanCurrentDepth = cleanSegments(data, $activePath, []);
      let nodeAtCurrentDepth = findNodeAtCurrentDepth(cleanCurrentDepth, root);
 
