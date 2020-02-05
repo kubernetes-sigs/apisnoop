@@ -47,7 +47,7 @@
  activeFilters.update(af => ({...af, bucket, job, ...query}));
  endpointsTestsAndUseragents.set(endpointsTestsAndUseragentsFromQuery.data);
  onMount(() => {
- if (bucketParam !== bucket) {
+ if (bucketParam && bucketParam !== bucket) {
    warnings.update(warnings => ({...warnings, invalidBucket: true}));
  }
    })
