@@ -8,8 +8,6 @@
      let bjs = get(bucketsAndJobs);
      const { bucket, job } = page.params;
      const {query} = page;
-
-
      // Check whether url params give a bucket that exists in our db
      // If so, pass it along.  Otherwise, use the default bucket.
      // invalid bucket is so we can put in a  notice on the page.
@@ -80,4 +78,44 @@
     <p><strong>Note: </strong><em>Could not find job <code>{invalidJob}</code> from <code>{activeBucket}</code>.  Displaying latest job instead.</em></p>
 {/if}
 
+<CoverageContainer />
+
+<script context="module">
+ import client from "../../apollo.js";
+ import { ENDPOINTS_TESTS_AND_USERAGENTS, ALL_BUCKETS_AND_JOBS_SANS_LIVE} from '../../queries';
+ import { determineBucketAndJob } from '../../lib/helpers.js';
+
+ export async function preload (page, session) {
+   let bucketAndJobsQuery = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE});
+   let rawBucketsAndJobsPayload = bucketAndJobsQuery.data.bucket_job_swagger;
+   let query = page.query;
+   let {bucket, job} = determineBucketAndJob(rawBucketsAndJobsPayload);
+   let endpointsUseragentsAndTestsFromQuery = await client.query({query: ENDPOINTS_TESTS_AND_USERAGENTS, variables: {bucket, job}});
+
+   return {
+     endpointsUseragentsAndTestsFromQuery,
+     query,
+     bucket,
+     job,
+     rawBucketsAndJobsPayload
+   };
+ }
+</script>
+
+<script>
+ import CoverageContainer from '../../components/CoverageContainer.svelte';
+ import {
+   activeFilters,
+   rawBucketsAndJobs,
+   endpointsTestsAndUseragents,
+ } from '../../stores';
+
+ export let rawBucketsAndJobsPayload;
+ export let endpointsUseragentsAndTestsFromQuery;
+ export let query;
+
+ rawBucketsAndJobs.set(rawBucketsAndJobsPayload);
+ activeFilters.update(af => ({...af, bucket, job, ...query}));
+ endpointsTestsAndUseragents.set(endpointsUseragentsAndTestsFromQuery.data);
+</script>
 <CoverageContainer />
