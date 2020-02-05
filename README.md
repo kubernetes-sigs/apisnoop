@@ -17,6 +17,12 @@ kind create cluster --config kind-cluster-config.yaml
 Once up, apply APISnoop using our provided yaml 
 
 ```shell
+
+# ensure large images are cached
+export KUBEMACS_IMAGE=gcr.io/apisnoop/kubemacs:0.9.24
+docker pull $KUBEMACS_IMAGE # cache into docker socket
+kind load docker-image --nodes kind-worker $KUBEMACS_IMAGE # docker->kind
+
 # create a namespace / set default NS
 DEFAULTNS=ii
 kubectl create ns $DEFAULTNS
