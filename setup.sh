@@ -3,22 +3,38 @@
 # [[file:~/cncf/apisnoop/deployment/k8s/kind-cluster-config.yaml::#%20kind-cluster-config.yaml][kind-cluster-config.yaml (enabling Dynamic Audit Logging)]]
 
 
-export NS=ii
-export KUBEMACS_IMAGE=gcr.io/apisnoop/kubemacs:0.9.24
-# ensure current kind-cluster-config.yaml
-wget -c https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml
-kind create cluster --name kind \
-     --image kindest/node:v1.17.0@sha256:9512edae126da271b66b990b6fff768fbb7cd786c7d39e86bdf55906352fdf62 \
-     --config kind-cluster-config.yaml
-# Populate the kind work node CRIs with the larger images before deployment
+if [ ! -z "$DEBUG" ]; then
+    set -x
+fi
+export KUBEMACS_IMAGE="${KUBEMACS_IMAGE:-gcr.io/apisnoop/kubemacs:0.9.29}"
+export KUSTOMIZE_PATH="${KUSTOMIZE_PATH:-https://github.com/cncf/apisnoop/deployment/k8s/local}"
+export KIND_IMAGE="${KIND_IMAGE:- kindest/node:v1.17.0@sha256:9512edae126da271b66b990b6fff768fbb7cd786c7d39e86bdf55906352fdf62}"
+export DEFAULT_NS="${DEFAULT_NS:-ii}"
+
+docker pull $KIND_IMAGE
+
+if read -p "Press enter to destroy your current kind cluster, ^C to abort "; then
+    kind delete cluster
+fi
+curl https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml -o kind-cluster-config.yaml
+kind create cluster --config kind-cluster-config.yaml --image $KIND_IMAGE
+# ensure large images are cached
+kubectl apply --dry-run -k "$KUSTOMIZE_PATH" -o yaml \
+  | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq \
+  | xargs -n 1 docker pull
+kubectl apply --dry-run -k "$KUSTOMIZE_PATH" -o yaml \
+  | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq \
+  | xargs -n 1 kind load docker-image
 docker pull $KUBEMACS_IMAGE # cache into docker socket
 kind load docker-image --nodes kind-worker $KUBEMACS_IMAGE # docker->kind
-# create a namespace / set default NS
-kubectl create ns $NS
-kubectl config set-context $(kubectl config current-context) --namespace=$NS
-# these two commands just ensure our image is cached and available quickly
-kubectl apply -k https://github.com/cncf/apisnoop/deployment/k8s/local
-kubectl wait --for=condition=Available deployment/kubemacs
-KUBEMACS_POD=$(kubectl get pod --selector=app=kubemacs -o name  | sed s:pod/::)
-kubectl exec -ti $KUBEMACS_POD -- tmate -S /tmp/ii.default.target.iisocket wait tmate-ready
-kubectl exec -ti $KUBEMACS_POD -- attach
+kubectl create ns $DEFAULT_NS
+kubectl config set-context $(kubectl config current-context) --namespace=$DEFAULT_NS
+
+#kubectl apply -k https://github.com/cncf/apisnoop/deployment/k8s/xip.io/kubemacs
+kubectl apply -k "$KUSTOMIZE_PATH/kubemacs"
+echo "Waiting for Kubemacs StatefulSet to have 1 ready Replica..."
+while [ "$(kubectl get statefulset kubemacs -o json | jq .status.readyReplicas)" != 1 ]; do
+    sleep 1s
+done
+kubectl wait --for=condition=Ready pod/kubemacs-0
+kubectl exec -t -i kubemacs-0 -- attach
