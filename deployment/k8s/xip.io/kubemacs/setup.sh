@@ -1,7 +1,7 @@
 if [ ! -z "$DEBUG" ]; then
     set -x
 fi
-export KUBEMACS_IMAGE="${KUBEMACS_IMAGE:-gcr.io/apisnoop/kubemacs:0.9.26}"
+export KUBEMACS_IMAGE="${KUBEMACS_IMAGE:-gcr.io/apisnoop/kubemacs:0.9.28}"
 export KUSTOMIZE_PATH="${KUSTOMIZE_PATH:-https://github.com/cncf/apisnoop/deployment/k8s/xip.io}"
 export KIND_IMAGE="${KIND_IMAGE:- kindest/node:v1.17.0@sha256:9512edae126da271b66b990b6fff768fbb7cd786c7d39e86bdf55906352fdf62}"
 export DEFAULT_NS="${DEFAULT_NS:-ii}"
@@ -30,5 +30,4 @@ while [ "$(kubectl get statefulset kubemacs -o json | jq .status.readyReplicas)"
   sleep 1s
 done
 kubectl wait --for=condition=Ready pod/kubemacs-0
-kubectl exec -t -i kubemacs-0 -- tmate -S /tmp/ii.default.target.iisocket wait tmate-ready
 kubectl exec -t -i kubemacs-0 -- attach
