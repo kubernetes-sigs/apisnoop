@@ -1,32 +1,17 @@
 <script>
  import * as d3 from 'd3';
- import { zoomedSunburst } from '../stores';
- import { onMount, afterUpdate } from 'svelte';
  import {
-   dropRight,
-   last,
-   split,
-   join,
-   find,
-   head,
-   tail,
-   reverse
+   compact,
+   join
  } from 'lodash-es';
- import { goto, stores } from '@sapper/app';
  import {
    activeBucketAndJob,
-   activePath,
-   breadcrumb
+   activeFilters,
+   zoomedSunburst
  } from '../stores';
 
- const { page } = stores();
-
- $: data = $zoomedSunburst;
- $: bucket = $activeBucketAndJob.bucket;
- $: job = $activeBucketAndJob.job;
- $: ([level, category, endpoint] = $breadcrumb);
- $: segments = [level, category, endpoint];
  $: sequenceArray = [];
+ $: activeDepth = determineDepth($activeFilters);
 
  const format = d3.format(",d")
  const width = 932
@@ -39,46 +24,35 @@
                .innerRadius(d => d.y0 * radius)
                .outerRadius(d => Math.max(d.y0 * radius, d.y1 * radius - 1))
 
- function determineDepth (node, depth) {
-   return node.depth === 0
-        ? depth
-        : determineDepth(node.parent, [node.data.name, ...depth]);
- };
-
- function cleanSegments (data, segments, clean) {
-   // given an array of url segments and data with nested children
-   // check whether segment matches the name of at least one of the children at respective depth.
-   // returning only valid segments.
-   if (segments.length === 0) {
-     return clean;
-   } else  {
-     let children = data.children.map(child => child.name);
-     let isValid = children.includes(head(segments));
-     if (!isValid) {
-       return clean
-     } else {
-       data = data.children.find(o => o.name === head(segments));
-       clean = clean.concat(head(segments));
-       segments= tail(segments);
-       return cleanSegments(data, segments, clean);
-     }
-   }
- };
-
- function findNodeAtCurrentDepth (segments, data) {
-   if (segments.length === 0 ) {
-     return data;
+ function determineDepth (filters) {
+   // check out depth based on which filters are set.
+   let { level, category, operation_id } = filters;
+   let setFilters = compact([level, category, operation_id]) // compact will remove falsy values.
+   if (setFilters.length === 3) {
+     return 'operation_id'
+   } else if (setFilters.length === 2) {
+     return 'category';
+   } else if (setFilters.length === 1) {
+     return 'level';
    } else {
-     let nextDepth = data.children
-                   ? data.children.find(child => child.data.name === head(segments))
-                   : data.data.name;
-     return findNodeAtCurrentDepth(tail(segments), nextDepth);
+     return 'root'
    }
  };
 
- function arcVisible(d) {
-   return d.y1 <= 4 && d.y0 >= 1 && d.x1 > d.x0;
- }
+ function depthUp () {
+   // reset the activeFilter for whatever is our current depth.  
+   // This will cause the sunburst to expand to the next previous filter, going up a level.
+   sequenceArray = [];
+   if (activeDepth === 'root') {
+     return null
+   } else if (activeDepth === 'operation_id') {
+     $activeFilters['operation_id'] = '';
+     $activeFilters['category'] === '';
+     } else {
+     $activeFilters[activeDepth] = '';
+   }
+   setURL();
+ };
 
  function labelVisible(d) {
    return d.y1 <= 3 && d.y0 >= 1 && (d.y1 - d.y0) * (d.x1 - d.x0) > 0.03;
@@ -98,9 +72,36 @@
    sequenceArray = [];
  }
 
+ function clicked (p) {
+   // upon clicking of a node, update the active filters and url.
+   let {
+     bucket,
+     job
+   } = $activeBucketAndJob;
+   let {
+     level,
+     category,
+     operation_id
+   } = p.data;
+   activeFilters.update(af => ({...af, bucket, job, level, category, operation_id}));
+   setURL();
+ };
 
+ function setURL () {
+   // push state without triggering a reload, using our active filters in order.
+   // this assumes that activeFilters were set correctly before calling this function.
+   let {
+     bucket,
+     job,
+     level,
+     category,
+     operation_id
+   } = $activeFilters;
+   let filterSegments = compact([bucket, job, level, category, operation_id]);
+   let urlPath = join(['coverage', ...filterSegments], '/');
+   history.pushState({}, '', urlPath);
+ };
 
- $: validSegments = cleanSegments(data, segments, []);
  $: partition = data => {
    const root = d3.hierarchy(data)
                   .sum(d => d.value)
@@ -110,37 +111,26 @@
             .size([2 * Math.PI, root.height + 1])
    (root);
  }
- $: root = partition(data).each(d=> d.current = d);
+ $: root = partition($zoomedSunburst).each(d=> d.current = d);
  $: nodes = root
    .descendants()
    .slice(1)
    .map((node) => {
      // take node and determine its opacity based on if its visible and active
      let currentOpacity = 1;
-     if (endpoint !== '') {
-       currentOpacity = node.current.data.name === endpoint
+     if ($activeFilters.operation_id !== '' && node.data.operation_id !== '') {
+       // if you and endpoint and we've filtered to endpoint, fade yrself if you aren't the filtered endpoint.
+       currentOpacity = ($activeFilters.operation_id === node.data.name)
                       ? 1
                       : 0.3
-     } else if (sequenceArray.length > 0) {
-       currentOpacity = sequenceArray.indexOf(node) >= 0
-                      ? 1
-                      : 0.3
-     } else if (!arcVisible(node.current)) {
-       currentOpacity = 0;
      }
-     return {...node, currentOpacity}
+     if (sequenceArray.length > 0) {
+       currentOpacity = (sequenceArray.indexOf(node) >= 0 || $activeFilters.operation_id === node.data.name)
+                      ? 1
+                      : 0.3
+     }
+     return {...node, currentOpacity};
    })
- $: cleanCurrentDepth = cleanSegments(data, $activePath, []);
- $: nodeAtCurrentDepth = findNodeAtCurrentDepth(cleanCurrentDepth, root);
-
- function clicked (p) {
-   console.log('you clicked');
-   zoomToCurrentDepth(p);
- };
-
- function zoomToCurrentDepth(p) {
-   console.log('zoooom');
- };
 </script>
 
 <div class="chart2">
@@ -154,8 +144,7 @@
           d={arc(node.current)}
           on:mouseover={() => mouseOver(node.current)}
           style="cursor: pointer;"
-          on:click={() => node.children ? clicked(node) : endpointClicked(node)}
-        />
+          on:click={()=> clicked(node)} />
         {/each}
       </g>
       <g pointer-events='none' text-anchor='middle' style='user-select: none;'>
@@ -172,21 +161,23 @@
       <circle
         r={radius}
         fill={root.data.color}
-        pointer-events="all" />
+        pointer-events="all"
+        on:click={depthUp}
+      />
 
       <text
         text-anchor='middle'
         font-size='2em'
         fill='white'
-        transform={category.length > 0 ? "translate(0, -15)" : ""} >
-        {level}
+        transform={$activeFilters.category.length > 0 ? "translate(0, -15)" : ""} >
+        {$activeFilters.level}
       </text>
       <text
         text-anchor='middle'
         font-size='2em'
         fill='white'
         transform="translate(0,15)">
-        {category}
+        {$activeFilters.category}
       </text>
     </g>
   </svg>
