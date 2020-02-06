@@ -12,17 +12,14 @@ if read -p "Press enter to destroy your current kind cluster, ^C to abort "; the
     kind delete cluster
 fi
 docker pull $KIND_IMAGE
-docker pull $KUBEMACS_IMAGE # cache into docker socket
-kubectl apply --dry-run -k "$KUSTOMIZE_PATH" -o yaml \
-  | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq \
-  | xargs -n 1 docker pull
+docker pull $KUBEMACS_IMAGE
+IMAGES=$(kubectl kustomize "$KUSTOMIZE_PATH" | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq )
+echo $IMAGES | xargs -n 1 docker pull
 curl https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml -o kind-cluster-config.yaml
 kind create cluster --config kind-cluster-config.yaml --image $KIND_IMAGE
-# docker->kind
+# this caches all container images used by your podspecs
 kind load docker-image --nodes kind-worker $KUBEMACS_IMAGE 
-kubectl apply --dry-run -k "$KUSTOMIZE_PATH" -o yaml \
-  | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq \
-  | xargs -n 1 kind load docker-image
+echo $IMAGES | xargs -n 1 kind load docker-image
 kubectl create ns $DEFAULT_NS
 kubectl config set-context $(kubectl config current-context) --namespace=$DEFAULT_NS
 kubectl apply -k "$KUSTOMIZE_PATH/kubemacs"
