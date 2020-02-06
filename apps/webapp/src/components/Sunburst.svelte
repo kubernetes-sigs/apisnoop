@@ -23,7 +23,6 @@
  $: job = $activeBucketAndJob.job;
 
  $: ([level, category, endpoint] = $breadcrumb);
-
  $: segments = [level, category, endpoint];
  $: sunburstLoaded = false;
 
