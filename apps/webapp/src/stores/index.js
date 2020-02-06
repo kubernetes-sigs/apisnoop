@@ -8,6 +8,7 @@ import {
 } from '../lib/helpers.js';
 
 import {
+  compact,
   concat,
   isArray,
   isEmpty,
@@ -45,6 +46,7 @@ export const activeFilters = writable({
   operation_id: ''
 })
 
+export const mouseOverPath = writable([]);
 export const warnings = writable({
   invalidBucket: false,
   invalidJob: false,
@@ -112,9 +114,7 @@ export const activeBucketAndJob = derived(
     let base = {
       bucket: '',
       job: '',
-      timestamp: '',
-      bucketWarning: '',
-      jobWarning: ''
+      timestamp: ''
     };
     if ($default.bucket === '') {
       set({...base});
@@ -142,19 +142,6 @@ export const allTestsAndTags = derived(endpointsTestsAndUseragents, $etu => $etu
 export const allUseragents = derived(endpointsTestsAndUseragents, $etu => $etu.useragents);
 // Based on the url params, the exact [level, category, endpoint] we are focused on.
 export const activePath = writable([]);
-
-export const bucketAndJobMetadata = derived([bucketsAndJobs, activeBucketAndJob], ([$bjs, $abj], set) => {
-  if (isEmpty($bjs)) {
-    set({bucket: '', job: '', timestamp: ''})
-  } else {
-    set({
-      bucket: $abj.bucket,
-      job: $abj.job,
-      timestamp: $bjs[$abj.bucket].jobs.find(j => j.job === $abj.job).timestamp
-    });
-  };
-});
-
 
 export const opIDs = derived(endpoints, ($ep, set) => {
   if ($ep.length > 0) {
@@ -266,16 +253,6 @@ export const currentDepth = derived(activePath, ($ap, set) => {
   let depth = $ap.length;
   set(depths[depth])
 });
-
-export const breadcrumb = derived(
-  [activePath],
-  ($ap) => {
-    // We want breadcrumb to be an array of [level, category, method]
-    // so we fill out any empty position in activPath with ''
-    let filler = ['','',''];
-    let bc = $ap[0].concat(filler);
-    return take(bc, 3);
-  });
 
 export const coverageAtDepth = derived([activePath, currentDepth, filteredEndpoints], ([$ap, $cd, $eps], set) => {
   let eps;
@@ -402,4 +379,12 @@ export const filteredTests = derived(
       });
     }
     return tests;
+  });
+
+export const breadcrumb = derived(
+  [activeFilters, mouseOverPath],
+  ([$active, $mouse], set) => {
+    let mouseCrumbs = $mouse.map(m => m.data.name);
+    let crumbs = take(compact([$active.level, $active.category, $active.operation_id, ...mouseCrumbs]), 3);
+    set(crumbs)
   });
