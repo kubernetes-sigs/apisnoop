@@ -12,8 +12,6 @@
  $: eTextColour = $opIDs[operation_id]
           ? $opIDs[operation_id]['tested'] ? endpointColour($opIDs[operation_id]) : 'gray'
           : 'white';
-
- afterUpdate(() => console.log('crumbs', $breadcrumb));
 </script>
 
 <div id='breadcrumb'>
