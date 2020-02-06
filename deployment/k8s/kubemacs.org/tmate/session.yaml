@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: session
+  labels:
+    app: session
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: session
+  template:
+    metadata:
+      labels:
+        app: session
+    spec:
+      volumes:
+      - name: secret-ssh-keys
+        secret:
+          secretName: ssh-keys
+      - name: tmate-unix-sockets
+        emptyDir: {}
+      containers:
+      - name: tmate-ssh-server
+        image: tmate/tmate-ssh-server:latest
+        securityContext:
+          capabilities:
+            add: [SYS_ADMIN] # needed to spawn containers (CLONE_NEWPID, etc.)
+        env:
+        - name: HAS_WEBSOCKET
+          value: "1"
+        - name: SSH_KEYS_PATH
+          value: /etc/tmate-keys
+        - name: SSH_PORT_ADVERTISE
+          value: "5432"
+        # - name: SSH_PORT_ADVERTISE
+        #   value: "2200"
+        - name: SSH_HOSTNAME
+          valueFrom:
+            configMapKeyRef:
+              name: config
+              key: hostname
+        ports:
+        - containerPort: 2200
+          name: ssh
+        volumeMounts:
+        - name: secret-ssh-keys
+          mountPath: /etc/tmate-keys
+        - name: tmate-unix-sockets
+          mountPath: /tmp/tmate/sessions
+      - name: tmate-websocket
+        image: tmate/tmate-websocket:latest
+        env:
+        - name: USE_PROXY_PROTOCOL
+          value: "1"
+        - name: WEBSOCKET_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: config
+              key: websocket_base_url
+        - name: MASTER_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: config
+              key: master_base_url
+        - name: USER_FACING_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: config
+              key: user_facing_base_url
+        ports:
+          - containerPort: 4001
+            name: http
+          - containerPort: 4002
+            name: daemon
+        volumeMounts:
+          - name: tmate-unix-sockets
+            mountPath: /tmp/tmate/sessions
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: session
+spec:
+  selector:
+    app: session
+  ports:
+  - port: 2200
+    name: ssh
+  - port: 4001
+    name: http
