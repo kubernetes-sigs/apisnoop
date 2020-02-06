@@ -47,6 +47,16 @@ export const activeFilters = writable({
 })
 
 export const mouseOverPath = writable([]);
+
+export const breadcrumb = derived(
+  [activeFilters, mouseOverPath],
+  ([$active, $mouse], set) => {
+    let mouseCrumbs = $mouse.map(m => m.data.name);
+    let crumbs = take(compact(uniq([$active.level, $active.category, $active.operation_id, ...mouseCrumbs])), 3);
+    set(crumbs)
+  }
+);
+
 export const warnings = writable({
   invalidBucket: false,
   invalidJob: false,
@@ -248,27 +258,28 @@ export const zoomedSunburst = derived(
     }
   })
 
-export const currentDepth = derived(activePath, ($ap, set) => {
+export const currentDepth = derived(breadcrumb, ($breadcrumb, set) => {
   let depths = ['root', 'level', 'category', 'endpoint']
-  let depth = $ap.length;
+  let depth = $breadcrumb.length;
   set(depths[depth])
 });
 
-export const coverageAtDepth = derived([activePath, currentDepth, filteredEndpoints], ([$ap, $cd, $eps], set) => {
+export const coverageAtDepth = derived([breadcrumb, currentDepth, filteredEndpoints], ([$bc, $depth, $eps], set) => {
   let eps;
   if (isEmpty($eps)) {
     set({})
     return;
-  } else if ($cd === 'root') {
+  } else if ($bc.length === 0) {
     eps = $eps;
-  } else if ($cd === 'level') {
-    eps = $eps.filter(ep => ep.level === $ap[0])
-  } else if ($cd === 'category') {
-    eps = $eps.filter(ep => ep.level === $ap[0] && ep.category === $ap[1])
-  } else if ($cd === 'endpoint') {
-    eps = $eps.filter(ep => ep.level === $ap[0] && ep.category === $ap[1] && ep.operation_id === $ap[2])
+  } else if ($bc.length === 1) {
+    eps = $eps.filter(ep => ep.level === $bc[0])
+  } else if ($bc.length === 2) {
+    eps = $eps.filter(ep => ep.level === $bc[0] && ep.category === $bc[1])
+  } else if ($bc.length === 3) {
+    eps = $eps.filter(ep => ep.level === $bc[0] && ep.category === $bc[1] && ep.operation_id === $bc[2])
+  } else {
+    eps = $eps;
   }
-
   let totalEndpoints = eps.length;
   let testedEndpoints = eps.filter(ep => ep.tested).length;
   let confTestedEndpoints = eps.filter(ep => ep.conf_tested).length;
@@ -279,7 +290,7 @@ export const coverageAtDepth = derived([activePath, currentDepth, filteredEndpoi
   });
 });
 
-export const endpointCoverage = derived([activePath, currentDepth, filteredEndpoints], ([$ap, $cd, $eps], set) => {
+export const endpointCoverage = derived([breadcrumb, currentDepth, filteredEndpoints], ([$bc, $cd, $eps], set) => {
   let endpoint;
   let opId;
   let defaultCoverage = {
@@ -295,7 +306,7 @@ export const endpointCoverage = derived([activePath, currentDepth, filteredEndpo
   if (isEmpty($eps) || $cd !== 'endpoint') {
     set(defaultCoverage);
   } else {
-    opId = $ap[2]
+    opId = $bc[2]
     endpoint = $eps.find(ep => ep.operation_id === opId)
     let {
       tested,
@@ -322,9 +333,8 @@ export const endpointCoverage = derived([activePath, currentDepth, filteredEndpo
   }
 });
 
-
 export const testsForEndpoint = derived(
-  [allTestsAndTags, activePath, currentDepth],
+  [allTestsAndTags, breadcrumb, currentDepth],
   ([$tt, $ap, $cd], set) => {
     if (isEmpty($tt) || $cd !== 'endpoint') {
       set([]);
@@ -339,7 +349,7 @@ export const testsForEndpoint = derived(
 
 
 export const testTagsForEndpoint = derived(
-  [allTestsAndTags, activePath, currentDepth],
+  [allTestsAndTags, breadcrumb, currentDepth],
   ([$tt, $ap, $cd], set) => {
     if (isEmpty($tt) || $cd !== 'endpoint') {
       set([]);
@@ -381,10 +391,3 @@ export const filteredTests = derived(
     return tests;
   });
 
-export const breadcrumb = derived(
-  [activeFilters, mouseOverPath],
-  ([$active, $mouse], set) => {
-    let mouseCrumbs = $mouse.map(m => m.data.name);
-    let crumbs = take(compact([$active.level, $active.category, $active.operation_id, ...mouseCrumbs]), 3);
-    set(crumbs)
-  });
