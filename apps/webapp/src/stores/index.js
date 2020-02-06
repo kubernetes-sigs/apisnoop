@@ -52,7 +52,15 @@ export const breadcrumb = derived(
   [activeFilters, mouseOverPath],
   ([$active, $mouse], set) => {
     let mouseCrumbs = $mouse.map(m => m.data.name);
-    let crumbs = take(compact(uniq([$active.level, $active.category, $active.operation_id, ...mouseCrumbs])), 3);
+    let activeAndMouseCrumbs = compact(uniq([$active.level, $active.category, $active.operation_id, ...mouseCrumbs]));
+    let crumbs = [];
+    // if length is 4, it means we are zoomed into an endpoint, and hovering over a different endpoint.
+    if (activeAndMouseCrumbs.length === 4) {
+      // if that's the case, we want to show the one we are hovered on.
+      crumbs = activeAndMouseCrumbs.filter(crumb => crumb !== $active.operation_id);
+    } else {
+      crumbs = take(compact(uniq([$active.level, $active.category, $active.operation_id, ...mouseCrumbs])), 3);
+    }
     set(crumbs)
   }
 );
@@ -67,6 +75,7 @@ export const warnings = writable({
 
 // Buckets and Jobs
 export const rawBucketsAndJobs = writable([]);
+
 export const bucketsAndJobs = derived(
   rawBucketsAndJobs,
   ($raw, set) => {
@@ -119,8 +128,8 @@ export const defaultBucketAndJob = derived(
 );
 
 export const activeBucketAndJob = derived(
-  [activeFilters, defaultBucketAndJob, ],
-  ([$filters, $default], set) => {
+  [activeFilters, defaultBucketAndJob, bucketsAndJobs],
+  ([$filters, $default, $all], set) => {
     let base = {
       bucket: '',
       job: '',
@@ -136,11 +145,12 @@ export const activeBucketAndJob = derived(
         timestamp: $default.timestamp
       });
     } else {
+      let timestamp = $all[$filters.bucket]['jobs'].find(job => job.job === $filters.job)['timestamp'];
       set({
         ...base,
         bucket: $filters.bucket,
         job: $filters.job,
-        timestamp: $filters.timestamp
+        timestamp: timestamp
       });
     };
   });
