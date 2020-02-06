@@ -12,9 +12,9 @@
     <CoverageHeader />
     <!-- <Filters /> -->
     <Breadcrumb />
-    <!-- <Sunburst /> -->
+    <Sunburst />
     <CoverageStats />
-    <Sunburst2 />
+    <!-- <Sunburst2 /> -->
     <TestsList />
 </section>
 
