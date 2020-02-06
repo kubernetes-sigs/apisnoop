@@ -9,15 +9,116 @@ git clone https://github.com/tmate-io/tmate-websocket.git
 git clone https://github.com/tmate-io/tmate-master.git
 git clone https://github.com/tmate-io/tmate-kube.git
 #+end_src
+* ingress
+
+#+begin_src shell
+kubectl apply -f - <<EOF
+<<tcp-services>>
+EOF
+#+end_src
+
+#+RESULTS:
+#+begin_example
+configmap/tcp-services configured
+#+end_example
+
+  #+name: tcp-services
+  #+begin_src yaml
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: tcp-services
+      namespace: ingress-nginx
+    data:
+      2200: "ii/session:2200"
+      # 5432: "ii/postgres:5432"
+      10350: "ii/kubemacs-tilt:10350"
+  #+end_src
+#+begin_src shell
+kubectl get -n ingress-nginx configmap/tcp-services -o yaml
+#+end_src
+
+#+RESULTS:
+#+begin_example
+apiVersion: v1
+data:
+  "2200": ii/session:2200
+  "10350": ii/kubemacs-tilt:10350
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"10350":"ii/kubemacs-tilt:10350","2200":"ii/session:2200"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"tcp-services","namespace":"ingress-nginx"}}
+  creationTimestamp: "2020-02-06T18:02:06Z"
+  name: tcp-services
+  namespace: ingress-nginx
+  resourceVersion: "94452"
+  selfLink: /api/v1/namespaces/ingress-nginx/configmaps/tcp-services
+  uid: 1651867d-86f6-4a03-a0bb-66640c64377c
+#+end_example
+
+* aoeu
+#+begin_src shell
+kubectl get all
+#+end_src
+
+#+RESULTS:
+#+begin_example
+NAME                            READY   STATUS    RESTARTS   AGE
+pod/kubemacs-0                  1/1     Running   0          8h
+pod/master-7f96dfc6fd-sc544     1/1     Running   0          94s
+pod/postgres-557b47554f-vx4tq   1/1     Running   1          96s
+pod/session-77d4c66655-thcv6    2/2     Running   0          94s
+
+NAME                    TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)             AGE
+service/kubemacs-tilt   ClusterIP   10.96.168.49    <none>        10350/TCP           8h
+service/master          ClusterIP   10.96.226.194   <none>        4000/TCP,9100/TCP   21m
+service/postgres        ClusterIP   10.96.205.145   <none>        5432/TCP            21m
+service/session         ClusterIP   10.96.178.234   <none>        2200/TCP,4001/TCP   21m
+
+NAME                       READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/master     1/1     1            1           21m
+deployment.apps/postgres   1/1     1            1           21m
+deployment.apps/session    1/1     1            1           21m
+
+NAME                                  DESIRED   CURRENT   READY   AGE
+replicaset.apps/master-557df8c8f9     0         0         0       8m34s
+replicaset.apps/master-7f96dfc6fd     1         1         1       21m
+replicaset.apps/postgres-557b47554f   1         1         1       21m
+replicaset.apps/postgres-8694765dc    0         0         0       8m34s
+replicaset.apps/session-75b59d6d4f    0         0         0       8m34s
+replicaset.apps/session-77d4c66655    1         1         1       21m
+
+NAME                        READY   AGE
+statefulset.apps/kubemacs   1/1     8h
+#+end_example
+
 * Modify Tilt / kustomize
 [[./Tiltfile]]
 [[~/tmate-kube/dev/master.yaml::kind:%20Deployment]]
 #+begin_src tmate :dir "." :session ii:tmate-tilt
-export TMATE_NS=tmate
+export TMATE_NS=ii
 kubectl create ns $TMATE_NS
 kubectl config set-context $(kubectl config current-context) --namespace=$TMATE_NS
 tilt up --host 0.0.0.0 --port 10350
 #+end_src
+
+* exploring the tmate deployment
+
+  #+begin_src shell
+    lsof -i -n -P 2>&1
+    :
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  COMMAND   PID USER   FD   TYPE     DEVICE SIZE/OFF NODE NAME
+  tmate      95   ii    6u  IPv4 2625393319      0t0  TCP 10.244.1.2:47424->157.230.72.130:22 (ESTABLISHED)
+  tmate     147   ii   11u  IPv4 2625297131      0t0  TCP 10.244.1.2:47686->157.230.72.130:22 (ESTABLISHED)
+  tilt    44945   ii    5u  IPv4 2627038037      0t0  TCP 10.244.1.2:56870->10.96.0.1:443 (ESTABLISHED)
+  tilt    44945   ii   17u  IPv6 2627093567      0t0  TCP *:10350 (LISTEN)
+  #+end_example
+
 * mix command
 #+begin_src shell :dir "."
 kubectl exec -it deploy/master mix do ecto.create, ecto.migrate
