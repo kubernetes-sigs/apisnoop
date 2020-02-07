@@ -1,14 +1,17 @@
 
-# Create a kind-cluster
+# Creating a apisnoop.localho.st test writing cluster
 
 You can either copy and paste these into a local terminal or download or try the following:
 
 ```shell
-wget https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/local/kubemacs/local-setup.sh
+wget https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/local/kubemacs/localho.st-setup.sh
 export EMAIL=hh@ii.coop
-export NAME="Hippie Hacker
+export NAME="Hippie Hacker"
 # or edit local-setup.sh before running
-bash local-setup.sh
+# if needed, you will want a clean cluster
+# kind delete cluster
+set -x
+. localho.st-setup.sh
 ```
 
 Our APISnoop Development Cluster
