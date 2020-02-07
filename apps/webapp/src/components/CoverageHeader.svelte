@@ -11,7 +11,7 @@
 
 <header>
   <h1>{bucket}
-    <button on:click={() => goto('/coverage/select')}>Change</button>
+    <button on:click={() => goto('/select')}>Change</button>
   </h1>
     <p>{timestamp}</p>
 </header>
