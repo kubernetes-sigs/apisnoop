@@ -1,64 +1,12 @@
-# Create a kind-cluster
-
-# Our APISnoop Development Cluster
-# - requires DynamicAuditLogging
-# - hostPorts 80/443 so we can reach the in-cluster services via *.localho.st
-# - host /var/run/docker.socket
-#   for tilt - building images to push into the cluster
-# - host /tmp (for ssh-agent + sockets)
-#     for git push to ssh urls
-
 cat <<EOF > kind-cluster.yaml
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-kubeadmConfigPatches:
-- |
-  apiVersion: kubeadm.k8s.io/v1beta2
-  kind: ClusterConfiguration
-  metadata:
-    name: config
-  apiServer:
-    extraArgs:
-      "feature-gates": "DynamicAuditing=true"
-      "runtime-config": "auditregistration.k8s.io/v1alpha1=true"
-      "audit-dynamic-configuration": "true"
-nodes:
- - role: control-plane
-   extraMounts:
-   - containerPath: /var/run/docker.sock
-     hostPath: /var/run/docker.sock
-     readOnly: False
-   - containerPath: /var/host/tmp
-     hostPath: /tmp
-     readOnly: False
-   extraPortMappings:
-   - containerPort: 80
-     hostPort: 80
-   - containerPort: 443
-     hostPort: 443
-   kubeadmConfigPatches:
-   - |
-     apiVersion: kubeadm.k8s.io/v1beta2
-     kind: InitConfiguration
-     nodeRegistration:
-       kubeletExtraArgs:
-         node-labels: "ingress-ready=true"
-         authorization-mode: "AlwaysAllow"
- - role: worker
-   extraMounts:
-   - containerPath: /var/run/docker.sock
-     hostPath: /var/run/docker.sock
-     readOnly: False
-   - containerPath: /var/host/tmp
-     hostPath: /tmp
-     readOnly: False
+
 EOF
 
 # Steps
 
 
-NAME="Hippie Hacker"
-EMAIL="hh@ii.coop"
+NAME=${NAME:-"Hippie Hacker"}
+EMAIL=${EMAIL:-"hh@ii.coop"}
 KIND_IMAGE="kindest/node:v1.17.0@sha256:9512edae126da271b66b990b6fff768fbb7cd786c7d39e86bdf55906352fdf62"
 KIND_CONFIG="kind-cluster.yaml"
 K8S_RESOURCES="k8s-resources.yaml"
