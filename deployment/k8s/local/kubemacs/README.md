@@ -79,10 +79,9 @@ K8S_RESOURCES="k8s-resources.yaml"
 DEFAULT_NS="ii"
 ```
 
-## kustomization.yamml
+## kustomization.yaml
 
-```shell
-cat <<EOF > kustomization.yaml
+```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 bases:
@@ -97,7 +96,6 @@ configMapGenerator:
   - INIT_DEFAULT_REPO=https://github.com/cncf/apisnoop.git
   - INIT_DEFAULT_DIR=/home/ii/apisnoop/deployment/k8s/local/
   - INIT_ORG_FILE=/home/ii/apisnoop/deployment/k8s/local/tilt.org
-EOF
 ```
 
 ## Create and kind cluster
@@ -128,7 +126,9 @@ done
 kubectl wait --for=condition=Ready pod/kubemacs-0
 ```
 
-## Deploy kubemacs
+## Attach to kubemacs
+
+This command will attach using tmate, and will populate your system clipboard (over OSC52) a tmate ssh/url to share with a test writing mentor/mentee.
 
 ```shell
 kubectl wait --for=condition=Ready pod/kubemacs-0
