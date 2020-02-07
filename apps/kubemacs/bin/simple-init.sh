@@ -33,7 +33,7 @@ cd $INIT_DEFAULT_DIR
         done \
             < <(inotifywait  -e create,open --format '%f' --quiet /tmp --monitor)
     fi
-    tmate -S $TMATE_SOCKET wait tmate-ready
+    tmate -S $TMATE_SOCKET wait-for tmate-ready
     tmate -S $TMATE_SOCKET set-hook -ug client-attached
     tmate -S $TMATE_SOCKET set-hook -g client-attached 'run-shell "tmate new-window osc52-tmate.sh"'
 )&

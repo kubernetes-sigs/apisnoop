@@ -105,3 +105,5 @@ ENV PGUSER=apisnoop \
 ENV TZ="Pacific/Auckland"
 ENTRYPOINT ["/bin/bash"]
 CMD ["simple-init.sh"]
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 \
+  CMD ["tmate", "-S ", "/tmp/ii.default.target.iisocket", "wait-for", "tmate-ready"] || exit 1
