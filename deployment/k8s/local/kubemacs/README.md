@@ -1,13 +1,15 @@
-- [Create a kind-cluster](#sec-1)
-- [kind-cluster.yaml](#sec-2)
-- [Steps](#sec-3)
 
+# Create a kind-cluster
 
-# Create a kind-cluster<a id="sec-1"></a>
+You can either copy and paste these into a local terminal or download or try the following:
 
-You can either copy and paste these into a local terminal or download:
-
--   <local-setup.sh>
+```shell
+wget https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/local/kubemacs/local-setup.sh
+export EMAIL=hh@ii.coop
+export NAME="Hippie Hacker
+# or edit local-setup.sh before running
+bash local-setup.sh
+```
 
 Our APISnoop Development Cluster
 
@@ -16,9 +18,7 @@ Our APISnoop Development Cluster
 -   host /var/run/docker.socket for tilt - building images to push into the cluster
 -   host /tmp (for ssh-agent + sockets) for git push to ssh urls
 
-# kind-cluster.yaml<a id="sec-2"></a>
-
-\#+kind-cluster.yaml
+# kind-cluster.yaml
 
 ```yaml
 kind: Cluster
@@ -67,12 +67,16 @@ nodes:
 ```
 
 ```shell
+<<customization-vars>>
 cat <<EOF > kind-cluster.yaml
-<<kind-cluster-yaml>>
+<<kind-cluster.yaml>>
 EOF
+<<kustomization-yaml>>
 ```
 
-# Steps<a id="sec-3"></a>
+# Steps
+
+## Configuration Vars
 
 ```shell
 NAME=${NAME:-"Hippie Hacker"}
@@ -81,6 +85,11 @@ KIND_IMAGE="kindest/node:v1.17.0@sha256:9512edae126da271b66b990b6fff768fbb7cd786
 KIND_CONFIG="kind-cluster.yaml"
 K8S_RESOURCES="k8s-resources.yaml"
 DEFAULT_NS="ii"
+```
+
+## kustomization.yaml
+
+```shell
 cat <<EOF > kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -97,11 +106,21 @@ configMapGenerator:
   - INIT_DEFAULT_DIR=/home/ii/apisnoop/deployment/k8s/local/
   - INIT_ORG_FILE=/home/ii/apisnoop/deployment/k8s/local/tilt.org
 EOF
+```
+
+## Create and kind cluster and cache/load images
+
+```shell
 kind create cluster --config $KIND_CONFIG --image $KIND_IMAGE
 kubectl kustomize . > $K8S_RESOURCES # uses kustomization.yaml
 K8S_IMAGES=$(cat $K8S_RESOURCES | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq )
 echo $K8S_IMAGES | xargs -n 1 docker pull # cache images in docker
 echo $K8S_IMAGES | xargs -n 1 kind load docker-image --nodes kind-worker # load cache into kind-worker
+```
+
+## Deploy and attach to the kubemacs pod
+
+```shell
 kubectl create ns $DEFAULT_NS
 kubectl config set-context $(kubectl config current-context) --namespace=$DEFAULT_NS
 kubectl apply -f $K8S_RESOURCES

@@ -1,9 +1,17 @@
 # -*- ii: y; -*-
+#+OPTIONS: toc:nil
 #+TITLE: localho.st kubemacs config
 * Create a kind-cluster
 
-You can either copy and paste these into a local terminal or download:
-- [[file:local-setup.sh]] 
+You can either copy and paste these into a local terminal or download or try the following:
+
+#+begin_src shell :eval never
+wget https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/local/kubemacs/local-setup.sh
+export EMAIL=hh@ii.coop
+export NAME="Hippie Hacker
+# or edit local-setup.sh before running
+bash local-setup.sh
+#+end_src
 
 Our APISnoop Development Cluster
 - requires DynamicAuditLogging
@@ -12,9 +20,10 @@ Our APISnoop Development Cluster
   for tilt - building images to push into the cluster
 - host /tmp (for ssh-agent + sockets)
     for git push to ssh urls
+
 * kind-cluster.yaml
-  #+kind-cluster.yaml
-  #+begin_src yaml
+  #+name: kind-cluster.yaml
+  #+begin_src yaml :exports code
     kind: Cluster
     apiVersion: kind.x-k8s.io/v1alpha4
     kubeadmConfigPatches:
@@ -60,13 +69,16 @@ Our APISnoop Development Cluster
          readOnly: False
   #+end_src
 
-  #+begin_src shell :tangle local-setup.sh
+  #+begin_src shell :tangle local-setup.sh :exports none :noweb yes :
+    <<customization-vars>>
     cat <<EOF > kind-cluster.yaml
-    <<kind-cluster-yaml>>
+    <<kind-cluster.yaml>>
     EOF
+    <<kustomization-yaml>>
   #+end_src
 * Steps
-
+** Configuration Vars
+  #+NAME: customization-vars
   #+begin_src shell :tangle local-setup.sh
     NAME=${NAME:-"Hippie Hacker"}
     EMAIL=${EMAIL:-"hh@ii.coop"}
@@ -74,6 +86,11 @@ Our APISnoop Development Cluster
     KIND_CONFIG="kind-cluster.yaml"
     K8S_RESOURCES="k8s-resources.yaml"
     DEFAULT_NS="ii"
+  #+end_src
+** kustomization.yaml
+
+  #+NAME: kustomization-yaml
+  #+begin_src shell :tangle local-setup.sh
     cat <<EOF > kustomization.yaml
     apiVersion: kustomize.config.k8s.io/v1beta1
     kind: Kustomization
@@ -90,11 +107,18 @@ Our APISnoop Development Cluster
       - INIT_DEFAULT_DIR=/home/ii/apisnoop/deployment/k8s/local/
       - INIT_ORG_FILE=/home/ii/apisnoop/deployment/k8s/local/tilt.org
     EOF
+  #+end_src
+
+** Create and kind cluster and cache/load images
+  #+begin_src shell :tangle local-setup.sh
     kind create cluster --config $KIND_CONFIG --image $KIND_IMAGE
     kubectl kustomize . > $K8S_RESOURCES # uses kustomization.yaml
     K8S_IMAGES=$(cat $K8S_RESOURCES | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq )
     echo $K8S_IMAGES | xargs -n 1 docker pull # cache images in docker
     echo $K8S_IMAGES | xargs -n 1 kind load docker-image --nodes kind-worker # load cache into kind-worker
+  #+end_src
+** Deploy and attach to the kubemacs pod
+  #+begin_src shell :tangle local-setup.sh
     kubectl create ns $DEFAULT_NS
     kubectl config set-context $(kubectl config current-context) --namespace=$DEFAULT_NS
     kubectl apply -f $K8S_RESOURCES
