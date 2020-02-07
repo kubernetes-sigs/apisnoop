@@ -66,14 +66,6 @@ nodes:
      readOnly: False
 ```
 
-```shell
-<<customization-vars>>
-cat <<EOF > kind-cluster.yaml
-<<kind-cluster.yaml>>
-EOF
-<<kustomization-yaml>>
-```
-
 # Steps
 
 ## Configuration Vars
@@ -87,7 +79,7 @@ K8S_RESOURCES="k8s-resources.yaml"
 DEFAULT_NS="ii"
 ```
 
-## kustomization.yaml
+## kustomization.yamml
 
 ```shell
 cat <<EOF > kustomization.yaml
@@ -108,17 +100,22 @@ configMapGenerator:
 EOF
 ```
 
-## Create and kind cluster and cache/load images
+## Create and kind cluster
 
 ```shell
 kind create cluster --config $KIND_CONFIG --image $KIND_IMAGE
+```
+
+## cache/load images
+
+```shell
 kubectl kustomize . > $K8S_RESOURCES # uses kustomization.yaml
 K8S_IMAGES=$(cat $K8S_RESOURCES | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq )
 echo $K8S_IMAGES | xargs -n 1 docker pull # cache images in docker
 echo $K8S_IMAGES | xargs -n 1 kind load docker-image --nodes kind-worker # load cache into kind-worker
 ```
 
-## Deploy and attach to the kubemacs pod
+## Deploy kubemacs
 
 ```shell
 kubectl create ns $DEFAULT_NS
@@ -129,6 +126,11 @@ while [ "$(kubectl get statefulset kubemacs -o json | jq .status.readyReplicas)"
   sleep 1s
 done
 kubectl wait --for=condition=Ready pod/kubemacs-0
-echo Run the following in iTerm2, xterm, or other OSC52 Terminal:
-echo kubectl exec -ti kubemacs-0 -- attach
+```
+
+## Deploy kubemacs
+
+```shell
+kubectl wait --for=condition=Ready pod/kubemacs-0
+kubectl exec -ti kubemacs-0 -- attach
 ```
