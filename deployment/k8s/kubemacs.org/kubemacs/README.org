@@ -1,50 +1,150 @@
 # -*- ii: y; -*-
-#+TITLE: hh.ii.coop kubemacs setup
+#+TITLE: kubemacs.org kubemacs setup
+* Creating a apisnoop.localho.st test writing cluster
 
-* Deploy kind
-#+begin_src shell :tangle "./setup.sh"
-  if [ ! -z "$DEBUG" ]; then
-      set -x
-  fi
-  export KUBEMACS_IMAGE="${KUBEMACS_IMAGE:-gcr.io/apisnoop/kubemacs:0.9.31}"
-  export KUSTOMIZE_PATH="${KUSTOMIZE_PATH:-https://github.com/cncf/apisnoop/deployment/k8s/hh}"
-  export KIND_IMAGE="${KIND_IMAGE:- kindest/node:v1.17.0@sha256:9512edae126da271b66b990b6fff768fbb7cd786c7d39e86bdf55906352fdf62}"
-  export DEFAULT_NS="${DEFAULT_NS:-ii}"
+You can either copy and paste these into a local terminal or download or try the following:
 
-  docker pull $KIND_IMAGE
-
-  if read -p "Press enter to destroy your current kind cluster, ^C to abort "; then
-      kind delete cluster
-  fi
-  curl https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml -o kind-cluster-config.yaml
-  kind create cluster --config kind-cluster-config.yaml --image $KIND_IMAGE
+#+begin_src shell :eval never
+wget https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kubemacs.org/kubemacs/local-setup.sh
+export EMAIL=hh@ii.coop
+export NAME="Hippie Hacker"
+# or edit local-setup.sh before running
+# if needed, you will want a clean cluster
+# kind delete cluster
+set -x
+. kubemacs.org-setup.sh
 #+end_src
 
-* Cache Kubemacs image
-  #+begin_src shell :tangle "./setup.sh"
-    # ensure large images are cached
-    kubectl apply --dry-run -k "$KUSTOMIZE_PATH" -o yaml \
-      | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq \
-      | xargs -n 1 docker pull
-    kubectl apply --dry-run -k "$KUSTOMIZE_PATH" -o yaml \
-      | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq \
-      | xargs -n 1 kind load docker-image
-    docker pull $KUBEMACS_IMAGE # cache into docker socket
-    kind load docker-image --nodes kind-worker $KUBEMACS_IMAGE # docker->kind
+Our APISnoop Development Cluster
+- requires DynamicAuditLogging
+- hostPorts 80/443 so we can reach the in-cluster services via *.localho.st
+- host /var/run/docker.socket
+  for tilt - building images to push into the cluster
+- host /tmp (for ssh-agent + sockets)
+    for git push to ssh urls
+
+* kind-cluster.yaml
+  #+name: kind-cluster.yaml
+  #+begin_src yaml :exports code
+    kind: Cluster
+    apiVersion: kind.x-k8s.io/v1alpha4
+    kubeadmConfigPatches:
+    - |
+      apiVersion: kubeadm.k8s.io/v1beta2
+      kind: ClusterConfiguration
+      metadata:
+        name: config
+      apiServer:
+        extraArgs:
+          "feature-gates": "DynamicAuditing=true"
+          "runtime-config": "auditregistration.k8s.io/v1alpha1=true"
+          "audit-dynamic-configuration": "true"
+    nodes:
+     - role: control-plane
+       extraMounts:
+       - containerPath: /var/run/docker.sock
+         hostPath: /var/run/docker.sock
+         readOnly: False
+       - containerPath: /var/host/tmp
+         hostPath: /tmp
+         readOnly: False
+       extraPortMappings:
+       - containerPort: 80
+         hostPort: 80
+       - containerPort: 443
+         hostPort: 443
+       kubeadmConfigPatches:
+       - |
+         apiVersion: kubeadm.k8s.io/v1beta2
+         kind: InitConfiguration
+         nodeRegistration:
+           kubeletExtraArgs:
+             node-labels: "ingress-ready=true"
+             authorization-mode: "AlwaysAllow"
+     - role: worker
+       extraMounts:
+       - containerPath: /var/run/docker.sock
+         hostPath: /var/run/docker.sock
+         readOnly: False
+       - containerPath: /var/host/tmp
+         hostPath: /tmp
+         readOnly: False
   #+end_src
+* Steps
+** Configuration Vars
+  #+NAME: customization-vars
+  #+begin_src shell
+    NAME=${NAME:-"Hippie Hacker"}
+    EMAIL=${EMAIL:-"hh@ii.coop"}
+    KIND_IMAGE="kindest/node:v1.17.0@sha256:9512edae126da271b66b990b6fff768fbb7cd786c7d39e86bdf55906352fdf62"
+    KIND_CONFIG="kind-cluster.yaml"
+    K8S_RESOURCES="k8s-resources.yaml"
+    DEFAULT_NS="ii"
+  #+end_src
+** kustomization.yaml
+  #+NAME: kustomization.yaml
+  #+begin_src yaml
+    apiVersion: kustomize.config.k8s.io/v1beta1
+    kind: Kustomization
+    bases:
+      - https://github.com/cncf/apisnoop/deployment/k8s/kubemacs.org/kubemacs
+    configMapGenerator:
+    - name: kubemacs-configuration
+      behavior: merge
+      literals:
+      - TZ=Pacific/Auckland
+      - GIT_NAME=${NAME}
+      - GIT_EMAIL=${EMAIL}
+      - INIT_DEFAULT_REPO=https://github.com/cncf/apisnoop.git
+      - INIT_DEFAULT_DIR=/home/ii/apisnoop/deployment/k8s/kubemacs.org/
+      - INIT_ORG_FILE=/home/ii/apisnoop/deployment/k8s/kubemacs.org/tilt.org
+  #+end_src
+** Create and kind cluster
+  #+NAME: create-cluster
+  #+begin_src shell
+    kind create cluster --config $KIND_CONFIG --image $KIND_IMAGE
+  #+end_src
+** cache/load images
+  #+NAME: cache/load-images
+  #+begin_src shell
+    kubectl kustomize . > $K8S_RESOURCES # uses kustomization.yaml
+    K8S_IMAGES=$(cat $K8S_RESOURCES | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq )
+    echo $K8S_IMAGES | xargs -n 1 docker pull # cache images in docker
+    echo $K8S_IMAGES | xargs -n 1 kind load docker-image --nodes kind-worker # load cache into kind-worker
+  #+end_src
+** Deploy kubemacs
+  #+NAME: deploy-kubemacs
+  #+begin_src shell
+    kubectl create ns $DEFAULT_NS
+    kubectl config set-context $(kubectl config current-context) --namespace=$DEFAULT_NS
+    kubectl apply -f $K8S_RESOURCES
+    echo "Waiting for Kubemacs StatefulSet to have 1 ready Replica..."
+    while [ "$(kubectl get statefulset kubemacs -o json | jq .status.readyReplicas)" != 1 ]; do
+      sleep 1s
+    done
+    kubectl wait --for=condition=Ready pod/kubemacs-0
+  #+end_src
+** Attach to kubemacs
 
-* Deploy apisnoop services
-#+begin_src shell :tangle "./setup.sh"
-  kubectl create ns $DEFAULT_NS
-  kubectl config set-context $(kubectl config current-context) --namespace=$DEFAULT_NS
+This command will attach using tmate, and will populate your system clipboard (over OSC52) a tmate ssh/url to share with a test writing mentor/mentee.
 
-  #kubectl apply -k https://github.com/cncf/apisnoop/deployment/k8s/xip.io/kubemacs
-  kubectl apply -k "$KUSTOMIZE_PATH/kubemacs"
-  echo "Waiting for Kubemacs StatefulSet to have 1 ready Replica..."
-  while [ "$(kubectl get statefulset kubemacs -o json | jq .status.readyReplicas)" != 1 ]; do
-    sleep 1s
-  done
-  kubectl wait --for=condition=Ready pod/kubemacs-0
-  kubectl exec -t -i kubemacs-0 -- attach
-#+end_src
-
+  #+NAME: attach-kubemacs
+  #+begin_src shell
+    kubectl wait --for=condition=Ready pod/kubemacs-0
+    kubectl exec -ti kubemacs-0 -- attach
+  #+end_src
+* Footnotes
+  #+begin_src shell :tangle kubemacs.org-setup.sh :exports none :noweb yes
+    # Run with EMAIL=me@my.net NAME="First Last" bash kubemacs.org-setup.sh
+    <<customization-vars>>
+    cat <<EOF > kind-cluster.yaml
+    <<kind-cluster.yaml>>
+    EOF
+    cat <<EOF > kustomization.yaml
+    <<kustomization.yaml>>
+    EOF
+    <<create-cluster>>
+    <<cache/load-images>>
+    <<deploy-kubemacs>>
+    <<attach-kubemacs>>
+  #+end_src
