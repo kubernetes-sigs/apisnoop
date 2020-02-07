@@ -1,5 +1,6 @@
 <script>
  import dayjs from 'dayjs';
+ import { goto } from '@sapper/app';
  import { activeBucketAndJob } from '../stores';
  import { onMount, afterUpdate } from 'svelte';
 
@@ -9,7 +10,9 @@
 </script>
 
 <header>
-    <h1>{bucket}</h1>
+  <h1>{bucket}
+    <button on:click={() => goto('/coverage/select')}>Change</button>
+  </h1>
     <p>{timestamp}</p>
 </header>
 

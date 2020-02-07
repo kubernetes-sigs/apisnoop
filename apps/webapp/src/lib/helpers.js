@@ -94,7 +94,7 @@ export const determineBucketAndJob = (bucketsAndJobs, bucketParam, jobParam) => 
     bucket = isValidBucket(bucketParam, bj)
       ? bucketParam
       : defaultBucket;
-    job = isValidJob(bj[bucket], job)
+    job = isValidJob(bj[bucket], jobParam)
       ? jobParam
       : bj[bucket]['latestJob'].job
   }
@@ -109,5 +109,6 @@ function isValidBucket (bucket, bjs) {
 }
 
 function isValidJob  (bucket, job) {
-  return Object.keys(bucket.jobs).includes(job);
+  let jobs = bucket.jobs.map(job => job.job);
+  return jobs.includes(job);
 }

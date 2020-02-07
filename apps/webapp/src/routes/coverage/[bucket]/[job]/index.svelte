@@ -6,6 +6,7 @@
  export async function preload (page, session) {
    let bucketAndJobsQuery = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE});
    let rawBucketsAndJobsPayload = bucketAndJobsQuery.data.bucket_job_swagger;
+   console.log({rawBucketsAndJobsPayload});
    let query = page.query;
    let bucketParam = page.params.bucket;
    let jobParam = page.params.job;
@@ -41,7 +42,6 @@
  export let bucketParam;
  export let job;
  export let jobParam;
- export let endpointsUseragentsAndTestsFromQuery;
  export let rawBucketsAndJobsPayload;
  export let endpointsTestsAndUseragentsFromQuery;
  export let query;
