@@ -10,6 +10,10 @@
          : '';
 
  let prettyDate = (timestamp) => dayjs(timestamp).format('DD MMMM, YYYY');
+ let switchTo = (bucket, job) => {
+   history.pushState({},'', `/coverage/${bucket}/${job}`);
+   window.location.reload();
+ };
 </script>
 
 {#if selectedBucket === ''}
@@ -24,10 +28,8 @@
 <h2>Select a date</h2>
 <ul>
   {#each jobs as job}
-  <li>
-    <a href='/coverage/{selectedBucket}/{job.job}'>
+  <li on:click={() => switchTo(selectedBucket, job.job)}>
       {prettyDate(job.timestamp)}
-    </a>
   </li>
   {/each}
 </ul>
