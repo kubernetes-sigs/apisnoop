@@ -9,7 +9,9 @@
  $: confTested = $coverageAtDepth.confTestedEndpoints;
  $: percentTested = `${percentage(tested,total)}%`;
  $: percentConfTested = `${percentage(confTested, total)}%`;
- $: [level, category, endpoint ] = $breadcrumb;
+ $: level = $breadcrumb[0] || '';
+ $: category= $breadcrumb[1] || '';
+ $: endpoint = $breadcrumb[2] || '';
 
 </script>
 
@@ -17,7 +19,7 @@
     <EndpointCoverageStats />
 {:else}
     <div id='coverage-stats'>
-        <p>{level} {category}</p>
+        <p class='breadcrumb'>{level} {category}</p>
         <h2> Coverage</h2>
         <ul>
             <li><strong>{total}</strong> total endpoints</li>
@@ -46,6 +48,7 @@
      padding: 0;
      font-weight: 200;
      font-size: 1.3em;
+     height: 1.5em;
      font-variant-caps: small-caps;
  }
 

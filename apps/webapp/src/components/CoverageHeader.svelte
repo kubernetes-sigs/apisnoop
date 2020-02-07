@@ -1,15 +1,18 @@
 <script>
  import dayjs from 'dayjs';
- import { bucketAndJobMetadata as metadata} from '../stores';
+ import { goto } from '@sapper/app';
+ import { activeBucketAndJob } from '../stores';
  import { onMount, afterUpdate } from 'svelte';
 
- $: bucket = $metadata.bucket;
- $: job = $metadata.job;
- $: timestamp = dayjs($metadata.timestamp).format('DD MMMM, YYYY');
+ $: bucket = $activeBucketAndJob.bucket;
+ $: job = $activeBucketAndJob.job;
+ $: timestamp = dayjs($activeBucketAndJob.timestamp).format('DD MMMM, YYYY');
 </script>
 
 <header>
-    <h1>{bucket}</h1>
+  <h1>{bucket}
+    <button on:click={() => goto('/select')}>Change</button>
+  </h1>
     <p>{timestamp}</p>
 </header>
 

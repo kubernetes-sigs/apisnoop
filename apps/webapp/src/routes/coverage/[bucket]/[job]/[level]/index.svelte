@@ -1,84 +1,77 @@
-<script context='module'>
- import { defaultBucketAndJob, bucketsAndJobs } from '../../../../../stores';
- import { get } from 'svelte/store';
+<script context="module">
  import client from "../../../../../apollo.js";
- import { ENDPOINTS_USERAGENTS_AND_TESTS, ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../../../../../queries';
+ import { ENDPOINTS_TESTS_AND_USERAGENTS, ALL_BUCKETS_AND_JOBS_SANS_LIVE } from '../../../../../queries';
+ import { determineBucketAndJob } from '../../../../../lib/helpers.js';
 
  export async function preload (page, session) {
-     let bjs = get(bucketsAndJobs);
-     const { bucket, job, level } = page.params;
-     const { query } = page;
+   let bucketAndJobsQuery = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE});
+   let rawBucketsAndJobsPayload = bucketAndJobsQuery.data.bucket_job_swagger;
+   let {
+     query,
+     params: {
+       bucket: bucketParam,
+       job: jobParam,
+       level
+       }
+     } = page;
+   let {bucket, job} = determineBucketAndJob(rawBucketsAndJobsPayload, bucketParam, jobParam);
+   let endpointsTestsAndUseragentsFromQuery = await client.query({
+     query: ENDPOINTS_TESTS_AND_USERAGENTS,
+     variables: {bucket, job}
+   });
 
-     // Check whether url params give a bucket that exists in our db
-     // If so, pass it along.  Otherwise, use the default bucket.
-     // invalid bucket is so we can put in a  notice on the page.
-     let bucketIsValid = (bucket) => Object.keys(bjs).includes(bucket);
-     let jobIsValid = (bucket, job) => bucket['jobs'].map(j => j.job).includes(job);
-
-     let activeBucket = bucketIsValid(bucket)
-                      ? bucket
-                      : get(defaultBucketAndJob)['bucket'];
-
-     let invalidBucket = bucketIsValid(bucket)
-                       ? null
-                       : bucket;
-
-     let activeJob = jobIsValid(bjs[activeBucket], job)
-                   ? job
-                   : bjs[activeBucket]['latestJob'].job;
-
-     let invalidJob = jobIsValid(bjs[activeBucket], job)
-                    ? null
-                    : job;
-
-     let metadata = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE}) 
-     let endpointsUseragentsAndTagsFromQuery = await client.query({query: ENDPOINTS_USERAGENTS_AND_TESTS, variables: {bucket: activeBucket, job: activeJob}});
-     return {
-         endpointsUseragentsAndTagsFromQuery ,
-         activeBucket,
-         activeJob,
-         invalidBucket,
-         invalidJob,
-         level,
-         query
-     };
- };
+   return {
+     bucket,
+     job,
+     bucketParam,
+     jobParam,
+     level,
+     endpointsTestsAndUseragentsFromQuery,
+     query,
+     rawBucketsAndJobsPayload
+   };
+ }
 </script>
 
 <script>
- import { isEmpty } from 'lodash-es';
- import {
-     allTestsAndTags,
-     endpoints,
-     activeBucketAndJob,
-     activeFilters,
-     activePath,
-     allUseragents
- } from '../../../../../stores';
-
  import CoverageContainer from '../../../../../components/CoverageContainer.svelte';
+ import {
+   activeFilters,
+   rawBucketsAndJobs,
+   endpointsTestsAndUseragents,
+   warnings
+ } from '../../../../../stores';
+ import { onMount, tick } from 'svelte';
 
- export let activeBucket;
- export let activeJob;
- export let endpointsUseragentsAndTagsFromQuery;
- export let invalidBucket;
- export let invalidJob;
+ export let bucket;
+ export let bucketParam;
+ export let job;
+ export let jobParam;
  export let level;
- export let metadata;
+ export let endpointsUseragentsAndTestsFromQuery;
+ export let rawBucketsAndJobsPayload;
+ export let endpointsTestsAndUseragentsFromQuery;
  export let query;
 
- activeFilters.update(af => ({...af, ...query}));
- allUseragents.set(endpointsUseragentsAndTagsFromQuery.data.useragents);
- activePath.set([level]);
- activeBucketAndJob.set({bucket: activeBucket, job: activeJob});
- allTestsAndTags.set(endpointsUseragentsAndTagsFromQuery.data.tests);
- endpoints.set(endpointsUseragentsAndTagsFromQuery.data.endpoint_coverage);
+ rawBucketsAndJobs.set(rawBucketsAndJobsPayload);
+ activeFilters.update(af => ({...af, bucket, job, ...query, level}));
+ endpointsTestsAndUseragents.set(endpointsTestsAndUseragentsFromQuery.data);
+ onMount(() => {
+   if (bucketParam && bucketParam !== bucket) {
+     warnings.update(warnings => ({...warnings, invalidBucket: true}));
+   }
+   if (jobParam && jobParam !== job) {
+     warnings.update(warnings => ({...warnings, invalidJob: true}));
+   }
+ })
 </script>
 
-    {#if invalidBucket}
-        <p><strong>Note: </strong><em>Could not find data for <code>{invalidBucket}</code>. Fetching for <code>{activeBucket}</code> instead.</em></p>
-    {/if}
-    {#if invalidJob}
-    <p><strong>Note: </strong><em>Could not find job <code>{invalidJob}</code> from <code>{activeBucket}</code>.  Displaying latest job instead.</em></p>
-    {/if}
+{#if $warnings.invalidBucket}
+<p><strong>Note: </strong><em>Could not find data for <code>{bucketParam}</code>. Displaying latest job for {bucket} instead.</em></p>
+<button on:click={() => $warnings.invalidBucket = false}>Got it</button>
+{/if}
+{#if !$warnings.invalidBucket && $warnings.invalidJob}
+<p><strong>Note: </strong><em>Could not find data for <code>{jobParam}</code>. Displaying latest job for {bucket} instead.</em></p>
+<button on:click={() => $warnings.invalidJob = false}>Got it</button>
+{/if}
 <CoverageContainer />
