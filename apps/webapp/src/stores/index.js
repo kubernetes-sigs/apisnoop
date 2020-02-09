@@ -47,6 +47,7 @@ export const activeFilters = writable({
 })
 
 export const mouseOverPath = writable([]);
+export const stableEndpointStats = writable([]);
 
 export const breadcrumb = derived(
   [activeFilters, mouseOverPath],

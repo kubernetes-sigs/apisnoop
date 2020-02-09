@@ -66,3 +66,17 @@ export const ALL_BUCKETS_AND_JOBS_SANS_LIVE = gql`
   }
 }
 `;
+
+export const STABLE_ENDPOINT_STATS = gql`
+query STABLE_ENDPOINT_STATS {
+  stable_endpoint_stats(where: {job: {_neq: "live"}}) {
+    conf_hits
+    date
+    job
+    percent_conf_tested
+    percent_tested
+    test_hits
+    total_endpoints
+  }
+}
+`;
