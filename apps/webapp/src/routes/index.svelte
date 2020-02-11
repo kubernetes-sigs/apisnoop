@@ -1,16 +1,28 @@
 <script context="module">
  export function preload({ params, query }) {
-	 return this.fetch(`index.json`).then(r => r.json()).then(buckets => {
-		 return { buckets };
+	 return this.fetch(`index.json`).then(r => r.json()).then(payload => {
+		 return { payload };
 	 });
  }
 </script>
 
 <script>
- export let buckets;
+ import CoverageOverTime from '../components/CoverageOverTime.svelte';
+ import { isEqual} from 'lodash-es';
+ export let payload;
  import {
-   stableEndpointStats
+     stableEndpointStats,
+     rawBucketsAndJobs,
    } from '../stores';
+
+ rawBucketsAndJobs.update(raw => isEqual(raw, payload.rawBucketsAndJobsPayload)
+                                ? raw
+                                : payload.rawBucketsAndJobsPayload);
+
+ stableEndpointStats.update(stats => isEqual(stats, payload.stableEndpointStatsPayload)
+                                ? stats
+                                : payload.stableEndpointStatsPayload);
+
 </script>
 
 <style>
@@ -24,24 +36,6 @@
 </style>
 
 <svelte:head>
-	<title>Blog</title>
+	<title>APISnoop</title>
 </svelte:head>
-
-<h1>Recent buckets</h1>
-
-<ul>
-	{#each buckets as bucket}
-	<li>{bucket.date}: {bucket.job}</li>
-	{/each}
-  <a href="#stats">go to stats</a>
-</ul>
-
-<section id='stats'>
-  <ul>
-  {#each buckets as stat}
-  <li>{stat.date}: {stat.percent_conf_tested}% conformance tested</li>
-  {/each}
-  </ul>
-</section>
-
-
+<CoverageOverTime />
