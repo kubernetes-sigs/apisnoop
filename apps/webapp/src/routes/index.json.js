@@ -10,8 +10,8 @@ export async function get(req, res) {
     let statsAndBucketsAndJob = {stableEndpointStatsPayload, rawBucketsAndJobsPayload}
     const payload = JSON.stringify(statsAndBucketsAndJob);
 
-	  res.writeHead(200, {
-		    'Content-Type': 'application/json'
-	  });
-	  res.end(payload);
+    res.writeHead(200, {
+        'Content-Type': 'application/json'
+    });
+    res.end(payload);
 }
