@@ -3,6 +3,7 @@
  import { isEmpty } from 'lodash-es';
  import { scaleLinear, scaleTime } from 'd3-scale';
  import { afterUpdate } from 'svelte';
+ import { prefetch, goto } from '@sapper/app';
  import {
      dates,
      coverage
@@ -10,7 +11,6 @@
  import {
      bucketsAndJobs
  } from '../stores';
-
 
  const padding = { top: 20, right: 15, bottom: 20, left: 25 };
  // y is total percentage, from 0 to 100
@@ -27,8 +27,6 @@
  let width = 900;
  let height = 450;
 
- console.log('date', typeof $dates[0], typeof dayjs($dates[0]));
- 
  $: activeJob = {};
  $: minX = dayjs($dates[0]);
  $: maxX = dayjs($dates[$dates.length - 1]);
@@ -42,8 +40,6 @@
  $: testedArea = `${testedPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
  $: confPath = `M${$coverage.map(c => `${xScale(c.timestamp)},${yScale(c.percent_conf_tested)}`).join('L')}`;
  $: confArea = `${confPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
-
- afterUpdate(() => console.log({coverage: $coverage, activeJob}));
 </script>
 
 <h1>Coverage Over Time</h1>
@@ -79,10 +75,12 @@
                 r='5'
                 class='point'
                 on:mouseover={() => {
+                             prefetch(`coverage/ci-kubernetes-e2e-gci-gce/${point.job}`)
                              activeJob = point
                              console.log({activeJob, coverage: point})
                              }}
                 on:mouseleave={() => activeJob = {}}
+                on:click={() => goto(`coverage/ci-kubernetes-e2e-gci-gce/${point.job}`)}
             />
         {/each}
         {#if !isEmpty(activeJob)}
@@ -100,6 +98,7 @@
         {/if}
     </svg>
 </div>
+
 <style>
  .chart, h2, p {
      max-width: 900px;
@@ -161,6 +160,7 @@
      fill: orange;
      fill-opacity: 0.6;
      stroke: rgba(0,0,0,0.5);
+     cursor: pointer;
  }
 
  rect.tooltip {

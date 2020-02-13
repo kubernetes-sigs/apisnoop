@@ -99,7 +99,7 @@
    } = $activeFilters;
    let filterSegments = compact([bucket, job, level, category, operation_id]);
    let urlPath = join(['coverage', ...filterSegments], '/');
-   history.pushState({}, '', urlPath);
+   goto(urlPath);
  };
 
  $: partition = data => {
