@@ -1,4 +1,3 @@
-
 <script context="module">
  import { join } from 'lodash-es';
  export function preload ({ params, query }) {
