@@ -11,7 +11,7 @@
 
 <header>
   <h1>{bucket}
-    <button on:click={() => goto('/select')}>Change</button>
+    <a href='/coverage/select'>Change</a>
   </h1>
     <p>{timestamp}</p>
 </header>
@@ -32,6 +32,11 @@
      margin-top: 0;
      font-variant-caps: small-caps;
      padding-left: 0.25em;
+ }
+
+ a {
+     font-size: 0.45em;
+     color: cornflowerblue;
  }
 </style>
 

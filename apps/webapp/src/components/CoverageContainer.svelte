@@ -1,6 +1,5 @@
 <script>
  import Sunburst from './Sunburst.svelte';
- import Sunburst2 from './Sunburst2.svelte';
  import CoverageHeader from './CoverageHeader.svelte';
  import CoverageStats from './CoverageStats.svelte';
  import Breadcrumb from './Breadcrumb.svelte';
@@ -14,7 +13,6 @@
     <Breadcrumb />
     <Sunburst />
     <CoverageStats />
-    <!-- <Sunburst2 /> -->
     <TestsList />
 </section>
 
