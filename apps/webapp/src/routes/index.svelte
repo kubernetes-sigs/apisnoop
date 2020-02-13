@@ -9,6 +9,7 @@
 <script>
  import CoverageOverTime from '../components/CoverageOverTime.svelte';
  import { isEqual} from 'lodash-es';
+ import { goto } from '@sapper/app';
  export let payload;
  import {
      stableEndpointStats,
@@ -22,8 +23,13 @@
  stableEndpointStats.update(stats => isEqual(stats, payload.stableEndpointStatsPayload)
                                 ? stats
                                 : payload.stableEndpointStatsPayload);
-
 </script>
+
+<svelte:head>
+    <title>APISnoop</title>
+</svelte:head>
+<CoverageOverTime />
+<a href='/coverage/ci-kubernetes-e2e-gci-gce' on:click={() => goto('/coverage/ci-kubernetes-e2e-gci-gce')}>go to coverage</a>
 
 <style>
  ul {
@@ -35,7 +41,3 @@
  }
 </style>
 
-<svelte:head>
-	<title>APISnoop</title>
-</svelte:head>
-<CoverageOverTime />
