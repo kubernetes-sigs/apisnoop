@@ -160,15 +160,13 @@ According to this APIsnoop query, there are still some remaining ConfigMap endpo
        config.UserAgent = "live-test-writing"
        // creates the clientset
        ClientSet, _ := kubernetes.NewForConfig(config)
-       DynamicClientSet, err := dynamic.NewForConfig(config)
-       if err != nil {
-         panic(err)
-       }
-       rcResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "replicationcontroller"}
+       DynamicClientSet, _ := dynamic.NewForConfig(config)
+       rcResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "replicationcontrollers"}
 
        testRcName := "rc-test"
        testRcNamespace := "default"
-       testRcInitalReplicaCount := int32(1)
+       testRcInitialReplicaCount := int32(1)
+       testRcMaxReplicaCount := int32(2)
 
        rcTest := v1.ReplicationController{
            ObjectMeta: metav1.ObjectMeta{
@@ -176,7 +174,7 @@ According to this APIsnoop query, there are still some remaining ConfigMap endpo
                Labels: map[string]string{"test-rc-static": "true"},
            },
            Spec: v1.ReplicationControllerSpec{
-               Replicas: &testRcInitalReplicaCount,
+               Replicas: &testRcInitialReplicaCount,
                Selector: map[string]string{"test-rc-static": "true"},
                Template: &v1.PodTemplateSpec{
                    ObjectMeta: metav1.ObjectMeta{
@@ -201,6 +199,26 @@ According to this APIsnoop query, there are still some remaining ConfigMap endpo
        }
        fmt.Println("[status] created ReplicationController")
 
+       // setup a watch for the RC
+       rcWatch, err := ClientSet.CoreV1().ReplicationControllers(testRcNamespace).Watch(metav1.ListOptions{LabelSelector: "test-rc-static=true"})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       rcWatchChan := rcWatch.ResultChan()
+
+       fmt.Println("[status] watching for all Replicas to be ready")
+       for event := range rcWatchChan {
+           rc, ok := event.Object.(*v1.ReplicationController)
+           if ok != true {
+               fmt.Println("Unable to fix type")
+               return
+           }
+           if rc.Status.Replicas == testRcInitialReplicaCount && rc.Status.ReadyReplicas == testRcInitialReplicaCount {
+               break
+           }
+       }
+
        rcLabelPatchPayload, err := json.Marshal(v1.ReplicationController{
            ObjectMeta: metav1.ObjectMeta{
                Labels: map[string]string{"test-rc": "patched"},
@@ -219,14 +237,10 @@ According to this APIsnoop query, there are still some remaining ConfigMap endpo
        fmt.Println("[status] patched ReplicationController")
 
        rcStatusPatchPayload, err := json.Marshal(map[string]interface{}{
-          "apiVersion": "v1",
-          "kind": "ReplicationController",
-         "metadata": map[string]interface{}{
-             "name": testRcName,
-          },
-          "status": map[string]interface{}{
-             "ReadyReplicas": 0,
-          },
+         "status": map[string]interface{}{
+           "readyReplicas": 0,
+           "availableReplicas": 0,
+         },
        })
        if err != nil {
            fmt.Println(err)
@@ -234,26 +248,63 @@ According to this APIsnoop query, there are still some remaining ConfigMap endpo
        }
 
        // Patch the ReplicationController's status
-       _, err = DynamicClientSet.Resource(rcResource).Namespace(testRcName).Patch(testRcName, types.StrategicMergePatchType, []byte(rcStatusPatchPayload), metav1.PatchOptions{}, "status")
+       rcStatus, err := ClientSet.CoreV1().ReplicationControllers(testRcNamespace).Patch(testRcName, types.StrategicMergePatchType, []byte(rcStatusPatchPayload), "status")
        if err != nil {
            fmt.Println(err)
+           return
+       }
+       if rcStatus.Status.ReadyReplicas != 0 {
+           fmt.Println("[error] failed to patch ReplicationController status; ReadyReplicas != 0")
            return
        }
        fmt.Println("[status] patched status of ReplicationController")
 
-       rcScale := autoscalingv1.Scale{
-           Spec: autoscalingv1.ScaleSpec{
-               Replicas: 2,
-           },
-       }
-
-       // Patch the ReplicationController's scale
-       _, err = ClientSet.CoreV1().ReplicationControllers(testRcNamespace).UpdateScale(testRcName, &rcScale)
+       rcStatusUnstructured, err := DynamicClientSet.Resource(rcResource).Namespace(testRcNamespace).Get(testRcName, metav1.GetOptions{}, "status")
        if err != nil {
            fmt.Println(err)
            return
        }
+       rcStatusUjson, _ := json.Marshal(rcStatusUnstructured)
+	     json.Unmarshal(rcStatusUjson, &rcStatus)
+       if rcStatus.Status.Replicas != testRcInitialReplicaCount {
+          fmt.Println("[error] Replica count does not match initial Replica count")
+       }
+       fmt.Println("[status] fetched ReplicationController status")
+
+       rcScalePatchPayload, err := json.Marshal(autoscalingv1.Scale{
+           Spec: autoscalingv1.ScaleSpec{
+               Replicas: 2,
+           },
+       })
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+
+       // Patch the ReplicationController's scale
+       rcScale, err := ClientSet.CoreV1().ReplicationControllers(testRcNamespace).Patch(testRcName, types.StrategicMergePatchType, []byte(rcScalePatchPayload), "scale")
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       rcScaleReplicasExpect := int32(2)
+       if rcScale.Status.Replicas == rcScaleReplicasExpect {
+           fmt.Println("[error] failed to patch ReplicationController scale; ReadyReplicas != 2")
+           return
+       }
        fmt.Println("[status] patched scale of ReplicationController")
+
+       fmt.Println("[status] watching for all Replicas to be ready")
+       for event := range rcWatchChan {
+           rc, ok := event.Object.(*v1.ReplicationController)
+           if ok != true {
+               fmt.Println("Unable to fix type")
+               return
+           }
+           if rc.Status.Replicas == testRcMaxReplicaCount && rc.Status.ReadyReplicas == testRcMaxReplicaCount {
+               break
+           }
+       }
 
        // Get the ReplicationController
        rc, err := ClientSet.CoreV1().ReplicationControllers(testRcNamespace).Get(testRcName, metav1.GetOptions{})
@@ -268,15 +319,33 @@ According to this APIsnoop query, there are still some remaining ConfigMap endpo
        fmt.Println("[status] fetched ReplicationController")
 
        rcStatusUpdatePayload := rc
+       rcStatusUpdatePayload.Status.AvailableReplicas = 1
        rcStatusUpdatePayload.Status.ReadyReplicas = 1
 
        // Replace the ReplicationController's status	
-       _, err = ClientSet.CoreV1().ReplicationControllers(testRcNamespace).UpdateStatus(rcStatusUpdatePayload)
+       rcStatus, err = ClientSet.CoreV1().ReplicationControllers(testRcNamespace).UpdateStatus(rcStatusUpdatePayload)
        if err != nil {
            fmt.Println(err)
            return
        }
+       if rcStatus.Status.ReadyReplicas != 1 {
+           fmt.Println("[error] failed to patch ReplicationController status; ReadyReplicas != 1")
+           return
+       }
        fmt.Println("[status] updated ReplicationController status")
+
+       fmt.Println("[status] watching for all Replicas to be ready")
+       for event := range rcWatchChan {
+           rc, ok := event.Object.(*v1.ReplicationController)
+           if ok != true {
+               fmt.Println("Unable to fix type")
+               return
+           }
+           if rc.Status.Replicas == testRcMaxReplicaCount && rc.Status.ReadyReplicas == testRcMaxReplicaCount {
+               fmt.Println("[status] all Replicas are ready")
+               break
+           }
+       }
 
        rcs, err := ClientSet.CoreV1().ReplicationControllers("").List(metav1.ListOptions{LabelSelector: "test-rc-static=true"})
        if err != nil {
@@ -291,12 +360,15 @@ According to this APIsnoop query, there are still some remaining ConfigMap endpo
            if rcItem.ObjectMeta.Name == testRcName &&
               rcItem.ObjectMeta.Namespace == testRcNamespace &&
               rcItem.ObjectMeta.Labels["test-rc-static"] == "true" &&
-              rcItem.ObjectMeta.Labels["test-rc"] == "patched" {
+              rcItem.ObjectMeta.Labels["test-rc"] == "patched" && 
+              rcItem.Status.Replicas == testRcMaxReplicaCount &&
+              rcItem.Status.ReadyReplicas == testRcMaxReplicaCount {
               foundRc = true
            }
        }
        if foundRc == false {
            fmt.Println("[error] unable to find ReplicationController")
+           return
        }
        fmt.Println("[status] retrieved all ReplicationControllers selecting with LabelSelector")
 
@@ -316,19 +388,61 @@ According to this APIsnoop query, there are still some remaining ConfigMap endpo
    #+RESULTS:
    #+begin_src go
    [status] created ReplicationController
+   [status] watching for all Replicas to be ready
    [status] patched ReplicationController
-   the server could not find the requested resource
+   [status] patched status of ReplicationController
+   [status] fetched ReplicationController status
+   [status] patched scale of ReplicationController
+   [status] watching for all Replicas to be ready
+   [status] fetched ReplicationController
+   [status] updated ReplicationController status
+   [status] watching for all Replicas to be ready
+   [status] all Replicas are ready
+   [status] retrieved all ReplicationControllers selecting with LabelSelector
+   [status] deleted ReplicationController
+   [status] complete
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
    #+end_src
 
 * Verify Increase it Coverage with APISnoop                          :export:
 Discover useragents:
-  #+begin_src sql-mode :eval never-export :exports both :session none
-    select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
-  #+end_src
+#+begin_src sql-mode :eval never-export :exports both :session none
+  select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+       useragent     
+  -------------------
+   live-test-writing
+  (1 row)
+
+#+end_SRC
 
 #+begin_src sql-mode :exports both :session none
 select * from endpoints_hit_by_new_test where useragent like 'live%'; 
 #+end_src
+
+#+RESULTS:
+#+begin_SRC example
+     useragent     |                     operation_id                      | hit_by_ete | hit_by_new_test 
+-------------------+-------------------------------------------------------+------------+-----------------
+ live-test-writing | createCoreV1NamespacedReplicationController           | t          |               2
+ live-test-writing | deleteCoreV1CollectionNamespacedReplicationController | f          |               2
+ live-test-writing | listCoreV1NamespacedReplicationController             | t          |               1
+ live-test-writing | listCoreV1ReplicationControllerForAllNamespaces       | f          |               1
+ live-test-writing | patchCoreV1NamespacedReplicationController            | f          |               2
+ live-test-writing | patchCoreV1NamespacedReplicationControllerScale       | f          |               2
+ live-test-writing | patchCoreV1NamespacedReplicationControllerStatus      | f          |               2
+ live-test-writing | readCoreV1NamespacedReplicationController             | t          |               1
+ live-test-writing | readCoreV1NamespacedReplicationControllerStatus       | f          |               1
+ live-test-writing | replaceCoreV1NamespacedReplicationControllerStatus    | f          |               2
+(10 rows)
+
+#+end_SRC
 
   #+begin_src sql-mode :eval never-export :exports both :session none
     select * from projected_change_in_coverage;
@@ -338,7 +452,7 @@ select * from endpoints_hit_by_new_test where useragent like 'live%';
   #+begin_SRC example
      category    | total_endpoints | old_coverage | new_coverage | change_in_number 
   ---------------+-----------------+--------------+--------------+------------------
-   test_coverage |             438 |          183 |          183 |                0
+   test_coverage |             438 |          190 |          197 |                7
   (1 row)
 
   #+end_SRC
