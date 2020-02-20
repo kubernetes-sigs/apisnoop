@@ -1,0 +1,300 @@
+# -*- ii: apisnoop; -*-
+#+TITLE: Mock Ticket Template
+#+AUTHOR: ii team
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+#+OPTIONS: toc:nil tags:nil todo:nil
+#+EXPORT_SELECT_TAGS: export
+* TODO [0%] In-Cluster Setup                                    :neverexport:
+  :PROPERTIES:
+  :LOGGING:  nil
+  :END:
+** TODO Connect demo to right eye
+
+   #+begin_src tmate :session foo:hello :eval never-export
+     echo "What parts of Kubernetes do you depend on $USER?"
+   #+end_src
+** Tilt Up
+   #+begin_src tmate :session foo:hello :eval never-export
+     cd ~/apisnoop
+     tilt up --host 0.0.0.0
+   #+end_src
+** TODO Verify Pods Running
+   #+begin_src shell
+     kubectl get pods
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   NAME                                    READY   STATUS    RESTARTS   AGE
+   apisnoop-auditlogger-86dcf97749-nb2rp   1/1     Running   1          3d
+   hasura-7c5775fc95-rmp28                 1/1     Running   1          3d
+   kubemacs-0                              1/1     Running   1          3d
+   pgadmin-78b7448594-bmvxl                1/1     Running   0          3d
+   postgres-6dbf95b969-hpr7k               1/1     Running   0          3d
+   webapp-5bd67b658b-fc6pr                 1/1     Running   0          3d
+   #+end_example
+
+** TODO Check it all worked
+
+   #+begin_src sql-mode :results replace
+     \d+
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                                                              List of relations
+    Schema |               Name               |       Type        |  Owner   |  Size   |                                    Description                                    
+   --------+----------------------------------+-------------------+----------+---------+-----------------------------------------------------------------------------------
+    public | api_operation                    | view              | apisnoop | 0 bytes | 
+    public | api_operation_material           | materialized view | apisnoop | 3056 kB | details on each operation_id as taken from the openAPI spec
+    public | api_operation_parameter_material | materialized view | apisnoop | 5008 kB | the parameters for each operation_id in open API spec
+    public | audit_event                      | view              | apisnoop | 0 bytes | a record for each audit event in an audit log
+    public | bucket_job_swagger               | table             | apisnoop | 3128 kB | metadata for audit events  and their respective swagger.json
+    public | endpoint_coverage                | view              | apisnoop | 0 bytes | the test hits and conformance test hits per operation_id & other useful details
+    public | endpoint_coverage_material       | materialized view | apisnoop | 144 kB  | 
+    public | endpoints_hit_by_new_test        | view              | apisnoop | 0 bytes | list endpoints hit during our live auditing alongside their current test coverage
+    public | projected_change_in_coverage     | view              | apisnoop | 0 bytes | overview of coverage stats if the e2e suite included your tests
+    public | raw_audit_event                  | table             | apisnoop | 380 MB  | a record for each audit event in an audit log
+    public | stable_endpoint_stats            | view              | apisnoop | 0 bytes | coverage stats for entire test run, looking only at its stable endpoints
+    public | tests                            | view              | apisnoop | 0 bytes | 
+    public | untested_stable_core_endpoints   | view              | apisnoop | 0 bytes | list stable core endpoints not hit by any tests, according to their test run
+    public | useragents                       | view              | apisnoop | 0 bytes | 
+   (14 rows)
+
+   #+end_SRC
+
+** TODO Check current coverage
+   #+NAME: stable endpoint stats
+   #+begin_src sql-mode
+     select * from stable_endpoint_stats where job != 'live';
+   #+end_src
+
+* Identify an untested feature Using APISnoop                        :export:
+
+According to this APIsnoop query, there are still some remaining Node endpoints which are untested.
+
+  #+NAME: untested_stable_core_endpoints
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    SELECT
+      operation_id,
+      -- k8s_action,
+      path,
+      description
+      FROM untested_stable_core_endpoints
+      where path not like '%volume%'
+      and path not like 'delete%'
+      and path not like 'create%'
+      and operation_id ilike '%NodeStatus'
+     ORDER BY operation_id desc
+     -- LIMIT 25
+           ;
+  #+end_src
+
+  #+RESULTS: untested_stable_core_endpoints
+  #+begin_SRC example
+       operation_id      |            path             |                  description                  
+  -----------------------+-----------------------------+-----------------------------------------------
+   readCoreV1NodeStatus  | /api/v1/nodes/{name}/status | read status of the specified Node
+   patchCoreV1NodeStatus | /api/v1/nodes/{name}/status | partially update status of the specified Node
+  (2 rows)
+
+  #+end_SRC
+
+* Use API Reference to Lightly Document the Feature                  :export:
+- [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+- [client-go - Nodes](https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/node.go)
+
+* The mock test                                                      :export:
+** Test outline
+1. List all Nodes, find the latest created Node
+
+2. Patch the NodeStatus Ready condition
+
+3. Get the NodeStatus to ensure Ready is False
+
+** Example in Go
+   #+begin_src go
+     package main
+
+     import (
+       "encoding/json"
+       "fmt"
+       "flag"
+       "os"
+
+       v1 "k8s.io/api/core/v1"
+       metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+       "k8s.io/client-go/kubernetes"
+       "k8s.io/client-go/dynamic"
+       "k8s.io/apimachinery/pkg/runtime/schema"
+       "k8s.io/apimachinery/pkg/types"
+       "k8s.io/client-go/tools/clientcmd"
+     )
+
+     func main() {
+       // uses the current context in kubeconfig
+       kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+       flag.Parse()
+       config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       // make our work easier to find in the audit_event queries
+       config.UserAgent = "live-test-writing"
+       // creates the clientset
+       ClientSet, _ := kubernetes.NewForConfig(config)
+       DynamicClientSet, _ := dynamic.NewForConfig(config)
+       nodeResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}
+
+       var testSelectedNode v1.Node
+       var testSelectedNodeCreationTimestamp int64
+
+       // access the API to list Nodes
+       nodes, err := ClientSet.CoreV1().Nodes().List(metav1.ListOptions{})
+       if err != nil {
+           fmt.Println("[error] failed to list Nodes") 
+           return
+       }
+
+       fmt.Println("[status] finding latest created node")
+       for _, node := range nodes.Items {
+           nodeCreationTimestamp := node.ObjectMeta.CreationTimestamp.Unix()
+           if testSelectedNodeCreationTimestamp == 0 || nodeCreationTimestamp > testSelectedNodeCreationTimestamp {
+               testSelectedNodeCreationTimestamp = nodeCreationTimestamp
+               testSelectedNode = node
+           }
+       }
+
+       updatedNodeStatusConditions := testSelectedNode.Status.Conditions
+       foundReadyCondition := false
+       for pos, cond := range testSelectedNode.Status.Conditions {
+           if cond.Type == "Ready" {
+               updatedNodeStatusConditions[pos] = cond
+               updatedNodeStatusConditions[pos].Status = "False"
+               foundReadyCondition = true
+               break
+           }
+       }
+       if foundReadyCondition == false {
+           fmt.Println("[error] failed to find Ready NodeStatus Condition")
+           return
+       }
+
+       nodeLabelPatchPayload, err := json.Marshal(v1.Node{
+           Status: v1.NodeStatus{
+               Conditions: updatedNodeStatusConditions,
+           },
+       })
+       if err != nil {
+          fmt.Println(err)
+          return
+       }
+       _, err = DynamicClientSet.Resource(nodeResource).Patch(testSelectedNode.ObjectMeta.Name, types.StrategicMergePatchType, []byte(nodeLabelPatchPayload), metav1.PatchOptions{}, "status")
+       if err != nil {
+          fmt.Println(err)
+          return
+       }
+       fmt.Println("[status] patched NodeStatus Ready Condition to be False")
+
+       nodeStatusPatchUnstructured, err := DynamicClientSet.Resource(nodeResource).Get(testSelectedNode.ObjectMeta.Name, metav1.GetOptions{}, "status")
+       if err != nil {
+          fmt.Println(err)
+          return
+       }
+       fmt.Println("[status] fetched patched NodeStatus")
+       var nodeStatus v1.Node
+       nodeStatusUjson, _ := json.Marshal(nodeStatusPatchUnstructured)
+       json.Unmarshal(nodeStatusUjson, &nodeStatus)
+
+       foundReadyConditionFalse := false
+       for _, cond := range nodeStatus.Status.Conditions {
+           if cond.Type == "Ready" && cond.Status == "False" {
+               foundReadyConditionFalse = true
+               break
+           }
+       }
+       if foundReadyConditionFalse == false {
+           fmt.Println("[error] failed to find Ready NodeStatus Condition")
+           return
+       }
+       fmt.Println("[status] Node was patched successfuly")
+       // write test here
+       fmt.Println("[status] complete")
+
+     }
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
+   [status] finding latest created node
+   [status] patched NodeStatus Ready Condition to be False
+   [status] fetched patched NodeStatus
+   [status] Node was patched successfuly
+   [status] complete
+   #+end_src
+
+* Verify Increase it Coverage with APISnoop                          :export:
+Discover useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+       useragent     
+  -------------------
+   live-test-writing
+  (1 row)
+
+  #+end_SRC
+
+List endpoints hit by the test:
+#+begin_src sql-mode :exports both :session none
+select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+     useragent     |     operation_id      | hit_by_ete | hit_by_new_test 
+-------------------+-----------------------+------------+-----------------
+ live-test-writing | listCoreV1Node        | t          |               1
+ live-test-writing | patchCoreV1NodeStatus | f          |               2
+ live-test-writing | readCoreV1NodeStatus  | f          |               1
+(3 rows)
+
+#+end_SRC
+
+Display endpoint coverage change:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select * from projected_change_in_coverage;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+  ---------------+-----------------+--------------+--------------+------------------
+   test_coverage |             438 |          190 |          192 |                2
+  (1 row)
+
+  #+end_SRC
+
+* Final notes :export:
+If a test with these calls gets merged, **test coverage will go up by 2 points**
+
+This test is also created with the goal of conformance promotion.
+
+-----  
+/sig testing
+ 
+/sig architecture  
+
+/area conformance  
+
+* Open Tasks
+  Set any open tasks here, using org-todo
+** DONE Live Your Best Life
+* Footnotes                                                     :neverexport:
+  :PROPERTIES:
+  :CUSTOM_ID: footnotes
+  :END:
