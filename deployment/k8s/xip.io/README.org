@@ -1,43 +1,61 @@
 # -*- ii: y; -*-
 #+TITLE: xip.io config
 
-* Deploy kind
-#+begin_src shell :tangle "./kubemacs/setup.sh"
-  if [ ! -z "$DEBUG" ]; then
-      set -x
-  fi
-  export KUSTOMIZE_PATH="${KUSTOMIZE_PATH:-https://github.com/cncf/apisnoop/deployment/k8s/xip.io}"
-  export KIND_IMAGE="${KIND_IMAGE:- kindest/node:v1.17.0@sha256:9512edae126da271b66b990b6fff768fbb7cd786c7d39e86bdf55906352fdf62}"
-  export DEFAULT_NS="${DEFAULT_NS:-ii}"
+* Docker run cloud-native k8s dev env
+** Environment for docker-init
 
-  docker pull $KIND_IMAGE
+Customize with your own email and repos (usually forks) to check out.
 
-  if read -p "Press enter to destroy your current kind cluster, ^C to abort "; then
-      kind delete cluster
-  fi
-  curl https://raw.githubusercontent.com/cncf/apisnoop/master/deployment/k8s/kind-cluster-config.yaml -o kind-cluster-config.yaml
-  kind create cluster --config kind-cluster-config.yaml --image $KIND_IMAGE
-#+end_src
+   #+name: cncf-conformance.env
+   #+begin_src shell :tangle cncf-conformance.env
+     # Pin your image
+     # KUBEMACS_IMAGE=kubemacs/kubemacs:2020.02.19
+     # Or not
+     KUBEMACS_IMAGE=kubemacs/kubemacs:latest
+     # $(id -u) / mainly for ~/.kube/config permissions
+     HOST_UID="1001"
+     # Vars for git commits
+     KUBEMACS_GIT_EMAIL=hh@ii.coop
+     KUBEMACS_GIT_NAME="Hippie Hacker"
+     KUBEMACS_TIMEZONE=Pacific/Auckland
+     # This is the kind cluster name, maybe we should rename
+     # for some reason we can't used kind as the name
+     KUBEMACS_KIND_NAME=cncf.conformance
+     # ~/.kube/$KUBEMACS_HOSTCONFIG_NAME
+     KUBEMACS_HOST_KUBECONFIG_NAME=config
+     # Using a docker registry alongside kind
+     KIND_LOCAL_REGISTRY_ENABLE=true
+     KIND_LOCAL_REGISTRY_NAME=local-registry
+     KIND_LOCAL_REGISTRY_PORT=5000
+     # The repositories to check out
+     KUBEMACS_INIT_DEFAULT_REPOS='https://github.com/hh/kubemacs.git https://github.com/hh/apisnoop.git https://github.com/ii/kubernetes.git'
+     # The folder to start tmate/emacs in
+     KUBEMACS_INIT_DEFAULT_DIR=apisnoop/deployment/k8s/xip.io
+     # The first file you want emacs to open
+     KUBEMACS_INIT_ORG_FILE=apisnoop/deployment/k8s/xip.io/README.org:44
+     # If you want to see lots of information
+     KUBEMACS_INIT_DEBUG=true
+   #+end_src
 
-* Cache Kubemacs image
-  #+begin_src shell :tangle "./kubemacs/setup.sh"
-    # ensure large images are cached
-    kubectl apply --dry-run -k "$KUSTOMIZE_PATH" -o yaml | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq | xargs -n 1 docker pull
-    kubectl apply --dry-run -k "$KUSTOMIZE_PATH" -o yaml | grep image: | sed 's/.*:\ \(.*\)/\1/' | sort | uniq | xargs -n 1 kind load docker-image
-  #+end_src
+** Running Docker
+   #+name: cncf-conformance.sh
+   #+begin_src shell :tangle cncf-conformance.sh
+     ENV_FILE=cncf-conformance.env
+     . $ENV_FILE
+     docker run \
+            --env-file $ENV_FILE \
+            --name kubemacs-docker-init \
+            --user root \
+            --privileged \
+            --network host \
+            --rm \
+            -it \
+            -v "$HOME/.kube:/tmp/.kube" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            $KUBEMACS_IMAGE \
+            docker-init.sh
+   #+end_src
 
-* Deploy apisnoop services
-#+begin_src shell :tangle "./kubemacs/setup.sh"
-  kubectl create ns $DEFAULT_NS
-  kubectl config set-context $(kubectl config current-context) --namespace=$DEFAULT_NS
-
-  #kubectl apply -k https://github.com/cncf/apisnoop/deployment/k8s/xip.io/kubemacs
-  kubectl apply -k "$KUSTOMIZE_PATH"
-#+end_src
-
-#+RESULTS:
-#+begin_src shell
-#+end_src
 * Change IP to match current
 
 You might need to setup inbound routing, or it may just work for your IP
