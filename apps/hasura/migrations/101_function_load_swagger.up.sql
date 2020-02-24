@@ -48,7 +48,6 @@ try:
            commit_hash,
            passed,
            job_result,
-           pod,
            infra_commit,
            job_version,
            job_timestamp,
@@ -62,17 +61,16 @@ try:
            $3 as commit_hash,
            $4 as passed,
            $5 as job_result,
-           $6 as pod,
-           $7 as infra_commit,
-           $8 as job_version,
-           (to_timestamp($9)) AT TIME ZONE 'UTC' as job_timestamp,
-           $10 as node_os_image,
-           $11 as master_os_image,
-           $12 as swagger
+           $6 as infra_commit,
+           $7 as job_version,
+           (to_timestamp($8)) AT TIME ZONE 'UTC' as job_timestamp,
+           $9 as node_os_image,
+           $10 as master_os_image,
+           $11 as swagger
     """
     plan = plpy.prepare(sql, [
         'text','text','text','text',
-        'text','text','text','text',
+        'text','text','text',
         'integer','text','text','jsonb'])
     rv = plpy.execute(plan, [
         bucket if not live else 'apisnoop',
@@ -80,7 +78,6 @@ try:
         commit_hash,
         metadata['passed'],
         metadata['result'],
-        metadata['metadata']['pod'],
         metadata['metadata']['infra-commit'],
         metadata['version'],
         int(metadata['timestamp']),
@@ -90,6 +87,7 @@ try:
     ])
     return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
 except Exception as err:
+    raise err
     return Template("something went wrong, likely this: ${error}").substitute(error = err)
 $$ LANGUAGE plpython3u ;
 reset role;

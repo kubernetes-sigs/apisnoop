@@ -1,6 +1,6 @@
 -- Create Table
 --     :PROPERTIES:
---     :header-args:sql-mode+: :notangle ../apps/hasura/migrations/100_table_bucket_job_swagger.up.sql
+--     :header-args:sql-mode+: :tangle ../apps/hasura/migrations/100_table_bucket_job_swagger.up.sql
 --     :END:
 --  #+NAME: bucket_job_swagger
 
