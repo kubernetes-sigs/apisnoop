@@ -2,10 +2,10 @@
 #+TITLE: A Year of Releases
 
 * Purpose
-  Bring in data for last fou8r weeks on sig-release-blocking annd the lasxt four releases, and then update coverage over time report to display this data clearly.
+  Bring in data for last four weeks on sig-release-blocking annd the lasxt four releases, and then update coverage over time report to display this data clearly.
 * Process
 ** Bring up apisnoop on cluster using tilt
-   First, we want to make an adjustment to our tilt file, to watch changes on our web app.  This will make the coverage over tikme work later easier.
+   First, we want to make an adjustment to our tilt file, to watch changes on our web app.  This will make the coverage over time work easier later.
    
    (what we are doing: our bundler is not noticing channges in the files correctly, so we tell tilt to touch a file so it gets picked up by the web bundler and compiled to the latest code)
    
@@ -22,7 +22,6 @@ docker_build('gcr.io/k8s-staging-apisnoop/hasura', '../../../apps/hasura')
 # docker_build('gcr.io/k8s-staging-apisnoop/postgres', '../../../apps/postgres')
 allow_k8s_contexts('in-cluster')
    #+end_src
-   
    
    #+NAME: Tilt Up
    #+begin_src tmate :dir "~/Projects/apisnoop/deployment/k8s/zz"
@@ -83,18 +82,20 @@ allow_k8s_contexts('in-cluster')
    #+end_src
 
    #+RESULTS: bucket_job_swagger buckets and jobs
-   #+begin_SRC example
-             bucket           |         job         
-   ---------------------------+---------------------
-    ci-kubernetes-e2e-gci-gce | 1232046793080967175
-    apisnoop                  | live
-    ci-kubernetes-e2e-gci-gce | 1222998434210910213
-    ci-kubernetes-e2e-gci-gce | 1226229106660610049
-    ci-kubernetes-e2e-gci-gce | 1228539796335366144
-    ci-kubernetes-e2e-gci-gce | 1230829120468815872
-   (6 rows)
+   #+begin_src sql-mode
+                       bucket                    |         job         
+   ----------------------------------------------+---------------------
+    ci-kubernetes-e2e-gci-gce                    | 1232076743536283652
+    apisnoop                                     | live
+    ci-kubernetes-e2e-gci-gce                    | 1228539796335366144
+    ci-kubernetes-e2e-gci-gce                    | 1222916418979237889
+    ci-kubernetes-e2e-gce-cos-k8sstable3-default | 1200130987455942659
+    ci-kubernetes-e2e-gci-gce                    | 1222998434210910213
+    ci-kubernetes-e2e-gci-gce                    | 1226229106660610049
+    ci-kubernetes-e2e-gce-cos-k8sstable2-default | 1230101702657445888
+   (8 rows)
 
-   #+end_SRC
+   #+end_src
 
    #+NAME: raw_audit_event buckets and jobs
    #+begin_src sql-mode
@@ -214,8 +215,8 @@ select distinct bucket, job from raw_audit_event;
     PL/Python function "load_audit_events"
    #+end_example
    
-   It is difficult to see what's going wrong when viewing the python within sql, so we grabbed the whole code (below) and will tangle it to a file, so we can run it as pure python.  This should create a sql file called 'load.sql' in our tmp folder.  If not, there's an issue with our pytyhon.  If it does create it successfully, but psql cannot load the sql file, then we have an issue with how the sql was constructed.
-    
+   It is difficult to see what's going wrong when viewing the python within sql, so we grabbed the whole code (below) and will tangle it to a file, so we can run it as pure python.  This should create a sql file called 'load.sql' in our tmp folder.  If not, there's an issue with our python.  If it does create it successfully, but psql cannot load the sql file, then we have an issue with how the sql was constructed.
+   To get the exact src+line numbers we use pgadmin to view the load_audit_events functions src, which is python3 inside plpy (sql).
     #+NAME: load_audit_event
     #+begin_src python :tangle ~/Projects/tmp/load_audit_events.py
       #!/usr/bin/env python3
@@ -531,9 +532,116 @@ select distinct bucket, job from raw_audit_event;
 
 The method is beding pulled from the event, the current_level is being determioned by the cache which is determined by the open_api_spec.  Is there some discrepancy in the spec versus the logs(e.g. running a verb that the spec of this opId hasn't accounted for?)
 
-I wasn't fully grokking how the cache plays into the method and current_level, or why this drift could occur.  We could skip over an event if the key isn't found, but then it'd be hard to tru8st the numbers we generate from this. 
+I wasn't fully grokking how the cache plays into the method and current_level, or why this drift could occur.  We could skip over an event if the key isn't found, but then it'd be hard to trust the numbers we generate from this. 
 
 I've left my ipdb session and code in pane 3 of this tmate session.
+
+Each event has some data that we process.
+
+#+name: event.keys()
+#+begin_example
+ipdb> event.keys()
+dict_keys(['kind', 'apiVersion', 'level', 'auditID', 'stage', 'requestURI', 'verb', 'user', 'sourceIPs', 'userAgent', 'objectRef', 'responseStatus', 'requestReceivedTimestamp', 'stageTimestamp', 'annotations'])
+#+end_example
+
+The requestURI includes */proxy/* but is targeting a service. Seemigly to create a service.
+
+#+name: event['requestURI']
+#+begin_example
+ipdb> event['requestURI']
+'/api/v1/namespaces/horizontal-pod-autoscaling-113/services/rc-light-ctrl/proxy/ConsumeMem?durationSec=30&megabytes=0&requestSizeMegabytes=100'
+#+end_example
+
+The uri has proxy, so we strip it and focus on the primary parts which is what we iterate over, bailing if we hit known bad urls that won't match.
+
+#+name: uri_parts
+#+begin_example
+ipdb> uri_parts
+['api', 'v1', 'namespaces', 'horizontal-pod-autoscaling-113', 'services', 'rc-light-ctrl']
+ipdb> part_count
+6
+ipdb> part
+'rc-light-ctrl'
+ipdb> idx
+5
+#+end_example
+
+The cache itself is a mapping of api url components to objects, where *{name}* is a placeholder in the url.
+At the end the keys should map to the different methods or verbs or.... it's not really documented anywhere that I can tell.
+
+#+name: cache walk for uri_parts
+#+begin_example
+ipdb> cache.keys()
+dict_keys(['api', 'apis'])
+ipdb> cache['api'].keys()
+dict_keys(['v1'])
+ipdb> cache['api']['v1'].keys()
+dict_keys(['namespaces', 'nodes', 'watch'])
+ipdb> cache['api']['v1']['namespaces'].keys()
+dict_keys(['{namespace}'])
+ipdb> cache['api']['v1']['namespaces']['{namespace}'].keys()
+dict_keys(['configmaps', 'endpoints', 'events', 'limitranges', 'persistentvolumeclaims', 'pods', 'podtemplates', 'replicationcontrollers', 'resourcequotas', 'secrets', 'serviceaccounts', 'services'])
+ipdb> cache['api']['v1']['namespaces']['{namespace}']['services'].keys()
+dict_keys(['{name}'])
+ipdb> cache['api']['v1']['namespaces']['{namespace}']['services']['{name}'].keys()
+dict_keys(['delete', 'get', 'patch', 'put'])
+#+end_example
+
+Without digging into the caching, the current_level contains the possible methods.
+Which when we get to the end has to match to a method.
+ 
+#+name: current_level.keys()
+#+begin_example
+ipdb> current_level.keys()
+dict_keys(['delete', 'get', 'patch', 'put'])
+#+end_example
+
+#+name: our error, asking for the method within current level
+#+begin_src python
+    op_id=current_level[method]
+#+end_src
+
+We have an event with a verb *create*.
+
+#+begin_example
+ipdb> event['verb']
+'create'
+#+end_example
+
+The method is not directly mapped from the verb anywhere I can find, and I still don't know a good way not to create manual static lookup.
+
+#+begin_src python
+  verb_to_method={
+    'get': 'get',
+    'list': 'get',
+    'proxy': 'proxy',
+    'create': 'post',
+    'post':'post',
+    'put':'post',
+    'update':'put',
+    'patch':'patch',
+    'connect':'connect',
+    'delete':'delete',
+    'deletecollection':'delete',
+    'watch':'get'
+  }
+#+end_src
+
+#+begin_example
+ipdb> method
+'post'
+#+end_example
+
+Currently there are no *post* methods for this url.. only delete, get, patch, and put.
+I'm unsure if this is a 1.15 specific thing or what.
+
+The test name is within the userAgent, so we could go look up the code (would be nice to have a line number here)
+
+#+name: event['userAgent']
+#+begin_example
+ipdb> event['userAgent']
+'e2e.test/v1.15.11 (linux/amd64) kubernetes/3b43c80 -- [sig-autoscaling] [HPA] Horizontal pod autoscaling (scale resource: CPU) [sig-autoscaling] ReplicationController light Should scale from 2 pods to 1 pod'
+#+end_example
 
 ** Bring in data for last four releases
 ** Adjust timestamp for these jobs to be date of release
