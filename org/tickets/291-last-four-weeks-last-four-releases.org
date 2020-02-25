@@ -1,11 +1,149 @@
-#-*-ii: engaged;-*_
+#-*-ii: engaged;-*-
 #+TITLE: A Year of Releases
 
 * Purpose
   Bring in data for last fou8r weeks on sig-release-blocking annd the lasxt four releases, and then update coverage over time report to display this data clearly.
 * Process
 ** Bring up apisnoop on cluster using tilt
+   First, we want to make an adjustment to our tilt file, to watch changes on our web app.  This will make the coverage over tikme work later easier.
+   
+   (what we are doing: our bundler is not noticing channges in the files correctly, so we tell tilt to touch a file so it gets picked up by the web bundler and compiled to the latest code)
+   
+   #+begin_src python :tangle "~/Projects/apisnoop/deployment/k8s/zz/Tiltfile"
+k8s_yaml(kustomize('.'))
+docker_build('gcr.io/k8s-staging-apisnoop/webapp', '../../../apps/webapp',
+  live_update=[
+  fall_back_on(['package.json', 'package-lock.json']),
+  sync('apps/webapp','/src'),
+  run('touch src/client.js')
+  ])
+docker_build('gcr.io/k8s-staging-apisnoop/hasura', '../../../apps/hasura')
+# docker_build('gcr.io/k8s-staging-apisnoop/auditlogger', '../../../apps/auditlogger')
+# docker_build('gcr.io/k8s-staging-apisnoop/postgres', '../../../apps/postgres')
+allow_k8s_contexts('in-cluster')
+   #+end_src
+   
+   
+   #+NAME: Tilt Up
+   #+begin_src tmate :dir "~/Projects/apisnoop/deployment/k8s/zz"
+   tilt up --host 0.0.0.0 
+   #+end_src
+   
+   We can test it worked using stable_endpoint_coverage
+   #+begin_src sql-mode
+   select * from stable_endpoint_stats;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+            job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+    1232046793080967175 | 2020-02-24 |             438 |       190 |       138 |          43.38 |               31.51
+   (1 row)
+
+   #+end_SRC
+   
+   We have results!
 ** Load last four weeks of data
+   I'll grab four successful jobs by navigating the artifacts in testgrid.  Not the most elegant, but works for the time limit we have.
+   - 1222998434210910213 :: jan30
+   - 1226229106660610049 :: feb8
+   - 1228539796335366144 :: feb15
+   - 1230878446196887554 :: feb21
+   
+        
+   We need to load the swagger, then the audit events, and then materialize all the views.  The materialized commands need to be run one at a time in org-mode, and the functionsn I'll run with one big src chunk, uncommenting as needed
+   
+   #+NAME: Load the Data
+   #+begin_src sql-mode
+   select * from load_audit_events(null,'1228539796335366144');
+   -- select * from load_audit_events(null,'1230829120468815872');
+   -- select * from load_swagger(null,'1230829120468815872');
+   -- select * from load_swagger(null,'1230878446196887554');
+   -- select * from load_audit_events(null,'1228539796335366144');
+   -- select * from load_swagger(null,'1228539796335366144');
+   -- select * from load_audit_events(null,'1226229106660610049');
+   -- select * from load_swagger(null,'1226229106660610049');
+   -- select * from load_audit_events(null,'1222998434210910213');
+   -- select * from load_swagger(null,'1222998434210910213');
+   #+end_src
+
+   #+RESULTS: Load the Data
+   #+begin_SRC example
+    load_audit_events 
+   -------------------
+
+   (1 row)
+
+   #+end_SRC
+  
+   #+NAME: bucket_job_swagger buckets and jobs
+   #+begin_src sql-mode
+   select bucket, job from bucket_job_swagger;
+   #+end_src
+
+   #+RESULTS: bucket_job_swagger buckets and jobs
+   #+begin_SRC example
+             bucket           |         job         
+   ---------------------------+---------------------
+    ci-kubernetes-e2e-gci-gce | 1232046793080967175
+    apisnoop                  | live
+    ci-kubernetes-e2e-gci-gce | 1222998434210910213
+    ci-kubernetes-e2e-gci-gce | 1226229106660610049
+    ci-kubernetes-e2e-gci-gce | 1228539796335366144
+    ci-kubernetes-e2e-gci-gce | 1230829120468815872
+   (6 rows)
+
+   #+end_SRC
+
+   #+NAME: raw_audit_event buckets and jobs
+   #+begin_src sql-mode
+\dt+
+     -- select distinct bucket, job from raw_audit_event;
+   #+end_src
+
+   #+RESULTS: raw_audit_event buckets and jobs
+   #+begin_SRC example
+                                                          List of relations
+     Schema   |          Name          | Type  |  Owner   |  Size  |                         Description                          
+   -----------+------------------------+-------+----------+--------+--------------------------------------------------------------
+    pg_temp_5 | raw_audit_event_import | table | apisnoop | 335 MB | 
+    public    | bucket_job_swagger     | table | apisnoop | 11 MB  | metadata for audit events  and their respective swagger.json
+    public    | raw_audit_event        | table | apisnoop | 786 MB | a record for each audit event in an audit log
+   (3 rows)
+
+   #+end_SRC
+   
+   
+   #+begin_src sql-mode
+    REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+    -- REFRESH MATERIALIZED VIEW endpoint_coverage_material;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   REFRESH MATERIALIZED VIEW
+   #+end_SRC
+   
+   #+begin_src sql-mode
+select * from stable_endpoint_stats;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+            job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+    1226229106660610049 | 2020-02-08 |             438 |         0 |         0 |           0.00 |                0.00
+    1222998434210910213 | 2020-01-30 |             438 |       190 |       137 |          43.38 |               31.28
+    1232046793080967175 | 2020-02-24 |             438 |       190 |       138 |          43.38 |               31.51
+    1228539796335366144 | 2020-02-15 |             438 |         0 |         0 |           0.00 |                0.00
+    1230829120468815872 | 2020-02-21 |             438 |         0 |         0 |           0.00 |                0.00
+   (5 rows)
+
+   #+end_SRC
+   
+   
+   
 ** Ensure Coverage over Time is working properly
 ** Find jobs for last four releases
 ** Bring in data for last four releases
