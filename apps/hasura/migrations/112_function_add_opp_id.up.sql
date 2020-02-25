@@ -103,7 +103,14 @@ def find_operation_id(openapi_spec, event):
       return openapi_spec['hit_cache'][url.path][method]
   uri_parts = url.path.strip('/').split('/')
   if 'proxy' in uri_parts:
-      uri_parts = uri_parts[0:uri_parts.index('proxy')]
+      # All parts up to proxy
+      z=uri_parts[0:uri_parts.index('proxy')]
+      # proxy is a single part of the uri_parts
+      z.append('proxy')
+      # However all parameters after that are another single argument
+      # to the proxy
+      z.append('/'.join(uri_parts[uri_parts.index('proxy')+1:]))
+      uri_parts = z
   part_count = len(uri_parts)
   try: # may have more parts... so no match
       cache = openapi_spec['cache'][part_count]
@@ -159,7 +166,11 @@ def find_operation_id(openapi_spec, event):
         else:
           print(url.path)
           return None
-      next_level={v: k for k, v in variable_levels.items()}[True]
+      try: # may have more parts... so no match # variable_levels -> {'{namespace}': False}
+        next_level={v: k for k, v in variable_levels.items()}[True]
+      except Exception as e: # TODO better to not use try/except
+        next_level=[*variable_levels][0]
+      # import ipdb; ipdb.set_trace()
       current_level = current_level[next_level] #coo
   try:
     op_id=current_level[method]
