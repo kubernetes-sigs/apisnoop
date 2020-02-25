@@ -133,11 +133,11 @@ select * from stable_endpoint_stats;
    #+begin_SRC example
             job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
    ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
-    1226229106660610049 | 2020-02-08 |             438 |         0 |         0 |           0.00 |                0.00
+    1222916418979237889 | 2020-01-30 |             438 |       191 |       138 |          43.61 |               31.51
     1222998434210910213 | 2020-01-30 |             438 |       190 |       137 |          43.38 |               31.28
-    1232046793080967175 | 2020-02-24 |             438 |       190 |       138 |          43.38 |               31.51
-    1228539796335366144 | 2020-02-15 |             438 |         0 |         0 |           0.00 |                0.00
-    1230829120468815872 | 2020-02-21 |             438 |         0 |         0 |           0.00 |                0.00
+    1228539796335366144 | 2020-02-15 |             438 |       190 |       138 |          43.38 |               31.51
+    1226229106660610049 | 2020-02-08 |             438 |       190 |       138 |          43.38 |               31.51
+    1232076743536283652 | 2020-02-24 |             438 |       190 |       138 |          43.38 |               31.51
    (5 rows)
 
    #+end_SRC
@@ -161,6 +161,380 @@ select * from stable_endpoint_stats;
    
 ** Ensure Coverage over Time is working properly
 ** Find jobs for last four releases
+*** 1.15
+    #+begin_src sql-mode
+    select * from load_audit_events('ci-kubernetes-e2e-gce-cos-k8sstable3-default', null);
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+    WARNING:  method was:post
+    ERROR:  TypeError: can only concatenate str (not "dict_keys") to str
+    CONTEXT:  Traceback (most recent call last):
+      PL/Python function "load_audit_events", line 307, in <module>
+        load_audit_events(bucket,job)
+      PL/Python function "load_audit_events", line 262, in load_audit_events
+        event['operationId']=find_operation_id(spec,event)
+      PL/Python function "load_audit_events", line 162, in find_operation_id
+        plpy.warning("current_level keys:" + current_level.keys())
+    PL/Python function "load_audit_events"
+    #+end_SRC
+    
+    #+begin_src sql-mode
+select distinct bucket, job from raw_audit_event;
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+                        bucket                    |         job         
+    ----------------------------------------------+---------------------
+     ci-kubernetes-e2e-gci-gce                    | 1222998434210910213
+     ci-kubernetes-e2e-gci-gce                    | 1226229106660610049
+     ci-kubernetes-e2e-gci-gce                    | 1228539796335366144
+     ci-kubernetes-e2e-gce-cos-k8sstable2-default | 1230101702657445888
+     ci-kubernetes-e2e-gci-gce                    | 1222916418979237889
+     ci-kubernetes-e2e-gci-gce                    | 1232076743536283652
+    (6 rows)
+
+    #+end_SRC
+
+*** interlude: debug load_audit_events to see why it didn't work for 1.15
+   When we tried to load 1.15 we got this error:
+   #+NAME: 1.15 error
+   #+begin_example
+    WARNING:  method was:post
+    ERROR:  TypeError: can only concatenate str (not "dict_keys") to str
+    CONTEXT:  Traceback (most recent call last):
+      PL/Python function "load_audit_events", line 307, in <module>
+        load_audit_events(bucket,job)
+      PL/Python function "load_audit_events", line 262, in load_audit_events
+        event['operationId']=find_operation_id(spec,event)
+      PL/Python function "load_audit_events", line 162, in find_operation_id
+        plpy.warning("current_level keys:" + current_level.keys())
+    PL/Python function "load_audit_events"
+   #+end_example
+   
+   It is difficult to see what's going wrong when viewing the python within sql, so we grabbed the whole code (below) and will tangle it to a file, so we can run it as pure python.  This should create a sql file called 'load.sql' in our tmp folder.  If not, there's an issue with our pytyhon.  If it does create it successfully, but psql cannot load the sql file, then we have an issue with how the sql was constructed.
+    
+    #+NAME: load_audit_event
+    #+begin_src python :tangle ~/Projects/tmp/load_audit_events.py
+      #!/usr/bin/env python3
+      from urllib.request import urlopen, urlretrieve
+      import os
+      import re
+      from bs4 import BeautifulSoup
+      import subprocess
+      import time
+      import glob
+      from tempfile import mkdtemp
+      from string import Template
+      from urllib.parse import urlparse
+      import requests
+      import hashlib
+      from collections import defaultdict
+      import json
+      import csv
+      import sys
+
+      from copy import deepcopy
+      from functools import reduce
+
+      def deep_merge(*dicts, update=False):
+          """
+          Merges dicts deeply.
+          Parameters
+          ----------
+          dicts : list[dict]
+              List of dicts.
+          update : bool
+              Whether to update the first dict or create a new dict.
+          Returns
+          -------
+          merged : dict
+              Merged dict.
+          """
+          def merge_into(d1, d2):
+              for key in d2:
+                  if key not in d1 or not isinstance(d1[key], dict):
+                      d1[key] = deepcopy(d2[key])
+                  else:
+                      d1[key] = merge_into(d1[key], d2[key])
+              return d1
+
+          if update:
+              return reduce(merge_into, dicts[1:], dicts[0])
+          else:
+              return reduce(merge_into, dicts, {})
+      def load_openapi_spec(url):
+          cache=defaultdict(dict)
+          openapi_spec = {}
+          openapi_spec['hit_cache'] = {}
+
+          swagger = requests.get(url).json()
+          for path in swagger['paths']:
+              path_data = {}
+              path_parts = path.strip("/").split("/")
+              path_len = len(path_parts)
+              path_dict = {}
+              last_part = None
+              last_level = None
+              current_level = path_dict
+              for part in path_parts:
+                  if part not in current_level:
+                      current_level[part] = {}
+                  last_part=part
+                  last_level = current_level
+                  current_level = current_level[part]
+              for method, swagger_method in swagger['paths'][path].items():
+                  if method == 'parameters':
+                      next
+                  else:
+                      current_level[method]=swagger_method.get('operationId', '')
+              cache = deep_merge(cache, {path_len:path_dict})
+          openapi_spec['cache'] = cache
+          return openapi_spec
+      def find_operation_id(openapi_spec, event):
+        verb_to_method={
+          'get': 'get',
+          'list': 'get',
+          'proxy': 'proxy',
+          'create': 'post',
+          'post':'post',
+          'put':'post',
+          'update':'put',
+          'patch':'patch',
+          'connect':'connect',
+          'delete':'delete',
+          'deletecollection':'delete',
+          'watch':'get'
+        }
+        method=verb_to_method[event['verb']]
+        url = urlparse(event['requestURI'])
+        # 1) Cached seen before results
+        if url.path in openapi_spec['hit_cache']:
+          if method in openapi_spec['hit_cache'][url.path].keys():
+            return openapi_spec['hit_cache'][url.path][method]
+        uri_parts = url.path.strip('/').split('/')
+        if 'proxy' in uri_parts:
+            uri_parts = uri_parts[0:uri_parts.index('proxy')]
+        part_count = len(uri_parts)
+        try: # may have more parts... so no match
+            cache = openapi_spec['cache'][part_count]
+        except Exception as e:
+          plpy.warning("part_count was:" + part_count)
+          plpy.warning("spec['cache'] keys was:" + openapi_spec['cache'])
+          raise e
+        last_part = None
+        last_level = None
+        current_level = cache
+        for idx in range(part_count):
+          part = uri_parts[idx]
+          last_level = current_level
+          if part in current_level:
+            current_level = current_level[part] # part in current_level
+          elif idx == part_count-1:
+            if part == 'metrics':
+              return None
+            if part == 'readyz':
+              return None
+            if part == 'livez':
+              return None
+            if part == 'healthz':
+              return None
+            if 'discovery.k8s.io' in uri_parts:
+              return None
+            #   elif part == '': # The last V
+            #     current_level = last_level
+            #       else:
+            variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
+            if len(variable_levels) > 1:
+              raise "If we have more than one variable levels... this should never happen."
+            next_level=variable_levels[0] # the var is the next level
+            current_level = current_level[next_level] # variable part is final part
+          else:
+            next_part = uri_parts[idx+1]
+            variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}
+            if not variable_levels: # there is no match
+              if 'example.com' in part:
+                return None
+              elif 'kope.io' in part:
+                return None
+              elif 'snapshot.storage.k8s.io' in part:
+                return None
+              elif 'discovery.k8s.io' in part:
+                return None
+              elif 'metrics.k8s.io' in part:
+                return None
+              elif 'wardle.k8s.io' in part:
+                return None
+              elif ['openapi','v2'] == uri_parts: # not part our our spec
+                return None
+              else:
+                print(url.path)
+                return None
+            next_level={v: k for k, v in variable_levels.items()}[True]
+            current_level = current_level[next_level] #coo
+        try:
+          op_id=current_level[method]
+        except Exception as err:
+          plpy.warning("method was:" + method)
+          plpy.warning("current_level keys:" + current_level.keys())
+          raise err
+        if url.path not in openapi_spec['hit_cache']:
+          openapi_spec['hit_cache'][url.path]={method:op_id}
+        else:
+          openapi_spec['hit_cache'][url.path][method]=op_id
+        return op_id
+      def get_json(url):
+          body = urlopen(url).read()
+          data = json.loads(body)
+          return data
+
+      def get_html(url):
+          html = urlopen(url).read()
+          soup = BeautifulSoup(html, 'html.parser')
+          return soup
+
+
+      def download_url_to_path(url, local_path):
+          local_dir = os.path.dirname(local_path)
+          if not os.path.isdir(local_dir):
+              os.makedirs(local_dir)
+          if not os.path.isfile(local_path):
+              process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
+              downloads[local_path] = process
+
+      # this global dict is used to track our wget subprocesses
+      # wget was used because the files can get to several halfa gig
+      downloads = {}
+
+      #establish bucket we'll draw test results from.
+      gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
+      baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
+      bucket =  baseline_bucket if custom_bucket is None else custom_bucket
+
+      #grab the latest successful test run for our chosen bucket.
+      testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
+      latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
+
+      #establish job
+      baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
+      job = baseline_job if custom_job is None else custom_job
+
+      def load_audit_events(bucket,job):
+          bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
+          artifacts_url = 'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/' + bucket + '/' +  job + '/' + 'artifacts'
+          job_metadata_files = [
+              'finished.json',
+              'artifacts/metadata.json',
+              'artifacts/junit_01.xml',
+              'build-log.txt'
+          ]
+          download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
+          combined_log_file = download_path + 'audit.log'
+
+          # meta data to download
+          for jobfile in job_metadata_files:
+              download_url_to_path( bucket_url + jobfile,
+                                    download_path + jobfile )
+
+          # Use soup to grab url of each of audit.log.* (some end in .gz)
+          soup = get_html(artifacts_url)
+          master_link = soup.find(href=re.compile("master"))
+          master_soup = get_html(
+              "https://gcsweb.k8s.io" + master_link['href'])
+          log_links = master_soup.find_all(
+              href=re.compile("audit.log"))
+
+          finished_metadata = json.load(open(download_path + 'finished.json'))
+          commit_hash=finished_metadata['job-version'].split('+')[1]
+          # download all logs
+          for link in log_links:
+              log_url = link['href']
+              log_file = download_path + os.path.basename(log_url)
+              download_url_to_path( log_url, log_file)
+
+          # Our Downloader uses subprocess of curl for speed
+          for download in downloads.keys():
+              # Sleep for 5 seconds and check for next download
+              while downloads[download].poll() is None:
+                  time.sleep(5)
+                  # print("Still downloading: " + download)
+              # print("Downloaded: " + download)
+
+          # Loop through the files, (z)cat them into a combined audit.log
+          with open(combined_log_file, 'ab') as log:
+              for logfile in sorted(
+                      glob.glob(download_path + '*kube-apiserver-audit*'), reverse=True):
+                  if logfile.endswith('z'):
+                      subprocess.run(['zcat', logfile], stdout=log, check=True)
+                  else:
+                      subprocess.run(['cat', logfile], stdout=log, check=True)
+          # Process the resulting combined raw audit.log by adding operationId
+          spec = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/' + commit_hash +  '/api/openapi-spec/swagger.json')
+          infilepath=combined_log_file
+          outfilepath=combined_log_file+'+opid'
+          with open(infilepath) as infile:
+              with open(outfilepath,'w') as output:
+                  for line in infile.readlines():
+                      event = json.loads(line)
+                      event['operationId']=find_operation_id(spec,event)
+                      output.write(json.dumps(event)+'\n')
+          #####
+          # Load the resulting updated audit.log directly into raw_audit_event
+          try:
+              # for some reason tangling isn't working to reference this SQL block
+              sql = Template("""
+      CREATE TEMPORARY TABLE raw_audit_event_import_${job} (data jsonb not null) ;
+      COPY raw_audit_event_import_${job} (data)
+      FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
+
+      INSERT INTO raw_audit_event(bucket, job,
+                                   audit_id, stage,
+                                   event_verb, request_uri,
+                                   operation_id,
+                                   data)
+      SELECT '${bucket}', '${job}',
+             (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
+             (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
+             (raw.data ->> 'operationId'),
+             raw.data
+        FROM raw_audit_event_import_${job} raw;
+              """).substitute(
+                  audit_logfile = outfilepath,
+                  # audit_logfile = combined_log_file,
+                  bucket = bucket,
+                  job = job
+              )
+              with open(download_path + 'load.sql', 'w') as sqlfile:
+                sqlfile.write(sql)
+              # rv = plpy.execute(sql)
+              #plpy.commit()
+              # this calls external binary, not part of transaction 8(
+              #rv = plpy.execute("select * from audit_event_op_update();")
+              #plpy.commit()
+              #rv = plpy.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY podspec_field_coverage_material;")
+              #plpy.commit()
+              return "it worked"
+          except plpy.SPIError:
+              return "something went wrong with plpy"
+          except:
+              return "something unknown went wrong"
+      #if __name__ == "__main__":
+      #    load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234')
+      #else:
+      # load_audit_events(bucket,job)
+      load_audit_events('ci-kubernetes-e2e-gce-cos-k8sstable3-default', null)
+    #+end_src
+    
+   I ran through this code at  [[file:~/Projects/tmp/load_audit_events.py][load_audit_events.py]]  putting in some ipdb traces.  The error seems to come for a particular event whose verb does not match any keys in the current_level.  So the verb is 'post' but the current_level only has keys for 'delete', 'get', 'put' etc.
+
+The method is beding pulled from the event, the current_level is being determioned by the cache which is determined by the open_api_spec.  Is there some discrepancy in the spec versus the logs(e.g. running a verb that the spec of this opId hasn't accounted for?)
+
+I wasn't fully grokking how the cache plays into the method and current_level, or why this drift could occur.  We could skip over an event if the key isn't found, but then it'd be hard to tru8st the numbers we generate from this. 
+
+I've left my ipdb session and code in pane 3 of this tmate session.
+
 ** Bring in data for last four releases
 ** Adjust timestamp for these jobs to be date of release
 ** Ensure Coverage over time displays these releases correctly
