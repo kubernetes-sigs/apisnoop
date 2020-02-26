@@ -80,7 +80,7 @@
 
 * Identifying an untested feature Using APISnoop                     :export:
 
-According to this APIsnoop query, there are still some remaining RESOURCENAME endpoints which are untested.
+According to this APIsnoop query, there are still some remaining Service endpoints which are untested.
 
   #+NAME: untested_stable_core_endpoints
   #+begin_src sql-mode :eval never-export :exports both :session none
@@ -92,79 +92,67 @@ According to this APIsnoop query, there are still some remaining RESOURCENAME en
       kind
       FROM untested_stable_core_endpoints
       where path not like '%volume%'
-      -- and kind like ''
+      and kind like 'Service'
       -- and operation_id ilike '%%'
      ORDER BY kind,operation_id desc
-     LIMIT 25
+     -- LIMIT 25
            ;
   #+end_src
 
  #+RESULTS: untested_stable_core_endpoints
  #+begin_SRC example
-                 operation_id                |      kind       
- --------------------------------------------+-----------------
-  createCoreV1NamespacedPodBinding           | Binding
-  createCoreV1NamespacedBinding              | Binding
-  readCoreV1ComponentStatus                  | ComponentStatus
-  listCoreV1ComponentStatus                  | ComponentStatus
-  replaceCoreV1NamespacedEndpoints           | Endpoints
-  patchCoreV1NamespacedEndpoints             | Endpoints
-  listCoreV1EndpointsForAllNamespaces        | Endpoints
-  deleteCoreV1CollectionNamespacedEndpoints  | Endpoints
-  replaceCoreV1NamespacedEvent               | Event
-  readCoreV1NamespacedEvent                  | Event
-  patchCoreV1NamespacedEvent                 | Event
-  listCoreV1NamespacedEvent                  | Event
-  listCoreV1EventForAllNamespaces            | Event
-  deleteCoreV1NamespacedEvent                | Event
-  deleteCoreV1CollectionNamespacedEvent      | Event
-  createCoreV1NamespacedEvent                | Event
-  patchCoreV1NamespacedLimitRange            | LimitRange
-  listCoreV1LimitRangeForAllNamespaces       | LimitRange
-  deleteCoreV1CollectionNamespacedLimitRange | LimitRange
-  replaceCoreV1NamespaceStatus               | Namespace
-  replaceCoreV1NamespaceFinalize             | Namespace
-  readCoreV1NamespaceStatus                  | Namespace
-  patchCoreV1NamespaceStatus                 | Namespace
-  patchCoreV1Namespace                       | Namespace
-  listCoreV1Namespace                        | Namespace
- (25 rows)
+              operation_id             |  kind   
+ --------------------------------------+---------
+  replaceCoreV1NamespacedServiceStatus | Service
+  readCoreV1NamespacedServiceStatus    | Service
+  patchCoreV1NamespacedServiceStatus   | Service
+  patchCoreV1NamespacedService         | Service
+ (4 rows)
 
  #+end_SRC
 
 * API Reference and feature documentation                            :export:
 - [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
-- [[https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/resourcename.go][client-go - RESOURCENAME]] 
+- [[https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/service.go][client-go - Service]]
 
 * The mock test                                                      :export:
 ** Test outline
-1. Create a RESOURCENAME with a static label
+1. Create a Service with a static label
 
-2. Patch the RESOURCENAME with a new Label and updated data
+2. Patch the Service with a new Label and updated data
 
-3. Get the RESOURCENAME to ensure it's patched
+3. Get the Service to ensure it's patched
 
-4. List all RESOURCENAMEs in all Namespaces
-   find the RESOURCENAME(1)
-   ensure that the RESOURCENAME is found and is patched
+4. Patch the Service's status
 
-5. Delete Namespaced RESOURCENAME(1) via a Collection with a LabelSelector
+5. Get the Service's status to ensure it's patched
+
+6. Update the Service's status
+
+7. Get the Service's status to ensure it's replace
+   
+8. Delete Namespaced Service
+
+9. Get Service to ensure that it's deleted
 
 ** Test the functionality in Go
    #+begin_src go
      package main
 
      import (
+	     "encoding/json"
        "fmt"
        "flag"
        "os"
-       // v1 "k8s.io/api/core/v1"
-       // "k8s.io/client-go/dynamic"
-       // "k8s.io/apimachinery/pkg/runtime/schema"
+       v1 "k8s.io/api/core/v1"
+       "k8s.io/client-go/dynamic"
+       "k8s.io/apimachinery/pkg/runtime/schema"
        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+       "k8s.io/apimachinery/pkg/util/intstr"
        "k8s.io/client-go/kubernetes"
-       // "k8s.io/apimachinery/pkg/types"
+       "k8s.io/apimachinery/pkg/types"
        "k8s.io/client-go/tools/clientcmd"
+       "k8s.io/apimachinery/pkg/util/uuid"
      )
 
      func main() {
@@ -180,16 +168,117 @@ According to this APIsnoop query, there are still some remaining RESOURCENAME en
        config.UserAgent = "live-test-writing"
        // creates the clientset
        ClientSet, _ := kubernetes.NewForConfig(config)
-       // DynamicClientSet, _ := dynamic.NewForConfig(config)
-       // podResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+       DynamicClientSet, _ := dynamic.NewForConfig(config)
+       serviceResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 
-       // access the API to list pods
-       pods, err := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{})
+       testServiceName := "test-service"
+       testServiceUUID := string(uuid.NewUUID())
+       testNs := "default"
+
+       // create the Service
+       testService := v1.Service{
+          ObjectMeta: metav1.ObjectMeta{
+              Name: testServiceName,
+              Labels: map[string]string{"test-service-static": "true"},
+          },
+          Spec: v1.ServiceSpec{
+              Selector: map[string]string{"test-service": testServiceUUID},
+              Type: "ClusterIP",
+              Ports: []v1.ServicePort{
+                  {
+                      Name: "http",
+                      Port: int32(80),
+                      TargetPort: intstr.FromInt(80),
+                  },
+              },
+          },
+       }
+       _, err = ClientSet.CoreV1().Services(testNs).Create(&testService)
        if err != nil {
            fmt.Println(err)
            return
        }
-       fmt.Printf("[status] there are %d pods in the cluster\n", len(pods.Items))
+       fmt.Println("[status] created Service")
+
+       // setup a watch for the Service
+       serviceWatch, err := ClientSet.CoreV1().Services(testNs).Watch(metav1.ListOptions{LabelSelector: "test-service-static=true"})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       serviceWatchChan := serviceWatch.ResultChan()
+       fmt.Println("[status] watching for Service to be available")
+       for event := range serviceWatchChan {
+           serviceEvent, ok := event.Object.(*v1.Service)
+           if ok != true {
+               fmt.Println("Unable to fix type")
+               return
+           }
+           if serviceEvent.Spec.ClusterIP != "" {
+               break
+           }
+       }
+
+       // patch the Service with a new Label and updated data
+       servicePatch, err := json.Marshal(map[string]interface{}{
+           "metadata": map[string]interface{}{
+               "labels": map[string]string{
+                   "test-service": "patched",
+               },
+           },
+           "spec": map[string]interface{}{
+               "selector": map[string]string{"test-service": testServiceUUID + "123"},
+           },
+       })
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       _, err = ClientSet.CoreV1().Services(testNs).Patch(testServiceName, types.StrategicMergePatchType, []byte(servicePatch), metav1.PatchOptions{})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       fmt.Println("[status] patched Service")
+
+       // get the Service and ensure it's patched
+       svc, err := ClientSet.CoreV1().Services(testNs).Get(testServiceName, metav1.GetOptions{})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       if svc.ObjectMeta.Labels["test-service-static"] != "true" || svc.Spec.Selector["test-service"] != testServiceUUID + "123" {
+           fmt.Println("[error] patching of Pod failed")
+           return
+       }
+       fmt.Println("[status] Service was patched successfully")
+
+       // patch the Service's Status
+       // TODO add patch
+       _, err = DynamicClientSet.Resource(serviceResource).Namespace(testNs).Patch(testService, types.StrategicMergePatchType, []byte())
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       // TODO get Service's Status to ensure it's been patched
+
+       // TODO update Service's Status
+
+       // TODO get Service's Status to ensure it's been updated
+
+       err = ClientSet.CoreV1().Services(testNs).Delete(testServiceName, &metav1.DeleteOptions{})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       fmt.Println("[status] deleted Service")
+
+       // get the Service and ensure it's patched
+       svc, err = ClientSet.CoreV1().Services(testNs).Get(testServiceName, metav1.GetOptions{})
+       if err == nil {
+           fmt.Println("[error] found Service after it was deleted")
+           return
+       }
 
        // write test here
        fmt.Println("[status] complete")
@@ -199,7 +288,11 @@ According to this APIsnoop query, there are still some remaining RESOURCENAME en
 
    #+RESULTS:
    #+begin_src go
-   [status] there are 20 pods in the cluster
+   [status] created Service
+   [status] watching for Service to be available
+   [status] patched Service
+   [status] Service was patched successfully
+   [status] deleted Service
    [status] complete
    #+end_src
 
@@ -209,10 +302,32 @@ Discover useragents:
     select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
   #+end_src
 
+  #+RESULTS:
+  #+begin_SRC example
+       useragent     
+  -------------------
+   live-test-writing
+  (1 row)
+
+  #+end_SRC
+
 List endpoints hit by the test:
 #+begin_src sql-mode :exports both :session none
 select * from endpoints_hit_by_new_test where useragent like 'live%'; 
 #+end_src
+
+#+RESULTS:
+#+begin_SRC example
+     useragent     |         operation_id          | hit_by_ete | hit_by_new_test 
+-------------------+-------------------------------+------------+-----------------
+ live-test-writing | createCoreV1NamespacedService | t          |               2
+ live-test-writing | deleteCoreV1NamespacedService | t          |               2
+ live-test-writing | listCoreV1NamespacedService   | t          |               1
+ live-test-writing | patchCoreV1NamespacedService  | f          |               2
+ live-test-writing | readCoreV1NamespacedService   | t          |               2
+(5 rows)
+
+#+end_SRC
 
 Display endpoint coverage change:
   #+begin_src sql-mode :eval never-export :exports both :session none
@@ -223,7 +338,7 @@ Display endpoint coverage change:
   #+begin_SRC example
      category    | total_endpoints | old_coverage | new_coverage | change_in_number 
   ---------------+-----------------+--------------+--------------+------------------
-   test_coverage |             438 |          183 |          183 |                0
+   test_coverage |             438 |          190 |          191 |                1
   (1 row)
 
   #+end_SRC
