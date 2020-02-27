@@ -95,10 +95,10 @@ If you want to share with others, you'll need a working DNS domain pointing to y
 
    #+RESULTS:
    #+begin_example
-   http://tilt.127.0.0.1.xip.io
-   http://pgadmin.127.0.0.1.xip.io
-   http://hasura.127.0.0.1.xip.io
-   http://apisnoop.127.0.0.1.xip.io
+   http://tilt.139.178.70.29.xip.io
+   http://pgadmin.139.178.70.29.xip.io
+   http://hasura.139.178.70.29.xip.io
+   http://apisnoop.139.178.70.29.xip.io
    #+end_example
 
 ** Optionally Update *.local.ii.coop -> *.YOU.your.domain
@@ -115,15 +115,17 @@ If you want to share with others, you'll need a working DNS domain pointing to y
 
    #+RESULTS:
    #+begin_example
-   http://tilt.local.ii.coop
-   http://pgadmin.local.ii.coop
-   http://hasura.local.ii.coop
-   http://apisnoop.local.ii.coop
+   http://tilt.hh.ii.coop
+   http://pgadmin.hh.ii.coop
+   http://hasura.hh.ii.coop
+   http://apisnoop.hh.ii.coop
    #+end_example
 
 * Bring up tilt
 Tilt will use the kustomization.yaml and the patches it references to bring up the apisnoop development environment.
-#+begin_src tmate :dir "."
+
+Uncomment the images / dockerfiles you want to work on before running tilt.
+#+begin_src tmate :dir "." :session ii:TILT
   tilt up --host 0.0.0.0
 #+end_src
 * Reset basic-auth password
@@ -154,3 +156,170 @@ If your writing tests, your next step are likely:
 - [[./org/tickets/mock-template.org::*Check%20it%20all%20worked][Check it all worked]] 
 - [[./org/tickets/mock-template.org::*Check%20current%20coverage][Check current coverage]] 
 - [[./org/tickets/mock-template.org::*Identify%20an%20untested%20feature%20Using%20APISnoop][Identify an untested feature Using APISnoop]]
+
+  
+* scratch 
+  #+begin_src sql-mode
+select test, cardinality(operation_ids) from tests limit 1;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                                                                           test                                                                         | cardinality 
+  ------------------------------------------------------------------------------------------------------------------------------------------------------+-------------
+    [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart exec hook properly [NodeConformance] [Conformance] |          12
+  (1 row)
+
+  #+end_SRC
+  
+* Tips 
+** Checking Which endpoints are hit by a test
+   Let's say you are looking at the test:
+   : runs ReplicaSets to verify preemption running path
+   And you want to see how many endpoints it hits, and what they are.
+   Our data set has multiple audit logs, but we are only concerned with sets from one specific bucket and job.
+   
+   #+NAME:Endpoints hit by a test
+   #+begin_src sql-mode
+     SELECT
+       test,
+       cardinality(operation_ids) as num_endpoints_hit,
+       operation_ids as endpoints_hit
+       FROM
+           tests
+      WHERE
+          test like '%runs ReplicaSets to verify preemption running path%'
+      AND bucket = 'ci-kubernetes-e2e-gce-cos-k8sbeta-default' 
+      AND job = '1232485151057907715'
+          ;
+   #+end_src
+
+   #+RESULTS: Endpoints hit by a test
+   #+begin_SRC example
+                                                test                                             | num_endpoints_hit |                                                                                                                                                                                                                                     endpoints_hit                                                                                                                                                                                                                                      
+   ----------------------------------------------------------------------------------------------+-------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+     [sig-scheduling] PreemptionExecutionPath runs ReplicaSets to verify preemption running path |                17 | {createAppsV1NamespacedReplicaSet,createAuthorizationV1SubjectAccessReview,createCoreV1Namespace,createCoreV1NamespacedPod,createRbacAuthorizationV1NamespacedRoleBinding,createSchedulingV1PriorityClass,deleteCoreV1Namespace,deleteCoreV1NamespacedPod,deleteSchedulingV1PriorityClass,listCoreV1NamespacedPod,listCoreV1NamespacedServiceAccount,listCoreV1Node,readAppsV1NamespacedReplicaSet,readCoreV1Namespace,readCoreV1NamespacedPod,readCoreV1Node,replaceCoreV1NodeStatus}
+   (1 row)
+
+   #+end_SRC
+
+Now, we want to see which of these endpoints are conformant.  This is information available in ~endpoint_coverage~, but how do we limit that list of all endpoints to this specific set?
+
+First, we can take just the array of operation_ids and unnest them into individual rows.  So operation_ids will become multiple columns of operation_id
+#+NAME: Expanding array into rows
+#+begin_src sql-mode
+  SELECT
+    unnest(operation_ids) as operation_id
+    FROM
+        tests
+   WHERE
+       test like '%runs ReplicaSets to verify preemption running path%'
+   AND bucket = 'ci-kubernetes-e2e-gce-cos-k8sbeta-default' 
+   AND job = '1232485151057907715'
+       ;
+
+#+end_src
+
+#+RESULTS: Expanding array into rows
+#+begin_SRC example
+                  operation_id                  
+------------------------------------------------
+ createAppsV1NamespacedReplicaSet
+ createAuthorizationV1SubjectAccessReview
+ createCoreV1Namespace
+ createCoreV1NamespacedPod
+ createRbacAuthorizationV1NamespacedRoleBinding
+ createSchedulingV1PriorityClass
+ deleteCoreV1Namespace
+ deleteCoreV1NamespacedPod
+ deleteSchedulingV1PriorityClass
+ listCoreV1NamespacedPod
+ listCoreV1NamespacedServiceAccount
+ listCoreV1Node
+ readAppsV1NamespacedReplicaSet
+ readCoreV1Namespace
+ readCoreV1NamespacedPod
+ readCoreV1Node
+ replaceCoreV1NodeStatus
+(17 rows)
+
+#+end_SRC
+
+#+RESULTS: Seeing coverage for arbirtrary set of endpoints
+#+begin_SRC example
+                  bucket                   |         job         |                  operation_id                  
+-------------------------------------------+---------------------+------------------------------------------------
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | createAppsV1NamespacedReplicaSet
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | createAuthorizationV1SubjectAccessReview
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | createCoreV1Namespace
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | createCoreV1NamespacedPod
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | createRbacAuthorizationV1NamespacedRoleBinding
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | createSchedulingV1PriorityClass
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | deleteCoreV1Namespace
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | deleteCoreV1NamespacedPod
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | deleteSchedulingV1PriorityClass
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | listCoreV1NamespacedPod
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | listCoreV1NamespacedServiceAccount
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | listCoreV1Node
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | readAppsV1NamespacedReplicaSet
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | readCoreV1Namespace
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | readCoreV1NamespacedPod
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | readCoreV1Node
+ ci-kubernetes-e2e-gce-cos-k8sbeta-default | 1232485151057907715 | replaceCoreV1NodeStatus
+(17 rows)
+
+#+end_SRC
+
+Then we can create an INNER JOIN to endpoint coverage, matching on bucket, job, and operation_id.
+Since we are joining on all columns, and there's no confusion on what these columns may be, we can use a NATURAL JOIN.
+
+For readability, I like to set our subquery as a WITH clause at the start of our query.
+
+#+NAME: Seeing coverage for arbitrary set of endpoints
+#+begin_src sql-mode
+  WITH selected_endpoints AS (
+    SELECT
+      bucket,
+      job,
+      unnest(operation_ids) as operation_id
+      FROM
+          tests
+     WHERE
+         test like '%runs ReplicaSets to verify preemption running path%'
+     AND bucket = 'ci-kubernetes-e2e-gce-cos-k8sbeta-default' 
+     AND job = '1232485151057907715')
+
+  SELECT
+    operation_id,
+    conf_tested
+    FROM endpoint_coverage
+           NATURAL INNER JOIN selected_endpoints
+   ORDER BY conf_tested ASC
+            ;
+#+end_src
+
+#+RESULTS: Seeing coverage for arbitrary set of endpoints
+#+begin_SRC example
+                  operation_id                  | conf_tested 
+------------------------------------------------+-------------
+ replaceCoreV1NodeStatus                        | f
+ createSchedulingV1PriorityClass                | f
+ deleteSchedulingV1PriorityClass                | f
+ readCoreV1Node                                 | f
+ createRbacAuthorizationV1NamespacedRoleBinding | t
+ readCoreV1NamespacedPod                        | t
+ deleteCoreV1Namespace                          | t
+ deleteCoreV1NamespacedPod                      | t
+ createAppsV1NamespacedReplicaSet               | t
+ listCoreV1NamespacedPod                        | t
+ listCoreV1NamespacedServiceAccount             | t
+ listCoreV1Node                                 | t
+ readAppsV1NamespacedReplicaSet                 | t
+ readCoreV1Namespace                            | t
+ createAuthorizationV1SubjectAccessReview       | t
+ createCoreV1Namespace                          | t
+ createCoreV1NamespacedPod                      | t
+(17 rows)
+
+#+end_SRC
+
