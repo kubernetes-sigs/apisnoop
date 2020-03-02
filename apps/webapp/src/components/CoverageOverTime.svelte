@@ -18,14 +18,14 @@
  // X Ticks will be every 3 weeks for the last 13 weeks
  $: xTicks = [
      dayjs($coverage[0].timestamp).subtract(1, 'day'),
-     dayjs().subtract(9, 'week'),
-     dayjs().subtract(6, 'week'),
-     dayjs().subtract(3, 'week'),
+     dayjs().subtract(9, 'month'),
+     dayjs().subtract(6, 'month'),
+     dayjs().subtract(3, 'month'),
      dayjs()
  ];
 
  let width = 900;
- let height = 450;
+ let height = 600;
 
  $: activeJob = {};
  $: minX = dayjs($dates[0]);
@@ -66,8 +66,8 @@
         </g>
         <path class='path-area' d={testedArea}></path>
         <path class='path-line' d={testedPath}></path>
-        <path class='path-area conf' d={confArea}></path>
         <path class='path-line conf' d={confPath}></path>
+        <path class='path-area conf' d={confArea}></path>
         {#each $coverage as point}
             <circle
                 cx='{xScale(point.timestamp)}'
@@ -77,10 +77,21 @@
                 on:mouseover={() => {
                              prefetch(`coverage/ci-kubernetes-e2e-gci-gce/${point.job}`)
                              activeJob = point
-                             console.log({activeJob, coverage: point})
                              }}
                 on:mouseleave={() => activeJob = {}}
-                on:click={() => goto(`coverage/ci-kubernetes-e2e-gci-gce/${point.job}`)}
+                on:click={() => goto(`coverage/${point.bucket}/${point.job}`)}
+            />
+            <circle
+                cx='{xScale(point.timestamp)}'
+                cy='{yScale(point.percent_conf_tested)}'
+                r='5'
+                class='point conf'
+                on:mouseover={() => {
+                             prefetch(`coverage/ci-kubernetes-e2e-gci-gce/${point.job}`)
+                             activeJob = point
+                             }}
+                on:mouseleave={() => activeJob = {}}
+                on:click={() => goto(`coverage/${point.bucket}/${point.job}`)}
             />
         {/each}
         {#if !isEmpty(activeJob)}
@@ -161,6 +172,9 @@
      fill-opacity: 0.6;
      stroke: rgba(0,0,0,0.5);
      cursor: pointer;
+ }
+ circle.point.conf {
+     fill: green;
  }
 
  rect.tooltip {
