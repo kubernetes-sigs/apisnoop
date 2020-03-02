@@ -63,7 +63,6 @@ export const hitByMatchingTestTags = (tests, regex, endpoint) => {
 export const determineBucketAndJob = (bucketsAndJobs, bucketParam, jobParam) => {
   let bucket;
   let job;
-  
   let buckets = groupBy(bucketsAndJobs, 'bucket');
   let bj = mapValues(buckets, (allJobs) => {
     let jobs = allJobs
