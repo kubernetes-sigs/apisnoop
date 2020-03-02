@@ -29,8 +29,6 @@
     <title>APISnoop</title>
 </svelte:head>
 <CoverageOverTime />
-<a href='/coverage/ci-kubernetes-e2e-gci-gce' on:click={() => goto('/coverage/ci-kubernetes-e2e-gci-gce')}>go to coverage</a>
-
 <style>
  ul {
 	 margin: 0 0 1em 0;
