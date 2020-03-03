@@ -1,0 +1,110 @@
+#+TITLE: Data Overview
+#+AUTHOR: Zach Mandeville
+#+DATE: 2020-03-03
+
+* Introduction
+  Apisnoop allows you to query the audit logs from a kubernetes cluster, with a focus on clusters running the e2e.test binary.  To do this, we gather audit logs, parse them, then add them to a postgres database and graphql endpoint.  This document explains how our data flows from ionitial audit log to ready-made query, to better understand the logic behind and capabilities of APISnoop.
+* Our Materials/Stack  
+** Overview
+  APISnoop is designed to have multiple entrances into its data, so you can gather insights in the way most comfortable to you.  It consists of a sql database that connects to a graphql api endpoint. We then integrate these with a simple web frontend and a highly customized version of emacs called kubemacs. 
+** PostgreSQL
+   We use [[https://www.postgresql.org/][PostgresQL]] for our sql database, pulling from a custom docker image held at [[gcr.io]].
+   The db initialization, and contaioner creation, are defined [[https://github.com/cncf/apisnoop/apps/postgres][in this repo]]
+
+  Postgres comes with psql, a commandline interpeter, and so you can directly query the db from within your cluster.
+** pgadmin
+   :LOGBOOK:
+   CLOCK: [2020-03-03 Tue 14:25]--[2020-03-03 Tue 14:50] =>  0:25
+   :END:
+   We package in [[https://www.pgadmin.org/][pgadmin]] with Postgres, to give you a web-frontend to administer or query your db.
+   Our configuration for pgadmin is held in [[https://github.com/cncf/apisnoop/apps/pgadmin][our repo]] 
+   
+   The majority of data fetching and processing is done with postgres functions and various tables and views.   All functions, tables, and views are defined in [[https://github.com/cncf/apisnoop/org/tables_and_views.org][org/tables_and_views.org]].  We tangle all the code defined in this document into a set of migrations that are run during APISnoop's initialization.
+
+** hasura
+   [[https://hasura.io][Hasura]] transforms our SQL tables and views into a graphql API endpoint.
+   In [[https://github.com/cncf/apisnoop/apps/hasura][our repo]] , you wil lfind the Docker image definition and all the hasura migrations.
+   The migrations are responsible for the creation of the database and its initial set of data.
+   
+   With hasura, you have an api endpoint that you can use in a custom set of code (and that we use for our web front end).  You also have a Graphiql console for building out graphql queries and seeing their results.  
+** kubemacs
+   :LOGBOOK:
+   CLOCK: [2020-03-03 Tue 15:07]
+   :END:
+   Kubemacs is our fork of  [[https://spacemacs.org][Spacemacs]], a hybrid vim+emacs text editor.  Our forks puts in an integrated pairing environment and a default configuration built for working with kubernetes and APISnoop.
+   
+   For example, I am writing this within kubemacs, having deployed it with apisnoop with a simple shell script.  With no additional configuration from me, this document is already connected to the cluster and all coverage data available in my instance of apisnoop.  If I wanted to share the coverage for all stable kubernetes endpoints as of today, I can fashion a sql query directly in this essay
+   
+   #+begin_src sql-mode
+     SELECT
+       date,
+       total_endpoints,
+       percent_tested,
+       percent_conf_tested
+       FROM
+           stable_endpoint_stats
+           ;
+   #+end_src
+   
+   And it will print the results of this query directly in the document.
+
+   #+RESULTS:
+   #+begin_src sql-mode
+       date    | total_endpoints | percent_tested | percent_conf_tested 
+   ------------+-----------------+----------------+---------------------
+    2020-03-02 |             438 |          43.84 |               31.96
+   (1 row)
+
+   #+end_src
+   
+   I can also run shell scripts for info about the cluster itself
+   
+   #+begin_src shell
+   kind get clusters; kubectl get pods
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src shell
+   cncf.conformance
+   NAME                                    READY   STATUS    RESTARTS   AGE
+   apisnoop-auditlogger-59fb76dd8d-kljct   1/1     Running   1          5h16m
+   hasura-79464f99ff-n2ssk                 1/1     Running   0          5h15m
+   kubemacs-0                              1/1     Running   0          6h18m
+   pgadmin-fbb7659d7-sq4cz                 1/1     Running   0          5h16m
+   postgres-7db8cf4b5c-swqq6               1/1     Running   0          5h16m
+   webapp-549d866f7-qpr2f                  1/1     Running   0          107m
+   #+end_src
+
+   Kubemacs image and configuration is held in [[https://github.com/cncf/apisnoop/apps/kubemacs][our repo]]  
+
+** Sapper/Svelte/D3
+   Our Webapp is built using [[https://svelte.dev/][Svelte]] and its web framework [[https://sapper.svelte.dev][Sapper]].  It consists of visualizations depicting coverage over time and an indepth sunburst showing coverage for each level and category of kubernetes endpoint.
+
+When you apply APISnoop to your own cluster, it will derive its data from the internal graphql endpoint.  This means you can load in your own data, and visually explore its coverage info in a local web frontend.
+
+As always, the image and src code for the webapp is held in [[https://github.com/cncf/apisnoop/apps/webapp][our repo]] 
+* Initial Data
+** OpenAPI Spec
+** Kubernetes Audit Logs
+* Adding OperationID and combining the audit logs
+* Useragents and Tests
+* Foundational Tables
+* Calculating Coverage
+* Auditlogger
+
+* Footnotes  
+** elisp helpers
+  #+begin_src  elisp
+    ; String => KillRing
+    ; Create an org-mode link of apisnoop repo + given path then add to clipboard
+    (defun ourRepo (path)
+      (yank
+       (kill-new
+        (concat "[[https://github.com/cncf/apisnoop/" path "][our repo]]"))))
+  #+end_src
+  #+RESULTS:
+  #+begin_src elisp
+  ourRepo
+  #+end_src
+  
+  
