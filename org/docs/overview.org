@@ -87,9 +87,9 @@ As always, the image and src code for the webapp is held in [[https://github.com
 ** OpenAPI Spec
    A kubernetes cluster commmunicates with its various services using a REST API.  This REST API is built using [[https://swagger.io][swagger]], following the [[https://www.openapis.org/][openAPI Spec]].  This means the entire API spec is available to view at [[github.com/kubernetes/kubernetes/api/openapi-spec]], and it is updated automatically whenever there's any change to the Kubernetes api.
 
-   Within the swagger.json, you can view the paths available,  and each one is given a unique operationID.  Each operationID entry gives details about the endpoint, its metadata, its group/version/kind, a short description, etc. 
+   Within the swagger.json, you can view the api endpoint paths available,  and each one is given a unique operationID.  Each operationID entry gives usefuld etails like description, group/version/kind, and other metadata.
 
-So the swagger is a great, authoritative way to understand the kubernetes endpoints.  Since it's generated with changes to the API, you want to ensure that the swagger file you're referencing is current to the cluster you are running.
+The swagger is a great, authoritative way to understand the kubernetes endpoints.  Since it's generated with changes to the API, you want to ensure that the swagger file you're referencing is current to the cluster you are running.
 ** Kubernetes Audit Logs
    To ensure a consistent and reliable code base, kubernetes has a suite of End to End (e2e) tests.  It's a large body of tests that include generally expected kubernetes behavior, along with tests for a specific provider or feature.  For example, some tests are for a specific linux capability, and so would not be expected to pass if you are running kubernetes on a windows service.  Other tests may be for an experimental, alpha feature that is held back from wider usage with a feature gate.  
 
@@ -97,19 +97,23 @@ So the swagger is a great, authoritative way to understand the kubernetes endpoi
 
     Every few hours the entire e2e suite is run on a kubernetes cluster, with its results viewable online at [[https://testgrid.k8s.io/]].  The results are divided into the various configurations of kubernetes.  Along with the test results, kubernetes stores all the audit logs from the tests. These logs are written in json and quite massive, broken up into several chunks per test job.  With them, though,  you have the most exact record of a test run, like which api paths were hit by which useragents.   When a test is run, the test's name is appended to the e2e.useragent like so: ~e2e.test -- TEST NAME~.   Which means the event holds the exact test that hit the exact path.
 
-** Gathering our swagger and event logs
-  When APISnoop initializes, it will fetch a specific set of audit events, defined by the particular test job that was run and the bucket in which that job is stored.  By default, we fetch the latest successful test run for SIG-Release-Master-Blocking, which is held in the bucket ~ci-kubernetes-e2e-gci-gce~.  Within thiks bucket is a file called ~jobResultsCache.json~ which details all jobs and their results. You can view this file here:
+* Finding our source for audit logs and swagger.json
+  When APISnoop initializes, it will fetch a specific set of audit events, defined by the particular test job that was run and the bucket in which that job is stored.  By default, we fetch the latest successful test run for SIG-Release-Master-Blocking, which is held in the bucket ~ci-kubernetes-e2e-gci-gce~.  Within this bucket is a file called ~jobResultsCache.json~ which details all jobs and their results. You can view this file here:
        https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/jobResultsCache.json
        
-       It is sorted by recency, so by filtering this list to Successes and getting the first result, we can get the most recent test run.
+       It is sorted by recency, so by filtering this list to Successes and getting the first result, we can get the most recent successful test run.
 
 This data also includes, in the job version, the hash for the commit that triggered this run.  We can use this hash to fetch the swagger.json from github at the exact commit for this test.   
 
-Using the job results, then, we are able to have a full set of audit files for a teset run and the specification of k8s api at the moment of the test.  By combining these, we could check the api spec for an endpoint and see how often it was hit during the test run and by which tests.  
+Using the job results, then, we are able to fetch a full set of audit files for a test run and the API spec for Kubernetes at the moment of the test.  By combining these two sources of data, we can calulate the coverage of each endpoint in the spec, based on its presence in the audit events.
 
+Once we know the location for our data sources, we insert them into the databas using two functions: load_swagger and load_audit_events.
+
+* Loading the Swagger
 The swagger file is inserted directly into our db along with its metadata like bucket, job, and the job timestamp.
+The method for this is detailed in our tables_and_views org file, and it is recommended reading further there.
 
-Unfortunately, the audit events do not contain the operationID that was hit which means we cannot cross-reference an audit event with the openAPI spec without some parsing.    And so, before inserting audit events into our db, we run a function that adds that operationID to them.
+* Loading Audit Events
 * Adding OperationID and combining the audit logs
   
 * Useragents and Tests

@@ -12,6 +12,62 @@
 
   If you are working on a new view, it is best to do it in our ~explorations~ folder, where it can be iterated and reviewed.  Once that view is determined to be crucial for the database, it would be ported to here, and tangled to a migration file.
 
+* Working in this file
+  If you are reading this in kubemacs, and have deployed apisnoop to your kubemacs cluster, then you can connect directly to the APISnoop database from this file (and any org file) through ~sql-mode~ code blocks.  
+
+  To get started, place your cursor within a sql-mode code block and execute it by pressing ~,,~.  This will prompt you to start up a connection, asking for your user, database, and server.  These are:
+  
+- User :: apisnoop
+- Database :: apisnoop
+- Server :: postgres
+
+You can try this now with the below code block.  It should display in your minibuffer the testing coverage for the most recent test run.
+
+#+begin_src sql-mode
+SELECT * FROM stable_endpoint_stats;
+#+end_src
+
+You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Block sQl)
+* Python Functions
+** Imports
+   #+NAME: global_func imports
+   #+begin_src python
+     from urllib.request import urlopen
+     import os
+     import json
+   #+end_src
+** Constants
+   #+NAME: global func constants
+   #+begin_src python
+   GD['GCS_LOGS'] = "https://storage.googleapis.com/kubernetes-jenkins/logs/"
+   GD['DEFAULT_BUCKET'] = "ci-kubernetes-gci-gce"
+   #+end_src
+** define get_json
+   #+NAME: define get_json
+   #+begin_src python
+     def get_json(url):
+         body = urlopen(url).read()
+         data = json.loads(body)
+         return data
+   #+end_src
+** define determine_bucket_job 
+** put it all together
+   #+NAME: determine_bucket_and_job
+   #+begin_src sql-mode
+     set role dba;
+     DROP FUNCTION IF EXISTS set_global_functions;
+     CREATE OR REPLACE FUNCTION set_global_functions()
+       RETURNS void AS $$
+       <<global_funcs imports>>
+
+       <<define get_json>>
+
+       <<global_func constants>>
+       GD['get_json'] = get_json
+       $$ LANGUAGE plpython3u ;
+       reset role;
+   #+end_src
+
 * 100: Raw Data Tables and Helper Functions
 ** 100: bucket_job_swagger table
   :PROPERTIES:
@@ -53,102 +109,290 @@
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/101_function_load_swagger.up.sql
   :END:
+    #+NAME: load_swagger.sql
+    #+BEGIN_SRC sql-mode :noweb yes :results silent
+      set role dba;
+      DROP FUNCTION IF EXISTS load_swagger;
+      CREATE OR REPLACE FUNCTION load_swagger(
+        custom_bucket text default null,
+        custom_job text default null,
+        live boolean default false)
+      RETURNS text AS $$
+      <<load_swagger.py>>
+      $$ LANGUAGE plpython3u ;
+      reset role;
+    #+END_SRC
+*** The Python function
+    #+NAME: load_swagger.py
+    #+BEGIN_SRC python :eval never :exports code
+          def get_json(url):
+              body = urlopen(url).read()
+              data = json.loads(body)
+              return data
 
-   #+NAME: load_swagger.sql
-   #+BEGIN_SRC sql-mode :noweb yes :results silent
-     set role dba;
-     DROP FUNCTION IF EXISTS load_swagger;
-     CREATE OR REPLACE FUNCTION load_swagger(
-       custom_bucket text default null,
-       custom_job text default null,
-       live boolean default false)
-     RETURNS text AS $$
-     <<load_swagger.py>>
-     $$ LANGUAGE plpython3u ;
-     reset role;
-   #+END_SRC
+          #establish bucket we'll draw test results from.
+          baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
+          bucket =  baseline_bucket if custom_bucket is None else custom_bucket
 
- #+NAME: load_swagger.py
- #+BEGIN_SRC python :eval never :exports code
-   try:
-       from urllib.request import urlopen, urlretrieve
-       from string import Template
-       import os
-       import json
+          #grab the latest successful test run for our chosen bucket.
+          testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
+          latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
 
-       def get_json(url):
-           body = urlopen(url).read()
-           data = json.loads(body)
-           return data
+          #establish job
+          baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
+          job = baseline_job if custom_job is None else custom_job
 
-       gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
-       #establish bucket we'll draw test results from.
-       baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
-       bucket =  baseline_bucket if custom_bucket is None else custom_bucket
-
-       #grab the latest successful test run for our chosen bucket.
-       testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
-       latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
-
-       #establish job
-       baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
-       job = baseline_job if custom_job is None else custom_job
-
-       metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
-       metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-       commit_hash = metadata["version"].split("+")[1]
-       swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json'])
-       swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
-       sql = """
-    INSERT INTO bucket_job_swagger(
-              bucket,
-              job,
+          metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
+          metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+          commit_hash = metadata["version"].split("+")[1]
+          swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json'])
+          swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
+          sql = """
+       INSERT INTO bucket_job_swagger(
+                 bucket,
+                 job,
+                 commit_hash,
+                 passed,
+                 job_result,
+                 infra_commit,
+                 job_version,
+                 job_timestamp,
+                 node_os_image,
+                 master_os_image,
+                 swagger
+          )
+         SELECT
+                 $1 as bucket,
+                 $2 as job,
+                 $3 as commit_hash,
+                 $4 as passed,
+                 $5 as job_result,
+                 $6 as infra_commit,
+                 $7 as job_version,
+                 (to_timestamp($8)) AT TIME ZONE 'UTC' as job_timestamp,
+                 $9 as node_os_image,
+                 $10 as master_os_image,
+                 $11 as swagger
+          """
+          plan = plpy.prepare(sql, [
+              'text','text','text','text',
+              'text','text','text',
+              'integer','text','text','jsonb'])
+          rv = plpy.execute(plan, [
+              bucket if not live else 'apisnoop',
+              job if not live else 'live',
               commit_hash,
-              passed,
-              job_result,
-              infra_commit,
-              job_version,
-              job_timestamp,
-              node_os_image,
-              master_os_image,
-              swagger
-       )
-      SELECT
-              $1 as bucket,
-              $2 as job,
-              $3 as commit_hash,
-              $4 as passed,
-              $5 as job_result,
-              $6 as infra_commit,
-              $7 as job_version,
-              (to_timestamp($8)) AT TIME ZONE 'UTC' as job_timestamp,
-              $9 as node_os_image,
-              $10 as master_os_image,
-              $11 as swagger
-       """
-       plan = plpy.prepare(sql, [
-           'text','text','text','text',
-           'text','text','text',
-           'integer','text','text','jsonb'])
-       rv = plpy.execute(plan, [
-           bucket if not live else 'apisnoop',
-           job if not live else 'live',
-           commit_hash,
-           metadata['passed'],
-           metadata['result'],
-           metadata['metadata']['infra-commit'],
-           metadata['version'],
-           int(metadata['timestamp']),
-           metadata['metadata']['node_os_image'],
-           metadata['metadata']['master_os_image'],
-           json.dumps(swagger)
-       ])
-       return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
-   except Exception as err:
-       raise err
-       return Template("something went wrong, likely this: ${error}").substitute(error = err)
- #+END_SRC
+              metadata['passed'],
+              metadata['result'],
+              metadata['metadata']['infra-commit'],
+              metadata['version'],
+              int(metadata['timestamp']),
+              metadata['metadata']['node_os_image'],
+              metadata['metadata']['master_os_image'],
+              json.dumps(swagger)
+          ])
+          return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
+      except Exception as err:
+          raise err
+          return Template("something went wrong, likely this: ${error}").substitute(error = err)
+    #+END_SRC
+    
+** 102: Refined Load Swagger
+  :PROPERTIES:
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/102_function_load_swagger.up.sql
+  :END:
+    #+NAME: zload_swagger.sql
+    #+BEGIN_SRC sql-mode :noweb yes :results silent
+      set role dba;
+      DROP FUNCTION IF EXISTS zload_swagger;
+      CREATE OR REPLACE FUNCTION zload_swagger(
+        custom_bucket text default null,
+        custom_job text default null,
+        live boolean default false)
+      RETURNS text AS $$
+      <<load_swagger2.py>>
+      $$ LANGUAGE plpython3u ;
+      reset role;
+    #+END_SRC
+*** The Python function
+**** Our Imports and Constants
+     We have a small set of dependencies, the request library for fetching and parsing urls, os for reading environment variables passed on in our docker ubild, json for reading our fetched data, and some string templating capabilities for when we write out a sql function inside of python (yes we are doing sql inside python inside sql). 
+     #+NAME: load_swagger: imports
+     #+begin_src python
+       from string import Template
 
+       def testing():
+           GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
+           DEFAULT_BUCKET="ci-kubernetes-e2e-gci-gce"
+           get_json = GD['get_json']
+           baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else DEFAULT_BUCKET 
+           bucket =  baseline_bucket if custom_bucket is None else custom_bucket
+
+           #grab the latest successful test run for our chosen bucket.
+           testgrid_history = get_json(GCS_LOGS + bucket + "/jobResultsCache.json")
+           latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
+
+           return "fun"
+
+       print(testing())
+     #+end_src
+
+     For constants, we want to define the source url to grab job metadata from, and the default bucket we will look at in case no bucket is passed in the function's arguments or APISnoop's env vars.
+
+     #+NAME: load_swagger: constants
+     #+begin_src python
+       GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
+       DEFAULT_BUCKET="ci-kubernetes-e2e-gci-gce"
+     #+end_src
+    
+**** Establish our bucket and job.
+    
+    #+NAME: scratch_load_swagger.py
+    #+BEGIN_SRC python :eval never :exports code
+
+          metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
+          metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+          commit_hash = metadata["version"].split("+")[1]
+          swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json'])
+          swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
+          sql = """
+       INSERT INTO bucket_job_swagger(
+                 bucket,
+                 job,
+                 commit_hash,
+                 passed,
+                 job_result,
+                 infra_commit,
+                 job_version,
+                 job_timestamp,
+                 node_os_image,
+                 master_os_image,
+                 swagger
+          )
+         SELECT
+                 $1 as bucket,
+                 $2 as job,
+                 $3 as commit_hash,
+                 $4 as passed,
+                 $5 as job_result,
+                 $6 as infra_commit,
+                 $7 as job_version,
+                 (to_timestamp($8)) AT TIME ZONE 'UTC' as job_timestamp,
+                 $9 as node_os_image,
+                 $10 as master_os_image,
+                 $11 as swagger
+          """
+          plan = plpy.prepare(sql, [
+              'text','text','text','text',
+              'text','text','text',
+              'integer','text','text','jsonb'])
+          rv = plpy.execute(plan, [
+              bucket if not live else 'apisnoop',
+              job if not live else 'live',
+              commit_hash,
+              metadata['passed'],
+              metadata['result'],
+              metadata['metadata']['infra-commit'],
+              metadata['version'],
+              int(metadata['timestamp']),
+              metadata['metadata']['node_os_image'],
+              metadata['metadata']['master_os_image'],
+              json.dumps(swagger)
+          ])
+          return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
+      except Exception as err:
+          raise err
+          return Template("something went wrong, likely this: ${error}").substitute(error = err)
+    #+END_SRC
+
+    #+NAME: old_load_swagger.py
+    #+BEGIN_SRC python :eval never :exports code
+      try:
+          from urllib.request import urlopen, urlretrieve
+          from string import Template
+          import os
+          import json
+
+          def get_json(url):
+              body = urlopen(url).read()
+              data = json.loads(body)
+              return data
+
+          gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
+          #establish bucket we'll draw test results from.
+          baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
+          bucket =  baseline_bucket if custom_bucket is None else custom_bucket
+
+          #grab the latest successful test run for our chosen bucket.
+          testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
+          latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
+
+          #establish job
+          baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
+          job = baseline_job if custom_job is None else custom_job
+
+          metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
+          metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+          commit_hash = metadata["version"].split("+")[1]
+          swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json'])
+          swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
+          sql = """
+       INSERT INTO bucket_job_swagger(
+                 bucket,
+                 job,
+                 commit_hash,
+                 passed,
+                 job_result,
+                 infra_commit,
+                 job_version,
+                 job_timestamp,
+                 node_os_image,
+                 master_os_image,
+                 swagger
+          )
+         SELECT
+                 $1 as bucket,
+                 $2 as job,
+                 $3 as commit_hash,
+                 $4 as passed,
+                 $5 as job_result,
+                 $6 as infra_commit,
+                 $7 as job_version,
+                 (to_timestamp($8)) AT TIME ZONE 'UTC' as job_timestamp,
+                 $9 as node_os_image,
+                 $10 as master_os_image,
+                 $11 as swagger
+          """
+          plan = plpy.prepare(sql, [
+              'text','text','text','text',
+              'text','text','text',
+              'integer','text','text','jsonb'])
+          rv = plpy.execute(plan, [
+              bucket if not live else 'apisnoop',
+              job if not live else 'live',
+              commit_hash,
+              metadata['passed'],
+              metadata['result'],
+              metadata['metadata']['infra-commit'],
+              metadata['version'],
+              int(metadata['timestamp']),
+              metadata['metadata']['node_os_image'],
+              metadata['metadata']['master_os_image'],
+              json.dumps(swagger)
+          ])
+          return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
+      except Exception as err:
+          raise err
+          return Template("something went wrong, likely this: ${error}").substitute(error = err)
+    #+END_SRC
+  
+
+**** Bring it all together
+     #+NAME: load_swagger2.py
+     #+begin_src python
+     <<load_swagger: imports>>
+     #+end_src
+    
 ** 110: raw_audit_event Table
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/110_table_raw_audit_event.up.sql
@@ -1470,39 +1714,6 @@ Using our api_operation_material view, look into the parameters field in each on
   args: {"functions":[],"remote_schemas":[],"query_collections":[],"allowlist":[],"version":2,"tables":[{"table":"api_operation","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"audit_event","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"bucket_job_swagger","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"endpoint_coverage","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[{"using":{"manual_configuration":{"remote_table":"api_operation","column_mapping":{"bucket":"bucket","operation_id":"operation_id","job":"job"}}},"name":"details","comment":null}],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"endpoints_hit_by_new_test","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"projected_change_in_coverage","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"raw_audit_event","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"stable_endpoint_stats","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"tests","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"untested_stable_core_endpoints","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"useragents","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]}]}
 #+end_src
 
-* OPEN TASKS
-** TODO remove hardcoded spec from add_opp_id trigger
-** TODO bucket_job_swagger files based on cluster or sources.yaml, and not hardcoded.
 * Footnotes
-- [X] Connect to your postgres db from within this file
-  You'll want execute this code block by moving your cursor within and typing =,,=
 
-  #+NAME: Connect org to postgres
-  #+BEGIN_SRC emacs-lisp :results silent
-    (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
-  #+END_SRC
-
-- [X] Test your connection works
-  You can run this sql block, and it see a message in your minbuffer like:
-  : You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10041".
-
-  #+NAME: Test Connection
-  #+BEGIN_SRC sql-mode :results silent
-    \conninfo
-  #+END_SRC
-
- #+BEGIN_SRC sql-mode
- select * from stable_endpoint_stats;
- #+END_SRC
-
- #+RESULTS:
- #+begin_src sql-mode
-          job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested
- ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
-  1181584183475048448 | 2019-10-08 |             430 |       165 |       114 |          38.37 |               26.51
-  1178464478988079104 | 2019-09-30 |             430 |       171 |       124 |          39.77 |               28.84
-  1173412183980118017 | 2019-09-16 |             430 |       171 |       118 |          39.77 |               27.44
- (3 rows)
-
- #+end_src
-
+[fn:1] 
