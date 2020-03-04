@@ -29,45 +29,29 @@ SELECT * FROM stable_endpoint_stats;
 
 You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Block sQl)
 * Python Functions
-** Imports
-   #+NAME: global_func imports
-   #+begin_src python
-     from urllib.request import urlopen
-     import os
-     import json
-   #+end_src
-** Constants
-   #+NAME: global func constants
-   #+begin_src python
-   GD['GCS_LOGS'] = "https://storage.googleapis.com/kubernetes-jenkins/logs/"
-   GD['DEFAULT_BUCKET'] = "ci-kubernetes-gci-gce"
-   #+end_src
-** define get_json
-   #+NAME: define get_json
-   #+begin_src python
-     def get_json(url):
-         body = urlopen(url).read()
-         data = json.loads(body)
-         return data
-   #+end_src
-** define determine_bucket_job 
-** put it all together
-   #+NAME: determine_bucket_and_job
-   #+begin_src sql-mode
-     set role dba;
-     DROP FUNCTION IF EXISTS set_global_functions;
-     CREATE OR REPLACE FUNCTION set_global_functions()
-       RETURNS void AS $$
-       <<global_funcs imports>>
+** understanding python
+    #+NAME: determine_bucket_job.sql
+    #+BEGIN_SRC sql-mode :noweb yes :results silent
+      set role dba;
+      DROP FUNCTION IF EXISTS testing_python;
+      CREATE OR REPLACE FUNCTION testing_python()
+      RETURNS text AS $$
+      from snoopUtils import determine_bucket_job
+      return determine_bucket_job()
+      $$ LANGUAGE plpython3u ;
+      reset role;
+    #+END_SRC
+    
+    #+begin_src sql-mode
+    select * from testing_python();
+    #+end_src
+    
+    ah huzzah!
+    
+    This is a test for bringing in our own python modules into the plpython system.  We have a couple of functions that are used in multiple spots in our codebase.  We also work with some fairly complex functions that can be hard to debug when they're being run inside sql.  I had the idea of bringing them in as a module, so that we could write and test the python separate from the sql.
 
-       <<define get_json>>
-
-       <<global_func constants>>
-       GD['get_json'] = get_json
-       $$ LANGUAGE plpython3u ;
-       reset role;
-   #+end_src
-
+   I found where the python packages are installed in the postgres server (~/usr/lib/local/python3.7/dist-packages~), so I wrote up a simple one called ~snoopUtils~ which had one of our self-contained functions.  I then appended the postgres Dockerfile to copy this snoopUtils file over.   Then I tested it with the above function.  It works without a lot of fuss!  I think this is a good path to go down, though am keen to hear from more pythonic minds. 
+    
 * 100: Raw Data Tables and Helper Functions
 ** 100: bucket_job_swagger table
   :PROPERTIES:
@@ -196,203 +180,6 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
           raise err
           return Template("something went wrong, likely this: ${error}").substitute(error = err)
     #+END_SRC
-    
-** 102: Refined Load Swagger
-  :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/102_function_load_swagger.up.sql
-  :END:
-    #+NAME: zload_swagger.sql
-    #+BEGIN_SRC sql-mode :noweb yes :results silent
-      set role dba;
-      DROP FUNCTION IF EXISTS zload_swagger;
-      CREATE OR REPLACE FUNCTION zload_swagger(
-        custom_bucket text default null,
-        custom_job text default null,
-        live boolean default false)
-      RETURNS text AS $$
-      <<load_swagger2.py>>
-      $$ LANGUAGE plpython3u ;
-      reset role;
-    #+END_SRC
-*** The Python function
-**** Our Imports and Constants
-     We have a small set of dependencies, the request library for fetching and parsing urls, os for reading environment variables passed on in our docker ubild, json for reading our fetched data, and some string templating capabilities for when we write out a sql function inside of python (yes we are doing sql inside python inside sql). 
-     #+NAME: load_swagger: imports
-     #+begin_src python
-       from string import Template
-
-       def testing():
-           GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
-           DEFAULT_BUCKET="ci-kubernetes-e2e-gci-gce"
-           get_json = GD['get_json']
-           baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else DEFAULT_BUCKET 
-           bucket =  baseline_bucket if custom_bucket is None else custom_bucket
-
-           #grab the latest successful test run for our chosen bucket.
-           testgrid_history = get_json(GCS_LOGS + bucket + "/jobResultsCache.json")
-           latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
-
-           return "fun"
-
-       print(testing())
-     #+end_src
-
-     For constants, we want to define the source url to grab job metadata from, and the default bucket we will look at in case no bucket is passed in the function's arguments or APISnoop's env vars.
-
-     #+NAME: load_swagger: constants
-     #+begin_src python
-       GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
-       DEFAULT_BUCKET="ci-kubernetes-e2e-gci-gce"
-     #+end_src
-    
-**** Establish our bucket and job.
-    
-    #+NAME: scratch_load_swagger.py
-    #+BEGIN_SRC python :eval never :exports code
-
-          metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
-          metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-          commit_hash = metadata["version"].split("+")[1]
-          swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json'])
-          swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
-          sql = """
-       INSERT INTO bucket_job_swagger(
-                 bucket,
-                 job,
-                 commit_hash,
-                 passed,
-                 job_result,
-                 infra_commit,
-                 job_version,
-                 job_timestamp,
-                 node_os_image,
-                 master_os_image,
-                 swagger
-          )
-         SELECT
-                 $1 as bucket,
-                 $2 as job,
-                 $3 as commit_hash,
-                 $4 as passed,
-                 $5 as job_result,
-                 $6 as infra_commit,
-                 $7 as job_version,
-                 (to_timestamp($8)) AT TIME ZONE 'UTC' as job_timestamp,
-                 $9 as node_os_image,
-                 $10 as master_os_image,
-                 $11 as swagger
-          """
-          plan = plpy.prepare(sql, [
-              'text','text','text','text',
-              'text','text','text',
-              'integer','text','text','jsonb'])
-          rv = plpy.execute(plan, [
-              bucket if not live else 'apisnoop',
-              job if not live else 'live',
-              commit_hash,
-              metadata['passed'],
-              metadata['result'],
-              metadata['metadata']['infra-commit'],
-              metadata['version'],
-              int(metadata['timestamp']),
-              metadata['metadata']['node_os_image'],
-              metadata['metadata']['master_os_image'],
-              json.dumps(swagger)
-          ])
-          return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
-      except Exception as err:
-          raise err
-          return Template("something went wrong, likely this: ${error}").substitute(error = err)
-    #+END_SRC
-
-    #+NAME: old_load_swagger.py
-    #+BEGIN_SRC python :eval never :exports code
-      try:
-          from urllib.request import urlopen, urlretrieve
-          from string import Template
-          import os
-          import json
-
-          def get_json(url):
-              body = urlopen(url).read()
-              data = json.loads(body)
-              return data
-
-          gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
-          #establish bucket we'll draw test results from.
-          baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
-          bucket =  baseline_bucket if custom_bucket is None else custom_bucket
-
-          #grab the latest successful test run for our chosen bucket.
-          testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
-          latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
-
-          #establish job
-          baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
-          job = baseline_job if custom_job is None else custom_job
-
-          metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
-          metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-          commit_hash = metadata["version"].split("+")[1]
-          swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json'])
-          swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
-          sql = """
-       INSERT INTO bucket_job_swagger(
-                 bucket,
-                 job,
-                 commit_hash,
-                 passed,
-                 job_result,
-                 infra_commit,
-                 job_version,
-                 job_timestamp,
-                 node_os_image,
-                 master_os_image,
-                 swagger
-          )
-         SELECT
-                 $1 as bucket,
-                 $2 as job,
-                 $3 as commit_hash,
-                 $4 as passed,
-                 $5 as job_result,
-                 $6 as infra_commit,
-                 $7 as job_version,
-                 (to_timestamp($8)) AT TIME ZONE 'UTC' as job_timestamp,
-                 $9 as node_os_image,
-                 $10 as master_os_image,
-                 $11 as swagger
-          """
-          plan = plpy.prepare(sql, [
-              'text','text','text','text',
-              'text','text','text',
-              'integer','text','text','jsonb'])
-          rv = plpy.execute(plan, [
-              bucket if not live else 'apisnoop',
-              job if not live else 'live',
-              commit_hash,
-              metadata['passed'],
-              metadata['result'],
-              metadata['metadata']['infra-commit'],
-              metadata['version'],
-              int(metadata['timestamp']),
-              metadata['metadata']['node_os_image'],
-              metadata['metadata']['master_os_image'],
-              json.dumps(swagger)
-          ])
-          return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
-      except Exception as err:
-          raise err
-          return Template("something went wrong, likely this: ${error}").substitute(error = err)
-    #+END_SRC
-  
-
-**** Bring it all together
-     #+NAME: load_swagger2.py
-     #+begin_src python
-     <<load_swagger: imports>>
-     #+end_src
-    
 ** 110: raw_audit_event Table
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/110_table_raw_audit_event.up.sql
@@ -1715,5 +1502,3 @@ Using our api_operation_material view, look into the parameters field in each on
 #+end_src
 
 * Footnotes
-
-[fn:1] 

@@ -7,5 +7,5 @@ docker_build('gcr.io/k8s-staging-apisnoop/webapp', 'apps/webapp',
   ])
 docker_build('gcr.io/k8s-staging-apisnoop/hasura', 'apps/hasura')
 # docker_build('gcr.io/k8s-staging-apisnoop/auditlogger', 'apps/auditlogger')
-# docker_build('gcr.io/k8s-staging-apisnoop/postgres', 'apps/postgres')
+docker_build('gcr.io/k8s-staging-apisnoop/postgres', 'apps/postgres')
 allow_k8s_contexts('in-cluster')
