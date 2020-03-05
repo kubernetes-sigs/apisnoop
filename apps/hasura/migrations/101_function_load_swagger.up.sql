@@ -52,21 +52,24 @@ plan = plpy.prepare(sql, [
     'text','text','text','text',
     'text','text','text',
     'integer','text','text','jsonb'])
-rv = plpy.execute(plan, [
-    bucket if not live else 'apisnoop',
-    job if not live else 'live',
-    commit_hash,
-    metadata['passed'],
-    metadata['result'],
-    metadata['metadata']['infra-commit'],
-    metadata['version'],
-    int(metadata['timestamp']),
-    metadata['metadata']['node_os_image'],
-    metadata['metadata']['master_os_image'],
-    json.dumps(swagger)
-])
-
+try:
+  rv = plpy.execute(plan, [
+      bucket if not live else 'apisnoop',
+      job if not live else 'live',
+      commit_hash,
+      metadata['passed'],
+      metadata['result'],
+      metadata['metadata']['infra-commit'],
+      metadata['version'],
+      int(metadata['timestamp']),
+      metadata['metadata']['node_os_image'],
+      metadata['metadata']['master_os_image'],
+      json.dumps(swagger)
+  ])
 ## Celebrate
 return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
+except:
+  e = sys.exc_info()[0]
+  print("<p>Error: %s</p>" % e )
 $$ LANGUAGE plpython3u ;
 reset role;
