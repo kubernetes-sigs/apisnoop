@@ -2,8 +2,7 @@
 --   :PROPERTIES:
 --   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/101_function_load_swagger.up.sql
 --   :END:
-
---    #+NAME: load_swagger.sql
+--     #+NAME: load_swagger.sql
 
 set role dba;
 DROP FUNCTION IF EXISTS load_swagger;
@@ -12,82 +11,62 @@ CREATE OR REPLACE FUNCTION load_swagger(
   custom_job text default null,
   live boolean default false)
 RETURNS text AS $$
-try:
-    from urllib.request import urlopen, urlretrieve
-    from string import Template
-    import os
-    import json
+#Import our snoop utilities and values
+import json
+from snoopUtils import determine_bucket_job, fetch_swagger
 
-    def get_json(url):
-        body = urlopen(url).read()
-        data = json.loads(body)
-        return data
+bucket, job = determine_bucket_job(custom_bucket, custom_job)
+swagger, metadata, commit_hash = fetch_swagger(bucket, job)
 
-    gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
-    #establish bucket we'll draw test results from.
-    baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
-    bucket =  baseline_bucket if custom_bucket is None else custom_bucket
-
-    #grab the latest successful test run for our chosen bucket.
-    testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
-    latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
-
-    #establish job
-    baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
-    job = baseline_job if custom_job is None else custom_job
-
-    metadata_url = ''.join(['https://storage.googleapis.com/kubernetes-jenkins/logs/', bucket, '/', job, '/finished.json'])
-    metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-    commit_hash = metadata["version"].split("+")[1]
-    swagger_url =  ''.join(['https://raw.githubusercontent.com/kubernetes/kubernetes/', commit_hash, '/api/openapi-spec/swagger.json'])
-    swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
-    sql = """
- INSERT INTO bucket_job_swagger(
-           bucket,
-           job,
-           commit_hash,
-           passed,
-           job_result,
-           infra_commit,
-           job_version,
-           job_timestamp,
-           node_os_image,
-           master_os_image,
-           swagger
-    )
-   SELECT
-           $1 as bucket,
-           $2 as job,
-           $3 as commit_hash,
-           $4 as passed,
-           $5 as job_result,
-           $6 as infra_commit,
-           $7 as job_version,
-           (to_timestamp($8)) AT TIME ZONE 'UTC' as job_timestamp,
-           $9 as node_os_image,
-           $10 as master_os_image,
-           $11 as swagger
-    """
-    plan = plpy.prepare(sql, [
-        'text','text','text','text',
-        'text','text','text',
-        'integer','text','text','jsonb'])
-    rv = plpy.execute(plan, [
-        bucket if not live else 'apisnoop',
-        job if not live else 'live',
+## define our sql statement
+sql = """
+INSERT INTO bucket_job_swagger(
+        bucket,
+        job,
         commit_hash,
-        metadata['passed'],
-        metadata['result'],
-        metadata['metadata']['infra-commit'],
-        metadata['version'],
-        int(metadata['timestamp']),
-        metadata['metadata']['node_os_image'],
-        metadata['metadata']['master_os_image'],
-        json.dumps(swagger)
-    ])
-    return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
-except Exception as err:
-    raise err
-    return Template("something went wrong, likely this: ${error}").substitute(error = err)
+        passed,
+        job_result,
+        infra_commit,
+        job_version,
+        job_timestamp,
+        node_os_image,
+        master_os_image,
+        swagger
+)
+SELECT
+        $1 as bucket,
+        $2 as job,
+        $3 as commit_hash,
+        $4 as passed,
+        $5 as job_result,
+        $6 as infra_commit,
+        $7 as job_version,
+        (to_timestamp($8)) AT TIME ZONE 'UTC' as job_timestamp,
+        $9 as node_os_image,
+        $10 as master_os_image,
+        $11 as swagger
+"""
+
+## Submit sql statement with values substituted in
+plan = plpy.prepare(sql, [
+    'text','text','text','text',
+    'text','text','text',
+    'integer','text','text','jsonb'])
+rv = plpy.execute(plan, [
+    bucket if not live else 'apisnoop',
+    job if not live else 'live',
+    commit_hash,
+    metadata['passed'],
+    metadata['result'],
+    metadata['metadata']['infra-commit'],
+    metadata['version'],
+    int(metadata['timestamp']),
+    metadata['metadata']['node_os_image'],
+    metadata['metadata']['master_os_image'],
+    json.dumps(swagger)
+])
+
+## Celebrate
+return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
 $$ LANGUAGE plpython3u ;
 reset role;
