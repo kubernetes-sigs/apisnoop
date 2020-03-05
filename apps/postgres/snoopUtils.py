@@ -35,10 +35,4 @@ def fetch_swagger(bucket, job):
     commit_hash = metadata["version"].split("+")[1]
     swagger_url =  ''.join([K8S_GITHUB_RAW, commit_hash, '/api/openapi-spec/swagger.json'])
     swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
-    return {
-        bucket: bucket,
-        job: job,
-        commit_hash: commit_hash,
-        metadata: metadata,
-        swagger: swagger
-    }
+    return (swagger, metadata, commit_hash);
