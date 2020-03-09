@@ -66,10 +66,10 @@ try:
       metadata['metadata']['master_os_image'],
       json.dumps(swagger)
   ])
-## Celebrate
+  ## Celebrate
   return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
 except:
   e = sys.exc_info()[0]
-  print("Error: %s " % e )
+  print("<p>Error: %s</p>" % e )
 $$ LANGUAGE plpython3u ;
 reset role;

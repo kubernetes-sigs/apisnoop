@@ -47,8 +47,6 @@ def merge_into(d1, d2):
             d1[key] = merge_into(d1[key], d2[key])
     return d1
 
-
-
 def deep_merge(*dicts, update=False):
     if update:
         return reduce(merge_into, dicts[1:], dicts[0])
@@ -84,14 +82,6 @@ def load_openapi_spec(url):
                 cache = deep_merge(cache, {path_len:path_dict})
                 openapi_spec['cache'] = cache
     return openapi_spec
-
-bucket,job=determine_bucket_job(None,None)
-swagger,metadata,commit_hash=fetch_swagger(bucket, job)
-url ='https://raw.githubusercontent.com/kubernetes/kubernetes/' + commit_hash +  '/api/openapi-spec/swagger.json'
-print(load_openapi_spec(url))
-# print(url)
-
-None
 
 def find_operation_id(openapi_spec, event):
   verb_to_method={

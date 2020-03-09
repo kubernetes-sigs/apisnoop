@@ -148,6 +148,7 @@ def download_url_to_path(url, local_path):
 downloads = {}
 
 bucket, job = determine_bucket_job(custom_bucket, custom_job)
+swagger,metadata,commit_hash=fetch_swagger(bucket, job)
 
 def load_audit_events(bucket,job):
     bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
@@ -197,9 +198,10 @@ def load_audit_events(bucket,job):
             else:
                 subprocess.run(['cat', logfile], stdout=log, check=True)
     # Process the resulting combined raw audit.log by adding operationId
-    # spec = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/' + commit_hash +  '/api/openapi-spec/swagger.json')
+    spec = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/' + commit_hash +  '/api/openapi-spec/swagger.json')
 
-    spec=fetch_swagger(bucket,job)
+    # spec=load_openapi_spec(swagger)
+    # spec=fetch_swagger(bucket,job)
     infilepath=combined_log_file
     outfilepath=combined_log_file+'+opid'
     with open(infilepath) as infile:
@@ -209,7 +211,7 @@ def load_audit_events(bucket,job):
                 event['operationId']=find_operation_id(spec,event)
                 output.write(json.dumps(event)+'\n')
     #####
-              # Load the resulting updated audit.log directly into raw_audit_event
+    # Load the resulting updated audit.log directly into raw_audit_event
     try:
         # for some reason tangling isn't working to reference this SQL block
         sql = Template("""
