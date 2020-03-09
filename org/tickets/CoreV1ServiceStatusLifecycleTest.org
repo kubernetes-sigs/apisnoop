@@ -1,0 +1,371 @@
+# -*- ii: apisnoop; -*-
+#+TITLE: Mock Ticket Template
+#+AUTHOR: ii team
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+#+OPTIONS: toc:nil tags:nil todo:nil
+#+EXPORT_SELECT_TAGS: export
+* TODO [0%] In-Cluster Setup                                    :neverexport:
+  :PROPERTIES:
+  :LOGGING:  nil
+  :END:
+** TODO Connect demo to right eye
+
+   #+begin_src tmate :session foo:hello :eval never-export
+     echo "What parts of Kubernetes do you depend on $USER?"
+   #+end_src
+** Tilt Up
+   #+begin_src tmate :session foo:hello :eval never-export
+     cd ~/apisnoop
+     tilt up --host 0.0.0.0
+   #+end_src
+** TODO Verify Pods Running
+   #+begin_src shell
+     kubectl get pods
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   NAME                                    READY   STATUS    RESTARTS   AGE
+   apisnoop-auditlogger-86dcf97749-nb2rp   1/1     Running   1          6d23h
+   hasura-7c5775fc95-rmp28                 1/1     Running   1          6d23h
+   kubemacs-0                              1/1     Running   1          6d23h
+   pgadmin-78b7448594-bmvxl                1/1     Running   0          6d23h
+   postgres-6dbf95b969-hpr7k               1/1     Running   0          6d23h
+   webapp-5bd67b658b-fc6pr                 1/1     Running   0          6d23h
+   #+end_example
+
+** TODO Check it all worked
+
+   #+begin_src sql-mode :results replace
+     \d+
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                                                              List of relations
+    Schema |               Name               |       Type        |  Owner   |  Size   |                                    Description                                    
+   --------+----------------------------------+-------------------+----------+---------+-----------------------------------------------------------------------------------
+    public | api_operation                    | view              | apisnoop | 0 bytes | 
+    public | api_operation_material           | materialized view | apisnoop | 3056 kB | details on each operation_id as taken from the openAPI spec
+    public | api_operation_parameter_material | materialized view | apisnoop | 5008 kB | the parameters for each operation_id in open API spec
+    public | audit_event                      | view              | apisnoop | 0 bytes | a record for each audit event in an audit log
+    public | bucket_job_swagger               | table             | apisnoop | 3128 kB | metadata for audit events  and their respective swagger.json
+    public | endpoint_coverage                | view              | apisnoop | 0 bytes | the test hits and conformance test hits per operation_id & other useful details
+    public | endpoint_coverage_material       | materialized view | apisnoop | 144 kB  | 
+    public | endpoints_hit_by_new_test        | view              | apisnoop | 0 bytes | list endpoints hit during our live auditing alongside their current test coverage
+    public | projected_change_in_coverage     | view              | apisnoop | 0 bytes | overview of coverage stats if the e2e suite included your tests
+    public | raw_audit_event                  | table             | apisnoop | 4405 MB | a record for each audit event in an audit log
+    public | stable_endpoint_stats            | view              | apisnoop | 0 bytes | coverage stats for entire test run, looking only at its stable endpoints
+    public | tests                            | view              | apisnoop | 0 bytes | 
+    public | untested_stable_core_endpoints   | view              | apisnoop | 0 bytes | list stable core endpoints not hit by any tests, according to their test run
+    public | useragents                       | view              | apisnoop | 0 bytes | 
+   (14 rows)
+
+   #+end_SRC
+
+** TODO Check current coverage
+   #+NAME: stable endpoint stats
+   #+begin_src sql-mode
+     select * from stable_endpoint_stats where job != 'live';
+   #+end_src
+
+   #+RESULTS: stable endpoint stats
+   #+begin_SRC example
+            job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+    1229108788603129860 | 2020-02-16 |             438 |       190 |       138 |          43.38 |               31.51
+   (1 row)
+
+   #+end_SRC
+
+* Identifying an untested feature Using APISnoop                     :export:
+
+According to this APIsnoop query, there are still some remaining Service endpoints which are untested.
+
+  #+NAME: untested_stable_core_endpoints
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    SELECT
+      operation_id,
+      -- k8s_action,
+      -- path,
+      -- description,
+      kind
+      FROM untested_stable_core_endpoints
+      where path not like '%volume%'
+      and kind like 'Service'
+      -- and operation_id ilike '%%'
+     ORDER BY kind,operation_id desc
+     -- LIMIT 25
+           ;
+  #+end_src
+
+ #+RESULTS: untested_stable_core_endpoints
+ #+begin_SRC example
+  operation_id | kind 
+ --------------+------
+ (0 rows)
+
+ #+end_SRC
+
+* API Reference and feature documentation                            :export:
+- [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+- [[https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/service.go][client-go - Service]]
+
+* The mock test                                                      :export:
+** Test outline
+1. Create a Service with a static label
+
+2. Patch the Service with a new Label and updated data
+
+3. Get the Service to ensure it's patched
+
+4. Patch the Service's status
+
+5. Get the Service's status to ensure it's patched
+
+6. Update the Service's status
+
+7. Get the Service's status to ensure it's replace
+   
+8. Delete Namespaced Service
+
+9. Get Service to ensure that it's deleted
+
+** Test the functionality in Go
+   #+begin_src go
+     package main
+
+     import (
+	     "encoding/json"
+       "fmt"
+       "flag"
+       "os"
+       v1 "k8s.io/api/core/v1"
+       "k8s.io/client-go/dynamic"
+       "k8s.io/apimachinery/pkg/runtime/schema"
+       metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+       "k8s.io/apimachinery/pkg/util/intstr"
+       "k8s.io/client-go/kubernetes"
+       "k8s.io/apimachinery/pkg/types"
+       "k8s.io/client-go/tools/clientcmd"
+       "k8s.io/apimachinery/pkg/util/uuid"
+     )
+
+     func main() {
+       // uses the current context in kubeconfig
+       kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+       flag.Parse()
+       config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       // make our work easier to find in the audit_event queries
+       config.UserAgent = "live-test-writing"
+       // creates the clientset
+       ClientSet, _ := kubernetes.NewForConfig(config)
+       DynamicClientSet, _ := dynamic.NewForConfig(config)
+       serviceResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+
+       testServiceName := "test-service"
+       testServiceUUID := string(uuid.NewUUID())
+       testNs := "default"
+
+       // create the Service
+       testService := v1.Service{
+          ObjectMeta: metav1.ObjectMeta{
+              Name: testServiceName,
+              Labels: map[string]string{"test-service-static": "true"},
+          },
+          Spec: v1.ServiceSpec{
+              Selector: map[string]string{"test-service": testServiceUUID},
+              Type: "ClusterIP",
+              Ports: []v1.ServicePort{
+                  {
+                      Name: "http",
+                      Port: int32(80),
+                      TargetPort: intstr.FromInt(80),
+                  },
+              },
+          },
+       }
+       _, err = ClientSet.CoreV1().Services(testNs).Create(&testService)
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       fmt.Println("[status] created Service")
+
+       // setup a watch for the Service
+       serviceWatch, err := ClientSet.CoreV1().Services(testNs).Watch(metav1.ListOptions{LabelSelector: "test-service-static=true"})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       serviceWatchChan := serviceWatch.ResultChan()
+       fmt.Println("[status] watching for Service to be available")
+       for event := range serviceWatchChan {
+           serviceEvent, ok := event.Object.(*v1.Service)
+           if ok != true {
+               fmt.Println("Unable to fix type")
+               return
+           }
+           if serviceEvent.Spec.ClusterIP != "" {
+               break
+           }
+       }
+
+       // patch the Service with a new Label and updated data
+       servicePatch, err := json.Marshal(map[string]interface{}{
+           "metadata": map[string]interface{}{
+               "labels": map[string]string{
+                   "test-service": "patched",
+               },
+           },
+           "spec": map[string]interface{}{
+               "selector": map[string]string{"test-service": testServiceUUID + "123"},
+           },
+       })
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       _, err = ClientSet.CoreV1().Services(testNs).Patch(testServiceName, types.StrategicMergePatchType, []byte(servicePatch), metav1.PatchOptions{})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       fmt.Println("[status] patched Service")
+
+       // get the Service and ensure it's patched
+       svc, err := ClientSet.CoreV1().Services(testNs).Get(testServiceName, metav1.GetOptions{})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       if svc.ObjectMeta.Labels["test-service-static"] != "true" || svc.Spec.Selector["test-service"] != testServiceUUID + "123" {
+           fmt.Println("[error] patching of Pod failed")
+           return
+       }
+       fmt.Println("[status] Service was patched successfully")
+
+       // patch the Service's Status
+       // TODO add patch
+       _, err = DynamicClientSet.Resource(serviceResource).Namespace(testNs).Patch(testService, types.StrategicMergePatchType, []byte())
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       // TODO get Service's Status to ensure it's been patched
+
+       // TODO update Service's Status
+
+       // TODO get Service's Status to ensure it's been updated
+
+       err = ClientSet.CoreV1().Services(testNs).Delete(testServiceName, &metav1.DeleteOptions{})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       fmt.Println("[status] deleted Service")
+
+       // get the Service and ensure it's patched
+       svc, err = ClientSet.CoreV1().Services(testNs).Get(testServiceName, metav1.GetOptions{})
+       if err == nil {
+           fmt.Println("[error] found Service after it was deleted")
+           return
+       }
+
+       // write test here
+       fmt.Println("[status] complete")
+
+     }
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
+   [status] created Service
+   [status] watching for Service to be available
+   [status] patched Service
+   [status] Service was patched successfully
+   [status] deleted Service
+   [status] complete
+   #+end_src
+
+* Verifying increase it coverage with APISnoop                       :export:
+Discover useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+       useragent     
+  -------------------
+   live-test-writing
+  (1 row)
+
+  #+end_SRC
+
+List endpoints hit by the test:
+#+begin_src sql-mode :exports both :session none
+select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+     useragent     |         operation_id          | hit_by_ete | hit_by_new_test 
+-------------------+-------------------------------+------------+-----------------
+ live-test-writing | createCoreV1NamespacedService | t          |               2
+ live-test-writing | deleteCoreV1NamespacedService | t          |               2
+ live-test-writing | listCoreV1NamespacedService   | t          |               1
+ live-test-writing | patchCoreV1NamespacedService  | f          |               2
+ live-test-writing | readCoreV1NamespacedService   | t          |               2
+(5 rows)
+
+#+end_SRC
+
+Display endpoint coverage change:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select * from projected_change_in_coverage;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+  ---------------+-----------------+--------------+--------------+------------------
+   test_coverage |             438 |          190 |          191 |                1
+  (1 row)
+
+  #+end_SRC
+
+* Final notes :export:
+If a test with these calls gets merged, **test coverage will go up by N points**
+
+This test is also created with the goal of conformance promotion.
+
+-----  
+/sig testing  
+
+/sig architecture  
+
+/area conformance  
+
+* Options :neverexport:
+** Delete all events after postgres initialization
+   #+begin_src sql-mode :eval never-export :exports both :session none
+   delete from raw_audit_event where bucket = 'apisnoop' and job='live';
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   DELETE 3945
+   #+end_SRC
+
+* Open Tasks
+  Set any open tasks here, using org-todo
+** DONE Live Your Best Life
+* Footnotes                                                     :neverexport:
+  :PROPERTIES:
+  :CUSTOM_ID: footnotes
+  :END:
