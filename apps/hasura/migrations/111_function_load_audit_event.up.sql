@@ -23,64 +23,8 @@ from collections import defaultdict
 import json
 import csv
 import sys
+from snoopUtils import deep_merge, load_openapi_spec, determine_bucket_job, fetch_swagger
 
-from copy import deepcopy
-from functools import reduce
-
-def deep_merge(*dicts, update=False):
-    """
-    Merges dicts deeply.
-    Parameters
-    ----------
-    dicts : list[dict]
-        List of dicts.
-    update : bool
-        Whether to update the first dict or create a new dict.
-    Returns
-    -------
-    merged : dict
-        Merged dict.
-    """
-    def merge_into(d1, d2):
-        for key in d2:
-            if key not in d1 or not isinstance(d1[key], dict):
-                d1[key] = deepcopy(d2[key])
-            else:
-                d1[key] = merge_into(d1[key], d2[key])
-        return d1
-
-    if update:
-        return reduce(merge_into, dicts[1:], dicts[0])
-    else:
-        return reduce(merge_into, dicts, {})
-def load_openapi_spec(url):
-    cache=defaultdict(dict)
-    openapi_spec = {}
-    openapi_spec['hit_cache'] = {}
-
-    swagger = requests.get(url).json()
-    for path in swagger['paths']:
-        path_data = {}
-        path_parts = path.strip("/").split("/")
-        path_len = len(path_parts)
-        path_dict = {}
-        last_part = None
-        last_level = None
-        current_level = path_dict
-        for part in path_parts:
-            if part not in current_level:
-                current_level[part] = {}
-            last_part=part
-            last_level = current_level
-            current_level = current_level[part]
-        for method, swagger_method in swagger['paths'][path].items():
-            if method == 'parameters':
-                next
-            else:
-                current_level[method]=swagger_method.get('operationId', '')
-        cache = deep_merge(cache, {path_len:path_dict})
-    openapi_spec['cache'] = cache
-    return openapi_spec
 def find_operation_id(openapi_spec, event):
   verb_to_method={
     'get': 'get',
@@ -184,10 +128,6 @@ def find_operation_id(openapi_spec, event):
   else:
     openapi_spec['hit_cache'][url.path][method]=op_id
   return op_id
-def get_json(url):
-    body = urlopen(url).read()
-    data = json.loads(body)
-    return data
 
 def get_html(url):
     html = urlopen(url).read()
@@ -207,18 +147,7 @@ def download_url_to_path(url, local_path):
 # wget was used because the files can get to several halfa gig
 downloads = {}
 
-#establish bucket we'll draw test results from.
-gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
-baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
-bucket =  baseline_bucket if custom_bucket is None else custom_bucket
-
-#grab the latest successful test run for our chosen bucket.
-testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
-latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
-
-#establish job
-baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
-job = baseline_job if custom_job is None else custom_job
+bucket, job = determine_bucket_job(custom_bucket, custom_job)
 
 def load_audit_events(bucket,job):
     bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
@@ -258,8 +187,6 @@ def load_audit_events(bucket,job):
         # Sleep for 5 seconds and check for next download
         while downloads[download].poll() is None:
             time.sleep(5)
-            # print("Still downloading: " + download)
-        # print("Downloaded: " + download)
 
     # Loop through the files, (z)cat them into a combined audit.log
     with open(combined_log_file, 'ab') as log:
@@ -270,7 +197,9 @@ def load_audit_events(bucket,job):
             else:
                 subprocess.run(['cat', logfile], stdout=log, check=True)
     # Process the resulting combined raw audit.log by adding operationId
-    spec = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/' + commit_hash +  '/api/openapi-spec/swagger.json')
+    # spec = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/' + commit_hash +  '/api/openapi-spec/swagger.json')
+
+    spec=fetch_swagger(bucket,job)
     infilepath=combined_log_file
     outfilepath=combined_log_file+'+opid'
     with open(infilepath) as infile:
@@ -280,7 +209,7 @@ def load_audit_events(bucket,job):
                 event['operationId']=find_operation_id(spec,event)
                 output.write(json.dumps(event)+'\n')
     #####
-    # Load the resulting updated audit.log directly into raw_audit_event
+              # Load the resulting updated audit.log directly into raw_audit_event
     try:
         # for some reason tangling isn't working to reference this SQL block
         sql = Template("""

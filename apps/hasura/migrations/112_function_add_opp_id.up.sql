@@ -55,7 +55,6 @@ def load_openapi_spec(url):
     cache=defaultdict(dict)
     openapi_spec = {}
     openapi_spec['hit_cache'] = {}
-
     swagger = requests.get(url).json()
     for path in swagger['paths']:
         path_data = {}
@@ -68,17 +67,18 @@ def load_openapi_spec(url):
         for part in path_parts:
             if part not in current_level:
                 current_level[part] = {}
-            last_part=part
-            last_level = current_level
-            current_level = current_level[part]
+                last_part=part
+                last_level = current_level
+                current_level = current_level[part]
         for method, swagger_method in swagger['paths'][path].items():
             if method == 'parameters':
                 next
             else:
                 current_level[method]=swagger_method.get('operationId', '')
-        cache = deep_merge(cache, {path_len:path_dict})
-    openapi_spec['cache'] = cache
+                cache = deep_merge(cache, {path_len:path_dict})
+                openapi_spec['cache'] = cache
     return openapi_spec
+
 
 def find_operation_id(openapi_spec, event):
   verb_to_method={

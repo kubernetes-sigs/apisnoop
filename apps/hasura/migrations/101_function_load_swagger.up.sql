@@ -67,9 +67,9 @@ try:
       json.dumps(swagger)
   ])
 ## Celebrate
-return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
+  return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
 except:
   e = sys.exc_info()[0]
-  print("<p>Error: %s</p>" % e )
+  print("Error: %s " % e )
 $$ LANGUAGE plpython3u ;
 reset role;
