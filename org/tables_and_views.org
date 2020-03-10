@@ -43,6 +43,8 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
      from functools import reduce
      from collections import defaultdict
      from urllib.parse import urlparse
+     from bs4 import BeautifulSoup
+     import subprocess
 
    #+end_src
 ** Our Constants
@@ -53,7 +55,6 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
      K8S_GITHUB_RAW= "https://raw.githubusercontent.com/kubernetes/kubernetes/"
 
    #+end_src
-
 
 ** get_json  Definition
    #+NAME: get_json
@@ -177,6 +178,31 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
    #+begin_src python
    #+end_src
 
+** get_html definition
+  #+NAME: get_html 
+  #+begin_src python
+    def get_html(url):
+        """return html content of given url"""
+        html = urlopen(url).read()
+        soup = BeautifulSoup(html, 'html.parser')
+        return soup
+
+  #+end_src
+** download_url_to_path definition
+   #+NAME: download_url_to_path
+   #+begin_src python
+     def download_url_to_path(url, local_path, dl_dict):
+         """
+         downloads contents to local path, creating path if needed,
+         then updates given downloads dict.
+         """
+         local_dir = os.path.dirname(local_path)
+         if not os.path.isdir(local_dir):
+             os.makedirs(local_dir)
+         if not os.path.isfile(local_path):
+             process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
+             dl_dict[local_path] = process
+   #+end_src
 ** load_openapi_spec Definition
    This loads just the paths portion of the open_api spec into a dictionary made up of paths and methods...with each part of the path its own dict ... this also seems to be recursive but am not fully tracking what the python is doing.  its iterating over each path, but does it create a flat dict at the end, or does each path have its smaller parts within it?  so 
    
@@ -527,34 +553,21 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   import json
   import csv
   import sys
-  from snoopUtils import deep_merge, load_openapi_spec, determine_bucket_job, fetch_swagger
+  from snoopUtils import deep_merge, get_html, download_url_to_path, load_openapi_spec, determine_bucket_job, fetch_swagger
 
   <<find_operation_id>>
-
-  def get_html(url):
-      html = urlopen(url).read()
-      soup = BeautifulSoup(html, 'html.parser')
-      return soup
-
-
-  def download_url_to_path(url, local_path):
-      local_dir = os.path.dirname(local_path)
-      if not os.path.isdir(local_dir):
-          os.makedirs(local_dir)
-      if not os.path.isfile(local_path):
-          process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
-          downloads[local_path] = process
 
   # this global dict is used to track our wget subprocesses
   # wget was used because the files can get to several halfa gig
   downloads = {}
 
   bucket, job = determine_bucket_job(custom_bucket, custom_job)
-  swagger,metadata,commit_hash=fetch_swagger(bucket, job)
+  BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
+  ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
 
   def load_audit_events(bucket,job):
-      bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
-      artifacts_url = 'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/' + bucket + '/' +  job + '/' + 'artifacts'
+      bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
+      artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
       job_metadata_files = [
           'finished.json',
           'artifacts/metadata.json',
@@ -567,7 +580,7 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
       # meta data to download
       for jobfile in job_metadata_files:
           download_url_to_path( bucket_url + jobfile,
-                                download_path + jobfile )
+                                download_path + jobfile, downloads )
 
       # Use soup to grab url of each of audit.log.* (some end in .gz)
       soup = get_html(artifacts_url)
@@ -583,7 +596,7 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
       for link in log_links:
           log_url = link['href']
           log_file = download_path + os.path.basename(log_url)
-          download_url_to_path( log_url, log_file)
+          download_url_to_path( log_url, log_file, downloads)
 
       # Our Downloader uses subprocess of curl for speed
       for download in downloads.keys():
@@ -641,20 +654,11 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
           with open(download_path + 'load.sql', 'w') as sqlfile:
             sqlfile.write(sql)
           rv = plpy.execute(sql)
-          #plpy.commit()
-          # this calls external binary, not part of transaction 8(
-          #rv = plpy.execute("select * from audit_event_op_update();")
-          #plpy.commit()
-          #rv = plpy.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY podspec_field_coverage_material;")
-          #plpy.commit()
           return "it worked"
       except plpy.SPIError:
           return "something went wrong with plpy"
       except:
           return "something unknown went wrong"
-  #if __name__ == "__main__":
-  #    load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234')
-  #else:
   load_audit_events(bucket,job)
 #+END_SRC
 
