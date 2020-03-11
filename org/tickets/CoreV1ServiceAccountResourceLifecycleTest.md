@@ -140,7 +140,6 @@ func main() {
   serviceAccountList, err := ClientSet.CoreV1().ServiceAccounts("").List(metav1.ListOptions{LabelSelector: "test-serviceaccount-static=true"})
   foundServiceAccount := false
   for _, serviceAccountItem := range serviceAccountList.Items {
-      // TODO add more checks
       if serviceAccountItem.ObjectMeta.Name == testServiceAccountName && serviceAccountItem.ObjectMeta.Namespace == testNamespaceName && serviceAccountItem.Secrets[0].Name == testSecretName {
           foundServiceAccount = true
           break
