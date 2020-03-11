@@ -131,20 +131,20 @@ def find_operation_id(openapi_spec, event):
 
 # this global dict is used to track our wget subprocesses
 # wget was used because the files can get to several halfa gig
-downloads = {}
 
 bucket, job = determine_bucket_job(custom_bucket, custom_job)
 BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
 ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
-
+K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
 def load_audit_events(bucket,job):
+    downloads = {}
     bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
     artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
     download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
     combined_log_file = download_path + 'audit.log'
     swagger, metadata, commit_hash = fetch_swagger(bucket, job)
 
-    # meta data to download
+    # download all metadata
     job_metadata_files = [
         'finished.json',
         'artifacts/metadata.json',
@@ -154,7 +154,6 @@ def load_audit_events(bucket,job):
     for jobfile in job_metadata_files:
         download_url_to_path( bucket_url + jobfile,
                               download_path + jobfile, downloads )
-
 
     # download all logs
     log_links = get_all_auditlog_links(artifacts_url)
@@ -177,11 +176,10 @@ def load_audit_events(bucket,job):
                 subprocess.run(['zcat', logfile], stdout=log, check=True)
             else:
                 subprocess.run(['cat', logfile], stdout=log, check=True)
-    # Process the resulting combined raw audit.log by adding operationId
-    spec = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/' + commit_hash +  '/api/openapi-spec/swagger.json')
 
-    # spec=load_openapi_spec(swagger)
-    # spec=fetch_swagger(bucket,job)
+    # Process the resulting combined raw audit.log by adding operationId
+    swagger_url = K8S_GITHUB_REPO + commit_hash + '/api/openapi-spec/swagger.json'
+    spec = load_openapi_spec(swagger_url)
     infilepath=combined_log_file
     outfilepath=combined_log_file+'+opid'
     with open(infilepath) as infile:
