@@ -115,8 +115,8 @@ def find_operation_id(openapi_spec, event):
   try: # may have more parts... so no match
       cache = openapi_spec['cache'][part_count]
   except Exception as e:
-    plpy.warning("part_count was:" + part_count)
-    plpy.warning("spec['cache'] keys was:" + openapi_spec['cache'])
+    warnings.warn("part_count was:" + part_count)
+    warnings.warn("spec['cache'] keys was:" + openapi_spec['cache'])
     raise e
   last_part = None
   last_level = None
@@ -175,8 +175,8 @@ def find_operation_id(openapi_spec, event):
   try:
     op_id=current_level[method]
   except Exception as err:
-    plpy.warning("method was:" + method)
-    plpy.warning("current_level keys:" + current_level.keys())
+    warnings.warn("method was:" + method)
+    warnings.warn("current_level keys:" + current_level.keys())
     raise err
   if url.path not in openapi_spec['hit_cache']:
     openapi_spec['hit_cache'][url.path]={method:op_id}
