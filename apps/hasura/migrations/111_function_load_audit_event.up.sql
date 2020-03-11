@@ -23,7 +23,7 @@ from collections import defaultdict
 import json
 import csv
 import sys
-from snoopUtils import deep_merge, load_openapi_spec, determine_bucket_job, fetch_swagger
+from snoopUtils import deep_merge, get_html, download_url_to_path, load_openapi_spec, determine_bucket_job, fetch_swagger, get_all_auditlog_links
 
 def find_operation_id(openapi_spec, event):
   verb_to_method={
@@ -129,59 +129,39 @@ def find_operation_id(openapi_spec, event):
     openapi_spec['hit_cache'][url.path][method]=op_id
   return op_id
 
-def get_html(url):
-    html = urlopen(url).read()
-    soup = BeautifulSoup(html, 'html.parser')
-    return soup
-
-
-def download_url_to_path(url, local_path):
-    local_dir = os.path.dirname(local_path)
-    if not os.path.isdir(local_dir):
-        os.makedirs(local_dir)
-    if not os.path.isfile(local_path):
-        process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
-        downloads[local_path] = process
-
 # this global dict is used to track our wget subprocesses
 # wget was used because the files can get to several halfa gig
 downloads = {}
 
 bucket, job = determine_bucket_job(custom_bucket, custom_job)
-swagger,metadata,commit_hash=fetch_swagger(bucket, job)
+BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
+ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
 
 def load_audit_events(bucket,job):
-    bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
-    artifacts_url = 'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/' + bucket + '/' +  job + '/' + 'artifacts'
+    bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
+    artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
+    download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
+    combined_log_file = download_path + 'audit.log'
+    swagger, metadata, commit_hash = fetch_swagger(bucket, job)
+
+    # meta data to download
     job_metadata_files = [
         'finished.json',
         'artifacts/metadata.json',
         'artifacts/junit_01.xml',
         'build-log.txt'
     ]
-    download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
-    combined_log_file = download_path + 'audit.log'
-
-    # meta data to download
     for jobfile in job_metadata_files:
         download_url_to_path( bucket_url + jobfile,
-                              download_path + jobfile )
+                              download_path + jobfile, downloads )
 
-    # Use soup to grab url of each of audit.log.* (some end in .gz)
-    soup = get_html(artifacts_url)
-    master_link = soup.find(href=re.compile("master"))
-    master_soup = get_html(
-        "https://gcsweb.k8s.io" + master_link['href'])
-    log_links = master_soup.find_all(
-        href=re.compile("audit.log"))
 
-    finished_metadata = json.load(open(download_path + 'finished.json'))
-    commit_hash=finished_metadata['job-version'].split('+')[1]
     # download all logs
+    log_links = get_all_auditlog_links(artifacts_url)
     for link in log_links:
         log_url = link['href']
         log_file = download_path + os.path.basename(log_url)
-        download_url_to_path( log_url, log_file)
+        download_url_to_path( log_url, log_file, downloads)
 
     # Our Downloader uses subprocess of curl for speed
     for download in downloads.keys():
@@ -239,20 +219,11 @@ SELECT '${bucket}', '${job}',
         with open(download_path + 'load.sql', 'w') as sqlfile:
           sqlfile.write(sql)
         rv = plpy.execute(sql)
-        #plpy.commit()
-        # this calls external binary, not part of transaction 8(
-        #rv = plpy.execute("select * from audit_event_op_update();")
-        #plpy.commit()
-        #rv = plpy.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY podspec_field_coverage_material;")
-        #plpy.commit()
         return "it worked"
     except plpy.SPIError:
         return "something went wrong with plpy"
     except:
         return "something unknown went wrong"
-#if __name__ == "__main__":
-#    load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234')
-#else:
 load_audit_events(bucket,job)
 $$ LANGUAGE plpython3u ;
 reset role;

@@ -39,6 +39,7 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
      import json
      from urllib.request import urlopen, urlretrieve
      import requests
+     import re
      from copy import deepcopy
      from functools import reduce
      from collections import defaultdict
@@ -202,6 +203,20 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
          if not os.path.isfile(local_path):
              process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
              dl_dict[local_path] = process
+   #+end_src
+** get_all_auditlog_links
+   #+begin_src python
+     def get_all_auditlog_links(au):
+         """
+         given an artifacts url, au, return a list of all
+         audit.log.* within it.
+         (some audit.logs end in .gz)
+         """
+         soup = get_html(au)
+         master_link = soup.find(href=re.compile("master"))
+         master_soup = get_html("https://gcsweb.k8s.io" + master_link['href'])
+         return master_soup.find_all(href=re.compile("audit.log"))
+
    #+end_src
 ** load_openapi_spec Definition
    This loads just the paths portion of the open_api spec into a dictionary made up of paths and methods...with each part of the path its own dict ... this also seems to be recursive but am not fully tracking what the python is doing.  its iterating over each path, but does it create a flat dict at the end, or does each path have its smaller parts within it?  so 
@@ -553,7 +568,7 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   import json
   import csv
   import sys
-  from snoopUtils import deep_merge, get_html, download_url_to_path, load_openapi_spec, determine_bucket_job, fetch_swagger
+  from snoopUtils import deep_merge, get_html, download_url_to_path, load_openapi_spec, determine_bucket_job, fetch_swagger, get_all_auditlog_links
 
   <<find_operation_id>>
 
@@ -568,31 +583,24 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   def load_audit_events(bucket,job):
       bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
       artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
+      download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
+      combined_log_file = download_path + 'audit.log'
+      swagger, metadata, commit_hash = fetch_swagger(bucket, job)
+
+      # meta data to download
       job_metadata_files = [
           'finished.json',
           'artifacts/metadata.json',
           'artifacts/junit_01.xml',
           'build-log.txt'
       ]
-      download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
-      combined_log_file = download_path + 'audit.log'
-
-      # meta data to download
       for jobfile in job_metadata_files:
           download_url_to_path( bucket_url + jobfile,
                                 download_path + jobfile, downloads )
 
-      # Use soup to grab url of each of audit.log.* (some end in .gz)
-      soup = get_html(artifacts_url)
-      master_link = soup.find(href=re.compile("master"))
-      master_soup = get_html(
-          "https://gcsweb.k8s.io" + master_link['href'])
-      log_links = master_soup.find_all(
-          href=re.compile("audit.log"))
 
-      finished_metadata = json.load(open(download_path + 'finished.json'))
-      commit_hash=finished_metadata['job-version'].split('+')[1]
       # download all logs
+      log_links = get_all_auditlog_links(artifacts_url)
       for link in log_links:
           log_url = link['href']
           log_file = download_path + os.path.basename(log_url)
@@ -662,9 +670,6 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   load_audit_events(bucket,job)
 #+END_SRC
 
-#+RESULTS: load_audit_events.py
-#+begin_src python
-#+end_src
 
 *** Create
 #+NAME: load_audit_events.sql

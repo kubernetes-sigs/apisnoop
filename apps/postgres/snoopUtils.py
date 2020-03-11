@@ -2,10 +2,13 @@ import os
 import json
 from urllib.request import urlopen, urlretrieve
 import requests
+import re
 from copy import deepcopy
 from functools import reduce
 from collections import defaultdict
 from urllib.parse import urlparse
+from bs4 import BeautifulSoup
+import subprocess
 
 GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
 DEFAULT_BUCKET="ci-kubernetes-gci-gce"
@@ -54,6 +57,35 @@ def deep_merge(*dicts, update=False):
         return reduce(merge_into, dicts, {})
 
 
+
+def get_html(url):
+    """return html content of given url"""
+    html = urlopen(url).read()
+    soup = BeautifulSoup(html, 'html.parser')
+    return soup
+
+def download_url_to_path(url, local_path, dl_dict):
+    """
+    downloads contents to local path, creating path if needed,
+    then updates given downloads dict.
+    """
+    local_dir = os.path.dirname(local_path)
+    if not os.path.isdir(local_dir):
+        os.makedirs(local_dir)
+    if not os.path.isfile(local_path):
+        process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
+        dl_dict[local_path] = process
+
+def get_all_auditlog_links(au):
+    """
+    given an artifacts url, au, return a list of all
+    audit.log.* within it.
+    (some audit.logs end in .gz)
+    """
+    soup = get_html(au)
+    master_link = soup.find(href=re.compile("master"))
+    master_soup = get_html("https://gcsweb.k8s.io" + master_link['href'])
+    return master_soup.find_all(href=re.compile("audit.log"))
 
 def load_openapi_spec(url):
     cache=defaultdict(dict)
