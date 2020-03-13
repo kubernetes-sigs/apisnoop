@@ -38,6 +38,7 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
      import os
      import json
      from urllib.request import urlopen, urlretrieve
+     from string import Template
      import requests
      import re
      from copy import deepcopy
@@ -50,7 +51,6 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
      from tempfile import mkdtemp
      import time
      import glob
-
    #+end_src
 ** Our Constants
    #+NAME: snoopUtil Constants
@@ -61,7 +61,6 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
 
    #+end_src
 
-   
 ** get_json  Definition
    #+NAME: get_json
    #+begin_src python :results silent
@@ -378,7 +377,7 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
          ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
          K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
          downloads = {}
-         bucket_url = GCS_LOGS + bucket + '/' + job + '/'
+         bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
          artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
          download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
          combined_log_file = download_path + 'audit.log'
@@ -418,7 +417,7 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
                      subprocess.run(['cat', logfile], stdout=log, check=True)
 
          # Process the resulting combined raw audit.log by adding operationId
-         swagger_url = K8S_GITHUB_RAW + commit_hash + '/api/openapi-spec/swagger.json'
+         swagger_url = K8S_GITHUB_REPO + commit_hash + '/api/openapi-spec/swagger.json'
          spec = load_openapi_spec(swagger_url)
          infilepath=combined_log_file
          outfilepath=combined_log_file+'+opid'
@@ -431,7 +430,58 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
          return (download_path, outfilepath)
 
    #+end_src
+** json_to_sql definitions
+   #+NAME: json_to_sql
+   #+begin_src  python
+     def json_to_sql(bucket,job,download_path):
+         """
+           Turns json+audits into load.sql
+         """
+         auditlog_path = download_path + "/audit.log+opid"
+         try:
+             sql = Template("""
+     CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
+     COPY raw_audit_event_import (data)
+     FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
 
+     INSERT INTO raw_audit_event(bucket, job,
+                                  audit_id, stage,
+                                  event_verb, request_uri,
+                                  operation_id,
+                                  data)
+     SELECT '${bucket}', '${job}',
+            (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
+            (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
+            (raw.data ->> 'operationId'),
+            raw.data
+       FROM raw_audit_event_import raw;
+             """).substitute(
+                 audit_logfile = auditlog_path,
+                 bucket = bucket,
+                 job = job
+             )
+             sqlfile_path = download_path + 'load_audit_events.sql'
+             with open(sqlfile_path, 'w') as sqlfile:
+                 sqlfile.write(sql)
+             print("it worked: " + sqlfile_path)
+             return sqlfile_path
+         # except plpy.SPIError:
+         #     return "something went wrong with plpy"
+         except:
+             return "something unknown went wrong"
+   #+end_src
+** insert_audits_into_db definition
+   #+NAME: insert_audits_into_db
+   #+begin_src python
+     def insert_audits_into_db (download_path, auditlog_path):
+         # try:
+         #     plpy.here?
+         # except:
+         #     from SQL import sqllib as plpy
+         rv = plpy.execute(sql)
+
+
+   #+end_src
 * 100: Raw Data Tables and Helper Functions
 ** 100: bucket_job_swagger table
   :PROPERTIES:
@@ -742,7 +792,7 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/113_trigger_add_opp_id.up.sql
   :END:
    #+NAME: Create Trigger
-   #+begin_src sql-mode :results silent
+   #+begin_src sql-mode :results silent :tangle no
      CREATE TRIGGER add_op_id BEFORE INSERT ON raw_audit_event
        FOR EACH ROW EXECUTE PROCEDURE add_op_id();
    #+end_src
@@ -1338,7 +1388,7 @@ Using our api_operation_material view, look into the parameters field in each on
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/910_load_and_populate_swaggers.up.sql
   :header-args:sql-mode+: :results silent
   :END:
-  #+begin_src sql-mode
+  #+begin_src sql-mode :tangle no
     select * from load_swagger();
     --populate the apisnoop/live bucket/job to help when writing test functions
     select * from load_swagger(null, null, true);
@@ -1347,7 +1397,7 @@ Using our api_operation_material view, look into the parameters field in each on
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/920_populate_audit_events.up.sql
   :END:
-  #+begin_src sql-mode
+  #+begin_src sql-mode :tangle no
     select * from load_audit_events();
     REFRESH MATERIALIZED VIEW api_operation_material;
     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
@@ -1611,7 +1661,7 @@ Using our api_operation_material view, look into the parameters field in each on
  #+END_SRC
 ** 999: replace metadata
    :PROPERTIES:
-   :header-args:yaml+: :tangle ../apps/hasura/migrations/999_replace_metadata.up.yaml
+   :header-args:yaml+: :notangle ../apps/hasura/migrations/999_replace_metadata.up.yaml
    :header-args:yaml+: :comments org
    :END:
 #+NAME: replace metadata
@@ -1622,3 +1672,18 @@ Using our api_operation_material view, look into the parameters field in each on
 
 * Footnotes
 * scratch
+  
+  https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/
+  #+begin_src sql-mode :results output replace
+     -- select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1232358105564581890');
+    -- select * from raw_audit_event limit 10;
+     -- select bucket, job, job_timestamp from bucket_job_swagger;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  ERROR:  function load_swagger(unknown, unknown) does not exist
+  LINE 1: select * from load_swagger('ci-kubernetes-e2e-gci-gce', '123...
+                        ^
+  HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+  #+end_SRC

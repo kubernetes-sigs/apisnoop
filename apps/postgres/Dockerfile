@@ -5,6 +5,8 @@ FROM postgres:12.0
    postgresql-plpython3-12 \
    postgresql-12-plsh \
    python3-bs4\
+   python3-psycopg2\
+   python3-ipdb\
    python3-requests \
    wget \
    make \

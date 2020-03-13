@@ -1,6 +1,7 @@
 import os
 import json
 from urllib.request import urlopen, urlretrieve
+from string import Template
 import requests
 import re
 from copy import deepcopy
@@ -10,6 +11,9 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import subprocess
 import warnings
+from tempfile import mkdtemp
+import time
+import glob
 
 GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
 DEFAULT_BUCKET="ci-kubernetes-gci-gce"
@@ -219,3 +223,109 @@ def find_operation_id(openapi_spec, event):
   else:
     openapi_spec['hit_cache'][url.path][method]=op_id
   return op_id
+
+def load_audit_events(bucket,job):
+    """
+    Grabs all audits logs available for a given bucket/job, combines them into a
+    single audit log, then returns the paths for where the raw downloads and
+    combined audit logs are stored.
+    """
+    BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
+    ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
+    K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
+    downloads = {}
+    bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
+    artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
+    download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
+    combined_log_file = download_path + 'audit.log'
+    swagger, metadata, commit_hash = fetch_swagger(bucket, job)
+
+    # download all metadata
+    job_metadata_files = [
+        'finished.json',
+        'artifacts/metadata.json',
+        'artifacts/junit_01.xml',
+        'build-log.txt'
+    ]
+    for jobfile in job_metadata_files:
+        download_url_to_path( bucket_url + jobfile,
+                              download_path + jobfile, downloads )
+
+    # download all logs
+    log_links = get_all_auditlog_links(artifacts_url)
+    for link in log_links:
+        log_url = link['href']
+        log_file = download_path + os.path.basename(log_url)
+        download_url_to_path( log_url, log_file, downloads)
+
+    # Our Downloader uses subprocess of curl for speed
+    for download in downloads.keys():
+        # Sleep for 5 seconds and check for next download
+        while downloads[download].poll() is None:
+            time.sleep(5)
+
+    # Loop through the files, (z)cat them into a combined audit.log
+    with open(combined_log_file, 'ab') as log:
+        for logfile in sorted(
+                glob.glob(download_path + '*kube-apiserver-audit*'), reverse=True):
+            if logfile.endswith('z'):
+                subprocess.run(['zcat', logfile], stdout=log, check=True)
+            else:
+                subprocess.run(['cat', logfile], stdout=log, check=True)
+
+    # Process the resulting combined raw audit.log by adding operationId
+    swagger_url = K8S_GITHUB_REPO + commit_hash + '/api/openapi-spec/swagger.json'
+    spec = load_openapi_spec(swagger_url)
+    infilepath=combined_log_file
+    outfilepath=combined_log_file+'+opid'
+    with open(infilepath) as infile:
+        with open(outfilepath,'w') as output:
+            for line in infile.readlines():
+                event = json.loads(line)
+                event['operationId']=find_operation_id(spec,event)
+                output.write(json.dumps(event)+'\n')
+    return (download_path, outfilepath)
+
+def json_to_sql(bucket,job,download_path):
+    """
+      Turns json+audits into load.sql
+    """
+    auditlog_path = download_path + "/audit.log+opid"
+    try:
+        sql = Template("""
+CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
+COPY raw_audit_event_import (data)
+FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
+
+INSERT INTO raw_audit_event(bucket, job,
+                             audit_id, stage,
+                             event_verb, request_uri,
+                             operation_id,
+                             data)
+SELECT '${bucket}', '${job}',
+       (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
+       (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
+       (raw.data ->> 'operationId'),
+       raw.data
+  FROM raw_audit_event_import raw;
+        """).substitute(
+            audit_logfile = auditlog_path,
+            bucket = bucket,
+            job = job
+        )
+        sqlfile_path = download_path + 'load_audit_events.sql'
+        with open(sqlfile_path, 'w') as sqlfile:
+            sqlfile.write(sql)
+        print("it worked: " + sqlfile_path)
+        return sqlfile_path
+    # except plpy.SPIError:
+    #     return "something went wrong with plpy"
+    except:
+        return "something unknown went wrong"
+
+def insert_audits_into_db (download_path, auditlog_path):
+    # try:
+    #     plpy.here?
+    # except:
+    #     from SQL import sqllib as plpy
+    rv = plpy.execute(sql)
