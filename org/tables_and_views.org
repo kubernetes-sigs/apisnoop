@@ -6,6 +6,7 @@
 #+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | TADA(d)
 #+ARCHIVE: archive/tables_and_views.archive.org::
 #+PROPERTY: header-args:sql-mode+ :results silent
+#+PROPERTY: header-args:sql-mode+ :comments both
 
 * Purpose
   This org houses all the tables and views that are migrated upon creation of apisnoop: BOT VERSION.  So these are the crucial parts for our prow pr bot.
@@ -364,35 +365,35 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
       openapi_spec['hit_cache'][url.path][method]=op_id
     return op_id
 #+END_SRC
-** load_audit_events definitions
-   #+NAME: load_audit_events
+** download_and_process_auditlogs definitions
+   #+NAME: download_and_process_auditlogs
    #+begin_src  python
-     def load_audit_events(bucket,job):
+     def download_and_process_auditlogs(bucket,job):
          """
          Grabs all audits logs available for a given bucket/job, combines them into a
-         single audit log, then returns the paths for where the raw downloads and
-         combined audit logs are stored.
+         single audit log, then returns the path for where the raw combined audit logs are stored.
+         The processed logs are in json, and include the operationId when found.
          """
-         BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
+         # BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
          ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
          K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
          downloads = {}
-         bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
+         # bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
          artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
          download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
          combined_log_file = download_path + 'audit.log'
          swagger, metadata, commit_hash = fetch_swagger(bucket, job)
 
          # download all metadata
-         job_metadata_files = [
-             'finished.json',
-             'artifacts/metadata.json',
-             'artifacts/junit_01.xml',
-             'build-log.txt'
-         ]
-         for jobfile in job_metadata_files:
-             download_url_to_path( bucket_url + jobfile,
-                                   download_path + jobfile, downloads )
+         # job_metadata_files = [
+         #     'finished.json',
+         #     'artifacts/metadata.json',
+         #     'artifacts/junit_01.xml',
+         #     'build-log.txt'
+         # ]
+         # for jobfile in job_metadata_files:
+         #     download_url_to_path( bucket_url + jobfile,
+         #                           download_path + jobfile, downloads )
 
          # download all logs
          log_links = get_all_auditlog_links(artifacts_url)
@@ -427,17 +428,15 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
                      event = json.loads(line)
                      event['operationId']=find_operation_id(spec,event)
                      output.write(json.dumps(event)+'\n')
-         return (download_path, outfilepath)
-
+         return outfilepath
    #+end_src
 ** json_to_sql definitions
    #+NAME: json_to_sql
    #+begin_src  python
-     def json_to_sql(bucket,job,download_path):
+     def json_to_sql(bucket,job,auditlog_path):
          """
            Turns json+audits into load.sql
          """
-         auditlog_path = download_path + "/audit.log+opid"
          try:
              sql = Template("""
      CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
@@ -460,27 +459,23 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
                  bucket = bucket,
                  job = job
              )
-             sqlfile_path = download_path + 'load_audit_events.sql'
-             with open(sqlfile_path, 'w') as sqlfile:
-                 sqlfile.write(sql)
-             print("it worked: " + sqlfile_path)
-             return sqlfile_path
-         # except plpy.SPIError:
-         #     return "something went wrong with plpy"
+             return sql
          except:
              return "something unknown went wrong"
    #+end_src
-** insert_audits_into_db definition
+** insert_audits_into_db definition                                   :notes:
+This is good for notes, but not used 
    #+NAME: insert_audits_into_db
-   #+begin_src python
-     def insert_audits_into_db (download_path, auditlog_path):
-         # try:
-         #     plpy.here?
-         # except:
-         #     from SQL import sqllib as plpy
-         rv = plpy.execute(sql)
-
-
+   #+begin_src python :tangle no
+      def insert_audits_into_db (download_path, auditlog_path):
+          # try:
+          #     plpy.here?
+          # except:
+          #     from SQL import sqllib as plpy
+          bucket, job = determine_bucket_job("ci-kubernetes-e2e-gci-gce","1232358105564581890")
+          download_path, auditlog_path = load_audit_events(bucket, job)
+          sql_string = json_to_sql(bucket, job, download_path)
+          rv = plpy.execute(sql)
    #+end_src
 * 100: Raw Data Tables and Helper Functions
 ** 100: bucket_job_swagger table
@@ -635,110 +630,25 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
   :PROPERTIES:
   :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/111_function_load_audit_event.up.sql
   :END:
-*** Python Code
-**** DELETE? deep_merge
-#+NAME: deep_merge
-#+BEGIN_SRC python :tangle no
-  from copy import deepcopy
-  from functools import reduce
-
-  def deep_merge(*dicts, update=False):
-      """
-      Merges dicts deeply.
-      Parameters
-      ----------
-      dicts : list[dict]
-          List of dicts.
-      update : bool
-          Whether to update the first dict or create a new dict.
-      Returns
-      -------
-      merged : dict
-          Merged dict.
-      """
-      def merge_into(d1, d2):
-          for key in d2:
-              if key not in d1 or not isinstance(d1[key], dict):
-                  d1[key] = deepcopy(d2[key])
-              else:
-                  d1[key] = merge_into(d1[key], d2[key])
-          return d1
-
-      if update:
-          return reduce(merge_into, dicts[1:], dicts[0])
-      else:
-          return reduce(merge_into, dicts, {})
-#+END_SRC
-
-**** load_audit_events
-#+NAME: load_audit_events.py
-#+BEGIN_SRC python :noweb yes :exports none
-  #!/usr/bin/env python3
-  import os
-  import json
-  from urllib.request import urlopen, urlretrieve
-  import requests
-  import re
-  from copy import deepcopy
-  from functools import reduce
-  from collections import defaultdict
-  from urllib.parse import urlparse
-  from bs4 import BeautifulSoup
-  import subprocess
-  import warnings
-  from tempfile import mkdtemp
-  import time
-  import glob
-  from snoopUtils import determine_bucket_job, load_audit_events
-
-  bucket, job = determine_bucket_job(custom_bucket, custom_job)
-  download_path, auditlog_path = load_audit_events(bucket, job)
-
-  def insert_audits_into_db (download_path, auditlog_path):
-      try:
-          sql = Template("""
-  CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
-  COPY raw_audit_event_import (data)
-  FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
-
-  INSERT INTO raw_audit_event(bucket, job,
-                               audit_id, stage,
-                               event_verb, request_uri,
-                               operation_id,
-                               data)
-  SELECT '${bucket}', '${job}',
-         (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
-         (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
-         (raw.data ->> 'operationId'),
-         raw.data
-    FROM raw_audit_event_import raw;
-          """).substitute(
-              audit_logfile = auditlog_path,
-              bucket = bucket,
-              job = job
-          )
-          with open(download_path + 'load.sql', 'w') as sqlfile:
-              sqlfile.write(sql)
-              rv = plpy.execute(sql)
-          return "it worked"
-      except plpy.SPIError:
-          return "something went wrong with plpy"
-      except:
-          return "something unknown went wrong"
-
-  insert_audits_into_db(download_path, auditlog_path)
-#+END_SRC
-
-
 *** Create
 #+NAME: load_audit_events.sql
 #+BEGIN_SRC sql-mode :noweb yes :results silent
   set role dba;
   CREATE OR REPLACE FUNCTION load_audit_events(
-  custom_bucket text default null,
-  custom_job text default null)
-  RETURNS text AS $$
-  <<load_audit_events.py>>
+    custom_bucket text default null,
+    custom_job text default null)
+    RETURNS text AS $$
+    from snoopUtils import determine_bucket_job, load_audit_events, insert_audit_events_into_db
+    bucket, job = determine_bucket_job(custom_bucket, custom_job)
+    auditlog_path = download_and_process_auditlogs(bucket, job)
+    sql_string = json_to_sql(bucket,job,auditlog_path) 
+    try:
+        plpy.execute(sql_string)
+        return "it worked"
+    except plpy.SPIError:
+        return "something went wrong with plpy"
+    except:
+        return "something unknown went wrong"
   $$ LANGUAGE plpython3u ;
   reset role;
 #+END_SRC

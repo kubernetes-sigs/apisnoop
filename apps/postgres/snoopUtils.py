@@ -224,32 +224,32 @@ def find_operation_id(openapi_spec, event):
     openapi_spec['hit_cache'][url.path][method]=op_id
   return op_id
 
-def load_audit_events(bucket,job):
+def download_and_process_auditlogs(bucket,job):
     """
     Grabs all audits logs available for a given bucket/job, combines them into a
-    single audit log, then returns the paths for where the raw downloads and
-    combined audit logs are stored.
+    single audit log, then returns the path for where the raw combined audit logs are stored.
+    The processed logs are in json, and include the operationId when found.
     """
-    BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
+    # BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
     ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
     K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
     downloads = {}
-    bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
+    # bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
     artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
     download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
     combined_log_file = download_path + 'audit.log'
     swagger, metadata, commit_hash = fetch_swagger(bucket, job)
 
     # download all metadata
-    job_metadata_files = [
-        'finished.json',
-        'artifacts/metadata.json',
-        'artifacts/junit_01.xml',
-        'build-log.txt'
-    ]
-    for jobfile in job_metadata_files:
-        download_url_to_path( bucket_url + jobfile,
-                              download_path + jobfile, downloads )
+    # job_metadata_files = [
+    #     'finished.json',
+    #     'artifacts/metadata.json',
+    #     'artifacts/junit_01.xml',
+    #     'build-log.txt'
+    # ]
+    # for jobfile in job_metadata_files:
+    #     download_url_to_path( bucket_url + jobfile,
+    #                           download_path + jobfile, downloads )
 
     # download all logs
     log_links = get_all_auditlog_links(artifacts_url)
@@ -284,13 +284,12 @@ def load_audit_events(bucket,job):
                 event = json.loads(line)
                 event['operationId']=find_operation_id(spec,event)
                 output.write(json.dumps(event)+'\n')
-    return (download_path, outfilepath)
+    return outfilepath
 
-def json_to_sql(bucket,job,download_path):
+def json_to_sql(bucket,job,auditlog_path):
     """
       Turns json+audits into load.sql
     """
-    auditlog_path = download_path + "/audit.log+opid"
     try:
         sql = Template("""
 CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
@@ -313,19 +312,6 @@ SELECT '${bucket}', '${job}',
             bucket = bucket,
             job = job
         )
-        sqlfile_path = download_path + 'load_audit_events.sql'
-        with open(sqlfile_path, 'w') as sqlfile:
-            sqlfile.write(sql)
-        print("it worked: " + sqlfile_path)
-        return sqlfile_path
-    # except plpy.SPIError:
-    #     return "something went wrong with plpy"
+        return sql
     except:
         return "something unknown went wrong"
-
-def insert_audits_into_db (download_path, auditlog_path):
-    # try:
-    #     plpy.here?
-    # except:
-    #     from SQL import sqllib as plpy
-    rv = plpy.execute(sql)
