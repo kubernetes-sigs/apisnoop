@@ -1,9 +1,3 @@
--- 610: Endpoints Hit by New Test
---    :PROPERTIES:
---    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/610_view_endpoints_hit_by_new_test.up.sql
---    :END:
---   #+NAME: endpoints hit by new test
-
 CREATE VIEW "public"."endpoints_hit_by_new_test" AS
   WITH live_testing_endpoints AS (
     SELECT DISTINCT

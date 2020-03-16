@@ -1,6 +1,3 @@
--- Create
--- #+NAME: tests view
-
 CREATE OR REPLACE VIEW "public"."useragents" AS
   WITH raw_useragents AS (
     SELECT audit_event.operation_id,

@@ -1,9 +1,3 @@
--- Create Table
---     :PROPERTIES:
---     :header-args:sql-mode+: :tangle ../apps/hasura/migrations/100_table_bucket_job_swagger.up.sql
---     :END:
---  #+NAME: bucket_job_swagger
-
 CREATE TABLE bucket_job_swagger (
     ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
     bucket text,
@@ -20,9 +14,6 @@ CREATE TABLE bucket_job_swagger (
     swagger jsonb,
     PRIMARY KEY (bucket, job)
 );
-
--- Index Table
---  #+NAME: general index the raw_swagger
 
 CREATE INDEX idx_swagger_jsonb_ops ON bucket_job_swagger
   USING GIN (swagger jsonb_ops);

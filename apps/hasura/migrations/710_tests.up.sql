@@ -1,6 +1,3 @@
--- Create
--- #+NAME: tests view
-
 CREATE OR REPLACE VIEW "public"."tests" AS
   WITH raw_tests AS (
     SELECT audit_event.operation_id,
