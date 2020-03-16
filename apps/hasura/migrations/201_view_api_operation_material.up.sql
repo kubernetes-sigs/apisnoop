@@ -1,6 +1,3 @@
--- Index
--- #+NAME: index the api_operation_material
-
 CREATE INDEX api_operation_materialized_bucket      ON api_operation_material            (bucket);
 CREATE INDEX api_operation_materialized_event_verb  ON api_operation_material            (event_verb);
 CREATE INDEX api_operation_materialized_k8s_action  ON api_operation_material            (k8s_action);

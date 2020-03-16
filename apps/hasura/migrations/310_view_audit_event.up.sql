@@ -1,10 +1,3 @@
--- 300: Audit Event
---   :PROPERTIES:
---   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/310_view_audit_event.up.sql
---   :END:
-  
---   #+NAME: view audit_event
-
 CREATE VIEW "public"."audit_event" AS
   SELECT (raw.data ->> 'auditID') as audit_id,
           raw.bucket,

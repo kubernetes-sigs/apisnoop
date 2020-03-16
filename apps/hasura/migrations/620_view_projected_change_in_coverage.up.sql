@@ -1,9 +1,3 @@
--- 620:Projected Change in Coverage
---    :PROPERTIES:
---    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/620_view_projected_change_in_coverage.up.sql
---    :END:
---    #+NAME: PROJECTED Change in Coverage
-
 CREATE OR REPLACE VIEW "public"."projected_change_in_coverage" AS
  WITH baseline AS (
    SELECT *

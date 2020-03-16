@@ -56,26 +56,44 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
 ** Our Constants
    #+NAME: snoopUtil Constants
    #+begin_src python :results silent
-      GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
-      DEFAULT_BUCKET="ci-kubernetes-gci-gce"
-      K8S_GITHUB_RAW= "https://raw.githubusercontent.com/kubernetes/kubernetes/"
-      # Why do we have to had this?
-      # The k8s VERB (aka action) mapping to http METHOD
-      # Our audit logs do NOT contain any mention of METHOD, only the VERB
-      VERB_TO_METHOD={
-          'get': 'get',
-          'list': 'get',
-          'proxy': 'proxy',
-          'create': 'post',
-          'post':'post',
-          'put':'post',
-          'update':'put',
-          'patch':'patch',
-          'connect':'connect',
-          'delete':'delete',
-          'deletecollection':'delete',
-          'watch':'get'
-      }
+     GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
+     DEFAULT_BUCKET="ci-kubernetes-gci-gce"
+     K8S_GITHUB_RAW= "https://raw.githubusercontent.com/kubernetes/kubernetes/"
+     # Why do we have to had this?
+     # The k8s VERB (aka action) mapping to http METHOD
+     # Our audit logs do NOT contain any mention of METHOD, only the VERB
+     VERB_TO_METHOD={
+         'get': 'get',
+         'list': 'get',
+         'proxy': 'proxy',
+         'create': 'post',
+         'post':'post',
+         'put':'post',
+         'update':'put',
+         'patch':'patch',
+         'connect':'connect',
+         'delete':'delete',
+         'deletecollection':'delete',
+         'watch':'get'
+     }
+     IGNORED_ENDPOINTS=[
+         'metrics',
+         'readyz',
+         'livez',
+         'healthz',
+         'finalize', # recently came up, am unsure what this or finalize-api mean or if we should be tracking it
+         'finalize-api',
+         'status' # hunch is this was a removed endpoint...but does not show in swagger.json
+     ]
+     # TODO: answer question: what are finalizers and the finalize-api?
+     DUMMY_URL_PATHS =[
+         'example.com',
+         'kope.io',
+         'snapshot.storage.k8s.io',
+         'discovery.k8s.io',
+         'metrics.k8s.io',
+         'wardle.k8s.io'
+     ]
    #+end_src
 
 ** get_json  Definition
@@ -243,7 +261,7 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
    This loads just the paths portion of the open_api spec into a dictionary made up of paths and methods...with each part of the path its own dict ... this also seems to be recursive but am not fully tracking what the python is doing.  its iterating over each path, but does it create a flat dict at the end, or does each path have its smaller parts within it?  so 
    
    #+NAME: load_openapi_spec
-   #+BEGIN_SRC python 
+  #+BEGIN_SRC python 
      def load_openapi_spec(url):
          # Usually, a Python dictionary throws a KeyError if you try to get an item with a key that is not currently in the dictionary.
          # The defaultdict in contrast will simply return an empty dict.
@@ -292,46 +310,45 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
                      openapi_spec['cache'] = cache
          return openapi_spec
    #+END_SRC
-
+** format_proxy_endpoint Definition
+   This is used as part of our find_operation_id.  Proxy endpoints will have an endpoint structure  
+   like so:
+   : api/v1/proxy/arg1/arg2/arg3/argn+1
+   The args given to proxy can be substantially long, and we aren't too concerned with them, but still want to be able to map a proxy endpoint to its open api spec.  And so we format the uri_parts to be the path with all arguments given to proxy collapsed into a single string.o
+   
+   #+NAME: format_uri_parts_for_proxy
+   #+begin_src python
+     def format_uri_parts_for_proxy(uri_parts):
+         formatted_parts=uri_parts[0:uri_parts.index('proxy')]
+         formatted_parts.append('proxy')
+         formatted_parts.append('/'.join(
+             uri_parts[uri_parts.index('proxy')+1:]))
+         return formatted_parts
+   #+end_src
 ** find_operation_id Definition
-
-#+begin_src python
-#+end_src
 #+NAME: find_operation_id
 #+BEGIN_SRC python
   def find_operation_id(openapi_spec, event):
     method=VERB_TO_METHOD[event['verb']]
     url = urlparse(event['requestURI'])
     # 1) Cached seen before results
-    # IS the URL in the hit_cach?
+    # Is the URL in the hit_cache?
     if url.path in openapi_spec['hit_cache']:
       # Is the method for this url cached?
       if method in openapi_spec['hit_cache'][url.path].keys():
         # Useful when url + method is already hit multiple times in an audit log
         return openapi_spec['hit_cache'][url.path][method]
-    # part of the url of the http/api request
+      # part of the url of the http/api request
     uri_parts = url.path.strip('/').split('/')
     # IF we git a proxy component, the rest of this is just parameters and we don't "count" them
     if 'proxy' in uri_parts:
-        # uri /orig/path/to/proxy/args/to/proxie
-        # z is our temporary var to update uri_parts to contain:
-        z=uri_parts[0:uri_parts.index('proxy')]
-        # z = [ orig path to ]
-        z.append('proxy')
-        # z = [ orig path to proxy ]
-        # However all parameters after that are another single argument
-        # to the proxy
-        z.append('/'.join(
-            uri_parts[uri_parts.index('proxy')+1:]))
-        # z = [ orig path to proxy "args/to/proxy"]
-        # allows dict_len and uri hit cache to work
-        uri_parts = z
-    # We index our cache primarily on part_count
+      uri_parts = format_uri_parts_for_proxy(uri_parts)
+      # We index our cache primarily on part_count
     part_count = len(uri_parts)
     # INSTEAD of try: except: maybe look into if cache has part count and complain explicitely with a good error
     try: # may have more parts... so no match
-        # If we hit a length / part_count that isn't in the APISpec... this an invalid api request
-        # our load_openapispec should populate all possible url length in our cache
+      # If we hit a length / part_count that isn't in the APISpec... this an invalid api request
+      # our load_openapispec should populate all possible url length in our cache
         cache = openapi_spec['cache'][part_count]
     except Exception as e:
       # If you hit here, you are debugging... hence the warnings
@@ -347,61 +364,33 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
       if part in current_level:
         current_level = current_level[part] # part in current_level
       elif idx == part_count-1:
-        # This elsif is ONLY run when we are at the end of the url /path/to/{namespace}, /path/to/metrics
-        # TODO turn into an if in constant array
-        if part == 'metrics':
+        if part in IGNORED_ENDPOINTS or 'discovery.k8s.io' in uri_parts:
           return None
-        if part == 'readyz':
-          return None
-        if part == 'livez':
-          return None
-        if part == 'healthz':
-          return None
-        if 'discovery.k8s.io' in uri_parts:
-          return None
-        #   elif part == '': # The last V
-        #     current_level = last_level
-        #       else:
-        # variable levels are like {namespace}, etc
         variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
         # If at some point in the future we have more than one... this will let un know
         if len(variable_levels) > 1:
           raise "If we have more than one variable levels... this should never happen."
-        # TODO inspect that variable_levels is not zero in length
+        # inspect that variable_levels is not zero in length.  This indicates some new, spec-less uri
+        if not variable_levels:
+          print("NOTICE: uri part found that is not in apis spec.")
+          print("URI: " + "/".join(uri_parts))
+          return none
         variable_level=variable_levels[0] # the var is the next level
         # TODO inspect that variable level is a key for current_level
         current_level = current_level[variable_level] # variable part is final part
       else:
         next_part = uri_parts[idx+1]
         # TODO reduce this down to , find the single next level with a "{" in it 
-        variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}
-        # variable_level=[x for x in current_level.keys() if '{' in x] .first
+        variable_levels=[x for x in current_level.keys() if '{' in x]
         if not variable_levels: # there is no match
-          # TODO turn into an if in constant array OR just return None and we look in the logs
-          if 'example.com' in part:
-            return None
-          elif 'kope.io' in part:
-            return None
-          elif 'snapshot.storage.k8s.io' in part:
-            return None
-          elif 'discovery.k8s.io' in part:
-            return None
-          elif 'metrics.k8s.io' in part:
-            return None
-          elif 'wardle.k8s.io' in part:
-            return None
-          elif ['openapi','v2'] == uri_parts: # not part our our spec
+          if part in DUMMY_URL_PATHS or uri_parts == ['openapi', 'v2']: #not part of our spec
             return None
           else:
             # TODO this is NOT valid, AND we didn't plan for it
             print(url.path)
             return None
-        # try: # may have more parts... so no match # variable_levels -> {'{namespace}': False}
         next_level=variable_levels[0]
-        # next_level={v: k for k, v in variable_levels.items()}[True]
         # except Exception as e: # TODO better to not use try/except (WE DON"T HAVE ANY CURRENT DATA")
-        #   next_level=[*variable_levels][0]
-        # import ipdb; ipdb.set_trace()
         current_level = current_level[next_level] #coo
     try:
       op_id=current_level[method]
@@ -677,31 +666,30 @@ CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data
 #+END_SRC
 
 ** 111: load_audit_event Function
-  :PROPERTIES:
-  :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/111_function_load_audit_event.up.sql
-  :END:
-*** Create
-#+NAME: load_audit_events.sql
-#+BEGIN_SRC sql-mode :noweb yes :results silent
-  set role dba;
-  CREATE OR REPLACE FUNCTION load_audit_events(
-    custom_bucket text default null,
-    custom_job text default null)
-    RETURNS text AS $$
-    from snoopUtils import determine_bucket_job, download_and_process_auditlogs, json_to_sql
-    bucket, job = determine_bucket_job(custom_bucket, custom_job)
-    auditlog_path = download_and_process_auditlogs(bucket, job)
-    sql_string = json_to_sql(bucket,job,auditlog_path) 
-    try:
-        plpy.execute(sql_string)
-        return "it worked"
-    except plpy.SPIError:
-        return "something went wrong with plpy"
-    except:
-        return "something unknown went wrong"
-  $$ LANGUAGE plpython3u ;
-  reset role;
-#+END_SRC
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/111_function_load_audit_event.up.sql
+   :END:
+   #+NAME: load_audit_events.sql
+   #+BEGIN_SRC sql-mode :noweb yes :results silent
+     set role dba;
+     CREATE OR REPLACE FUNCTION load_audit_events(
+       custom_bucket text default null,
+       custom_job text default null)
+       RETURNS text AS $$
+       from snoopUtils import determine_bucket_job, download_and_process_auditlogs, json_to_sql
+       bucket, job = determine_bucket_job(custom_bucket, custom_job)
+       auditlog_path = download_and_process_auditlogs(bucket, job)
+       sql_string = json_to_sql(bucket,job,auditlog_path) 
+       try:
+           plpy.execute(sql_string)
+           return "it worked"
+       except plpy.SPIError:
+           return "something went wrong with plpy"
+       except:
+           return "something unknown went wrong"
+       $$ LANGUAGE plpython3u ;
+       reset role;
+   #+END_SRC
 ** 112: add_opp_id function
   :PROPERTIES:
   :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/112_function_add_opp_id.up.sql
@@ -1348,7 +1336,7 @@ Using our api_operation_material view, look into the parameters field in each on
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/910_load_and_populate_swaggers.up.sql
   :header-args:sql-mode+: :results silent
   :END:
-  #+begin_src sql-mode :tangle no
+  #+begin_src sql-mode
     select * from load_swagger();
     --populate the apisnoop/live bucket/job to help when writing test functions
     select * from load_swagger(null, null, true);
@@ -1357,7 +1345,7 @@ Using our api_operation_material view, look into the parameters field in each on
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/920_populate_audit_events.up.sql
   :END:
-  #+begin_src sql-mode :tangle no
+  #+begin_src sql-mode
     select * from load_audit_events();
     REFRESH MATERIALIZED VIEW api_operation_material;
     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
@@ -1647,14 +1635,3 @@ Using our api_operation_material view, look into the parameters field in each on
                         ^
   HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
   #+end_SRC
-* aoeu
-  #+begin_example
-"ERROR:  ImportError: cannot import name ’load_audit_events’ from ’snoopUtils’ (/usr/local/lib/python3.7/dist-packages/snoopUtils.py)
-CONTEXT:  Traceback (most recent call last):
-  PL/Python function \"load_audit_events\", line 2, in <module>
-    from snoopUtils import determine_bucket_job, load_audit_events, insert_audit_events_into_db
-PL/Python function \"load_audit_events\"
-  #+end_example
-  #+begin_src sql-mode
-select * from load_audit_events('ci-kubernetes-e2e-gci-gce','1232358105564581890');
-  #+end_src
