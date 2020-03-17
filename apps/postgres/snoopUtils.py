@@ -324,24 +324,55 @@ def json_to_sql(bucket,job,auditlog_path):
     """
       Turns json+audits into load.sql
     """
+    import_number = job[-7:]
     try:
         sql = Template("""
-CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
-COPY raw_audit_event_import (data)
+CREATE TEMPORARY TABLE raw_audit_event_import${import_number}(data jsonb not null) ;
+COPY raw_audit_event_import${import_number} (data)
 FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
 
-INSERT INTO raw_audit_event(bucket, job,
-                             audit_id, stage,
-                             event_verb, request_uri,
-                             operation_id,
-                             data)
-SELECT '${bucket}', '${job}',
-       (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
-       (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
-       (raw.data ->> 'operationId'),
-       raw.data
-  FROM raw_audit_event_import raw;
+INSERT INTO audit_event(bucket, job,
+                        audit_id, stage,
+                        event_verb, request_uri,
+                        operation_id, event_level,
+                        api_version, useragent,
+                        test_hit, conf_test_hit,
+                        event_user, object_namespace,
+                        object_type, object_group,
+                        object_ver, source_ips,
+                        annotations, request_object,
+                        response_object, response_status,
+                        stage_timestamp, request_received_timestamp,
+                        data)
+
+SELECT '${bucket}',
+        '${job}',
+        (raw.data ->> 'auditID'),
+        (raw.data ->> 'stage'),
+        (raw.data ->> 'verb'),
+        (raw.data ->> 'requestURI'),
+        (raw.data ->> 'operationId'),
+        (raw.data ->> 'level') as event_level,
+        (raw.data ->> 'apiVersion') as api_version,
+        (raw.data ->> 'userAgent') as useragent,
+        ((raw.data ->> 'userAgent') like 'e2e.test%') as test_hit,
+        ((raw.data ->> 'userAgent') like '%[Conformance]%') as conf_test_hit,
+        (raw.data -> 'user') as event_user,
+        (raw.data #>> '{objectRef,namespace}') as object_namespace,
+        (raw.data #>> '{objectRef,resource}') as object_type,
+        (raw.data #>> '{objectRef,apiGroup}') as object_group,
+        (raw.data #>> '{objectRef,apiVersion}') as object_ver,
+        (raw.data -> 'sourceIPs') as source_ips,
+        (raw.data -> 'annotations') as annotations,
+        (raw.data -> 'requestObject') as request_object,
+        (raw.data -> 'responseObject') as response_object,
+        (raw.data -> 'responseStatus') as response_status,
+        (raw.data ->> 'stageTimestamp') as stage_timestamp,
+        (raw.data ->> 'requestReceivedTimestamp') as request_received_timestamp,
+        raw.data
+  FROM raw_audit_event_import${import_number} raw;
         """).substitute(
+             import_number=import_number,
             audit_logfile = auditlog_path,
             bucket = bucket,
             job = job
