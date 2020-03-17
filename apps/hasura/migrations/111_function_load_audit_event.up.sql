@@ -10,8 +10,9 @@ CREATE OR REPLACE FUNCTION load_audit_events(
   try:
       plpy.execute(sql_string)
       return "it worked"
-  except plpy.SPIError:
-      return "something went wrong with plpy"
+  except plpy.SPIError as plpyError:
+      print("something went wrong with plpy: ") 
+      return plpyError
   except:
       return "something unknown went wrong"
   $$ LANGUAGE plpython3u ;

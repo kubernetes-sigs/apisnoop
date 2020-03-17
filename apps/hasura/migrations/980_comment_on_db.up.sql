@@ -12,15 +12,15 @@ COMMENT ON column bucket_job_swagger.node_os_image IS 'id for which node image w
 COMMENT ON column bucket_job_swagger.node_os_image IS 'id for which master os image was used for test run';
 COMMENT ON column bucket_job_swagger.swagger IS 'raw json of the open api spec for k8s as of the commit hash for this test run.';
 
-COMMENT ON TABLE  raw_audit_event IS 'a record for each audit event in an audit log';
-COMMENT ON COLUMN raw_audit_event.bucket IS 'The testrun bucket for the event';
-COMMENT ON COLUMN raw_audit_event.job IS 'The testrun job for the event';
-COMMENT ON COLUMN raw_audit_event.audit_id IS 'The id for the event';
-COMMENT ON COLUMN raw_audit_event.stage IS 'stage of event';
-COMMENT ON COLUMN raw_audit_event.event_verb IS 'verb of event';
-COMMENT ON COLUMN raw_audit_event.request_uri IS 'cluster uri that event requested';
-COMMENT ON COLUMN raw_audit_event.operation_id IS 'operation_id hit by event';
-COMMENT ON COLUMN raw_audit_event.data IS 'full raw data of event';
+COMMENT ON TABLE  audit_event IS 'a record for each audit event in an audit log';
+COMMENT ON COLUMN audit_event.bucket IS 'The testrun bucket for the event';
+COMMENT ON COLUMN audit_event.job IS 'The testrun job for the event';
+COMMENT ON COLUMN audit_event.audit_id IS 'The id for the event';
+COMMENT ON COLUMN audit_event.stage IS 'stage of event';
+COMMENT ON COLUMN audit_event.event_verb IS 'verb of event';
+COMMENT ON COLUMN audit_event.request_uri IS 'cluster uri that event requested';
+COMMENT ON COLUMN audit_event.operation_id IS 'operation_id hit by event';
+COMMENT ON COLUMN audit_event.data IS 'full raw data of event';
 
 COMMENT ON MATERIALIZED VIEW api_operation_material IS 'details on each operation_id as taken from the openAPI spec';
 COMMENT ON COLUMN api_operation_material.operation_id IS 'Also referred to as endpoint.  Name for the action at a given path';
@@ -55,29 +55,6 @@ COMMENT ON column api_operation_parameter_material.in IS 'value of "in" key in p
 COMMENT ON column api_operation_parameter_material.bucket IS 'testrun bucket of operation_id this parameter belongs to';
 COMMENT ON column api_operation_parameter_material.job IS 'testrun job of operation_id this parameter belongs to';
 COMMENT ON column api_operation_parameter_material.entry IS 'full json blog of parameter entry';
-
-COMMENT ON VIEW audit_event IS 'a record for each audit event in an audit log';
-COMMENT ON COLUMN audit_event.audit_id IS 'The id for the event';
-COMMENT ON COLUMN audit_event.bucket IS 'The testrun bucket for the event';
-COMMENT ON COLUMN audit_event.job IS 'The testrun job for the event';
-COMMENT ON COLUMN audit_event.event_level IS 'level of event';
-COMMENT ON COLUMN audit_event.event_stage IS 'stage of event';
-COMMENT ON COLUMN audit_event.operation_id IS 'operation_id hit by event';
-COMMENT ON COLUMN audit_event.param_schema IS 'parameter schema for operation_id';
-COMMENT ON COLUMN audit_event.api_version IS 'k8s api version used in testrun';
-COMMENT ON COLUMN audit_event.request_uri IS 'cluster uri that event requested';
-COMMENT ON COLUMN audit_event.useragent IS 'useragent making request';
-COMMENT ON COLUMN audit_event.object_namespace IS 'namespace from objectRef of event';
-COMMENT ON COLUMN audit_event.object_type IS 'resource from objectRef of event';
-COMMENT ON COLUMN audit_event.object_group IS 'apiGroup from objectRef of event';
-COMMENT ON COLUMN audit_event.object_ver IS 'apiVersion from objectRef of event';
-COMMENT ON COLUMN audit_event.source_ips IS 'sourceIPs of event';
-COMMENT ON COLUMN audit_event.annotations IS 'annotations of event';
-COMMENT ON COLUMN audit_event.request_object IS 'full requestObject from event';
-COMMENT ON COLUMN audit_event.response_object IS 'full responseObject from event';
-COMMENT ON COLUMN audit_event.stage_timestamp IS 'timestamp of event';
-COMMENT ON COLUMN audit_event.request_received_timestamp IS 'timestamp when request received';
-COMMENT ON COLUMN audit_event.data IS 'full raw data of event';
 
 COMMENT ON VIEW endpoint_coverage IS 'the test hits and conformance test hits per operation_id & other useful details';
 COMMENT ON COLUMN endpoint_coverage.date IS 'Date of test run according to its metadata';
