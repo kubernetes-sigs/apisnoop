@@ -175,6 +175,7 @@ According to this APIsnoop query, there are still some remaining Deployment endp
        testDeploymentUpdateImage := "httpd"
        testDeploymentDefaultReplicas := int32(3)
        testDeploymentMinimumReplicas := int32(1)
+       testDeploymentNoReplicas := int32(0)
        testDeploymentLabelSelectors := metav1.LabelSelector{
            MatchLabels: map[string]string{"app": "test-deployment"},
        }
@@ -259,7 +260,7 @@ According to this APIsnoop query, there are still some remaining Deployment endp
                "labels": map[string]string{"test-deployment": "patched"},
            },
            "spec": map[string]interface{}{
-               "replicas": int32(1),
+               "replicas": testDeploymentMinimumReplicas,
                "template": map[string]interface{}{
                    "spec": map[string]interface{}{
                        "containers": []map[string]interface{}{{
@@ -322,10 +323,13 @@ According to this APIsnoop query, there are still some remaining Deployment endp
            return
        }
 
-       fmt.Println("updating the Deployment")
+       fmt.Println("updating the DeploymentStatus")
        testDeploymentUpdate := testDeployment
+       testDeploymentUpdate.ObjectMeta.Labels["test-deployment"] = "updated"
        testDeploymentUpdate.Spec.Template.Spec.Containers[0].Image = testDeploymentUpdateImage
-       testDeploymentUpdate.Status.ReadyReplicas = int32(0)
+	     testDeploymentDefaultReplicasPointer := &testDeploymentDefaultReplicas
+       testDeploymentUpdate.Spec.Replicas = testDeploymentDefaultReplicasPointer
+       testDeploymentUpdate.Status.ReadyReplicas = testDeploymentNoReplicas
        testDeploymentUpdateUnstructuredMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&testDeploymentUpdate)
        if err != nil {
            fmt.Println(err, "failed to convert to unstructured")
@@ -335,7 +339,7 @@ According to this APIsnoop query, there are still some remaining Deployment endp
        }
        _, err = DynamicClientSet.Resource(deploymentResource).Namespace(testNamespaceName).Update(&testDeploymentUpdateUnstructured, metav1.UpdateOptions{}, "status")
        if err != nil {
-           fmt.Println(err, "failed to update the Deployment")
+           fmt.Println(err, "failed to update the DeploymentStatus")
            return
        }
        for event := range dplmtWatchChan {
@@ -344,21 +348,83 @@ According to this APIsnoop query, there are still some remaining Deployment endp
            }
        }
 
-       fmt.Println("fetching the Deployment")
+       fmt.Println("fetching the DeploymentStatus")
        deploymentGetUnstructured, err := DynamicClientSet.Resource(deploymentResource).Namespace(testNamespaceName).Get(testDeploymentName, metav1.GetOptions{}, "status")
        if err != nil {
            fmt.Println(err, "failed to fetch the Deployment")
            return
        }
        deploymentGet := appsv1.Deployment{}
-	     err = runtime.DefaultUnstructuredConverter.FromUnstructured(deploymentGetUnstructured.Object, &deploymentGet)
+       err = runtime.DefaultUnstructuredConverter.FromUnstructured(deploymentGetUnstructured.Object, &deploymentGet)
        if err != nil {
            fmt.Println(err, "failed to convert the unstructured response to a Deployment")
            return
        }
-       if ! (deploymentGet.Spec.Template.Spec.Containers[0].Image == testDeploymentUpdateImage || deploymentGet.Status.ReadyReplicas == 0) {
+       if ! (deploymentGet.Spec.Template.Spec.Containers[0].Image == testDeploymentUpdateImage || deploymentGet.Status.ReadyReplicas == testDeploymentNoReplicas || deploymentGet.ObjectMeta.Labels["test-deployment"] == "updated") {
            fmt.Println("failed to update the Deployment (did not return correct values)")
            return
+       }
+       for event := range dplmtWatchChan {
+           if event.Type == watch.Modified {
+               break
+           }
+       }
+       for event := range dplmtWatchChan {
+           deployment, ok := event.Object.(*appsv1.Deployment)
+           if ok != true {
+               fmt.Println("failed to convert event Object to a Deployment")
+               return
+           }
+           if deployment.Status.ReadyReplicas == testDeploymentDefaultReplicas {
+               break
+           }
+       }
+
+       fmt.Println("patching the DeploymentStatus")
+       deploymentStatusPatch, err := json.Marshal(map[string]interface{}{
+           "metadata": map[string]interface{}{
+               "labels": map[string]string{"test-deployment": "patched-status"},
+           },
+           "status": map[string]interface{}{
+               "readyReplicas": testDeploymentNoReplicas,
+           },
+       })
+       if err != nil {
+           fmt.Println(err, "failed to Marshal Deployment JSON patch")
+           return
+       }
+       DynamicClientSet.Resource(deploymentResource).Namespace(testNamespaceName).Patch(testDeploymentName, types.StrategicMergePatchType, []byte(deploymentStatusPatch), metav1.PatchOptions{}, "status")
+
+       fmt.Println("fetching the DeploymentStatus")
+       deploymentGetUnstructured, err = DynamicClientSet.Resource(deploymentResource).Namespace(testNamespaceName).Get(testDeploymentName, metav1.GetOptions{}, "status")
+       if err != nil {
+           fmt.Println(err, "failed to fetch the DeploymentStatus")
+           return
+       }
+       deploymentGet = appsv1.Deployment{}
+       err = runtime.DefaultUnstructuredConverter.FromUnstructured(deploymentGetUnstructured.Object, &deploymentGet)
+       if err != nil {
+           fmt.Println(err, "failed to convert the unstructured response to a Deployment")
+           return
+       }
+       if ! (deploymentGet.Spec.Template.Spec.Containers[0].Image == testDeploymentUpdateImage || deploymentGet.Status.ReadyReplicas == 0 || deploymentGet.ObjectMeta.Labels["test-deployment"] == "patched-status") {
+           fmt.Println("failed to update the Deployment (did not return correct values)")
+           return
+       }
+       for event := range dplmtWatchChan {
+           if event.Type == watch.Modified {
+               break
+           }
+       }
+       for event := range dplmtWatchChan {
+           deployment, ok := event.Object.(*appsv1.Deployment)
+           if ok != true {
+               fmt.Println("failed to convert event Object to a Deployment")
+               return
+           }
+           if deployment.Status.ReadyReplicas == testDeploymentDefaultReplicas {
+               break
+           }
        }
 
        // write test here
@@ -368,16 +434,6 @@ According to this APIsnoop query, there are still some remaining Deployment endp
 
    #+RESULTS:
    #+begin_src go
-   creating a Deployment
-   watching for the Deployment to be added
-   waiting for all Replicas to be Ready
-   patching the Deployment
-   waiting for Replicas to scale
-   listing Deployments
-   updating the Deployment
-   fetching the Deployment
-   [status] complete
-   deleting the Deployment
    #+end_src
 
 * Verifying increase it coverage with APISnoop                       :export:
@@ -388,9 +444,10 @@ Discover useragents:
 
   #+RESULTS:
   #+begin_SRC example
-   useragent 
-  -----------
-  (0 rows)
+       useragent     
+  -------------------
+   live-test-writing
+  (1 row)
 
   #+end_SRC
 
@@ -414,11 +471,9 @@ Display endpoint coverage change:
 
   #+RESULTS:
   #+begin_SRC example
-     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
-  ---------------+-----------------+--------------+--------------+------------------
-   test_coverage |             445 |          181 |          181 |                0
-  (1 row)
-
+  ERROR:  relation "projected_change_in_coverage" does not exist
+  LINE 1: select * from projected_change_in_coverage;
+                        ^
   #+end_SRC
 
 * Final notes :export:
