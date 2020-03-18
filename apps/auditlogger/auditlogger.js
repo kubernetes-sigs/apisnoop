@@ -3,6 +3,9 @@
 
 // apisnoop auditlogger
 const connectionString = typeof process.env.PG_CONNECTION_STRING !== 'undefined' ? process.env.PG_CONNECTION_STRING : 'postgres://apisnoop:s3cretsauc3@postgres/apisnoop?sslmode=disable'
+const rawAuditTableName = typeof process.env.APP_DB_READINESS_TABLE !== 'undefined' ? process.env.APP_DB_READINESS_TABLE : 'audit_event'
+const appPort = typeof process.env.APP_PORT !== 'undefined' ? process.env.APP_PORT : '9900'
+const appDisableLogs = typeof process.env.APP_DISABLE_LOGS !== 'undefined' ? process.env.APP_DISABLE_LOGS : 'false'
 const express = require('express')
 const app = express()
 const bodyParser = require('body-parser')
@@ -16,9 +19,15 @@ var postgresIsReady = false
 
 console.log(`[status] using connection string: ${connectionString}`)
 
+function logs(...messages) {
+    if (appDisableLogs == 'true') {
+        return
+    }
+    console.log(...messages)
+}
+
 function hello (req, res, next) {
     const helloMsg = 'Hey! I\'m your friendly neighbourhood auditlogger. Note: the endpoint /events is where logging takes place.'
-    console.log(helloMsg)
     res.json({ message: helloMsg })
     return res.end()
 }
@@ -39,7 +48,6 @@ function checkForBodyContent (req, res, next) {
 
 function checkUserAgent (req, res, next) {
     const requestContent = req.body
-    console.log(req.headers['user-agent'])
     if (req.headers['user-agent'] !== 'kube-apiserver-admission') {
         console.log('[error] request didn\'t come from kube-apiserver')
         return requestFailure(req, res, next, 'Error: request must come from Kubernetes apiserver')
@@ -51,7 +59,7 @@ function postgresReadyCheck (req, res, next) {
     if (postgresIsReady === true) {
         return next()
     }
-    knex.raw("SELECT to_regclass('raw_audit_event');").then(resp => {
+    knex.raw(`SELECT to_regclass('${rawAuditTableName}');`).then(resp => {
         postgresIsReady = resp.rows[0].to_regclass !== null
     })
 }
@@ -60,9 +68,9 @@ function logEventsToDB (req, res, next) {
     const requestContent = req.body
     const items = requestContent.items[0]
 
-    console.log(JSON.stringify(requestContent, null, 2))
+    logs(JSON.stringify(requestContent, null, 2))
 
-    console.log('[status] inserting into database')
+    logs('[status] inserting into database')
     var dataToInsert = {
          bucket: 'apisnoop',
          job: 'live',
@@ -72,14 +80,14 @@ function logEventsToDB (req, res, next) {
          request_uri: items.requestURI,
         data: JSON.stringify(items)
     }
-    console.log(dataToInsert)
+    logs(dataToInsert)
 
     knex.transaction((trx) => {
-         knex('raw_audit_event').transacting(trx).insert(dataToInsert)
+         knex(`${rawAuditTableName}`).transacting(trx).insert(dataToInsert)
              .then(trx.commit)
              .catch(trx.rollback)
     }).then(resp => {
-        console.log('[status] successfully submitted entry')
+        logs('[status] successfully submitted entry')
         res.json({ message: 'operation complete; data inserted' })
         return res.end()
     }).catch(err => {
@@ -101,10 +109,9 @@ app.post('/events', [checkForBodyContent, checkUserAgent, postgresReadyCheck], l
 
 knex.raw('select 0;').then(() => {
     console.log('[status] connected to database')
-    app.listen('9900', () => {
-        console.log('[status] started; listening on port 9900')
+    app.listen(appPort, () => {
+        console.log(`[status] started; listening on port ${appPort}`)
     })
-
 }).catch(err => {
     console.log('[error] No database connection found.')
     console.log(err)
