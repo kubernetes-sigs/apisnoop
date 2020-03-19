@@ -21,7 +21,7 @@ Here are some environment variables to configure auditlogger
 #+NAME: auditlogger bot (nodejs)
 #+begin_src js :tangle ./app/auditlogger.js :results silent
   const connectionString = typeof process.env.APP_DB_CONNECTION_STRING !== 'undefined' ? process.env.APP_DB_CONNECTION_STRING : 'postgres://apisnoop:s3cretsauc3@postgres/apisnoop?sslmode=disable'
-  const rawAuditTableName = typeof process.env.APP_DB_AUDIT_EVENT_TABLE !== 'undefined' ? process.env.APP_DB_AUDIT_EVENT_TABLE : 'audit_event'
+  const auditTableName = typeof process.env.APP_DB_AUDIT_EVENT_TABLE !== 'undefined' ? process.env.APP_DB_AUDIT_EVENT_TABLE : 'audit_event'
   const appPort = typeof process.env.APP_PORT !== 'undefined' ? process.env.APP_PORT : '9900'
   const appDisableLogs = typeof process.env.APP_DISABLE_LOGS !== 'undefined' ? process.env.APP_DISABLE_LOGS : 'false'
   const express = require('express')
@@ -77,7 +77,7 @@ Here are some environment variables to configure auditlogger
       if (postgresIsReady === true) {
           return next()
       }
-      knex.raw(`SELECT to_regclass('${rawAuditTableName}');`).then(resp => {
+      knex.raw(`SELECT to_regclass('${auditTableName}');`).then(resp => {
           postgresIsReady = resp.rows[0].to_regclass !== null
       })
   }
@@ -85,25 +85,65 @@ Here are some environment variables to configure auditlogger
   function logEventsToDB (req, res, next) {
       const requestContent = req.body
       const items = requestContent.items[0]
-
       logs(JSON.stringify(requestContent, null, 2))
 
+      // set each relevant part of data load to a variable, for easier insertion statement into db below
+      const {
+          auditID,
+          stage,
+          verb,
+          requestURI,
+          level,
+          apiVersion,
+          userAgent,
+          user,
+          objectRef,
+          sourceIPs,
+          annotations,
+          requestObject,
+          responseObject,
+          responseStatus,
+          stageTimestamp,
+          requestReceivedTimestamp
+      } = items;
+
+      // regex for useragent, to determine if a test or conformance test hit
+      const STARTS_WITH_E2E = new RegExp('^e2e.test')
+      const HAS_CONF_IN_BRACKETS = new RegExp('\[Conformance\]')
+
       logs('[status] inserting into database')
-      var dataToInsert = {
-           bucket: 'apisnoop',
-           job: 'live',
-           audit_id: items.auditID,
-           stage: items.stage,
-           event_verb: items.verb,
-           request_uri: items.requestURI,
+      let dataToInsert = {
+          bucket: 'apisnoop',
+          job: 'live',
+          audit_id: auditID,
+          stage,
+          event_verb: verb,
+          request_uri: requestURI,
+          event_level: level,
+          api_version: apiVersion,
+          useragent: userAgent,
+          test_hit: STARTS_WITH_E2E.test(userAgent),
+          conf_test_hit: HAS_CONF_IN_BRACKETS.test(userAgent),
+          event_user: user,
+          object_namespace: objectRef ? objectRef.namespace : null,
+          object_type: objectRef ? objectRef.resource : null,
+          object_group: objectRef ? objectRef.apiGroup : null,
+          object_ver: objectRef ? objectRef.apiVersion : null,
+          source_ips: JSON.stringify(sourceIPs),
+          annotations: JSON.stringify(annotations),
+          request_object: JSON.stringify(requestObject),
+          response_object: JSON.stringify(responseObject),
+          response_status: JSON.stringify(responseStatus),
+          stage_timestamp: stageTimestamp,
+          request_received_timestamp: requestReceivedTimestamp,
           data: JSON.stringify(items)
       }
       logs(dataToInsert)
 
       knex.transaction((trx) => {
-           knex(`${rawAuditTableName}`).transacting(trx).insert(dataToInsert)
-               .then(trx.commit)
-               .catch(trx.rollback)
+          knex(`${auditTableName}`).transacting(trx).insert(dataToInsert)
+              .then(trx.commit)
+              .catch(trx.rollback)
       }).then(resp => {
           logs('[status] successfully submitted entry')
           res.json({ message: 'operation complete; data inserted' })

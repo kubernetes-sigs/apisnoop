@@ -1,5 +1,7 @@
 #+TITLE: Hasura Code, Deployment, and Reference Materials
 #+TODO: TODO(t) IN-PROGRESS(i) WAITING(w) | DONE(d)
+#+PROPERTY: header-args:sql-mode+ :results silent
+#+PROPERTY: header-args:sql-mode+ :comments both
 
 * Introduction 
   Hasura is used in APIsnoop for managing migrations to the APIsnoop postgres database and creates a GraphQL API endpoint, derived on our tables and views.
@@ -323,29 +325,12 @@ spec:
     :PROPERTIES:
     :header-args:sql-mode+: :tangle ./app/migrations/112_function_add_opp_id.up.sql
     :END:
-**** Python Code
-    #+NAME: add_opp_id.py
-    #+begin_src python :results silent :noweb yes :tangle no
+ #+NAME: add_opp_id.sql
+ #+begin_src sql-mode :noweb yes :results silent
+   set role dba;
+   CREATE OR REPLACE FUNCTION add_op_id() RETURNS TRIGGER as $$
       import json
-      from urllib.request import urlopen, urlretrieve
-      import os
-      import re
-      from bs4 import BeautifulSoup
-      import subprocess
-      import time
-      import glob
-      from tempfile import mkdtemp
-      from string import Template
-      from urllib.parse import urlparse
-      import requests
-      import hashlib
-      from collections import defaultdict
-      import json
-      import csv
-      import sys
-      from snoopUtils import deep_merge, load_openapi_spec, find_operation_id
-      import warnings
-
+      from snoopUtils import load_openapi_spec, find_operation_id
       if "spec" not in GD:
           GD["spec"] = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/7d13dfe3c34f44/api/openapi-spec/swagger.json')
       spec = GD["spec"]
@@ -353,14 +338,6 @@ spec:
       if TD["new"]["operation_id"] is None:
           TD["new"]["operation_id"] = find_operation_id(spec, event);
       return "MODIFY";
-    #+end_src
-
-**** Create
- #+NAME: add_opp_id.sql
- #+begin_src sql-mode :noweb yes :results silent
-   set role dba;
-   CREATE FUNCTION add_op_id() RETURNS TRIGGER as $$
-   <<add_opp_id.py>>
    $$ LANGUAGE plpython3u;
    reset role;
  #+end_src
@@ -369,8 +346,8 @@ spec:
     :header-args:sql-mode+: :tangle ./app/migrations/113_trigger_add_opp_id.up.sql
     :END:
     #+NAME: Create Trigger
-    #+begin_src sql-mode :results silent :tangle no
-      CREATE TRIGGER add_op_id BEFORE INSERT ON raw_audit_event
+    #+begin_src sql-mode :results silent
+      CREATE TRIGGER add_op_id BEFORE INSERT ON audit_event
         FOR EACH ROW EXECUTE PROCEDURE add_op_id();
     #+end_src
 ** 200: API Views
@@ -578,7 +555,7 @@ spec:
                     FROM
                         audit_event
                   ) as coverage ON (coverage.bucket = ao.bucket AND coverage.job = ao.job)
-           WHERE ao.deprecated IS False and ao.job != 'live'
+           WHERE ao.deprecated IS False
          GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
      #+END_SRC
 
@@ -789,7 +766,7 @@ spec:
     :END:
    #+NAME: endpoints hit by new test
    #+begin_src sql-mode
-     CREATE VIEW "public"."endpoints_hit_by_new_test" AS
+     CREATE OR REPLACE VIEW "public"."endpoints_hit_by_new_test" AS
        WITH live_testing_endpoints AS (
          SELECT DISTINCT
            operation_id,
@@ -814,7 +791,6 @@ spec:
          FROM live_testing_endpoints lte
                 JOIN baseline b ON (b.operation_id = lte.operation_id);
    #+end_src
-
 *** 620:Projected Change in Coverage
     :PROPERTIES:
     :header-args:sql-mode+: :tangle ./app/migrations/620_view_projected_change_in_coverage.up.sql
