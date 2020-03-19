@@ -2,6 +2,1191 @@
 #+TODO: TODO(t) IN-PROGRESS(i) WAITING(w) | DONE(d)
 
 * Introduction 
+  Hasura is used in APIsnoop for managing migrations to the APIsnoop postgres database and creates a GraphQL API endpoint, derived on our tables and views.
 * App
+** Dockerfile
+#+begin_src dockerfile :tangle app/Dockerfile
+FROM hasura/graphql-engine:v1.0.0.cli-migrations
+MAINTAINER Hippie Hacker <hh@ii.coop>
+COPY ./migrations /hasura-migrations
+#+end_src
+
+** cloudbuild.yaml
+#+begin_src yaml :tangle app/cloudbuild.yaml
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/hasura:$_GIT_TAG',
+           '--build-arg', 'IMAGE_ARG=gcr.io/$PROJECT_ID/hasura:$_GIT_TAG',
+           '.']
+substitutions:
+  _GIT_TAG: '12345'
+images:
+  - 'gcr.io/$PROJECT_ID/hasura:$_GIT_TAG'
+options:
+  substitution_option: 'ALLOW_LOOSE'
+#+end_src
+
+** config_sample.yaml
+#+begin_src yaml :tangle app/config_sample.yaml
+endpoint: http://localhost:9000
+#+end_src
+
 * Deployment
+** deployment.yaml 
+#+begin_src yaml :tangle deployment/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hasura
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.apisnoop.graphql: hasura
+  template:
+    metadata:
+      labels:
+        io.apisnoop.graphql: hasura
+    spec:
+      restartPolicy: Always
+      containers:
+      - name: hasura
+        image: "gcr.io/k8s-staging-apisnoop/hasura:v20200211-0.9.34-1-g24cf96f"
+        ports:
+        - containerPort: 8080
+        env:
+        - name: HASURA_GRAPHQL_DATABASE_URL
+          value: "postgres://apisnoop:s3cretsauc3@postgres:5432/apisnoop"
+        - name: HASURA_GRAPHQL_ENABLE_CONSOLE
+          value: "true"
+        - name: RESTART
+          value: "true"
+#+end_src
+
+** graphql-ingress.yaml
+#+begin_src yaml :tangle deployment/graphql-ingress.yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: graphql-ingress
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /v1
+        backend:
+          serviceName: hasura
+          servicePort: 8080
+#+end_src
+** ingress.yaml
+#+begin_src yaml :tangle deployment/ingress.yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: hasura-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/server-alias: "hasura.local.ii.coop, hasura.local.ii.nz, hasura.local.sharing.io"
+spec:
+  rules:
+  - host: hasura.localho.st
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: hasura
+          servicePort: 8080
+#+end_src
+** kustomization.yaml
+#+begin_src yaml :tangle deployment/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - graphql-ingress.yaml
+#+end_src
+** service.yaml
+#+begin_src yaml :tangle deployment/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: hasura
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    io.apisnoop.graphql: hasura
+  ports:
+  - name: "8080"
+    port: 8080
+    targetPort: 8080
+#+end_src
+
+* Tables and Views
+** 100: Raw Data Tables and Helper Functions
+*** 100: bucket_job_swagger table
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/100_table_bucket_job_swagger.up.sql
+    :header-args:sql-mode+: :var heading=(org-entry-get nil "ITEM")
+    :END:
+**** Create Table
+     :PROPERTIES:
+     :header-args:sql-mode+: :tangle ./app/migrations/100_table_bucket_job_swagger.up.sql
+     :END:
+  #+NAME: bucket_job_swagger
+  #+BEGIN_SRC sql-mode :results silent
+    CREATE TABLE bucket_job_swagger (
+        ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+        bucket text,
+        job text,
+        commit_hash text,
+        passed text,
+        job_result text,
+        pod text,
+        infra_commit text,
+        job_version text,
+        job_timestamp timestamp,
+        node_os_image text,
+        master_os_image text ,
+        swagger jsonb,
+        PRIMARY KEY (bucket, job)
+    );
+  #+END_SRC
+**** Index Table
+  #+NAME: general index the raw_swagger
+  #+BEGIN_SRC sql-mode
+    CREATE INDEX idx_swagger_jsonb_ops ON bucket_job_swagger
+      USING GIN (swagger jsonb_ops);
+    CREATE INDEX idx_swagger_jsonb_path_ops ON bucket_job_swagger
+      USING GIN (swagger jsonb_path_ops);
+  #+END_SRC
+*** 101: Function to Load Swagger
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/101_function_load_swagger.up.sql
+    :END:
+     #+NAME: load_swagger.sql
+     #+BEGIN_SRC sql-mode :noweb yes :results silent
+       set role dba;
+       DROP FUNCTION IF EXISTS load_swagger;
+       CREATE OR REPLACE FUNCTION load_swagger(
+         custom_bucket text default null,
+         custom_job text default null,
+         live boolean default false)
+       RETURNS text AS $$
+       <<load_swagger.py>>
+       $$ LANGUAGE plpython3u ;
+       reset role;
+     #+END_SRC
+**** The Python function
+     #+NAME: load_swagger.py
+     #+BEGIN_SRC python :eval never :exports code
+       #Import our snoop utilities and values
+       import json
+       from snoopUtils import determine_bucket_job, fetch_swagger
+
+       bucket, job = determine_bucket_job(custom_bucket, custom_job)
+       swagger, metadata, commit_hash = fetch_swagger(bucket, job)
+
+       ## define our sql statement
+       sql = """
+       INSERT INTO bucket_job_swagger(
+               bucket,
+               job,
+               commit_hash,
+               passed,
+               job_result,
+               infra_commit,
+               job_version,
+               job_timestamp,
+               node_os_image,
+               master_os_image,
+               swagger
+       )
+       SELECT
+               $1 as bucket,
+               $2 as job,
+               $3 as commit_hash,
+               $4 as passed,
+               $5 as job_result,
+               $6 as infra_commit,
+               $7 as job_version,
+               (to_timestamp($8)) AT TIME ZONE 'UTC' as job_timestamp,
+               $9 as node_os_image,
+               $10 as master_os_image,
+               $11 as swagger
+       """
+
+       ## Submit sql statement with values substituted in
+       plan = plpy.prepare(sql, [
+           'text','text','text','text',
+           'text','text','text',
+           'integer','text','text','jsonb'])
+       try:
+         rv = plpy.execute(plan, [
+             bucket if not live else 'apisnoop',
+             job if not live else 'live',
+             commit_hash,
+             metadata['passed'],
+             metadata['result'],
+             metadata['metadata']['infra-commit'],
+             metadata['version'],
+             int(metadata['timestamp']),
+             metadata['metadata']['node_os_image'],
+             metadata['metadata']['master_os_image'],
+             json.dumps(swagger)
+         ])
+         ## Celebrate
+         return ''.join(["Success!  Added the swagger for job ", job, " from bucket ", bucket])
+       except:
+         e = sys.exc_info()[0]
+         print("<p>Error: %s</p>" % e )
+     #+END_SRC
+*** 110: audit_event Table
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/110_table_audit_event.up.sql
+    :END:
+**** Create
+ #+NAME: raw_audit_event
+ #+BEGIN_SRC sql-mode
+   CREATE UNLOGGED TABLE audit_event (
+     bucket text,
+     job text,
+     audit_id text NOT NULL,
+     stage text NOT NULL,
+     event_verb text NOT NULL,
+     request_uri text NOT NULL,
+     operation_id text,
+     event_level text,
+     event_stage text,
+     api_version text,
+     useragent text,
+     test_hit boolean,
+     conf_test_hit boolean,
+     event_user jsonb,
+     object_namespace text,
+     object_type text,
+     object_group text,
+     object_ver text,
+     source_ips jsonb,
+     annotations jsonb,
+     request_object jsonb,
+     response_object jsonb,
+     response_status jsonb,
+     stage_timestamp text,
+     request_received_timestamp text,
+     data jsonb NOT NULL
+     -- id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+     -- ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+   );
+ #+END_SRC
+
+**** TODO Index
+ I am not sure why our create index and alter table lines are commented out.
+ the TODO is to enquire on why these lines are commented
+ #+NAME: index the raw_audit_event
+ #+BEGIN_SRC sql-mode
+ CREATE INDEX idx_audit_event_bucket        ON audit_event (bucket);
+ CREATE INDEX idx_audit_event_job  ON audit_event (job);
+ CREATE INDEX idx_audit_event_operation_id  ON audit_event(operation_id);
+ CREATE INDEX idx_audit_event_test_hit ON audit_event(test_hit);
+ CREATE INDEX idx_audit_event_conf_test_hit ON audit_event(conf_test_hit);
+ #+END_SRC
+
+*** 111: load_audit_event Function
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/111_function_load_audit_event.up.sql
+    :END:
+    #+NAME: load_audit_events.sql
+    #+BEGIN_SRC sql-mode :noweb yes :results silent
+      set role dba;
+      CREATE OR REPLACE FUNCTION load_audit_events(
+        custom_bucket text default null,
+        custom_job text default null)
+        RETURNS text AS $$
+        from snoopUtils import determine_bucket_job, download_and_process_auditlogs, json_to_sql
+        bucket, job = determine_bucket_job(custom_bucket, custom_job)
+        auditlog_path = download_and_process_auditlogs(bucket, job)
+        sql_string = json_to_sql(bucket,job,auditlog_path) 
+        try:
+            plpy.execute(sql_string)
+            return "it worked"
+        except plpy.SPIError as plpyError:
+            print("something went wrong with plpy: ") 
+            return plpyError
+        except:
+            return "something unknown went wrong"
+        $$ LANGUAGE plpython3u ;
+        reset role;
+    #+END_SRC
+*** 112: add_opp_id function
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/112_function_add_opp_id.up.sql
+    :END:
+**** Python Code
+    #+NAME: add_opp_id.py
+    #+begin_src python :results silent :noweb yes :tangle no
+      import json
+      from urllib.request import urlopen, urlretrieve
+      import os
+      import re
+      from bs4 import BeautifulSoup
+      import subprocess
+      import time
+      import glob
+      from tempfile import mkdtemp
+      from string import Template
+      from urllib.parse import urlparse
+      import requests
+      import hashlib
+      from collections import defaultdict
+      import json
+      import csv
+      import sys
+      from snoopUtils import deep_merge, load_openapi_spec, find_operation_id
+      import warnings
+
+      if "spec" not in GD:
+          GD["spec"] = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/7d13dfe3c34f44/api/openapi-spec/swagger.json')
+      spec = GD["spec"]
+      event = json.loads(TD["new"]["data"])
+      if TD["new"]["operation_id"] is None:
+          TD["new"]["operation_id"] = find_operation_id(spec, event);
+      return "MODIFY";
+    #+end_src
+
+**** Create
+ #+NAME: add_opp_id.sql
+ #+begin_src sql-mode :noweb yes :results silent
+   set role dba;
+   CREATE FUNCTION add_op_id() RETURNS TRIGGER as $$
+   <<add_opp_id.py>>
+   $$ LANGUAGE plpython3u;
+   reset role;
+ #+end_src
+*** 113: add_opp_id trigger
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/113_trigger_add_opp_id.up.sql
+    :END:
+    #+NAME: Create Trigger
+    #+begin_src sql-mode :results silent :tangle no
+      CREATE TRIGGER add_op_id BEFORE INSERT ON raw_audit_event
+        FOR EACH ROW EXECUTE PROCEDURE add_op_id();
+    #+end_src
+** 200: API Views
+*** 200: api_operation_material view
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/200_view_api_operation_material.up.sql
+    :END:
+   We can track this, but it won't show up in Hasura as it does not support materialized views yet.  We can still use it to create _other_ views hasura can see though.
+**** Define regex_from_path function
+ #+NAME: regex_from_path.py
+ #+BEGIN_SRC python :eval never :export none
+   import re
+   if path is None:
+     return None
+   K8S_PATH_VARIABLE_PATTERN = re.compile("{(path)}$")
+   VARIABLE_PATTERN = re.compile("{([^}]+)}")
+   path_regex = K8S_PATH_VARIABLE_PATTERN.sub("(.*)", path).rstrip('/')
+   path_regex = VARIABLE_PATTERN.sub("([^/]*)", path_regex).rstrip('/')
+   if not path_regex.endswith(")") and not path_regex.endswith("?"):
+     path_regex += "([^/]*)"
+   if path_regex.endswith("proxy"):
+       path_regex += "/?$"
+   else:
+       path_regex += "$"
+   return path_regex
+ #+END_SRC
+
+ #+NAME: regex_from_path.sql
+ #+BEGIN_SRC sql-mode :noweb yes
+   set role dba;
+   CREATE OR REPLACE FUNCTION regex_from_path(path text)
+   RETURNS text AS $$
+   <<regex_from_path.py>>
+   $$ LANGUAGE plpython3u ;
+   reset role;
+ #+END_SRC
+
+**** Create
+
+ #+NAME: api_operation_material
+ #+BEGIN_SRC sql-mode
+   CREATE MATERIALIZED VIEW "public"."api_operation_material" AS
+     SELECT
+       (d.value ->> 'operationId'::text) AS operation_id,
+       CASE
+       WHEN paths.key ~~ '%alpha%' THEN 'alpha'
+       WHEN paths.key ~~ '%beta%' THEN 'beta'
+       ELSE 'stable'
+            END AS level,
+       split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+       ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+       ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+       ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+       CASE
+       WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
+       ELSE false
+            END AS deprecated,
+       (d.value ->> 'description'::text) AS description,
+       d.key AS http_method,
+       (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+       CASE
+       WHEN (d.value ->> 'x-kubernetes-action'::text) = 'get' THEN ARRAY ['get']
+       WHEN (d.value ->> 'x-kubernetes-action'::text) =  'list' THEN ARRAY [ 'list' ]
+       WHEN (d.value ->> 'x-kubernetes-action'::text) = 'proxy' THEN ARRAY [ 'proxy' ]
+       WHEN (d.value ->> 'x-kubernetes-action'::text) = 'deletecollection' THEN ARRAY [ 'deletecollection' ]
+       WHEN (d.value ->> 'x-kubernetes-action'::text) = 'watch' THEN ARRAY [ 'watch' ]
+       WHEN (d.value ->> 'x-kubernetes-action'::text) = 'post' THEN ARRAY [ 'post', 'create' ]
+       WHEN (d.value ->> 'x-kubernetes-action'::text) =  'put' THEN ARRAY [ 'put', 'update' ]
+       WHEN (d.value ->> 'x-kubernetes-action'::text) = 'patch' THEN ARRAY [ 'patch' ]
+       WHEN (d.value ->> 'x-kubernetes-action'::text) = 'connect' THEN ARRAY [ 'connect' ]
+       ELSE NULL
+              END as event_verb,
+       paths.key AS path,
+       (d.value -> 'consumes'::text)::jsonb AS consumes,
+       (d.value -> 'responses'::text)::jsonb AS responses,
+       (d.value -> 'parameters'::text)::jsonb AS parameters,
+       string_agg(btrim((jsonstring.value)::text, '"'::text), ', '::text) AS tags,
+       string_agg(btrim((schemestring.value)::text, '"'::text), ', '::text) AS schemes,
+       regex_from_path(paths.key) as regex,
+       bjs.bucket AS bucket,
+       bjs.job AS job
+       FROM bucket_job_swagger bjs
+            , jsonb_each((bjs.swagger -> 'paths'::text)) paths(key, value)
+            , jsonb_each(paths.value) d(key, value)
+            , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+            , jsonb_array_elements((d.value -> 'tags'::text)) jsonstring(value)
+            , jsonb_array_elements((d.value -> 'schemes'::text)) schemestring(value)
+      GROUP BY bjs.bucket, bjs.job, paths.key, d.key, d.value, cat_tag.value
+      ORDER BY paths.key;
+ #+END_SRC
+
+**** Index
+ #+NAME: index the api_operation_material
+ #+BEGIN_SRC sql-mode :tangle ./app/migrations/201_view_api_operation_material.up.sql :results silent
+   CREATE INDEX api_operation_materialized_bucket      ON api_operation_material            (bucket);
+   CREATE INDEX api_operation_materialized_event_verb  ON api_operation_material            (event_verb);
+   CREATE INDEX api_operation_materialized_k8s_action  ON api_operation_material            (k8s_action);
+   CREATE INDEX api_operation_materialized_k8s_group   ON api_operation_material            (k8s_group);
+   CREATE INDEX api_operation_materialized_k8s_version ON api_operation_material            (k8s_version);
+   CREATE INDEX api_operation_materialized_k8s_kind    ON api_operation_material            (k8s_kind);
+   CREATE INDEX api_operation_materialized_tags        ON api_operation_material            (tags);
+   CREATE INDEX api_operation_materialized_schemes     ON api_operation_material            (schemes);
+   CREATE INDEX api_operation_materialized_regex_gist  ON api_operation_material USING GIST (regex gist_trgm_ops);
+   CREATE INDEX api_operation_materialized_regex_gin   ON api_operation_material USING GIN  (regex gin_trgm_ops);
+   CREATE INDEX api_operation_materialized_consumes_ops   ON api_operation_material USING GIN  (consumes jsonb_ops);
+   CREATE INDEX api_operation_materialized_consumes_path  ON api_operation_material USING GIN  (consumes jsonb_path_ops);
+   CREATE INDEX api_operation_materialized_parameters_ops   ON api_operation_material USING GIN  (parameters jsonb_ops);
+   CREATE INDEX api_operation_materialized_parameters_path  ON api_operation_material USING GIN  (parameters jsonb_path_ops);
+   CREATE INDEX api_operation_materialized_responses_ops   ON api_operation_material USING GIN  (responses jsonb_ops);
+   CREATE INDEX api_operation_materialized_responses_path  ON api_operation_material USING GIN  (responses jsonb_path_ops);
+ #+END_SRC
+
+*** 210: api_operation
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/210_view_api_operation.up.sql
+    :END:
+  
+   #+begin_src sql-mode
+     CREATE OR REPLACE VIEW api_operation AS
+       SELECT
+         ,*
+         FROM
+             api_operation_material;
+   #+end_src
+*** 220: api_operation_parameter_material
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/220_view_api_operation_parameter_material.up.sql
+    :END:
+**** Create
+ Using our api_operation_material view, look into the parameters field in each one.
+ #+NAME: api_operation_parameter_material view
+ #+BEGIN_SRC sql-mode
+   CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS
+     SELECT ao.operation_id AS param_op,
+     (param.entry ->> 'name'::text) AS param_name,
+            -- for resource:
+            -- if param is body in body, take its $ref from its schema
+            -- otherwise, take its type
+            replace(
+              CASE
+              WHEN ((param.entry ->> 'in'::text) = 'body'::text)
+               AND ((param.entry -> 'schema'::text) is not null)
+                THEN ((param.entry -> 'schema'::text) ->> '$ref'::text)
+              ELSE (param.entry ->> 'type'::text)
+              END, '#/definitions/','') AS param_schema,
+            CASE
+            WHEN ((param.entry ->> 'required'::text) = 'true') THEN true
+            ELSE false
+             END AS required,
+            (param.entry ->> 'description'::text) AS param_description,
+            CASE
+            WHEN ((param.entry ->> 'uniqueItems'::text) = 'true') THEN true
+            ELSE false
+            END AS unique_items,
+            (param.entry ->> 'in'::text) AS "in",
+            ao.bucket,
+            ao.job,
+            param.entry as entry
+       FROM api_operation_material ao
+            , jsonb_array_elements(ao.parameters) WITH ORDINALITY param(entry, index)
+             WHERE ao.parameters IS NOT NULL;
+ #+END_SRC
+**** Index
+ #+NAME: index the api_operation_material
+ #+BEGIN_SRC sql-mode
+     CREATE INDEX api_parameters_materialized_schema      ON api_operation_parameter_material            (param_schema);
+ #+END_SRC
+
+** 500: Endpoint Coverage Views
+   :PROPERTIES:
+   :header-args:sql-mode+: :results silent
+   :END:
+*** 500: Endpoint Coverage Material View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/500_view_endpoint_coverage_material.up.sql
+    :END:
+
+    developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]]
+   
+    #+NAME: Endpoint Coverage View
+    #+BEGIN_SRC sql-mode
+      CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
+       SELECT DISTINCT
+         bjs.job_timestamp::date as date,
+         ao.bucket as bucket,
+         ao.job as job,
+         ao.operation_id as operation_id,
+         ao.level,
+         ao.category,
+         ao.k8s_group as group,
+         ao.k8s_kind as kind,
+         ao.k8s_version as version,
+         (count (*) FILTER (where coverage.operation_id = ao.operation_id AND test_hit is true) > 0) as tested,
+         (count (*) FILTER (where coverage.operation_id = ao.operation_id AND conf_test_hit is true) > 0) as conf_tested,
+         (count (*) FILTER (where coverage.operation_id = ao.operation_id) > 0) as hit
+         FROM api_operation_material ao
+                LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
+                LEFT JOIN (
+                  SELECT  DISTINCT
+                    operation_id,
+                    bucket,
+                    job,
+                    test_hit,
+                    conf_test_hit
+                    FROM
+                        audit_event
+                  ) as coverage ON (coverage.bucket = ao.bucket AND coverage.job = ao.job)
+           WHERE ao.deprecated IS False and ao.job != 'live'
+         GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
+     #+END_SRC
+
+**** Index
+    #+NAME: Add indexes 
+    #+begin_src sql-mode :results silent
+      CREATE INDEX idx_endpoint_coverage_material_job ON endpoint_coverage_material (job);
+    #+end_src
+   
+*** 510: Endpoint Coverage View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/510_view_endpoint_coverage.up.sql
+    :END:
+     #+NAME: endpoint_coverage_material
+     #+BEGIN_SRC sql-mode
+       CREATE OR REPLACE VIEW "public"."endpoint_coverage" AS
+       SELECT
+         *
+         FROM
+             endpoint_coverage_material;
+     #+END_SRC
+   
+*** 520: stable endpoint_stats_view
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/520_view_stable_endpoint_stats.up.sql
+    :END:
+    Based on the update we give to dan, developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]]
+    #+NAME: Endpoint Stats View
+    #+BEGIN_SRC sql-mode
+      CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS
+      SELECT
+        ec.job,
+        ec.date,
+        COUNT(1) as total_endpoints,
+        COUNT(1) filter(WHERE tested is true) as test_hits,
+        COUNT(1) filter(WHERE conf_tested is true) as conf_hits,
+        ROUND(((count(*) filter(WHERE tested is true)) * 100 )::numeric / count(*), 2) as percent_tested,
+        ROUND(((count(*) filter(WHERE conf_tested is true)) * 100 )::numeric / count(*), 2) as percent_conf_tested
+        FROM endpoint_coverage ec
+          WHERE ec.level = 'stable'
+       GROUP BY ec.date, ec.job;
+    #+END_SRC
+*** 530: Change in Coverage
+    :PROPERTIES:
+    :header-args:sql-mode+: :notangle ./app/migrations/530_view_change_in_coverage.up.sql
+    :END:
+
+    Meant to look at the last two test runs in database and calculate their change in coverage.  This was assuming we were loading multiple audit events.  Currently the flow is to load one baseline eent, and then compare the testing we do against it.  As such, removing this view until it is needed, to not confuse the tester working with apisnoop.
+    #+NAME: Change in Coverage
+    #+BEGIN_SRC sql-mode :results replace
+    CREATE OR REPLACE VIEW "public"."change_in_coverage" AS
+      with last_two_runs as (
+        select
+          *
+          FROM
+              stable_endpoint_stats
+         ORDER BY
+           date DESC
+         LIMIT 2
+      ), new_coverage as (
+        SELECT *
+          FROM last_two_runs
+         order by date desc
+         limit 1
+      ), old_coverage as (
+        SELECT *
+          FROM last_two_runs
+         order by date asc
+         limit 1
+      )
+          (
+            select
+              'test hits' as category,
+              old_coverage.test_hits as old_coverage,
+              new_coverage.test_hits as new_coverage,
+              (new_coverage.test_hits - old_coverage.test_hits) as change_in_number,
+              (new_coverage.percent_tested - old_coverage.percent_tested) as change_in_percent
+              from old_coverage
+                   , new_coverage
+          )
+          UNION
+          (
+            select
+              'conf hits' as category,
+              old_coverage.conf_hits as old_coverage,
+              new_coverage.conf_hits as new_coverage,
+              (new_coverage.conf_hits - old_coverage.conf_hits) as change_in_number,
+              (new_coverage.percent_conf_tested - old_coverage.percent_conf_tested) as change_in_percent
+              from
+                  old_coverage
+                , new_coverage
+          )
+          ;
+    #+END_SRC
+
+*** 540: Change in Tests
+    :PROPERTIES:
+    :header-args:sql-mode+: :notangle ./app/migrations/540_view_change_in_tests.up.sql
+    :END:
+    Meant to look at the last two test runs in database and calculate their change in coverage.  This was assuming we were loading multiple audit events.  Currently the flow is to load one baseline eent, and then compare the testing we do against it.  As such, removing this view until it is needed, to not confuse the tester working with apisnoop.
+    #+NAME: Change in Tests
+    #+begin_src sql-mode
+    CREATE OR REPLACE VIEW "public"."change_in_tests" AS
+      with last_two_runs as (
+        select
+          job, job_timestamp
+          FROM
+              bucket_job_swagger
+         ORDER BY
+           job_timestamp DESC
+         LIMIT 2
+      ),
+        new_run as (
+          SELECT
+            job
+            FROM last_two_runs
+           order by job_timestamp DESC
+           limit 1
+        ),
+        old_run as (
+          SELECT
+            job
+            FROM
+                last_two_runs
+           order by job_timestamp asc
+           limit 1
+        )
+          (
+            SELECT
+              test,
+              'added' as status
+              FROM
+                  (
+                    (
+                      SELECT DISTINCT
+                        split_part(useragent, '--', 2) as test
+                        FROM
+                            audit_event
+                            INNER JOIN new_run on (audit_event.job = new_run.job)
+                    )
+                    EXCEPT
+                    (
+                      SELECT DISTINCT
+                        split_part(useragent, '--', 2) as test
+                        FROM
+                            audit_event
+                            INNER JOIN old_run on (audit_event.job = old_run.job)
+                    )
+                  ) added_tests
+          )
+          UNION
+          (
+            SELECT
+              test,
+              'removed' as status
+              FROM
+                  (
+                    (
+                      SELECT DISTINCT
+                        split_part(useragent, '--', 2) as test
+                        FROM
+                            audit_event
+                            INNER JOIN old_run on (audit_event.job = old_run.job)
+                    )
+                    EXCEPT
+                    (
+                      SELECT DISTINCT
+                        split_part(useragent, '--', 2) as test
+                        FROM
+                            audit_event
+                            INNER JOIN new_run on (audit_event.job = new_run.job)
+                    )
+                  ) removed_tests
+          )
+          ;
+
+    #+end_src
+** 600: Test Writing Views
+*** 600: Untested Stable Core Endpoints
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/600_view_untested_stable_core_endpoints.up.sql
+    :END:
+
+ #+NAME: untested endpoints
+ #+begin_src sql-mode
+   CREATE OR REPLACE VIEW "public"."untested_stable_core_endpoints" AS
+     SELECT
+       ec.*,
+       ao.description,
+       ao.http_method,
+       ao.k8s_action,
+       ao.path
+       FROM endpoint_coverage ec
+              JOIN
+              api_operation_material ao ON (ec.bucket = ao.bucket AND ec.job = ao.job AND ec.operation_id = ao.operation_id)
+      WHERE ec.level = 'stable'
+        AND ec.category = 'core'
+        AND tested is false
+        AND ao.deprecated IS false
+        AND ec.job != 'live'
+      ORDER BY hit desc
+               ;
+ #+end_src
+
+*** 610: Endpoints Hit by New Test
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/610_view_endpoints_hit_by_new_test.up.sql
+    :END:
+   #+NAME: endpoints hit by new test
+   #+begin_src sql-mode
+     CREATE VIEW "public"."endpoints_hit_by_new_test" AS
+       WITH live_testing_endpoints AS (
+         SELECT DISTINCT
+           operation_id,
+           useragent,
+           count(*) as hits
+           FROM
+               audit_event
+          GROUP BY operation_id, useragent
+       ), baseline AS  (
+         SELECT DISTINCT
+           operation_id,
+           tested,
+           conf_tested
+           FROM endpoint_coverage
+          WHERE bucket != 'apisnoop'
+       )
+       SELECT DISTINCT
+         lte.useragent,
+         lte.operation_id,
+         b.tested as hit_by_ete,
+         lte.hits as hit_by_new_test
+         FROM live_testing_endpoints lte
+                JOIN baseline b ON (b.operation_id = lte.operation_id);
+   #+end_src
+
+*** 620:Projected Change in Coverage
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/620_view_projected_change_in_coverage.up.sql
+    :END:
+    #+NAME: PROJECTED Change in Coverage
+    #+BEGIN_SRC sql-mode :results replace
+      CREATE OR REPLACE VIEW "public"."projected_change_in_coverage" AS
+       WITH baseline AS (
+         SELECT *
+           FROM
+               stable_endpoint_stats
+          WHERE job != 'live'
+       ), test AS (
+         SELECT
+           COUNT(1) AS endpoints_hit
+           FROM
+               (
+                 SELECT
+                   operation_id
+           FROM audit_event
+            WHERE useragent like 'live-test%'
+           EXCEPT
+           SELECT
+             operation_id
+           FROM
+               endpoint_coverage
+               WHERE tested is true
+                     ) tested_endpoints
+       ), coverage AS (
+         SELECT
+         baseline.test_hits AS old_coverage,
+         (baseline.test_hits::int + test.endpoints_hit::int) AS new_coverage
+         FROM baseline, test
+       )
+       SELECT
+         'test_coverage' AS category,
+         baseline.total_endpoints,
+         coverage.old_coverage,
+         coverage.new_coverage,
+         (coverage.new_coverage - coverage.old_coverage) AS change_in_number
+         FROM baseline, coverage
+                ;
+    #+END_SRC
+
+** 700: Tests and UserAgents
+*** 710: tests
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/710_tests.up.sql
+    :END:
+**** Create
+ #+NAME: tests view
+ #+BEGIN_SRC sql-mode
+   CREATE OR REPLACE VIEW "public"."tests" AS
+     WITH raw_tests AS (
+       SELECT audit_event.operation_id,
+              audit_event.bucket,
+              audit_event.job,
+              array_to_string(regexp_matches(audit_event.useragent, '\[[a-zA-Z0-9\.\-:]*\]'::text, 'g'::text), ','::text) AS test_tag,
+              split_part(audit_event.useragent, '--'::text, 2) AS test
+         FROM audit_event
+        WHERE ((audit_event.useragent ~~ 'e2e.test%'::text) AND (audit_event.job <> 'live'::text))
+     )
+     SELECT DISTINCT raw_tests.bucket,
+                     raw_tests.job,
+                     raw_tests.test,
+                     array_agg(DISTINCT raw_tests.operation_id) AS operation_ids,
+                     array_agg(DISTINCT raw_tests.test_tag) AS test_tags
+       FROM raw_tests
+      GROUP BY raw_tests.test, raw_tests.bucket, raw_tests.job;
+ #+END_SRC
+*** 720: useragents
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/720_useragents.up.sql
+    :END:
+**** Create
+ #+NAME: tests view
+ #+BEGIN_SRC sql-mode
+   CREATE OR REPLACE VIEW "public"."useragents" AS
+     WITH raw_useragents AS (
+       SELECT audit_event.operation_id,
+              audit_event.bucket,
+              audit_event.job,
+              audit_event.useragent
+         FROM audit_event
+        WHERE (audit_event.job <> 'live'::text)
+     )
+     SELECT DISTINCT raw_useragents.bucket,
+                     raw_useragents.job,
+                     raw_useragents.useragent,
+                     array_agg(DISTINCT raw_useragents.operation_id) AS operation_ids
+       FROM raw_useragents
+      GROUP BY raw_useragents.useragent, raw_useragents.bucket, raw_useragents.job;
+ #+END_SRC
+** 900: Tracking and Population
+*** 910: Populate Swaggers Up
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/910_load_and_populate_swaggers.up.sql
+    :header-args:sql-mode+: :results silent
+    :END:
+   #+begin_src sql-mode
+     select * from load_swagger();
+     --populate the apisnoop/live bucket/job to help when writing test functions
+     select * from load_swagger(null, null, true);
+   #+end_src
+*** 920: Populate Audits Up
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/920_populate_audit_events.up.sql
+    :END:
+   #+begin_src sql-mode
+     select * from load_audit_events();
+     REFRESH MATERIALIZED VIEW api_operation_material;
+     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+     REFRESH MATERIALIZED VIEW endpoint_coverage_material;
+   #+end_src
+*** 980: Comment on DB
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ./app/migrations/980_comment_on_db.up.sql
+    :END:
+**** 100: Bucket Job Swagger
+ #+NAME: Comments on bucket_job_swagger
+ #+begin_src sql-mode
+   COMMENT ON TABLE bucket_job_swagger IS 'metadata for audit events  and their respective swagger.json';
+   COMMENT ON column bucket_job_swagger.ingested_at IS 'timestamp for when data added to table';
+   COMMENT ON column bucket_job_swagger.bucket IS 'storage bucket for audit event test run and swagger';
+   COMMENT ON column bucket_job_swagger.job IS 'specific job # of audit event test run';
+   COMMENT ON column bucket_job_swagger.commit_hash IS 'git commit hash for this particular test run';
+   COMMENT ON column bucket_job_swagger.passed IS 'whether test run passed';
+   COMMENT ON column bucket_job_swagger.job_result IS 'whether test run was successful.';
+   COMMENT ON column bucket_job_swagger.pod IS 'The pod this test was run on';
+   COMMENT ON column bucket_job_swagger.job_version IS 'version of k8s on which this job was run';
+   COMMENT ON column bucket_job_swagger.job_timestamp IS 'timestamp when job was run.  Will be different from ingested_at.';
+   COMMENT ON column bucket_job_swagger.node_os_image IS 'id for which node image was used for test run';
+   COMMENT ON column bucket_job_swagger.node_os_image IS 'id for which master os image was used for test run';
+   COMMENT ON column bucket_job_swagger.swagger IS 'raw json of the open api spec for k8s as of the commit hash for this test run.';
+ #+end_src
+**** 110: audit_event
+     #+begin_src sql-mode
+       COMMENT ON TABLE  audit_event IS 'a record for each audit event in an audit log';
+       COMMENT ON COLUMN audit_event.bucket IS 'The testrun bucket for the event';
+       COMMENT ON COLUMN audit_event.job IS 'The testrun job for the event';
+       COMMENT ON COLUMN audit_event.audit_id IS 'The id for the event';
+       COMMENT ON COLUMN audit_event.stage IS 'stage of event';
+       COMMENT ON COLUMN audit_event.event_verb IS 'verb of event';
+       COMMENT ON COLUMN audit_event.request_uri IS 'cluster uri that event requested';
+       COMMENT ON COLUMN audit_event.operation_id IS 'operation_id hit by event';
+       COMMENT ON COLUMN audit_event.data IS 'full raw data of event';
+     #+end_src
+**** 200: api_operation_material
+     #+begin_src sql-mode
+       COMMENT ON MATERIALIZED VIEW api_operation_material IS 'details on each operation_id as taken from the openAPI spec';
+       COMMENT ON COLUMN api_operation_material.operation_id IS 'Also referred to as endpoint.  Name for the action at a given path';
+       COMMENT ON COLUMN api_operation_material.level IS 'Alpha, Beta, or Stable. The level of stability of an endpoint';
+       COMMENT ON COLUMN api_operation_material.category IS 'will either be analogous with the k8s group or "core".';
+       COMMENT ON COLUMN api_operation_material.k8s_group IS 'kubernetes group this operation_id belongs to';
+       COMMENT ON COLUMN api_operation_material.k8s_version IS 'kubernetes version (e.g alpha or beta or stable)';
+       COMMENT ON COLUMN api_operation_material.k8s_kind IS 'kubernetes kind';
+       COMMENT ON COLUMN api_operation_material.deprecated IS 'whether operation_id has deprecated in its description';
+       COMMENT ON COLUMN api_operation_material.description IS 'description of operation_id';
+       COMMENT ON COLUMN api_operation_material.http_method IS 'http equivalent for operation, e.g. GET, POST, DELETE';
+       COMMENT ON COLUMN api_operation_material.k8s_action IS 'the k8s analog for the http_method';
+       COMMENT ON COLUMN api_operation_material.event_verb IS 'a more succinct description of k8s_action';
+       COMMENT ON COLUMN api_operation_material.path IS 'location in cluster of endpoint for this operation_id';
+       COMMENT ON COLUMN api_operation_material.consumes IS 'what the operation_id consumes';
+       COMMENT ON COLUMN api_operation_material.responses IS 'how the operation_id responds';
+       COMMENT ON COLUMN api_operation_material.parameters IS 'parameters of operation_id';
+       COMMENT ON COLUMN api_operation_material.tags IS 'tags of operation_id';
+       COMMENT ON COLUMN api_operation_material.schemes IS 'schemes of operation_id';
+       COMMENT ON COLUMN api_operation_material.regex IS 'regex pattern for how to match to this operation_id. Likely  not needed anymore.';
+       COMMENT ON COLUMN api_operation_material.bucket IS 'the testrun bucket this operation_id belongs to';
+       COMMENT ON COLUMN api_operation_material.job IS 'the testrun job this operation_id belongs to';
+
+     #+end_src
+**** 220: api_operation_material
+     #+begin_src sql-mode
+       COMMENT ON MATERIALIZED VIEW api_operation_parameter_material IS 'the parameters for each operation_id in open API spec';
+       COMMENT ON column api_operation_parameter_material.param_op IS 'the operation_id this parameter belongs to';
+       COMMENT ON column api_operation_parameter_material.param_name IS 'the name of the parameter';
+       COMMENT ON column api_operation_parameter_material.param_schema IS 'schema for param, if available, otherwise its type';
+       COMMENT ON column api_operation_parameter_material.required IS 'whether operation_id requires this parameter';
+       COMMENT ON column api_operation_parameter_material.param_description IS 'description given for parameter';
+       COMMENT ON column api_operation_parameter_material.unique_items IS 'whether parameter has unique items';
+       COMMENT ON column api_operation_parameter_material.in IS 'value of "in" key in parameter entry';
+       COMMENT ON column api_operation_parameter_material.bucket IS 'testrun bucket of operation_id this parameter belongs to';
+       COMMENT ON column api_operation_parameter_material.job IS 'testrun job of operation_id this parameter belongs to';
+       COMMENT ON column api_operation_parameter_material.entry IS 'full json blog of parameter entry';
+     #+end_src
+**** 300: audit_event
+     #+begin_src sql-mode :tangle no
+       COMMENT ON VIEW audit_event IS 'a record for each audit event in an audit log';
+       COMMENT ON COLUMN audit_event.audit_id IS 'The id for the event';
+       COMMENT ON COLUMN audit_event.bucket IS 'The testrun bucket for the event';
+       COMMENT ON COLUMN audit_event.job IS 'The testrun job for the event';
+       COMMENT ON COLUMN audit_event.event_level IS 'level of event';
+       COMMENT ON COLUMN audit_event.event_stage IS 'stage of event';
+       COMMENT ON COLUMN audit_event.operation_id IS 'operation_id hit by event';
+       COMMENT ON COLUMN audit_event.param_schema IS 'parameter schema for operation_id';
+       COMMENT ON COLUMN audit_event.api_version IS 'k8s api version used in testrun';
+       COMMENT ON COLUMN audit_event.request_uri IS 'cluster uri that event requested';
+       COMMENT ON COLUMN audit_event.useragent IS 'useragent making request';
+       COMMENT ON COLUMN audit_event.object_namespace IS 'namespace from objectRef of event';
+       COMMENT ON COLUMN audit_event.object_type IS 'resource from objectRef of event';
+       COMMENT ON COLUMN audit_event.object_group IS 'apiGroup from objectRef of event';
+       COMMENT ON COLUMN audit_event.object_ver IS 'apiVersion from objectRef of event';
+       COMMENT ON COLUMN audit_event.source_ips IS 'sourceIPs of event';
+       COMMENT ON COLUMN audit_event.annotations IS 'annotations of event';
+       COMMENT ON COLUMN audit_event.request_object IS 'full requestObject from event';
+       COMMENT ON COLUMN audit_event.response_object IS 'full responseObject from event';
+       COMMENT ON COLUMN audit_event.stage_timestamp IS 'timestamp of event';
+       COMMENT ON COLUMN audit_event.request_received_timestamp IS 'timestamp when request received';
+       COMMENT ON COLUMN audit_event.data IS 'full raw data of event';
+     #+end_src
+**** 500: endpoint_coverage
+     #+begin_src sql-mode
+       COMMENT ON VIEW endpoint_coverage IS 'the test hits and conformance test hits per operation_id & other useful details';
+       COMMENT ON COLUMN endpoint_coverage.date IS 'Date of test run according to its metadata';
+       COMMENT ON COLUMN endpoint_coverage.bucket IS 'The testrun bucket for the event';
+       COMMENT ON COLUMN endpoint_coverage.job IS 'The testrun job for the event';
+       COMMENT ON COLUMN endpoint_coverage.operation_id IS 'operation_id of endpoint.  Two terms used interchangably';
+       COMMENT ON COLUMN endpoint_coverage.level IS 'Alpha, Beta, or Stable. The level of stability of an endpoint';
+       COMMENT ON COLUMN endpoint_coverage.category IS 'will either be analogous with the k8s group or "core".';
+       COMMENT ON COLUMN endpoint_coverage.group IS 'kubernetes group this operation_id belongs to';
+       COMMENT ON COLUMN endpoint_coverage.version IS 'kubernetes version (e.g alpha or beta or stable)';
+       COMMENT ON COLUMN endpoint_coverage.kind IS 'kubernetes kind';
+       COMMENT ON COLUMN endpoint_coverage.tested IS 'boolean on whether any e2e. useragent hits this endpoint';
+       COMMENT ON COLUMN endpoint_coverage.conf_tested IS 'boolean on whether any useragent with [Conformance] in name hits endpoint';
+       COMMENT ON COLUMN endpoint_coverage.hit IS 'boolean whether endpoint hit by any useragent';
+     #+end_src
+
+**** 520: stable_endpoint_stats
+     #+begin_src sql-mode
+       COMMENT ON VIEW stable_endpoint_stats IS 'coverage stats for entire test run, looking only at its stable endpoints';
+       COMMENT ON COLUMN stable_endpoint_stats.job IS 'The testrun job';
+       COMMENT ON COLUMN stable_endpoint_stats.date IS 'Date of test run according to its metadata';
+       COMMENT ON COLUMN stable_endpoint_stats.total_endpoints IS 'number of stable endpoints in this test run';
+       COMMENT ON COLUMN stable_endpoint_stats.test_hits IS 'number of stable, tested endpoints in this test run';
+       COMMENT ON COLUMN stable_endpoint_stats.conf_hits IS 'number of stable, conformance tested endpoints in this test run';
+       COMMENT ON COLUMN stable_endpoint_stats.percent_tested IS 'percent of total, stable endpoints in the run that are tested';
+       COMMENT ON COLUMN stable_endpoint_stats.percent_conf_tested IS 'percent of stable endpoints in the run that are conformance tested';
+     #+end_src
+
+**** 600: untested_stable_core_endpoints
+     #+begin_src sql-mode
+       COMMENT ON VIEW untested_stable_core_endpoints IS 'list stable core endpoints not hit by any tests, according to their test run';
+       COMMENT ON COLUMN untested_stable_core_endpoints.date IS 'Date of test run according to its metadata';
+       COMMENT ON COLUMN untested_stable_core_endpoints.bucket IS 'The testrun bucket for the event';
+       COMMENT ON COLUMN untested_stable_core_endpoints.job IS 'The testrun job for the event';
+       COMMENT ON COLUMN untested_stable_core_endpoints.operation_id IS 'operation_id of endpoint.  Two terms used interchangably';
+       COMMENT ON COLUMN untested_stable_core_endpoints.level IS 'Alpha, Beta, or Stable. The level of stability of an endpoint';
+       COMMENT ON COLUMN untested_stable_core_endpoints.category IS 'will either be analogous with the k8s group or "core".';
+       COMMENT ON COLUMN untested_stable_core_endpoints.group IS 'kubernetes group this operation_id belongs to';
+       COMMENT ON COLUMN untested_stable_core_endpoints.version IS 'kubernetes version (e.g alpha or beta or stable)';
+       COMMENT ON COLUMN untested_stable_core_endpoints.kind IS 'kubernetes kind';
+       COMMENT ON COLUMN untested_stable_core_endpoints.description IS 'description of operation_id';
+       COMMENT ON COLUMN untested_stable_core_endpoints.http_method IS 'http equivalent for operation, e.g. GET, POST, DELETE';
+       COMMENT ON COLUMN untested_stable_core_endpoints.k8s_action IS 'the k8s analog for the http_method';
+       COMMENT ON COLUMN untested_stable_core_endpoints.path IS 'location in cluster of endpoint for this operation_id';
+     #+end_src
+
+**** 610: endpoints_hit_by_new_test
+     #+begin_src sql-mode
+       COMMENT ON VIEW endpoints_hit_by_new_test IS 'list endpoints hit during our live auditing alongside their current test coverage';
+       COMMENT ON COLUMN endpoints_hit_by_new_test.useragent IS 'the useragent that hit the endpoint as captured by apisnoop';
+       COMMENT ON COLUMN endpoints_hit_by_new_test.operation_id IS 'the operation_id hit';
+       COMMENT ON COLUMN endpoints_hit_by_new_test.hit_by_ete IS 'number of times this endpoint is hit, according to latest test run';
+       COMMENT ON COLUMN endpoints_hit_by_new_test.hit_by_new_test IS 'number of times the useragent hit this endpoint, according to apisnoop';
+     #+end_src
+
+**** 620: projected_change_in_coverage
+     #+begin_src sql-mode
+       COMMENT ON VIEW projected_change_in_coverage IS 'overview of coverage stats if the e2e suite included your tests';
+       COMMENT ON COLUMN projected_change_in_coverage.total_endpoints IS 'number of stable, core endpoints as of the latest test run';
+       COMMENT ON COLUMN projected_change_in_coverage.old_coverage IS 'number of stable, core endpoints hit by tests, as of the latest test run';
+       COMMENT ON COLUMN projected_change_in_coverage.new_coverage IS 'number of stable, core endpoints hit by tests, when including those hit by your tests';
+       COMMENT ON COLUMN projected_change_in_coverage.change_in_number IS 'new_coverage less old_coverage';
+     #+end_src
+
+*** 998: Tracking Tables
+    :PROPERTIES:
+    :header-args:yaml+: :tangle ./app/migrations/998_tracking.up.yaml
+    :header-args:yaml+: :comments org
+    :END:
+**** bucket_job_swagger
+ #+NAME: track api_swagger
+ #+BEGIN_SRC yaml
+ - type: track_table
+   args:
+     schema: public
+     name: bucket_job_swagger
+ #+END_SRC
+**** audit_event
+  #+NAME: track audit_event
+  #+BEGIN_SRC yaml
+  - type: track_table
+    args:
+      schema: public
+      name: audit_event
+  #+END_SRC
+
+**** api_operation
+  #+NAME: track api_operation
+  #+BEGIN_SRC yaml
+  - type: track_table
+    args:
+      schema: public
+      name: api_operation
+  #+END_SRC
+**** endpoint_coverage
+  #+NAME: track endpoint_coverage
+  #+BEGIN_SRC yaml
+  - type: track_table
+    args:
+      schema: public
+      name: endpoint_coverage
+  #+END_SRC
+**** stable_endpoint_stats
+  #+NAME: track endpoint_stats
+  #+BEGIN_SRC yaml
+  - type: track_table
+    args:
+      schema: public
+      name: stable_endpoint_stats
+  #+END_SRC
+**** untested_stable_core_endpoints
+  #+NAME: track untested_stable_core_endpoints
+  #+BEGIN_SRC yaml
+  - type: track_table
+    args:
+      schema: public
+      name: untested_stable_core_endpoints
+  #+END_SRC
+**** endpoints_hit_by_new_test
+  #+NAME: track endpoints_hit_by_new_test
+  #+BEGIN_SRC yaml
+  - type: track_table
+    args:
+      schema: public
+      name: endpoints_hit_by_new_test
+  #+END_SRC
+**** projected_change_in_coverage
+  #+NAME: track projected_change_in_coverage
+  #+BEGIN_SRC yaml
+  - type: track_table
+    args:
+      schema: public
+      name: projected_change_in_coverage
+  #+END_SRC
+**** tests
+  #+NAME: track tests
+  #+BEGIN_SRC yaml
+  - type: track_table
+    args:
+      schema: public
+      name: tests
+  #+END_SRC
+**** useragents
+  #+NAME: track useragents
+  #+BEGIN_SRC yaml
+  - type: track_table
+    args:
+      schema: public
+      name: useragents
+  #+END_SRC
+*** 999: replace metadata
+    :PROPERTIES:
+    :header-args:yaml+: :notangle ./app/migrations/999_replace_metadata.up.yaml
+    :header-args:yaml+: :comments org
+    :END:
+ #+NAME: replace metadata
+ #+begin_src yaml
+ - type: replace_metadata
+   args: {"functions":[],"remote_schemas":[],"query_collections":[],"allowlist":[],"version":2,"tables":[{"table":"api_operation","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"audit_event","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"bucket_job_swagger","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"endpoint_coverage","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[{"using":{"manual_configuration":{"remote_table":"api_operation","column_mapping":{"bucket":"bucket","operation_id":"operation_id","job":"job"}}},"name":"details","comment":null}],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"endpoints_hit_by_new_test","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"projected_change_in_coverage","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"raw_audit_event","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"stable_endpoint_stats","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"tests","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"untested_stable_core_endpoints","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]},{"table":"useragents","is_enum":false,"configuration":{"custom_root_fields":{"select":null,"select_by_pk":null,"select_aggregate":null,"insert":null,"update":null,"delete":null},"custom_column_names":{}},"object_relationships":[],"array_relationships":[],"insert_permissions":[],"select_permissions":[],"update_permissions":[],"delete_permissions":[],"event_triggers":[],"computed_fields":[]}]}
+ #+end_src
+
+
 * Footnotes
