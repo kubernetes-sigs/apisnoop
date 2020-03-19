@@ -1,5 +1,5 @@
-const connectionString = typeof process.env.PG_CONNECTION_STRING !== 'undefined' ? process.env.PG_CONNECTION_STRING : 'postgres://apisnoop:s3cretsauc3@postgres/apisnoop?sslmode=disable'
-const rawAuditTableName = typeof process.env.APP_DB_READINESS_TABLE !== 'undefined' ? process.env.APP_DB_READINESS_TABLE : 'audit_event'
+const connectionString = typeof process.env.APP_DB_CONNECTION_STRING !== 'undefined' ? process.env.APP_DB_CONNECTION_STRING : 'postgres://apisnoop:s3cretsauc3@postgres/apisnoop?sslmode=disable'
+const rawAuditTableName = typeof process.env.APP_DB_AUDIT_EVENT_TABLE !== 'undefined' ? process.env.APP_DB_AUDIT_EVENT_TABLE : 'audit_event'
 const appPort = typeof process.env.APP_PORT !== 'undefined' ? process.env.APP_PORT : '9900'
 const appDisableLogs = typeof process.env.APP_DISABLE_LOGS !== 'undefined' ? process.env.APP_DISABLE_LOGS : 'false'
 const express = require('express')
