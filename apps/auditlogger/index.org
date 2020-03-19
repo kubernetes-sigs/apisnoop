@@ -1,7 +1,269 @@
 #+TITLE: Auditlogger Code, Deployment, and Reference Materials
 #+TODO: TODO(t) IN-PROGRESS(i) WAITING(w) | DONE(d)
+#+PROPERTY: header-args :comments none 
+#+
 
 * Introduction 
+  Logs all events in a kubernetes cluster and inserts it into the apisnoop DB.  Useful for running mock-test code and making sure this test hits the endpoints you intend.
 * App
+** javascript code
+#+NAME: auditlogger bot (nodejs)
+#+begin_src js :tangle ./app/auditlogger.js :results silent
+  const connectionString = typeof process.env.PG_CONNECTION_STRING !== 'undefined' ? process.env.PG_CONNECTION_STRING : 'postgres://apisnoop:s3cretsauc3@postgres/apisnoop?sslmode=disable'
+  const rawAuditTableName = typeof process.env.APP_DB_READINESS_TABLE !== 'undefined' ? process.env.APP_DB_READINESS_TABLE : 'audit_event'
+  const appPort = typeof process.env.APP_PORT !== 'undefined' ? process.env.APP_PORT : '9900'
+  const appDisableLogs = typeof process.env.APP_DISABLE_LOGS !== 'undefined' ? process.env.APP_DISABLE_LOGS : 'false'
+  const express = require('express')
+  const app = express()
+  const bodyParser = require('body-parser')
+  const morgan = require('morgan')
+  const knex = require('knex')({
+      client: 'pg',
+      connection: connectionString
+  })
+
+  var postgresIsReady = false
+
+  console.log(`[status] using connection string: ${connectionString}`)
+
+  function logs(...messages) {
+      if (appDisableLogs == 'true') {
+          return
+      }
+      console.log(...messages)
+  }
+
+  function hello (req, res, next) {
+      const helloMsg = 'Hey! I\'m your friendly neighbourhood auditlogger. Note: the endpoint /events is where logging takes place.'
+      res.json({ message: helloMsg })
+      return res.end()
+  }
+
+  function requestFailure (req, res, next, message) {
+      res.status(400)
+      res.json({ message })
+      return res.end()
+  }
+
+  function checkForBodyContent (req, res, next) {
+      if (Object.keys(req.body).length === 0 || typeof req.body !== 'object') {
+          console.log('[error] request contains no body')
+          return requestFailure(req, res, next, 'request must contain a body')
+      }
+      return next()
+  }
+
+  function checkUserAgent (req, res, next) {
+      const requestContent = req.body
+      if (req.headers['user-agent'] !== 'kube-apiserver-admission') {
+          console.log('[error] request didn\'t come from kube-apiserver')
+          return requestFailure(req, res, next, 'Error: request must come from Kubernetes apiserver')
+      }
+      return next()
+  }
+
+  function postgresReadyCheck (req, res, next) {
+      if (postgresIsReady === true) {
+          return next()
+      }
+      knex.raw(`SELECT to_regclass('${rawAuditTableName}');`).then(resp => {
+          postgresIsReady = resp.rows[0].to_regclass !== null
+      })
+  }
+
+  function logEventsToDB (req, res, next) {
+      const requestContent = req.body
+      const items = requestContent.items[0]
+
+      logs(JSON.stringify(requestContent, null, 2))
+
+      logs('[status] inserting into database')
+      var dataToInsert = {
+           bucket: 'apisnoop',
+           job: 'live',
+           audit_id: items.auditID,
+           stage: items.stage,
+           event_verb: items.verb,
+           request_uri: items.requestURI,
+          data: JSON.stringify(items)
+      }
+      logs(dataToInsert)
+
+      knex.transaction((trx) => {
+           knex(`${rawAuditTableName}`).transacting(trx).insert(dataToInsert)
+               .then(trx.commit)
+               .catch(trx.rollback)
+      }).then(resp => {
+          logs('[status] successfully submitted entry')
+          res.json({ message: 'operation complete; data inserted' })
+          return res.end()
+      }).catch(err => {
+          console.log(`[error] database: ${err}`)
+          requestFailure(req, res, next, `[error] database: ${err}`)
+      })
+  }
+
+  console.log('[status] starting apisnoop-auditlog-event-handler')
+
+  app.use(bodyParser.urlencoded({
+      extended: true
+  }))
+  app.use(express.json())
+  app.use(morgan('combined'))
+
+  app.get('/', hello)
+  app.post('/events', [checkForBodyContent, checkUserAgent, postgresReadyCheck], logEventsToDB)
+
+  knex.raw('select 0;').then(() => {
+      console.log('[status] connected to database')
+      app.listen(appPort, () => {
+          console.log(`[status] started; listening on port ${appPort}`)
+      })
+  }).catch(err => {
+      console.log('[error] No database connection found.')
+      console.log(err)
+      process.exit(1)
+  })
+#+end_src
+
+
+#+NAME: auditlogger bot (nodejs) package
+#+begin_src json :tangle ./app/package.json :comments no :results silent
+{
+  "name": "apisnoop-auditlogger",
+  "version": "0.0.2",
+  "description": "AuditLogger for apisnoop",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Caleb Woodbine <caleb@ii.coop>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "express": "^4.17.1",
+    "knex": "^0.20.1",
+    "morgan": "^1.9.1",
+    "pg": "^7.12.1"
+  }
+}
+#+end_src
+
+** Dockerfile
+ #+NAME: dockerfile for auditlogger bot
+ #+begin_src dockerfile :tangle ./app/Dockerfile
+   FROM node:12.14.1-alpine3.11
+   RUN apk update && \
+   apk add vim postgresql-client netcat-openbsd
+   RUN adduser -D -H -h /opt/apisnoop apisnoop
+   WORKDIR /opt/apisnoop
+   COPY auditlogger.js .
+   COPY package.json .
+   RUN npm i
+   EXPOSE 9900
+   USER apisnoop
+   CMD ["node", "auditlogger.js"]
+ #+end_src
+
+#+NAME: build auditlog bot container image
+#+begin_src shell
+  export TAG=$(TZ='Pacific/Auckland'; export TZ ; date +%F-%H-%M)
+  docker build -t gcr.io/apisnoop/auditlogger:$TAG .
+#+end_src
+
+** cloudbuild
+  #+NAME: auditlogger cloudbuild 
+#+begin_src yaml :tangle ./app/cloudbuild.yaml :comments no :results silent
+    steps:
+      - name: gcr.io/cloud-builders/docker
+        args: ['build', '-t', 'gcr.io/$PROJECT_ID/auditlogger:$_GIT_TAG',
+              '--build-arg', 'IMAGE_ARG=gcr.io/$PROJECT_ID/auditlogger:$_GIT_TAG',
+              '.']
+    substitutions:
+      _GIT_TAG: '12345'
+    images:
+      - 'gcr.io/$PROJECT_ID/auditlogger:$_GIT_TAG'
+    options:
+      substitution_option: 'ALLOW_LOOSE'
+#+end_src
+   
+
 * Deployment
+** Audit-sink  
+#+NAME: audit-sink.yaml   
+#+begin_src yaml :tangle ./deployment/audit-sink.yaml
+apiVersion: auditregistration.k8s.io/v1alpha1
+kind: AuditSink
+metadata:
+  name: auditlogger
+spec:
+  policy:
+    level: Metadata
+    stages:
+    - ResponseComplete
+  webhook:
+    throttle:
+      qps: 10
+      burst: 15
+    clientConfig:
+      #url: "http://apisnoop-auditlogger.kube-system.svc.cluster.local:9900/events"
+      # svc cluster ip of apisnoop-auditlogger
+      url: "http://10.96.96.96:9900/events"
+#+end_src
+
+** deployment
+#+NAME: deployment.yaml   
+#+begin_src yaml :tangle ./deployment/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apisnoop-auditlogger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.apisnoop.auditlogger: apisnoop-auditlogger
+  template:
+    metadata:
+      labels:
+        io.apisnoop.auditlogger: apisnoop-auditlogger
+    spec:
+      containers:
+        - name: apisnoop-auditlogger
+          image: "gcr.io/k8s-staging-apisnoop/auditlogger:v20200211-0.9.34-1-g24cf96f"
+          #command:
+          #  - "sleep"
+          #args: 
+          #  - "10000000"
+          ports:
+            - containerPort: 9900
+#+end_src
+
+** kustomization
+#+NAME: kustomization.yaml   
+#+begin_src yaml :tangle ./deployment/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - audit-sink.yaml
+  - deployment.yaml
+  - service.yaml
+#+end_src
+
+** service
+#+NAME: service.yaml   
+#+begin_src yaml :tangle ./deployment/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: apisnoop-auditlogger
+spec:
+  ports:
+    - port: 9900
+      targetPort: 9900
+  selector:
+    io.apisnoop.auditlogger: apisnoop-auditlogger
+  clusterIP: 10.96.96.96
+  type: ClusterIP
+#+end_src
+
 * Footnotes
