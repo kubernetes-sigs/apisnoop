@@ -24,7 +24,7 @@ CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
               FROM
                   audit_event
             ) as coverage ON (coverage.bucket = ao.bucket AND coverage.job = ao.job)
-     WHERE ao.deprecated IS False and ao.job != 'live'
+     WHERE ao.deprecated IS False
    GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
 
 CREATE INDEX idx_endpoint_coverage_material_job ON endpoint_coverage_material (job);

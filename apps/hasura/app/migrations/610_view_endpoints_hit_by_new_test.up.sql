@@ -1,4 +1,4 @@
-CREATE VIEW "public"."endpoints_hit_by_new_test" AS
+CREATE OR REPLACE VIEW "public"."endpoints_hit_by_new_test" AS
   WITH live_testing_endpoints AS (
     SELECT DISTINCT
       operation_id,

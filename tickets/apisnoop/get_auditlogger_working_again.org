@@ -1,0 +1,147 @@
+#+TITLE: Get Auditlogger Working Again
+#+AUTHOR: Zach Mandeville
+#+TAGs: FIXED(f)
+#+PROPERTY: header-args:sql-mode+ :results silent
+
+* Purpose
+  Verify we can get apisnoop up, run a test in go, and see the endpoints this test hit and our projected change in coverage.
+* Process
+** Set up dev/testing iteration loop
+*** Setup
+   #+NAME: Connect to Right Eye
+   #+begin_src tmate :session ii:FUN
+     echo "You're connected!" 
+     pwd
+   #+end_src
+    
+   Move up two dirs in tilt session so we run the right tilt file
+   #+NAME: Bring Tilt Up
+   #+begin_src tmate :session ii:TILT 
+    cd ../..
+   #+end_src
+*** Loop   
+**** Bring Tilt Up
+    #+NAME: Bring Tilt Up
+    #+begin_src tmate :session ii:TILT 
+    tilt up --host 0.0.0.0 
+    #+end_src
+***** Name errors seen and add to processing list
+**** If works, check data loaded
+     We should be able to see accurate, recent numbers in stable_endpoint_stats
+     #+NAME: stable endpoint stats  
+     #+begin_src sql-mode :results silent
+     select * from stable_endpoint_stats;
+     #+end_src
+     
+     bucket_job_swagger should have baseline bucket and live bucket, job
+     #+NAME: bucket_job_swagger
+     #+begin_src sql-mode :results silent
+     select bucket, job from bucket_job_swagger; 
+     #+end_src
+     
+     endpoint coverage should have apisnoop/live as a bucket/job, but no data for them
+     #+NAME: endpoint_coverage
+     #+begin_src sql-mode :results silent
+     select distinct bucket, job, useragent from endpoint_coverage;
+     #+end_src
+***** Name errors seen and add to processing list                     
+      - FIXED There is no live bucket in the endpoint coverage view.  Is the view filtered to exclude live?
+**** If works run go test
+      #+begin_src go :results silent
+        package main
+        import (
+          "fmt"
+          "flag"
+          "os"
+          // v1 "k8s.io/api/core/v1"
+          // "k8s.io/client-go/dynamic"
+          // "k8s.io/apimachinery/pkg/runtime/schema"
+          metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+          "k8s.io/client-go/kubernetes"
+          // "k8s.io/apimachinery/pkg/types"
+          "k8s.io/client-go/tools/clientcmd"
+        )
+
+        func main() {
+          // uses the current context in kubeconfig
+          kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+          flag.Parse()
+          config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+          if err != nil {
+              fmt.Println(err)
+              return
+          }
+          // make our work easier to find in the audit_event queries
+          config.UserAgent = "live-test-writing"
+          // creates the clientset
+          ClientSet, _ := kubernetes.NewForConfig(config)
+          // DynamicClientSet, _ := dynamic.NewForConfig(config)
+          // podResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+
+          // access the API to list pods
+          pods, err := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{})
+          if err != nil {
+              fmt.Println(err)
+              return
+          }
+          fmt.Printf("[status] there are %d pods in the cluster\n", len(pods.Items))
+
+          // write test here
+          fmt.Println("[status] complete")
+
+        }
+      #+end_src
+
+      after this, our useragent 'live-test-writing' should show in the view "endpoint hit by new test" 
+      #+NAME: endpoints hit by new test
+      #+begin_src sql-mode :results replace
+      select * from endpoints_hit_by_new_test where useragent like 'live%';
+      #+end_src
+
+      #+RESULTS:
+      #+begin_SRC example
+           useragent     |         operation_id          | hit_by_ete | hit_by_new_test 
+      -------------------+-------------------------------+------------+-----------------
+       live-test-writing | listCoreV1PodForAllNamespaces | f          |               1
+      (1 row)
+
+      #+end_SRC
+
+***** Name errors seen and add to processing list
+      - FIXED live-test-writing does not show. but other useragents do show...so this makes me think that auditlogger is...logging correctly...revisit the code to double-check though.
+      - live-test-writing is being added to audit_event, but with no operation_id.  likey due to our trigger.
+**** If needed tilt down
+** DONE Check that existing views don't filter out live results accidentally
+   CLOSED: [2020-03-20 Fri 08:58]
+   We want to look at endpoint coverage.  It _was_ filtered
+   #+NAME: endpoint_coverage details
+   #+begin_src sql-mode
+  \d+ endpoint_coverage_material
+   #+end_src
+   
+   Checking now, we should have live as a job in this view and it should have endpoints, but no hits
+   #+begin_src sql-mode
+     select operation_id from endpoint_coverage where job = 'live' limit 30;
+     -- select operation_id, tested from endpoint_coverage where job = 'live' and tested is true; 
+   #+end_src
+   
+   Fantastic!
+   
+** DONE Adjust auditlogger code to load direct into audit event
+   CLOSED: [2020-03-20 Fri 10:25]
+   We used to put data into raw_audit_event and then have our views parse it.  Now, we 7parse it as part of the insertion...so the simplest thing would be to have our auditlogger send the already parsed log.  I updated it to destructure all the necessary variables from our response item variable, and then pass each of them along as the appropriate name for the insertion.
+** DONE Ensure our add_op_id is running when auditLogger inserts data
+   CLOSED: [2020-03-20 Fri 10:56]
+   It wasn't tangling before.  now it is tangling.
+   
+** TODO make sure that operation_uids are being added per audit event entry
+   Once it tangled it worked!  Though i noticed in the add_opp_id sql function that the swagger.json path is hardcoded....this aint' correct.
+** Isolate the issue
+** Fix it
+** Verify it
+** Celebrate
+
+# Local Variables:
+# ii: enabled
+# End:
+* Conclusion | Next Steps
