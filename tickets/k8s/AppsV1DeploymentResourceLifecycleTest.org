@@ -327,7 +327,7 @@ According to this APIsnoop query, there are still some remaining Deployment endp
        testDeploymentUpdate := testDeployment
        testDeploymentUpdate.ObjectMeta.Labels["test-deployment"] = "updated"
        testDeploymentUpdate.Spec.Template.Spec.Containers[0].Image = testDeploymentUpdateImage
-	     testDeploymentDefaultReplicasPointer := &testDeploymentDefaultReplicas
+       testDeploymentDefaultReplicasPointer := &testDeploymentDefaultReplicas
        testDeploymentUpdate.Spec.Replicas = testDeploymentDefaultReplicasPointer
        testDeploymentUpdate.Status.ReadyReplicas = testDeploymentNoReplicas
        testDeploymentUpdateUnstructuredMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&testDeploymentUpdate)
@@ -337,7 +337,8 @@ According to this APIsnoop query, there are still some remaining Deployment endp
        testDeploymentUpdateUnstructured := unstructuredv1.Unstructured{
            Object: testDeploymentUpdateUnstructuredMap,
        }
-       _, err = DynamicClientSet.Resource(deploymentResource).Namespace(testNamespaceName).Update(&testDeploymentUpdateUnstructured, metav1.UpdateOptions{}, "status")
+	     // currently this hasn't been able to hit the endpoint replaceAppsV1NamespacedDeploymentStatus
+       _, err = DynamicClientSet.Resource(deploymentResource).Namespace(testNamespaceName).Update(&testDeploymentUpdateUnstructured, metav1.UpdateOptions{})//, "status")
        if err != nil {
            fmt.Println(err, "failed to update the DeploymentStatus")
            return
@@ -434,6 +435,18 @@ According to this APIsnoop query, there are still some remaining Deployment endp
 
    #+RESULTS:
    #+begin_src go
+   creating a Deployment
+   watching for the Deployment to be added
+   waiting for all Replicas to be Ready
+   patching the Deployment
+   waiting for Replicas to scale
+   listing Deployments
+   updating the DeploymentStatus
+   fetching the DeploymentStatus
+   patching the DeploymentStatus
+   fetching the DeploymentStatus
+   [status] complete
+   deleting the Deployment
    #+end_src
 
 * Verifying increase it coverage with APISnoop                       :export:
@@ -458,9 +471,17 @@ select * from endpoints_hit_by_new_test where useragent like 'live%';
 
 #+RESULTS:
 #+begin_SRC example
- useragent | operation_id | hit_by_ete | hit_by_new_test 
------------+--------------+------------+-----------------
-(0 rows)
+     useragent     |                operation_id                | hit_by_ete | hit_by_new_test 
+-------------------+--------------------------------------------+------------+-----------------
+ live-test-writing | createAppsV1NamespacedDeployment           | t          |               1
+ live-test-writing | deleteAppsV1CollectionNamespacedDeployment | f          |               1
+ live-test-writing | listAppsV1DeploymentForAllNamespaces       | f          |               1
+ live-test-writing | listAppsV1NamespacedDeployment             | t          |               1
+ live-test-writing | patchAppsV1NamespacedDeployment            | f          |               1
+ live-test-writing | patchAppsV1NamespacedDeploymentStatus      | f          |               1
+ live-test-writing | readAppsV1NamespacedDeploymentStatus       | f          |               2
+ live-test-writing | replaceAppsV1NamespacedDeployment          | t          |               1
+(8 rows)
 
 #+end_SRC
 
@@ -471,9 +492,11 @@ Display endpoint coverage change:
 
   #+RESULTS:
   #+begin_SRC example
-  ERROR:  relation "projected_change_in_coverage" does not exist
-  LINE 1: select * from projected_change_in_coverage;
-                        ^
+     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+  ---------------+-----------------+--------------+--------------+------------------
+   test_coverage |             445 |          181 |          186 |                5
+  (1 row)
+
   #+end_SRC
 
 * Final notes :export:
@@ -491,12 +514,12 @@ This test is also created with the goal of conformance promotion.
 * Options :neverexport:
 ** Delete all events after postgres initialization
    #+begin_src sql-mode :eval never-export :exports both :session none
-   delete from raw_audit_event where bucket = 'apisnoop' and job='live';
+   delete from audit_event where bucket = 'apisnoop' and job='live';
    #+end_src
 
    #+RESULTS:
    #+begin_SRC example
-   DELETE 3945
+   DELETE 19526
    #+end_SRC
 
 * Open Tasks
