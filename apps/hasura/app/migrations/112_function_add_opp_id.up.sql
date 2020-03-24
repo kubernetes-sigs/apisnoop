@@ -1,3 +1,10 @@
+-- 112: add_opp_id function
+--     :PROPERTIES:
+--     :header-args:sql-mode+: :tangle ./app/migrations/112_function_add_opp_id.up.sql
+--     :END:
+--  #+NAME: add_opp_id.sql
+
+-- [[file:~/apisnoop/apps/hasura/index.org::add_opp_id.sql][add_opp_id.sql]]
 set role dba;
 CREATE OR REPLACE FUNCTION add_op_id() RETURNS TRIGGER as $$
    import json
@@ -15,3 +22,4 @@ CREATE OR REPLACE FUNCTION add_op_id() RETURNS TRIGGER as $$
    return "MODIFY";
 $$ LANGUAGE plpython3u;
 reset role;
+-- add_opp_id.sql ends here
