@@ -1,3 +1,10 @@
+-- 101: Function to Load Swagger
+--     :PROPERTIES:
+--     :header-args:sql-mode+: :tangle ./app/migrations/101_function_load_swagger.up.sql
+--     :END:
+--      #+NAME: load_swagger.sql
+
+-- [[file:~/apisnoop/apps/hasura/index.org::load_swagger.sql][load_swagger.sql]]
 set role dba;
 DROP FUNCTION IF EXISTS load_swagger;
 CREATE OR REPLACE FUNCTION load_swagger(
@@ -67,3 +74,4 @@ except:
   print("<p>Error: %s</p>" % e )
 $$ LANGUAGE plpython3u ;
 reset role;
+-- load_swagger.sql ends here

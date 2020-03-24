@@ -1,3 +1,11 @@
+-- 600: Untested Stable Core Endpoints
+--     :PROPERTIES:
+--     :header-args:sql-mode+: :tangle ./app/migrations/600_view_untested_stable_core_endpoints.up.sql
+--     :END:
+
+--  #+NAME: untested endpoints
+
+-- [[file:~/apisnoop/apps/hasura/index.org::untested%20endpoints][untested endpoints]]
 CREATE OR REPLACE VIEW "public"."untested_stable_core_endpoints" AS
   SELECT
     ec.*,
@@ -15,3 +23,4 @@ CREATE OR REPLACE VIEW "public"."untested_stable_core_endpoints" AS
      AND ec.job != 'live'
    ORDER BY hit desc
             ;
+-- untested endpoints ends here

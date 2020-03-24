@@ -1,3 +1,10 @@
+-- 111: load_audit_event Function
+--     :PROPERTIES:
+--     :header-args:sql-mode+: :tangle ./app/migrations/111_function_load_audit_event.up.sql
+--     :END:
+--     #+NAME: load_audit_events.sql
+
+-- [[file:~/apisnoop/apps/hasura/index.org::load_audit_events.sql][load_audit_events.sql]]
 set role dba;
 CREATE OR REPLACE FUNCTION load_audit_events(
   custom_bucket text default null,
@@ -17,3 +24,4 @@ CREATE OR REPLACE FUNCTION load_audit_events(
       return "something unknown went wrong"
   $$ LANGUAGE plpython3u ;
   reset role;
+-- load_audit_events.sql ends here

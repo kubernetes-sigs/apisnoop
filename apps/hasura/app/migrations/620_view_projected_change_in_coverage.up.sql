@@ -1,3 +1,10 @@
+-- 620:Projected Change in Coverage
+--     :PROPERTIES:
+--     :header-args:sql-mode+: :tangle ./app/migrations/620_view_projected_change_in_coverage.up.sql
+--     :END:
+--     #+NAME: PROJECTED Change in Coverage
+
+-- [[file:~/apisnoop/apps/hasura/index.org::PROJECTED%20Change%20in%20Coverage][PROJECTED Change in Coverage]]
 CREATE OR REPLACE VIEW "public"."projected_change_in_coverage" AS
  WITH baseline AS (
    SELECT *
@@ -34,3 +41,4 @@ CREATE OR REPLACE VIEW "public"."projected_change_in_coverage" AS
    (coverage.new_coverage - coverage.old_coverage) AS change_in_number
    FROM baseline, coverage
           ;
+-- PROJECTED Change in Coverage ends here

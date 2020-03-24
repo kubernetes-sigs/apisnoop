@@ -1,3 +1,7 @@
+-- 100: Bucket Job Swagger
+--  #+NAME: Comments on bucket_job_swagger
+
+-- [[file:~/apisnoop/apps/hasura/index.org::Comments%20on%20bucket_job_swagger][Comments on bucket_job_swagger]]
 COMMENT ON TABLE bucket_job_swagger IS 'metadata for audit events  and their respective swagger.json';
 COMMENT ON column bucket_job_swagger.ingested_at IS 'timestamp for when data added to table';
 COMMENT ON column bucket_job_swagger.bucket IS 'storage bucket for audit event test run and swagger';
@@ -11,7 +15,11 @@ COMMENT ON column bucket_job_swagger.job_timestamp IS 'timestamp when job was ru
 COMMENT ON column bucket_job_swagger.node_os_image IS 'id for which node image was used for test run';
 COMMENT ON column bucket_job_swagger.node_os_image IS 'id for which master os image was used for test run';
 COMMENT ON column bucket_job_swagger.swagger IS 'raw json of the open api spec for k8s as of the commit hash for this test run.';
+-- Comments on bucket_job_swagger ends here
 
+-- 110: audit_event
+
+-- [[file:~/apisnoop/apps/hasura/index.org::*110:%20audit_event][110: audit_event:1]]
 COMMENT ON TABLE  audit_event IS 'a record for each audit event in an audit log';
 COMMENT ON COLUMN audit_event.bucket IS 'The testrun bucket for the event';
 COMMENT ON COLUMN audit_event.job IS 'The testrun job for the event';
@@ -21,7 +29,11 @@ COMMENT ON COLUMN audit_event.event_verb IS 'verb of event';
 COMMENT ON COLUMN audit_event.request_uri IS 'cluster uri that event requested';
 COMMENT ON COLUMN audit_event.operation_id IS 'operation_id hit by event';
 COMMENT ON COLUMN audit_event.data IS 'full raw data of event';
+-- 110: audit_event:1 ends here
 
+-- 200: api_operation_material
+
+-- [[file:~/apisnoop/apps/hasura/index.org::*200:%20api_operation_material][200: api_operation_material:1]]
 COMMENT ON MATERIALIZED VIEW api_operation_material IS 'details on each operation_id as taken from the openAPI spec';
 COMMENT ON COLUMN api_operation_material.operation_id IS 'Also referred to as endpoint.  Name for the action at a given path';
 COMMENT ON COLUMN api_operation_material.level IS 'Alpha, Beta, or Stable. The level of stability of an endpoint';
@@ -43,7 +55,11 @@ COMMENT ON COLUMN api_operation_material.schemes IS 'schemes of operation_id';
 COMMENT ON COLUMN api_operation_material.regex IS 'regex pattern for how to match to this operation_id. Likely  not needed anymore.';
 COMMENT ON COLUMN api_operation_material.bucket IS 'the testrun bucket this operation_id belongs to';
 COMMENT ON COLUMN api_operation_material.job IS 'the testrun job this operation_id belongs to';
+-- 200: api_operation_material:1 ends here
 
+-- 220: api_operation_material
+
+-- [[file:~/apisnoop/apps/hasura/index.org::*220:%20api_operation_material][220: api_operation_material:1]]
 COMMENT ON MATERIALIZED VIEW api_operation_parameter_material IS 'the parameters for each operation_id in open API spec';
 COMMENT ON column api_operation_parameter_material.param_op IS 'the operation_id this parameter belongs to';
 COMMENT ON column api_operation_parameter_material.param_name IS 'the name of the parameter';
@@ -55,7 +71,11 @@ COMMENT ON column api_operation_parameter_material.in IS 'value of "in" key in p
 COMMENT ON column api_operation_parameter_material.bucket IS 'testrun bucket of operation_id this parameter belongs to';
 COMMENT ON column api_operation_parameter_material.job IS 'testrun job of operation_id this parameter belongs to';
 COMMENT ON column api_operation_parameter_material.entry IS 'full json blog of parameter entry';
+-- 220: api_operation_material:1 ends here
 
+-- 500: endpoint_coverage
+
+-- [[file:~/apisnoop/apps/hasura/index.org::*500:%20endpoint_coverage][500: endpoint_coverage:1]]
 COMMENT ON VIEW endpoint_coverage IS 'the test hits and conformance test hits per operation_id & other useful details';
 COMMENT ON COLUMN endpoint_coverage.date IS 'Date of test run according to its metadata';
 COMMENT ON COLUMN endpoint_coverage.bucket IS 'The testrun bucket for the event';
@@ -69,7 +89,11 @@ COMMENT ON COLUMN endpoint_coverage.kind IS 'kubernetes kind';
 COMMENT ON COLUMN endpoint_coverage.tested IS 'boolean on whether any e2e. useragent hits this endpoint';
 COMMENT ON COLUMN endpoint_coverage.conf_tested IS 'boolean on whether any useragent with [Conformance] in name hits endpoint';
 COMMENT ON COLUMN endpoint_coverage.hit IS 'boolean whether endpoint hit by any useragent';
+-- 500: endpoint_coverage:1 ends here
 
+-- 520: stable_endpoint_stats
+
+-- [[file:~/apisnoop/apps/hasura/index.org::*520:%20stable_endpoint_stats][520: stable_endpoint_stats:1]]
 COMMENT ON VIEW stable_endpoint_stats IS 'coverage stats for entire test run, looking only at its stable endpoints';
 COMMENT ON COLUMN stable_endpoint_stats.job IS 'The testrun job';
 COMMENT ON COLUMN stable_endpoint_stats.date IS 'Date of test run according to its metadata';
@@ -78,7 +102,11 @@ COMMENT ON COLUMN stable_endpoint_stats.test_hits IS 'number of stable, tested e
 COMMENT ON COLUMN stable_endpoint_stats.conf_hits IS 'number of stable, conformance tested endpoints in this test run';
 COMMENT ON COLUMN stable_endpoint_stats.percent_tested IS 'percent of total, stable endpoints in the run that are tested';
 COMMENT ON COLUMN stable_endpoint_stats.percent_conf_tested IS 'percent of stable endpoints in the run that are conformance tested';
+-- 520: stable_endpoint_stats:1 ends here
 
+-- 600: untested_stable_core_endpoints
+
+-- [[file:~/apisnoop/apps/hasura/index.org::*600:%20untested_stable_core_endpoints][600: untested_stable_core_endpoints:1]]
 COMMENT ON VIEW untested_stable_core_endpoints IS 'list stable core endpoints not hit by any tests, according to their test run';
 COMMENT ON COLUMN untested_stable_core_endpoints.date IS 'Date of test run according to its metadata';
 COMMENT ON COLUMN untested_stable_core_endpoints.bucket IS 'The testrun bucket for the event';
@@ -93,15 +121,24 @@ COMMENT ON COLUMN untested_stable_core_endpoints.description IS 'description of 
 COMMENT ON COLUMN untested_stable_core_endpoints.http_method IS 'http equivalent for operation, e.g. GET, POST, DELETE';
 COMMENT ON COLUMN untested_stable_core_endpoints.k8s_action IS 'the k8s analog for the http_method';
 COMMENT ON COLUMN untested_stable_core_endpoints.path IS 'location in cluster of endpoint for this operation_id';
+-- 600: untested_stable_core_endpoints:1 ends here
 
+-- 610: endpoints_hit_by_new_test
+
+-- [[file:~/apisnoop/apps/hasura/index.org::*610:%20endpoints_hit_by_new_test][610: endpoints_hit_by_new_test:1]]
 COMMENT ON VIEW endpoints_hit_by_new_test IS 'list endpoints hit during our live auditing alongside their current test coverage';
 COMMENT ON COLUMN endpoints_hit_by_new_test.useragent IS 'the useragent that hit the endpoint as captured by apisnoop';
 COMMENT ON COLUMN endpoints_hit_by_new_test.operation_id IS 'the operation_id hit';
 COMMENT ON COLUMN endpoints_hit_by_new_test.hit_by_ete IS 'number of times this endpoint is hit, according to latest test run';
 COMMENT ON COLUMN endpoints_hit_by_new_test.hit_by_new_test IS 'number of times the useragent hit this endpoint, according to apisnoop';
+-- 610: endpoints_hit_by_new_test:1 ends here
 
+-- 620: projected_change_in_coverage
+
+-- [[file:~/apisnoop/apps/hasura/index.org::*620:%20projected_change_in_coverage][620: projected_change_in_coverage:1]]
 COMMENT ON VIEW projected_change_in_coverage IS 'overview of coverage stats if the e2e suite included your tests';
 COMMENT ON COLUMN projected_change_in_coverage.total_endpoints IS 'number of stable, core endpoints as of the latest test run';
 COMMENT ON COLUMN projected_change_in_coverage.old_coverage IS 'number of stable, core endpoints hit by tests, as of the latest test run';
 COMMENT ON COLUMN projected_change_in_coverage.new_coverage IS 'number of stable, core endpoints hit by tests, when including those hit by your tests';
 COMMENT ON COLUMN projected_change_in_coverage.change_in_number IS 'new_coverage less old_coverage';
+-- 620: projected_change_in_coverage:1 ends here
