@@ -143,7 +143,7 @@ According to this APIsnoop query, there are still some remaining DaemonSet endpo
      package main
 
      import (
-       // "encoding/json"
+       "encoding/json"
        "fmt"
        "flag"
        "os"
@@ -153,7 +153,7 @@ According to this APIsnoop query, there are still some remaining DaemonSet endpo
        // "k8s.io/apimachinery/pkg/runtime/schema"
        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
        "k8s.io/client-go/kubernetes"
-       // "k8s.io/apimachinery/pkg/types"
+       "k8s.io/apimachinery/pkg/types"
        "k8s.io/client-go/tools/clientcmd"
        watch "k8s.io/apimachinery/pkg/watch"
      )
@@ -177,6 +177,9 @@ According to this APIsnoop query, there are still some remaining DaemonSet endpo
        // TEST BEGINS HERE
 
        testDaemonSetName := "testdaemonset"
+       testDaemonSetImageInitial := "nginx"
+       testDaemonSetImagePatch := "alpine"
+       testDaemonSetImageUpdate := "httpd"
        testDaemonSetStaticLabel := map[string]string{"test-static": "true"}
        testDaemonSetStaticLabelFlat := "test-static=true"
        testDaemonSetSelector := map[string]string{"app": testDaemonSetName}
@@ -199,7 +202,7 @@ According to this APIsnoop query, there are still some remaining DaemonSet endpo
                    Spec: v1.PodSpec{
                        Containers: []v1.Container{{
                            Name: testDaemonSetName,
-                           Image: "nginx",
+                           Image: testDaemonSetImageInitial,
                        }},
                    },
                },
@@ -221,7 +224,18 @@ According to this APIsnoop query, there are still some remaining DaemonSet endpo
                break
            }
        }	
-       go func() {
+       fmt.Println("watching for DaemonSet readiness count to be equal to the desired count")
+       for watchEvent := range resourceWatchChan {
+           daemonset, ok := watchEvent.Object.(*appsv1.DaemonSet)
+           if ok == false {
+               fmt.Println("failed to convert watchEvent.Object type")
+               return
+           }
+           if daemonset.Status.NumberReady == daemonset.Status.DesiredNumberScheduled {
+               break
+           }
+       }	
+       defer func() {
            fmt.Println("deleting the DaemonSet")
            err = ClientSet.AppsV1().DaemonSets(testNamespaceName).DeleteCollection(&metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: testDaemonSetStaticLabelFlat})
            if err != nil {
@@ -240,6 +254,90 @@ According to this APIsnoop query, there are still some remaining DaemonSet endpo
            }
        }()
 
+       fmt.Println("patching the DaemonSet")
+       resourcePatch, err := json.Marshal(map[string]interface{}{
+           "metadata": map[string]interface{}{
+               "labels": map[string]string{"test-resource": "patched"},
+           },
+           "spec": map[string]interface{}{
+               "template": map[string]interface{}{
+                   "spec": map[string]interface{}{
+                       "containers": []map[string]interface{}{{
+                           "name": testDaemonSetName,
+                           "image": testDaemonSetImagePatch,
+                           "command": []string{"/bin/sleep", "100000"},
+                       }},
+                   },
+               },
+           },
+       })
+       if err != nil {
+           fmt.Println(err, "failed marshal resource patch")
+           return
+       }
+       _, err = ClientSet.AppsV1().DaemonSets(testNamespaceName).Patch(testDaemonSetName, types.StrategicMergePatchType, []byte(resourcePatch))
+       if err != nil {
+           fmt.Println(err, "failed patch resource")
+           return
+       }
+       for watchEvent := range resourceWatchChan {
+          if watchEvent.Type == watch.Modified {
+              break
+          }
+       }
+       fmt.Println("watching for DaemonSet readiness count to be equal to the desired count")
+       for watchEvent := range resourceWatchChan {
+           daemonset, ok := watchEvent.Object.(*appsv1.DaemonSet)
+           if ok == false {
+               fmt.Println("failed to convert watchEvent.Object type")
+               return
+           }
+           if daemonset.Status.NumberReady == daemonset.Status.DesiredNumberScheduled {
+               break
+           }
+       }	
+
+       fmt.Println("fetching the DaemonSet")
+       ds, err := ClientSet.AppsV1().DaemonSets(testNamespaceName).Get(testDaemonSetName, metav1.GetOptions{})
+       if err != nil {
+           fmt.Println(err, "failed fetch resource")
+           return
+       }
+       if ds.ObjectMeta.Labels["test-resource"] != "patched" {
+           fmt.Println("failed to patch resource - missing patched label")
+           return
+       }
+       if ds.Spec.Template.Spec.Containers[0].Image != testDaemonSetImagePatch {
+           fmt.Println("failed to patch resource - missing patched image")
+           return
+       }
+       if ds.Spec.Template.Spec.Containers[0].Command[0] != "/bin/sleep" {
+           fmt.Println("failed to patch resource - missing patched command")
+           return
+       }
+
+       fmt.Println("updating the DaemonSet")
+       dsUpdate := ds
+       dsUpdate.ObjectMeta.Labels["test-resource"] = "updated"
+       dsUpdate.Spec.Template.Spec.Containers[0].Image = testDaemonSetImageUpdate
+       dsUpdate.Spec.Template.Spec.Containers[0].Command = []string{}
+       _, err = ClientSet.AppsV1().DaemonSets(testNamespaceName).Update(dsUpdate)
+       if err != nil {
+           fmt.Println(err, "failed to update resource")
+           return
+       }
+       fmt.Println("watching for DaemonSet readiness count to be equal to the desired count")
+       for watchEvent := range resourceWatchChan {
+           daemonset, ok := watchEvent.Object.(*appsv1.DaemonSet)
+           if ok == false {
+               fmt.Println("failed to convert watchEvent.Object type")
+               return
+           }
+           if daemonset.Status.NumberReady == daemonset.Status.DesiredNumberScheduled {
+               break
+           }
+       }	
+
        fmt.Println("listing DaemonSets")
        dss, err := ClientSet.AppsV1().DaemonSets("").List(metav1.ListOptions{LabelSelector: testDaemonSetStaticLabelFlat})
        if err != nil {
@@ -249,6 +347,20 @@ According to this APIsnoop query, there are still some remaining DaemonSet endpo
        if len(dss.Items) == 0 {
            fmt.Println("there are no DaemonSets found")
            return
+       }
+       for _, ds := range dss.Items {
+           if ds.ObjectMeta.Labels["test-resource"] != "updated" {
+               fmt.Println("failed to patch resource - missing updated label")
+               return
+           }
+           if ds.Spec.Template.Spec.Containers[0].Image != testDaemonSetImageUpdate {
+               fmt.Println("failed to patch resource - missing updated image")
+               return
+           }
+           if len(ds.Spec.Template.Spec.Containers[0].Command) != 0 {
+               fmt.Println("failed to patch resource - missing updated command")
+               return
+           }
        }
 
        // TEST ENDS HERE
@@ -263,9 +375,15 @@ According to this APIsnoop query, there are still some remaining DaemonSet endpo
    #+begin_src go
    creating a DaemonSet
    watching for the DaemonSet to be added
+   watching for DaemonSet readiness count to be equal to the desired count
+   patching the DaemonSet
+   watching for DaemonSet readiness count to be equal to the desired count
+   fetching the DaemonSet
+   updating the DaemonSet
+   watching for DaemonSet readiness count to be equal to the desired count
    listing DaemonSets
-   deleting the DaemonSet
    [status] complete
+   deleting the DaemonSet
    #+end_src
 
 * Verifying increase it coverage with APISnoop                       :export:
@@ -276,9 +394,10 @@ Discover useragents:
 
   #+RESULTS:
   #+begin_SRC example
-   useragent 
-  -----------
-  (0 rows)
+       useragent     
+  -------------------
+   live-test-writing
+  (1 row)
 
   #+end_SRC
 
@@ -295,7 +414,10 @@ select * from endpoints_hit_by_new_test where useragent like 'live%';
  live-test-writing | deleteAppsV1CollectionNamespacedDaemonSet | f          |               1
  live-test-writing | listAppsV1DaemonSetForAllNamespaces       | f          |               1
  live-test-writing | listAppsV1NamespacedDaemonSet             | t          |               1
-(4 rows)
+ live-test-writing | patchAppsV1NamespacedDaemonSet            | f          |               1
+ live-test-writing | readAppsV1NamespacedDaemonSet             | f          |               1
+ live-test-writing | replaceAppsV1NamespacedDaemonSet          | f          |               1
+(7 rows)
 
 #+end_SRC
 
@@ -308,13 +430,13 @@ Display endpoint coverage change:
   #+begin_SRC example
      category    | total_endpoints | old_coverage | new_coverage | change_in_number 
   ---------------+-----------------+--------------+--------------+------------------
-   test_coverage |             445 |          181 |          184 |                3
+   test_coverage |             445 |          181 |          187 |                6
   (1 row)
 
   #+end_SRC
 
 * Final notes :export:
-If a test with these calls gets merged, **test coverage will go up by N points**
+If a test with these calls gets merged, **test coverage will go up by 6 points**
 
 This test is also created with the goal of conformance promotion.
 
