@@ -1,6 +1,6 @@
 ((nil .
       ((eval .
-             (defun apisnoop/insert-ticket-template-plz ()
+             (defun apisnoop/insert-ticket-template ()
                "Inserts contents of current directory's ticket-template.org file into current buffer."
                (interactive)
                (let ((ticket-template "./ticket-template.org"))
