@@ -62,7 +62,7 @@
      max-width: 800px;
      margin: auto;
      list-style-type: none;
-     font-size: 3vw;
+     font-size: 2.33vw;
      display: flex;
      justify-content: center;
      align-items: center;

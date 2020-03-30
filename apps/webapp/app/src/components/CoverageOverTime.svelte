@@ -15,7 +15,9 @@
  const padding = { top: 20, right: 15, bottom: 20, left: 25 };
  // y is total percentage, from 0 to 100
  const yTicks = [0, 10, 20, 30, 40, 50, 60,70,80,90, 100];
- // X Ticks will be every 3 weeks for the last 13 weeks
+ 
+ // Coverage is sorted by timestamp, with oldest at [0]
+ // X ticks will be from oldest audit run to today.
  $: xTicks = [
      dayjs($coverage[0].timestamp).subtract(1, 'day'),
      dayjs().subtract(9, 'month'),
@@ -40,6 +42,8 @@
  $: testedArea = `${testedPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
  $: confPath = `M${$coverage.map(c => `${xScale(c.timestamp)},${yScale(c.percent_conf_tested)}`).join('L')}`;
  $: confArea = `${confPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
+
+ afterUpdate(()=> console.log({coverage: $coverage}));
 </script>
 
 <h1>Coverage Over Time</h1>
