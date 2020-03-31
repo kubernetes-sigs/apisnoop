@@ -1,0 +1,123 @@
+#+TITLE: Webapp Code, Deployment, and Reference Materials
+#+TODO: TODO(t) IN-PROGRESS(i) WAITING(w) | DONE(d)
+
+* Introduction 
+  A web display for APIsnoop data, given from an APIsnoop GraphQL API.
+* App
+** Dockerfile
+#+begin_src dockerfile :tangle ./app/Dockerfile
+FROM node:slim
+
+RUN addgroup --system --gid 1001 appuser \
+    &&  adduser --system --uid 1001 --ingroup appuser appuser
+
+COPY . /webapp
+
+RUN chown -R appuser:appuser /webapp
+
+USER appuser
+
+WORKDIR /webapp
+
+RUN npm install
+
+EXPOSE 3000
+# EXPOSE 10000
+
+# RUN npm run build
+# USER root
+
+# CMD ["npm", "start"]
+CMD ["npm", "run", "dev"]
+#+end_src
+
+** cloudbuild.yaml
+#+begin_src yaml :tangle ./app/cloudbuild.yaml
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/webapp:$_GIT_TAG',
+           '--build-arg', 'IMAGE_ARG=gcr.io/$PROJECT_ID/webapp:$_GIT_TAG',
+           '.']
+substitutions:
+  _GIT_TAG: '12345'
+images:
+  - 'gcr.io/$PROJECT_ID/webapp:$_GIT_TAG'
+options:
+  substitution_option: 'ALLOW_LOOSE'
+#+end_src
+
+* Deployment
+** deployment.yaml
+#+begin_src yaml :tangle ./deployment/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.apisnoop.webapp: webapp
+  template:
+    metadata:
+      labels:
+        io.apisnoop.webapp: webapp
+    spec:
+      restartPolicy: Always
+      containers:
+      - name: webapp
+        image: "gcr.io/k8s-staging-apisnoop/webapp:v20200211-0.9.34-1-g24cf96f"
+        ports:
+        - containerPort: 3000
+#+end_src
+
+** ingress.yaml
+#+begin_src yaml :tangle ./deployment/ingress.yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: webapp-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/server-alias: "apisnoop.local.ii.coop, apisnoop.local.ii.nz, apisnoop.local.sharing.io"
+  # annotations:
+  #   nginx.ingress.kubernetes.io/app-root: /
+  # annotations:
+  #   nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  rules:
+  - host: apisnoop.localho.st
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: webapp
+          servicePort: 3000
+#+end_src
+
+** kustomization.yaml
+#+begin_src yaml :tangle ./deployment/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+# TODO set ingress to apisnoop.local.sharing.io 
+#+end_src
+
+** service.yaml
+#+begin_src yaml :tangle ./deployment/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp
+spec:
+  selector:
+    io.apisnoop.webapp: webapp
+  ports:
+  - name: "3000"
+    port: 3000
+    targetPort: 3000
+#+end_src
+
+* Footnotes

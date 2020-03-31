@@ -372,7 +372,7 @@ SELECT '${bucket}',
         raw.data
   FROM raw_audit_event_import${import_number} raw;
         """).substitute(
-             import_number=import_number,
+              import_number=import_number,
             audit_logfile = auditlog_path,
             bucket = bucket,
             job = job

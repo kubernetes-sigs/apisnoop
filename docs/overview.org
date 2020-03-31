@@ -1,0 +1,168 @@
+#+TITLE: APISnoop Overview
+#+AUTHOR: Zach Mandeville
+#+DATE: 2020-03-03
+
+* Introduction
+  Apisnoop allows you to query the audit logs from a kubernetes cluster, with a focus on clusters running the e2e.test binary.  To do this, we gather audit logs, parse them, then add them to a postgres database and graphql endpoint.  This document explains at a high level how APISnoop is constructed, and how data flows from an audit log, through apisnoop, and into sql queries adn web visualizations.   It's intended to give you a better undertanding of the logic and capabilities of APISnoop.
+* Our Materials/Stack  
+** Overview
+  APISnoop is designed to have multiple entrances into its data, so you can gather insights in the way most comfortable to you.  It consists of a sql database that connects to a graphql api endpoint. We then integrate these with a simple web frontend and a highly customized version of emacs called kubemacs. 
+** PostgreSQL
+   We use [[https://www.postgresql.org/][PostgresQL]] for our sql database, pulling from a custom docker image held at [[gcr.io]].
+   The db initialization, and contaioner creation, are defined [[https://github.com/cncf/apisnoop/apps/postgres][in this repo]]
+
+  Postgres comes with psql, a commandline interpeter, and so you can directly query the db from within your cluster.
+** pgadmin
+   :LOGBOOK:
+   CLOCK: [2020-03-03 Tue 14:25]--[2020-03-03 Tue 14:50] =>  0:25
+   :END:
+   We package in [[https://www.pgadmin.org/][pgadmin]] with Postgres, to give you a web-frontend to administer or query your db.
+   Our configuration for pgadmin is held in [[https://github.com/cncf/apisnoop/apps/pgadmin][our repo]] 
+   
+   The majority of data fetching and processing is done with postgres functions and various tables and views.   All functions, tables, and views are defined in [[https://github.com/cncf/apisnoop/org/tables_and_views.org][org/tables_and_views.org]].  We tangle all the code defined in this document into a set of migrations that are run during APISnoop's initialization.
+
+** hasura
+   [[https://hasura.io][Hasura]] transforms our SQL tables and views into a graphql API endpoint.
+   In [[https://github.com/cncf/apisnoop/apps/hasura][our repo]] , you wil lfind the Docker image definition and all the hasura migrations.
+   The migrations are responsible for the creation of the database and its initial set of data.
+   
+   With hasura, you have an api endpoint that you can use in a custom set of code (and that we use for our web front end).  You also have a Graphiql console for building out graphql queries and seeing their results.  
+** kubemacs
+   :LOGBOOK:
+   CLOCK: [2020-03-03 Tue 15:59]--[2020-03-03 Tue 16:24] =>  0:25
+   :END:
+   Kubemacs is our fork of  [[https://spacemacs.org][Spacemacs]], a hybrid vim+emacs text editor.  Our forks puts in an integrated pairing environment and a default configuration built for working with kubernetes and APISnoop.
+   
+   For example, I am writing this within kubemacs, having deployed it with apisnoop with a simple shell script.  With no additional configuration from me, this document is already connected to the cluster and all coverage data available in my instance of apisnoop.  If I wanted to share the coverage for all stable kubernetes endpoints as of today, I can fashion a sql query directly in this essay
+   
+   #+begin_src sql-mode
+     SELECT
+       date,
+       total_endpoints,
+       percent_tested,
+       percent_conf_tested
+       FROM
+           stable_endpoint_stats
+           ;
+   #+end_src
+   
+   And it will print the results of this query directly in the document.
+
+   #+RESULTS:
+   #+begin_src sql-mode
+       date    | total_endpoints | percent_tested | percent_conf_tested 
+   ------------+-----------------+----------------+---------------------
+    2020-03-02 |             438 |          43.84 |               31.96
+   (1 row)
+
+   #+end_src
+   
+   I can also run shell scripts for info about the cluster itself
+   
+   #+begin_src shell
+   kind get clusters; kubectl get pods
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src shell
+   cncf.conformance
+   NAME                                    READY   STATUS    RESTARTS   AGE
+   apisnoop-auditlogger-59fb76dd8d-kljct   1/1     Running   1          5h16m
+   hasura-79464f99ff-n2ssk                 1/1     Running   0          5h15m
+   kubemacs-0                              1/1     Running   0          6h18m
+   pgadmin-fbb7659d7-sq4cz                 1/1     Running   0          5h16m
+   postgres-7db8cf4b5c-swqq6               1/1     Running   0          5h16m
+   webapp-549d866f7-qpr2f                  1/1     Running   0          107m
+   #+end_src
+
+   Kubemacs image and configuration is held in [[https://github.com/cncf/apisnoop/apps/kubemacs][our repo]]  
+
+** Sapper/Svelte/D3
+   Our Webapp is built using [[https://svelte.dev/][Svelte]] and its web framework [[https://sapper.svelte.dev][Sapper]].  It consists of visualizations depicting coverage over time and an indepth sunburst showing coverage for each level and category of kubernetes endpoint.
+
+When you apply APISnoop to your own cluster, it will derive its data from the internal graphql endpoint.  This means you can load in your own data, and visually explore its coverage info in a local web frontend.
+
+As always, the image and src code for the webapp is held in [[https://github.com/cncf/apisnoop/apps/webapp][our repo]] 
+* Initial Data
+** OpenAPI Spec
+   A kubernetes cluster commmunicates with its various services using a REST API.  This REST API is built using [[https://swagger.io][swagger]], following the [[https://www.openapis.org/][openAPI Spec]].  This means the entire API spec is available to view at [[github.com/kubernetes/kubernetes/api/openapi-spec]], and it is updated automatically whenever there's any change to the Kubernetes api.
+
+   Within the swagger.json, you can view the api endpoint paths available,  and each one is given a unique operationID.  Each operationID entry gives usefuld etails like description, group/version/kind, and other metadata.
+
+The swagger is a great, authoritative way to understand the kubernetes endpoints.  Since it's generated with changes to the API, you want to ensure that the swagger file you're referencing is current to the cluster you are running.
+** Kubernetes Audit Logs
+   To ensure a consistent and reliable code base, kubernetes has a suite of End to End (e2e) tests.  It's a large body of tests that include generally expected kubernetes behavior, along with tests for a specific provider or feature.  For example, some tests are for a specific linux capability, and so would not be expected to pass if you are running kubernetes on a windows service.  Other tests may be for an experimental, alpha feature that is held back from wider usage with a feature gate.  
+
+    However, there is an important set of tests within the suite, for behaviors that _should_ be the same across all providers and installations.  These are the 'Conformance' tests, and it's through passing these tests that a provder can say their cluster installation is 'certified conformant'.
+
+    Every few hours the entire e2e suite is run on a kubernetes cluster, with its results viewable online at [[https://testgrid.k8s.io/]].  The results are divided into the various configurations of kubernetes.  Along with the test results, kubernetes stores all the audit logs from the tests. These logs are written in json and quite massive, broken up into several chunks per test job.  With them, though,  you have the most exact record of a test run, like which api paths were hit by which useragents.   When a test is run, the test's name is appended to the e2e.useragent like so: ~e2e.test -- TEST NAME~.   Which means the event holds the exact test that hit the exact path.
+
+* Finding our source for audit logs and swagger.json
+  When APISnoop initializes, it will fetch a specific set of audit events, defined by the particular test job that was run and the bucket in which that job is stored.  By default, we fetch the latest successful test run for SIG-Release-Master-Blocking, which is held in the bucket ~ci-kubernetes-e2e-gci-gce~.  Within this bucket is a file called ~jobResultsCache.json~ which details all jobs and their results. You can view this file here:
+       https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/jobResultsCache.json
+       
+       It is sorted by recency, so by filtering this list to Successes and getting the first result, we can get the most recent successful test run.
+
+This data also includes, in the job version, the hash for the commit that triggered this run.  We can use this hash to fetch the swagger.json from github at the exact commit for this test.   
+
+Using the job results, then, we are able to fetch a full set of audit files for a test run and the API spec for Kubernetes at the moment of the test.  By combining these two sources of data, we can calulate the coverage of each endpoint in the spec, based on its presence in the audit events.
+
+Once we know the location for our data sources, we insert them into the databas using two functions: load_swagger and load_audit_events.
+
+* Loading the Swagger
+The swagger file is inserted directly into our db along with its metadata like bucket, job, and the job timestamp.
+
+Our function for loading swaggers is defined in tables_and_views.org, [[file:~/apisnoop/org/tables_and_views.org::*101:%20Function%20to%20Load%20Swagger][101: Function to Load Swagger]]  
+It utilizes two snoopUtils functions: [[file:~/apisnoop/org/tables_and_views.org::*Define%20determine_bucket_job][determine_bucket_job]]   and [[file:~/apisnoop/org/tables_and_views.org::*Define%20fetch_swagger][fetch_swagger]]  
+* Loading Audit Events
+  We load audit events similar to swagger by running a bucket/job determination and then fetching the events.  Unfortunately, the audit events do not include an operationID by default.  Since this ID is a shared standard, and the most accurate way to tie an event to its swagger info, we want to ensure its a part of the data before we insert it.
+
+  And so we have a fairly complex function we run on each event as it passes through to determine and set its operationID.  This is discussed in the next heading.
+* Adding OperationID and combining the audit logs
+  As we move through the audit logs we append the operationID for each event to the event entry, using our snoopUtils function  [[file:~/apisnoop/org/tables_and_views.org::*find_operation_id%20Definition][find_operation_id]].  How it works is covered in more detail in that link.  In general, we load an optimized version of the openAPI spec, that's organized by url path count, making it quick to look up an event's opID based on its URI.  
+
+These events can include dummy data or features that are not a part of the spec (something hitting example.com, for example, or that is a liveliness check that doesnt' relate to testing itself).  If an event has a uri we know to ignore, then we pass over it and do not add it to the db.  IF it hits a uri that is not in spec but hasn't been encountered yet, then we print a notice of this before passing it over.  This lets us bring it up in a future meeting, to make sure our understanding of the spec matches the community's current understanding.
+* Useragents and Tests
+  Each event has a useragent value specificying the [[https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent][user-agent]] that made the request to that k8s endpoint.  Requests coming from our e2e test binary will have ~e2e.test~ in its useragent string.  All tests have their name appended to ~e2e.test~ and separated by '--'. So if the test ~[Conformance] ensure you can foo the bar~ makes a request to ~createFooBar~ the audit event will include:
+  #+begin_example json
+    {
+      "operationID": "createFooBar",
+      "useragent": "e2e.test -- [Conformance] ensure you can foo the bar"
+    }
+  #+end_example
+  
+  This is real handy for our useragnet and test views, as we just take the usseragent from the raw event and split all e2e.tests on the '--', giving us a nice list of all tests and the operationID's they hit.
+* Foundational Tables
+  All our views are derived from two tables, that hold our raw data: ~bucket_job_swagger~ and ~raw_audit_event~.  
+  We also utilize three crucial materialized views:
+  - [[file:~/apisnoop/org/tables_and_views.org::*200:%20api_operation_material%20view][api_operation_material]] :: This separates and cleanly displays info for each operationID as taken from bucket_job_swagger.
+  - [[file:~/apisnoop/org/tables_and_views.org::*Define%20get_json][api_operation_parameter_material]] :: Within each operation is a parameter list, which we separate into its own view.  This view is crucial for building out our audit events view, filtering out any false calls. TODO get better understanding of why.
+  - [[file:~/apisnoop/org/tables_and_views.org::*500:%20Endpoint%20Coverage%20Material%20View][endpoint_coverage_material]] :: This takes our audit events and our api_operations and generates a view for each endpoint, calculating how often its hit, whether its hit by tests, and whether its hit by conformance tests.
+* The Test Writing Flow
+  We wanted to make sure we were only writing valuable tests, ones that meaningfully raised endpoint coverage and had buy-in from the relevant k8s working groups.  Tests are written in a specific ginkgo framework with specific guidelines, but the basic gist of the test could be expressed in any language that can interface with the kubernetes client.
+
+Because of this, our test-writing flow is to first isolate a set of endpoints that need coverage, write out a function that matches the behavior of the test, and determine how coverage would increase if a test of this style was written and merged.  We do this in a single document that we export into a  PR labeled with the appropriate working groups.  
+
+Doing it this way lets us easily triage our intended tests with the Conformance and Test WG's during their regular meetings, and adjust our code appropriately based on their feedback.  If everyone agrees it is a useful test, then we transpose it into the ginkgo framework and submit the test in a separate, linked PR.
+
+This flow cuts down the amount of time a test PR stays open as all necessary discussion happens before we submit the code.
+
+We've adapted APISnoop in a number of ways to help this test-writing flow.
+* APISnoop and Test Writing
+  
+* Footnotes  
+** elisp helpers
+  #+begin_src  elisp
+    ; String => KillRing
+    ; Create an org-mode link of apisnoop repo + given path then add to clipboard
+    (defun ourRepo (path)
+      (yank
+       (kill-new
+        (concat "[[https://github.com/cncf/apisnoop/" path "][our repo]]"))))
+  #+end_src
+  #+RESULTS:
+  #+begin_src elisp
+  ourRepo
+  #+end_src
+  
+  

@@ -6,6 +6,7 @@
 #+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | TADA(d)
 #+ARCHIVE: archive/tables_and_views.archive.org::
 #+PROPERTY: header-args:sql-mode+ :results silent
+#+PROPERTY: header-args:sql-mode+ :comments both
 
 * Purpose
   This org houses all the tables and views that are migrated upon creation of apisnoop: BOT VERSION.  So these are the crucial parts for our prow pr bot.
@@ -58,7 +59,41 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
      GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
      DEFAULT_BUCKET="ci-kubernetes-gci-gce"
      K8S_GITHUB_RAW= "https://raw.githubusercontent.com/kubernetes/kubernetes/"
-
+     # Why do we have to had this?
+     # The k8s VERB (aka action) mapping to http METHOD
+     # Our audit logs do NOT contain any mention of METHOD, only the VERB
+     VERB_TO_METHOD={
+         'get': 'get',
+         'list': 'get',
+         'proxy': 'proxy',
+         'create': 'post',
+         'post':'post',
+         'put':'post',
+         'update':'put',
+         'patch':'patch',
+         'connect':'connect',
+         'delete':'delete',
+         'deletecollection':'delete',
+         'watch':'get'
+     }
+     IGNORED_ENDPOINTS=[
+         'metrics',
+         'readyz',
+         'livez',
+         'healthz',
+         'finalize', # recently came up, am unsure what this or finalize-api mean or if we should be tracking it
+         'finalize-api',
+         'status' # hunch is this was a removed endpoint...but does not show in swagger.json
+     ]
+     # TODO: answer question: what are finalizers and the finalize-api?
+     DUMMY_URL_PATHS =[
+         'example.com',
+         'kope.io',
+         'snapshot.storage.k8s.io',
+         'discovery.k8s.io',
+         'metrics.k8s.io',
+         'wardle.k8s.io'
+     ]
    #+end_src
 
 ** get_json  Definition
@@ -226,75 +261,97 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
    This loads just the paths portion of the open_api spec into a dictionary made up of paths and methods...with each part of the path its own dict ... this also seems to be recursive but am not fully tracking what the python is doing.  its iterating over each path, but does it create a flat dict at the end, or does each path have its smaller parts within it?  so 
    
    #+NAME: load_openapi_spec
-   #+BEGIN_SRC python 
+  #+BEGIN_SRC python 
      def load_openapi_spec(url):
+         # Usually, a Python dictionary throws a KeyError if you try to get an item with a key that is not currently in the dictionary.
+         # The defaultdict in contrast will simply return an empty dict.
          cache=defaultdict(dict)
          openapi_spec = {}
          openapi_spec['hit_cache'] = {}
          swagger = requests.get(url).json()
+         # swagger contains other data, but paths is our primary target
          for path in swagger['paths']:
-             path_data = {}
+             # parts of the url of the 'endpoint'
              path_parts = path.strip("/").split("/")
+             # how many parts?
              path_len = len(path_parts)
-             path_dict = {}
+             # current_level = path_dict  = {}
              last_part = None
              last_level = None
+             path_dict = {}
              current_level = path_dict
+             # look at each part of the url/path
              for part in path_parts:
+                 # if the current level doesn't have a key (folder) for this part, create an empty one
                  if part not in current_level:
                      current_level[part] = {}
+                     # last_part will be this part, unless there are more parts 
                      last_part=part
+                     # last_level will be this level, unless there are more levels
                      last_level = current_level
+                     # current_level will be this this 'folder/dict', this might be empty
+                     # /api will be the top level v. often, and we only set it once
                      current_level = current_level[part]
+             # current level is now pointing to the inmost url part hash
+             # now we iterate through the http methods for this path/endpoint
              for method, swagger_method in swagger['paths'][path].items():
+                 # If the method is parameters, we don't look at it
+                 # think this method is only called to explore with the dynamic client
                  if method == 'parameters':
                      next
                  else:
+                     # for the nested current_level (end of the path/url) use the method as a lookup to the operationId
                      current_level[method]=swagger_method.get('operationId', '')
+                     # cache = {}
+                     # cache = {3 : {'/api','v1','endpoints'} 
+                     # cache = {3 : {'/api','v1','endpoints'} {2 : {'/api','v1'} 
+                     # cache uses the length of the path to only search against other paths that are the same length
                      cache = deep_merge(cache, {path_len:path_dict})
                      openapi_spec['cache'] = cache
          return openapi_spec
-
    #+END_SRC
-
+** format_proxy_endpoint Definition
+   This is used as part of our find_operation_id.  Proxy endpoints will have an endpoint structure  
+   like so:
+   : api/v1/proxy/arg1/arg2/arg3/argn+1
+   The args given to proxy can be substantially long, and we aren't too concerned with them, but still want to be able to map a proxy endpoint to its open api spec.  And so we format the uri_parts to be the path with all arguments given to proxy collapsed into a single string.o
+   
+   #+NAME: format_uri_parts_for_proxy
+   #+begin_src python
+     def format_uri_parts_for_proxy(uri_parts):
+         formatted_parts=uri_parts[0:uri_parts.index('proxy')]
+         formatted_parts.append('proxy')
+         formatted_parts.append('/'.join(
+             uri_parts[uri_parts.index('proxy')+1:]))
+         return formatted_parts
+   #+end_src
 ** find_operation_id Definition
 #+NAME: find_operation_id
 #+BEGIN_SRC python
   def find_operation_id(openapi_spec, event):
-    verb_to_method={
-      'get': 'get',
-      'list': 'get',
-      'proxy': 'proxy',
-      'create': 'post',
-      'post':'post',
-      'put':'post',
-      'update':'put',
-      'patch':'patch',
-      'connect':'connect',
-      'delete':'delete',
-      'deletecollection':'delete',
-      'watch':'get'
-    }
-    method=verb_to_method[event['verb']]
+    method=VERB_TO_METHOD[event['verb']]
     url = urlparse(event['requestURI'])
     # 1) Cached seen before results
+    # Is the URL in the hit_cache?
     if url.path in openapi_spec['hit_cache']:
+      # Is the method for this url cached?
       if method in openapi_spec['hit_cache'][url.path].keys():
+        # Useful when url + method is already hit multiple times in an audit log
         return openapi_spec['hit_cache'][url.path][method]
+      # part of the url of the http/api request
     uri_parts = url.path.strip('/').split('/')
+    # IF we git a proxy component, the rest of this is just parameters and we don't "count" them
     if 'proxy' in uri_parts:
-        # All parts up to proxy
-        z=uri_parts[0:uri_parts.index('proxy')]
-        # proxy is a single part of the uri_parts
-        z.append('proxy')
-        # However all parameters after that are another single argument
-        # to the proxy
-        z.append('/'.join(uri_parts[uri_parts.index('proxy')+1:]))
-        uri_parts = z
+      uri_parts = format_uri_parts_for_proxy(uri_parts)
+      # We index our cache primarily on part_count
     part_count = len(uri_parts)
+    # INSTEAD of try: except: maybe look into if cache has part count and complain explicitely with a good error
     try: # may have more parts... so no match
+      # If we hit a length / part_count that isn't in the APISpec... this an invalid api request
+      # our load_openapispec should populate all possible url length in our cache
         cache = openapi_spec['cache'][part_count]
     except Exception as e:
+      # If you hit here, you are debugging... hence the warnings
       warnings.warn("part_count was:" + part_count)
       warnings.warn("spec['cache'] keys was:" + openapi_spec['cache'])
       raise e
@@ -307,50 +364,33 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
       if part in current_level:
         current_level = current_level[part] # part in current_level
       elif idx == part_count-1:
-        if part == 'metrics':
+        if part in IGNORED_ENDPOINTS or 'discovery.k8s.io' in uri_parts:
           return None
-        if part == 'readyz':
-          return None
-        if part == 'livez':
-          return None
-        if part == 'healthz':
-          return None
-        if 'discovery.k8s.io' in uri_parts:
-          return None
-        #   elif part == '': # The last V
-        #     current_level = last_level
-        #       else:
         variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
+        # If at some point in the future we have more than one... this will let un know
         if len(variable_levels) > 1:
           raise "If we have more than one variable levels... this should never happen."
-        next_level=variable_levels[0] # the var is the next level
-        current_level = current_level[next_level] # variable part is final part
+        # inspect that variable_levels is not zero in length.  This indicates some new, spec-less uri
+        if not variable_levels:
+          print("NOTICE: uri part found that is not in apis spec.")
+          print("URI: " + "/".join(uri_parts))
+          return none
+        variable_level=variable_levels[0] # the var is the next level
+        # TODO inspect that variable level is a key for current_level
+        current_level = current_level[variable_level] # variable part is final part
       else:
         next_part = uri_parts[idx+1]
-        variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}
+        # TODO reduce this down to , find the single next level with a "{" in it 
+        variable_levels=[x for x in current_level.keys() if '{' in x]
         if not variable_levels: # there is no match
-          if 'example.com' in part:
-            return None
-          elif 'kope.io' in part:
-            return None
-          elif 'snapshot.storage.k8s.io' in part:
-            return None
-          elif 'discovery.k8s.io' in part:
-            return None
-          elif 'metrics.k8s.io' in part:
-            return None
-          elif 'wardle.k8s.io' in part:
-            return None
-          elif ['openapi','v2'] == uri_parts: # not part our our spec
+          if part in DUMMY_URL_PATHS or uri_parts == ['openapi', 'v2']: #not part of our spec
             return None
           else:
+            # TODO this is NOT valid, AND we didn't plan for it
             print(url.path)
             return None
-        try: # may have more parts... so no match # variable_levels -> {'{namespace}': False}
-          next_level={v: k for k, v in variable_levels.items()}[True]
-        except Exception as e: # TODO better to not use try/except
-          next_level=[*variable_levels][0]
-        # import ipdb; ipdb.set_trace()
+        next_level=variable_levels[0]
+        # except Exception as e: # TODO better to not use try/except (WE DON"T HAVE ANY CURRENT DATA")
         current_level = current_level[next_level] #coo
     try:
       op_id=current_level[method]
@@ -364,35 +404,35 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
       openapi_spec['hit_cache'][url.path][method]=op_id
     return op_id
 #+END_SRC
-** load_audit_events definitions
-   #+NAME: load_audit_events
+** download_and_process_auditlogs definitions
+   #+NAME: download_and_process_auditlogs
    #+begin_src  python
-     def load_audit_events(bucket,job):
+     def download_and_process_auditlogs(bucket,job):
          """
          Grabs all audits logs available for a given bucket/job, combines them into a
-         single audit log, then returns the paths for where the raw downloads and
-         combined audit logs are stored.
+         single audit log, then returns the path for where the raw combined audit logs are stored.
+         The processed logs are in json, and include the operationId when found.
          """
-         BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
+         # BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
          ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
          K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
          downloads = {}
-         bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
+         # bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
          artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
          download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
          combined_log_file = download_path + 'audit.log'
          swagger, metadata, commit_hash = fetch_swagger(bucket, job)
 
          # download all metadata
-         job_metadata_files = [
-             'finished.json',
-             'artifacts/metadata.json',
-             'artifacts/junit_01.xml',
-             'build-log.txt'
-         ]
-         for jobfile in job_metadata_files:
-             download_url_to_path( bucket_url + jobfile,
-                                   download_path + jobfile, downloads )
+         # job_metadata_files = [
+         #     'finished.json',
+         #     'artifacts/metadata.json',
+         #     'artifacts/junit_01.xml',
+         #     'build-log.txt'
+         # ]
+         # for jobfile in job_metadata_files:
+         #     download_url_to_path( bucket_url + jobfile,
+         #                           download_path + jobfile, downloads )
 
          # download all logs
          log_links = get_all_auditlog_links(artifacts_url)
@@ -418,69 +458,94 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
 
          # Process the resulting combined raw audit.log by adding operationId
          swagger_url = K8S_GITHUB_REPO + commit_hash + '/api/openapi-spec/swagger.json'
-         spec = load_openapi_spec(swagger_url)
+         openapi_spec = load_openapi_spec(swagger_url)
          infilepath=combined_log_file
          outfilepath=combined_log_file+'+opid'
          with open(infilepath) as infile:
              with open(outfilepath,'w') as output:
                  for line in infile.readlines():
                      event = json.loads(line)
-                     event['operationId']=find_operation_id(spec,event)
+                     event['operationId']=find_operation_id(openapi_spec,event)
                      output.write(json.dumps(event)+'\n')
-         return (download_path, outfilepath)
-
+         return outfilepath
    #+end_src
 ** json_to_sql definitions
    #+NAME: json_to_sql
    #+begin_src  python
-     def json_to_sql(bucket,job,download_path):
+     def json_to_sql(bucket,job,auditlog_path):
          """
            Turns json+audits into load.sql
          """
-         auditlog_path = download_path + "/audit.log+opid"
+         import_number = job[-7:]
          try:
              sql = Template("""
-     CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
-     COPY raw_audit_event_import (data)
+     CREATE TEMPORARY TABLE raw_audit_event_import${import_number}(data jsonb not null) ;
+     COPY raw_audit_event_import${import_number} (data)
      FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
 
-     INSERT INTO raw_audit_event(bucket, job,
-                                  audit_id, stage,
-                                  event_verb, request_uri,
-                                  operation_id,
-                                  data)
-     SELECT '${bucket}', '${job}',
-            (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
-            (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
-            (raw.data ->> 'operationId'),
-            raw.data
-       FROM raw_audit_event_import raw;
+     INSERT INTO audit_event(bucket, job,
+                             audit_id, stage,
+                             event_verb, request_uri,
+                             operation_id, event_level,
+                             api_version, useragent,
+                             test_hit, conf_test_hit,
+                             event_user, object_namespace,
+                             object_type, object_group,
+                             object_ver, source_ips,
+                             annotations, request_object,
+                             response_object, response_status,
+                             stage_timestamp, request_received_timestamp,
+                             data)
+
+     SELECT '${bucket}',
+             '${job}',
+             (raw.data ->> 'auditID'),
+             (raw.data ->> 'stage'),
+             (raw.data ->> 'verb'),
+             (raw.data ->> 'requestURI'),
+             (raw.data ->> 'operationId'),
+             (raw.data ->> 'level') as event_level,
+             (raw.data ->> 'apiVersion') as api_version,
+             (raw.data ->> 'userAgent') as useragent,
+             ((raw.data ->> 'userAgent') like 'e2e.test%') as test_hit,
+             ((raw.data ->> 'userAgent') like '%[Conformance]%') as conf_test_hit,
+             (raw.data -> 'user') as event_user,
+             (raw.data #>> '{objectRef,namespace}') as object_namespace,
+             (raw.data #>> '{objectRef,resource}') as object_type,
+             (raw.data #>> '{objectRef,apiGroup}') as object_group,
+             (raw.data #>> '{objectRef,apiVersion}') as object_ver,
+             (raw.data -> 'sourceIPs') as source_ips,
+             (raw.data -> 'annotations') as annotations,
+             (raw.data -> 'requestObject') as request_object,
+             (raw.data -> 'responseObject') as response_object,
+             (raw.data -> 'responseStatus') as response_status,
+             (raw.data ->> 'stageTimestamp') as stage_timestamp,
+             (raw.data ->> 'requestReceivedTimestamp') as request_received_timestamp,
+             raw.data
+       FROM raw_audit_event_import${import_number} raw;
              """).substitute(
+                  import_number=import_number,
                  audit_logfile = auditlog_path,
                  bucket = bucket,
                  job = job
              )
-             sqlfile_path = download_path + 'load_audit_events.sql'
-             with open(sqlfile_path, 'w') as sqlfile:
-                 sqlfile.write(sql)
-             print("it worked: " + sqlfile_path)
-             return sqlfile_path
-         # except plpy.SPIError:
-         #     return "something went wrong with plpy"
+             return sql
          except:
              return "something unknown went wrong"
    #+end_src
-** insert_audits_into_db definition
+** insert_audits_into_db definition                                   :notes:
+This is good for notes, but not used 
    #+NAME: insert_audits_into_db
-   #+begin_src python
-     def insert_audits_into_db (download_path, auditlog_path):
-         # try:
-         #     plpy.here?
-         # except:
-         #     from SQL import sqllib as plpy
-         rv = plpy.execute(sql)
-
-
+   #+begin_src python :tangle no
+      def insert_audits_into_db (download_path, auditlog_path):
+          # try:
+          #     plpy.here?
+          # except:
+          #     from SQL import sqllib as plpy
+          bucket, job = determine_bucket_job("ci-kubernetes-e2e-gci-gce","1232358105564581890")
+          download_path, auditlog_path = load_audit_events(bucket, job)
+          sql_string = json_to_sql(bucket, job, download_path)
+          rv = plpy.execute(sql)
    #+end_src
 * 100: Raw Data Tables and Helper Functions
 ** 100: bucket_job_swagger table
@@ -600,16 +665,14 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
         e = sys.exc_info()[0]
         print("<p>Error: %s</p>" % e )
     #+END_SRC
-** 110: raw_audit_event Table
+** 110: audit_event Table
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/110_table_raw_audit_event.up.sql
+  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/110_table_audit_event.up.sql
   :END:
 *** Create
 #+NAME: raw_audit_event
 #+BEGIN_SRC sql-mode
-  CREATE UNLOGGED TABLE raw_audit_event (
-    -- id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    -- ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
+  CREATE UNLOGGED TABLE audit_event (
     bucket text,
     job text,
     audit_id text NOT NULL,
@@ -617,131 +680,68 @@ You can create new sql-mode blocks with this key command: ~,ibQ~ (or: Insert Blo
     event_verb text NOT NULL,
     request_uri text NOT NULL,
     operation_id text,
+    event_level text,
+    event_stage text,
+    api_version text,
+    useragent text,
+    test_hit boolean,
+    conf_test_hit boolean,
+    event_user jsonb,
+    object_namespace text,
+    object_type text,
+    object_group text,
+    object_ver text,
+    source_ips jsonb,
+    annotations jsonb,
+    request_object jsonb,
+    response_object jsonb,
+    response_status jsonb,
+    stage_timestamp text,
+    request_received_timestamp text,
     data jsonb NOT NULL
+    -- id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    -- ingested_at timestamp DEFAULT CURRENT_TIMESTAMP,
   );
 #+END_SRC
+
 *** TODO Index
 I am not sure why our create index and alter table lines are commented out.
 the TODO is to enquire on why these lines are commented
 #+NAME: index the raw_audit_event
 #+BEGIN_SRC sql-mode
--- CREATE INDEX idx_audit_event_primary          ON raw_audit_event (bucket, job, audit_id, stage);
--- ALTER TABLE raw_audit_event add primary key using index idx_audit_event_primary;
-CREATE INDEX idx_audit_event_jsonb_ops        ON raw_audit_event USING GIN (data jsonb_ops);
-CREATE INDEX idx_audit_event_jsonb_path_jobs  ON raw_audit_event USING GIN (data jsonb_path_ops);
+CREATE INDEX idx_audit_event_bucket        ON audit_event (bucket);
+CREATE INDEX idx_audit_event_job  ON audit_event (job);
+CREATE INDEX idx_audit_event_operation_id  ON audit_event(operation_id);
+CREATE INDEX idx_audit_event_test_hit ON audit_event(test_hit);
+CREATE INDEX idx_audit_event_conf_test_hit ON audit_event(conf_test_hit);
 #+END_SRC
 
 ** 111: load_audit_event Function
-  :PROPERTIES:
-  :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/111_function_load_audit_event.up.sql
-  :END:
-*** Python Code
-**** DELETE? deep_merge
-#+NAME: deep_merge
-#+BEGIN_SRC python :tangle no
-  from copy import deepcopy
-  from functools import reduce
-
-  def deep_merge(*dicts, update=False):
-      """
-      Merges dicts deeply.
-      Parameters
-      ----------
-      dicts : list[dict]
-          List of dicts.
-      update : bool
-          Whether to update the first dict or create a new dict.
-      Returns
-      -------
-      merged : dict
-          Merged dict.
-      """
-      def merge_into(d1, d2):
-          for key in d2:
-              if key not in d1 or not isinstance(d1[key], dict):
-                  d1[key] = deepcopy(d2[key])
-              else:
-                  d1[key] = merge_into(d1[key], d2[key])
-          return d1
-
-      if update:
-          return reduce(merge_into, dicts[1:], dicts[0])
-      else:
-          return reduce(merge_into, dicts, {})
-#+END_SRC
-
-**** load_audit_events
-#+NAME: load_audit_events.py
-#+BEGIN_SRC python :noweb yes :exports none
-  #!/usr/bin/env python3
-  import os
-  import json
-  from urllib.request import urlopen, urlretrieve
-  import requests
-  import re
-  from copy import deepcopy
-  from functools import reduce
-  from collections import defaultdict
-  from urllib.parse import urlparse
-  from bs4 import BeautifulSoup
-  import subprocess
-  import warnings
-  from tempfile import mkdtemp
-  import time
-  import glob
-  from snoopUtils import determine_bucket_job, load_audit_events
-
-  bucket, job = determine_bucket_job(custom_bucket, custom_job)
-  download_path, auditlog_path = load_audit_events(bucket, job)
-
-  def insert_audits_into_db (download_path, auditlog_path):
-      try:
-          sql = Template("""
-  CREATE TEMPORARY TABLE raw_audit_event_import (data jsonb not null) ;
-  COPY raw_audit_event_import (data)
-  FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
-
-  INSERT INTO raw_audit_event(bucket, job,
-                               audit_id, stage,
-                               event_verb, request_uri,
-                               operation_id,
-                               data)
-  SELECT '${bucket}', '${job}',
-         (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
-         (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
-         (raw.data ->> 'operationId'),
-         raw.data
-    FROM raw_audit_event_import raw;
-          """).substitute(
-              audit_logfile = auditlog_path,
-              bucket = bucket,
-              job = job
-          )
-          with open(download_path + 'load.sql', 'w') as sqlfile:
-              sqlfile.write(sql)
-              rv = plpy.execute(sql)
-          return "it worked"
-      except plpy.SPIError:
-          return "something went wrong with plpy"
-      except:
-          return "something unknown went wrong"
-
-  insert_audits_into_db(download_path, auditlog_path)
-#+END_SRC
-
-
-*** Create
-#+NAME: load_audit_events.sql
-#+BEGIN_SRC sql-mode :noweb yes :results silent
-  set role dba;
-  CREATE OR REPLACE FUNCTION load_audit_events(
-  custom_bucket text default null,
-  custom_job text default null)
-  RETURNS text AS $$
-  <<load_audit_events.py>>
-  $$ LANGUAGE plpython3u ;
-  reset role;
-#+END_SRC
+   :PROPERTIES:
+   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/111_function_load_audit_event.up.sql
+   :END:
+   #+NAME: load_audit_events.sql
+   #+BEGIN_SRC sql-mode :noweb yes :results silent
+     set role dba;
+     CREATE OR REPLACE FUNCTION load_audit_events(
+       custom_bucket text default null,
+       custom_job text default null)
+       RETURNS text AS $$
+       from snoopUtils import determine_bucket_job, download_and_process_auditlogs, json_to_sql
+       bucket, job = determine_bucket_job(custom_bucket, custom_job)
+       auditlog_path = download_and_process_auditlogs(bucket, job)
+       sql_string = json_to_sql(bucket,job,auditlog_path) 
+       try:
+           plpy.execute(sql_string)
+           return "it worked"
+       except plpy.SPIError as plpyError:
+           print("something went wrong with plpy: ") 
+           return plpyError
+       except:
+           return "something unknown went wrong"
+       $$ LANGUAGE plpython3u ;
+       reset role;
+   #+END_SRC
 ** 112: add_opp_id function
   :PROPERTIES:
   :header-args:sql-mode+:  :tangle ../apps/hasura/migrations/112_function_add_opp_id.up.sql
@@ -965,7 +965,7 @@ Using our api_operation_material view, look into the parameters field in each on
 * 300: Audit Event Views
 ** 300: Audit Event
   :PROPERTIES:
-  :header-args:sql-mode+: :tangle ../apps/hasura/migrations/310_view_audit_event.up.sql
+  :header-args:sql-mode+: :notangle ../apps/hasura/migrations/310_view_audit_event.up.sql
   :END:
   
   #+NAME: view audit_event
@@ -1015,6 +1015,7 @@ Using our api_operation_material view, look into the parameters field in each on
    :END:
 
    developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]]
+   
    #+NAME: Endpoint Coverage View
    #+BEGIN_SRC sql-mode
      CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
@@ -1028,28 +1029,21 @@ Using our api_operation_material view, look into the parameters field in each on
         ao.k8s_group as group,
         ao.k8s_kind as kind,
         ao.k8s_version as version,
-        EXISTS (
-          select *
-            from audit_event
-           where audit_event.operation_id = ao.operation_id
-             AND audit_event.bucket = ao.bucket
-             AND audit_event.job = ao.job
-             AND audit_event.useragent like 'e2e.test%') as tested,
-        EXISTS (
-          select *
-            from audit_event
-           where audit_event.operation_id = ao.operation_id
-             AND audit_event.bucket = ao.bucket
-             AND audit_event.job = ao.job
-             AND audit_event.useragent like '%[Conformance]%') as conf_tested,
-        EXISTS (
-          select *
-            from audit_event
-           where audit_event.operation_id = ao.operation_id
-             AND audit_event.bucket = ao.bucket
-             AND audit_event.job = ao.job) as hit
+        (count (*) FILTER (where coverage.operation_id = ao.operation_id AND test_hit is true) > 0) as tested,
+        (count (*) FILTER (where coverage.operation_id = ao.operation_id AND conf_test_hit is true) > 0) as conf_tested,
+        (count (*) FILTER (where coverage.operation_id = ao.operation_id) > 0) as hit
         FROM api_operation_material ao
                LEFT JOIN bucket_job_swagger bjs ON (ao.bucket = bjs.bucket AND ao.job = bjs.job)
+               LEFT JOIN (
+                 SELECT  DISTINCT
+                   operation_id,
+                   bucket,
+                   job,
+                   test_hit,
+                   conf_test_hit
+                   FROM
+                       audit_event
+                 ) as coverage ON (coverage.bucket = ao.bucket AND coverage.job = ao.job)
           WHERE ao.deprecated IS False and ao.job != 'live'
         GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
     #+END_SRC
@@ -1057,9 +1051,7 @@ Using our api_operation_material view, look into the parameters field in each on
 *** Index
    #+NAME: Add indexes 
    #+begin_src sql-mode :results silent
-  CREATE INDEX idx_endpoint_coverage_material_bucket             ON endpoint_coverage_material                       (bucket);
-  CREATE INDEX idx_endpoint_coverage_material_job                ON endpoint_coverage_material                          (job);
-  CREATE INDEX idx_endpoint_coverage_material_operation_id       ON endpoint_coverage_material                 (operation_id);
+     CREATE INDEX idx_endpoint_coverage_material_job ON endpoint_coverage_material (job);
    #+end_src
    
 ** 510: Endpoint Coverage View
@@ -1388,7 +1380,7 @@ Using our api_operation_material view, look into the parameters field in each on
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/910_load_and_populate_swaggers.up.sql
   :header-args:sql-mode+: :results silent
   :END:
-  #+begin_src sql-mode :tangle no
+  #+begin_src sql-mode
     select * from load_swagger();
     --populate the apisnoop/live bucket/job to help when writing test functions
     select * from load_swagger(null, null, true);
@@ -1397,7 +1389,7 @@ Using our api_operation_material view, look into the parameters field in each on
   :PROPERTIES:
   :header-args:sql-mode+: :tangle ../apps/hasura/migrations/920_populate_audit_events.up.sql
   :END:
-  #+begin_src sql-mode :tangle no
+  #+begin_src sql-mode
     select * from load_audit_events();
     REFRESH MATERIALIZED VIEW api_operation_material;
     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
@@ -1424,17 +1416,17 @@ Using our api_operation_material view, look into the parameters field in each on
   COMMENT ON column bucket_job_swagger.node_os_image IS 'id for which master os image was used for test run';
   COMMENT ON column bucket_job_swagger.swagger IS 'raw json of the open api spec for k8s as of the commit hash for this test run.';
 #+end_src
-*** 110: raw_audit_event
+*** 110: audit_event
     #+begin_src sql-mode
-      COMMENT ON TABLE  raw_audit_event IS 'a record for each audit event in an audit log';
-      COMMENT ON COLUMN raw_audit_event.bucket IS 'The testrun bucket for the event';
-      COMMENT ON COLUMN raw_audit_event.job IS 'The testrun job for the event';
-      COMMENT ON COLUMN raw_audit_event.audit_id IS 'The id for the event';
-      COMMENT ON COLUMN raw_audit_event.stage IS 'stage of event';
-      COMMENT ON COLUMN raw_audit_event.event_verb IS 'verb of event';
-      COMMENT ON COLUMN raw_audit_event.request_uri IS 'cluster uri that event requested';
-      COMMENT ON COLUMN raw_audit_event.operation_id IS 'operation_id hit by event';
-      COMMENT ON COLUMN raw_audit_event.data IS 'full raw data of event';
+      COMMENT ON TABLE  audit_event IS 'a record for each audit event in an audit log';
+      COMMENT ON COLUMN audit_event.bucket IS 'The testrun bucket for the event';
+      COMMENT ON COLUMN audit_event.job IS 'The testrun job for the event';
+      COMMENT ON COLUMN audit_event.audit_id IS 'The id for the event';
+      COMMENT ON COLUMN audit_event.stage IS 'stage of event';
+      COMMENT ON COLUMN audit_event.event_verb IS 'verb of event';
+      COMMENT ON COLUMN audit_event.request_uri IS 'cluster uri that event requested';
+      COMMENT ON COLUMN audit_event.operation_id IS 'operation_id hit by event';
+      COMMENT ON COLUMN audit_event.data IS 'full raw data of event';
     #+end_src
 *** 200: api_operation_material
     #+begin_src sql-mode
@@ -1476,7 +1468,7 @@ Using our api_operation_material view, look into the parameters field in each on
       COMMENT ON column api_operation_parameter_material.entry IS 'full json blog of parameter entry';
     #+end_src
 *** 300: audit_event
-    #+begin_src sql-mode
+    #+begin_src sql-mode :tangle no
       COMMENT ON VIEW audit_event IS 'a record for each audit event in an audit log';
       COMMENT ON COLUMN audit_event.audit_id IS 'The id for the event';
       COMMENT ON COLUMN audit_event.bucket IS 'The testrun bucket for the event';
@@ -1577,14 +1569,6 @@ Using our api_operation_material view, look into the parameters field in each on
   args:
     schema: public
     name: bucket_job_swagger
-#+END_SRC
-*** raw_audit_event
-#+NAME: track raw_audit_event
-#+BEGIN_SRC yaml
-- type: track_table
-  args:
-    schema: public
-    name: raw_audit_event
 #+END_SRC
 *** audit_event
  #+NAME: track audit_event
@@ -1687,3 +1671,141 @@ Using our api_operation_material view, look into the parameters field in each on
                         ^
   HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
   #+end_SRC
+#+begin_src sql-mode
+REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+-- REFRESH MATERIALIZED VIEW api_operation_material;
+  -- select * from load_swagger();
+#+end_src
+
+#+begin_src sql-mode :results replace code
+  select operation_id, tested from zendpoint_coverage limit 100;
+#+end_src
+
+
+
+#+RESULTS:
+#+begin_src sql-mode
+                           operation_id                           | tested 
+------------------------------------------------------------------+--------
+ connectCoreV1DeleteNamespacedPodProxy                            | f
+ connectCoreV1DeleteNamespacedPodProxyWithPath                    | f
+ connectCoreV1DeleteNamespacedServiceProxy                        | f
+ connectCoreV1DeleteNamespacedServiceProxyWithPath                | f
+ connectCoreV1DeleteNodeProxy                                     | f
+ connectCoreV1DeleteNodeProxyWithPath                             | f
+ connectCoreV1GetNamespacedPodAttach                              | f
+ connectCoreV1GetNamespacedPodExec                                | t
+ connectCoreV1GetNamespacedPodPortforward                         | t
+ connectCoreV1GetNamespacedPodProxy                               | f
+ connectCoreV1GetNamespacedPodProxyWithPath                       | t
+ connectCoreV1GetNamespacedServiceProxy                           | f
+ connectCoreV1GetNamespacedServiceProxyWithPath                   | t
+ connectCoreV1GetNodeProxy                                        | f
+ connectCoreV1GetNodeProxyWithPath                                | t
+ connectCoreV1HeadNamespacedPodProxy                              | f
+ connectCoreV1HeadNamespacedPodProxyWithPath                      | f
+ connectCoreV1HeadNamespacedServiceProxy                          | f
+ connectCoreV1HeadNamespacedServiceProxyWithPath                  | f
+ connectCoreV1HeadNodeProxy                                       | f
+ connectCoreV1HeadNodeProxyWithPath                               | f
+ connectCoreV1OptionsNamespacedPodProxy                           | f
+ connectCoreV1OptionsNamespacedPodProxyWithPath                   | f
+ connectCoreV1OptionsNamespacedServiceProxy                       | f
+ connectCoreV1OptionsNamespacedServiceProxyWithPath               | f
+ connectCoreV1OptionsNodeProxy                                    | f
+ connectCoreV1OptionsNodeProxyWithPath                            | f
+ connectCoreV1PatchNamespacedPodProxy                             | f
+ connectCoreV1PatchNamespacedPodProxyWithPath                     | f
+ connectCoreV1PatchNamespacedServiceProxy                         | f
+ connectCoreV1PatchNamespacedServiceProxyWithPath                 | f
+ connectCoreV1PatchNodeProxy                                      | f
+ connectCoreV1PatchNodeProxyWithPath                              | f
+ connectCoreV1PostNamespacedPodAttach                             | f
+ connectCoreV1PostNamespacedPodExec                               | t
+ connectCoreV1PostNamespacedPodPortforward                        | f
+ connectCoreV1PostNamespacedPodProxy                              | f
+ connectCoreV1PostNamespacedPodProxyWithPath                      | f
+ connectCoreV1PostNamespacedServiceProxy                          | f
+ connectCoreV1PostNamespacedServiceProxyWithPath                  | f
+ connectCoreV1PostNodeProxy                                       | f
+ connectCoreV1PostNodeProxyWithPath                               | f
+ connectCoreV1PutNamespacedPodProxy                               | f
+ connectCoreV1PutNamespacedPodProxyWithPath                       | f
+ connectCoreV1PutNamespacedServiceProxy                           | f
+ connectCoreV1PutNamespacedServiceProxyWithPath                   | f
+ connectCoreV1PutNodeProxy                                        | f
+ connectCoreV1PutNodeProxyWithPath                                | f
+ createAdmissionregistrationV1beta1MutatingWebhookConfiguration   | f
+ createAdmissionregistrationV1beta1ValidatingWebhookConfiguration | f
+ createAdmissionregistrationV1MutatingWebhookConfiguration        | t
+ createAdmissionregistrationV1ValidatingWebhookConfiguration      | t
+ createApiextensionsV1beta1CustomResourceDefinition               | f
+ createApiextensionsV1CustomResourceDefinition                    | t
+ createApiregistrationV1APIService                                | t
+ createApiregistrationV1beta1APIService                           | f
+ createAppsV1NamespacedControllerRevision                         | f
+ createAppsV1NamespacedDaemonSet                                  | f
+ createAppsV1NamespacedDeployment                                 | t
+ createAppsV1NamespacedReplicaSet                                 | t
+ createAppsV1NamespacedStatefulSet                                | t
+ createAuditregistrationV1alpha1AuditSink                         | f
+ createAuthenticationV1beta1TokenReview                           | f
+ createAuthenticationV1TokenReview                                | t
+ createAuthorizationV1beta1NamespacedLocalSubjectAccessReview     | f
+ createAuthorizationV1beta1SelfSubjectAccessReview                | f
+ createAuthorizationV1beta1SelfSubjectRulesReview                 | f
+ createAuthorizationV1beta1SubjectAccessReview                    | f
+ createAuthorizationV1NamespacedLocalSubjectAccessReview          | f
+ createAuthorizationV1SelfSubjectAccessReview                     | t
+ createAuthorizationV1SelfSubjectRulesReview                      | f
+ createAuthorizationV1SubjectAccessReview                         | t
+ createAutoscalingV1NamespacedHorizontalPodAutoscaler             | f
+ createAutoscalingV2beta1NamespacedHorizontalPodAutoscaler        | f
+ createAutoscalingV2beta2NamespacedHorizontalPodAutoscaler        | f
+ createBatchV1beta1NamespacedCronJob                              | t
+ createBatchV1NamespacedJob                                       | t
+ createBatchV2alpha1NamespacedCronJob                             | f
+ createCertificatesV1beta1CertificateSigningRequest               | t
+ createCoordinationV1beta1NamespacedLease                         | f
+ createCoordinationV1NamespacedLease                              | t
+ createCoreV1Namespace                                            | t
+ createCoreV1NamespacedBinding                                    | f
+ createCoreV1NamespacedConfigMap                                  | t
+ createCoreV1NamespacedEndpoints                                  | t
+ createCoreV1NamespacedEvent                                      | f
+ createCoreV1NamespacedLimitRange                                 | t
+ createCoreV1NamespacedPersistentVolumeClaim                      | t
+ createCoreV1NamespacedPod                                        | t
+ createCoreV1NamespacedPodBinding                                 | f
+ createCoreV1NamespacedPodEviction                                | t
+ createCoreV1NamespacedPodTemplate                                | t
+ createCoreV1NamespacedReplicationController                      | t
+ createCoreV1NamespacedResourceQuota                              | t
+ createCoreV1NamespacedSecret                                     | t
+ createCoreV1NamespacedService                                    | t
+ createCoreV1NamespacedServiceAccount                             | t
+ createCoreV1NamespacedServiceAccountToken                        | f
+ createCoreV1Node                                                 | f
+ createCoreV1PersistentVolume                                     | t
+(100 rows)
+
+#+end_src
+
+
+#+begin_src sql-mode
+select * from stable_endpoint_stats;
+#+end_src
+
+#+begin_src sql-mode
+select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1219613215860723712');
+#+end_src
+
+#+begin_src sql-mode
+REFRESH MATERIALIZED VIEW endpoint_coverage_material;
+REFRESH MATERIALIZED VIEW api_operation_material;
+-- REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+#+end_src
+
+#+begin_src sql-mode
+select * from stable_endpoint_stats;
+#+end_src
