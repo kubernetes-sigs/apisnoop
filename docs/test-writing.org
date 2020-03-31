@@ -1,0 +1,64 @@
+#+TITLE: Test Writing
+
+* Introduction
+  A core purpose of APISnoop is to help kubernetes test writers find a useful area in kubernets to test, and then augment their ability to write that test.  We do this with a combination of a specific test-writing flow and functionality built for that flow.
+* The ii flow
+  We want to write tests that visibly increase coverage, and that the community agree are useful (spefically the SIG Conformance Working Group).  To be as efficient and respectful of everyone's time, we don't want to open a test PR unless we know the test matches these two points.  
+
+Right now, the best metric for measuring test coverage in kubernetes is to measure the number of endpoints hit by tests.  So our flow is to:
+  - Find an endpoint not yet hit by tests
+  - Write an outline a meaningful test on this endpoint, based on its documentation.
+  - Write code that follows this outline, and verify that this code hits the endpoint(s) we intend.
+  - Determine the projected change in coverage if this code were to be written as a test and merged into the testing framework.
+  - Open a PR for this 'Mock Test' to make it easy to find and share.
+  - Discuss this PR with Sig Conformance during their office hours, to determine its usefulness.
+  - Based on feedback, either iterate over our design, or tranpose our work into the ginkgo test framework and submit a new test PR.
+ 
+
+While there are a number of steps, this method helps ensure that the tests being written will provide a meaningful change in coverage, and this is agreed upon by the community before any test-writing work begins.  This lets us maintain a high velocity for test-writing.  
+
+We move through all these steps within a single org-file, through a method called 'literate programming'.  This allows us to to share our work, at any stage,in an easy to read way.  It also lets us share the intention behind our code, which helps the discussion with SIG Conformance.
+
+* Setting up APISnoop for test writers
+  APISnoop has a suite of tools to reproduce and move through our test-writing flow for each new test you write.  These tools work best when you are interacting with APISnoop in our recommend weay: from within a kubernetes cluster that was started with Kubemacs.  If you have not set this up yet, check out our [[Setting up Kubemacs with APISnoop]]
+  
+The rest of this articles details how to use APISnoop and Kubemacs to quickly move through our test-writing flow, and assumes you have both set up.
+* Create a new mock test file
+First we want to create the org file that will hold all our work, this will become the 'mock ticket' we share.
+
+- Navigate to the directory ~tickets/k8s~ and create a new org file.  
+  - It can be named whatever you like, but should end with ~.org~
+- When in this file, hit ~SPC SPC~ then the command ~apisnoop/insert-mock-template~.
+-   This will create the document structure, and include a number of pre-built code blocks that you can modify to your own needs.   
+
+This template is well-commented, so we won't dive deep into all its parts here.
+* Use SQL to find endpoints to test
+  APISnoop includes a postgres database, which has the current api spec of Kubernetes (as defined in its swagger.json) and the latest test run for k8s master mapped to postgres tables.  When you insert a mock template, we can connect this org file to the database.  This means you can query any aspect of the api, especially its current coverage, from within your mock test doc.
+ 
+For example, we provide a sample query that will show endopints for a particular kind or resource that are not yet hit by tests. To execute the query, just hit ~,,~ over the code block.
+
+The first time you execute a sql-mode code block, kubemacs will ask to connect to the db.  The credentials you want to give are:
+- user :: apisnoop
+- db :: apisnoop
+- server :: postgres
+
+Along with executing our pre-made queries, you can write your own ad-hoc queries in their own code blocks as needed.  In either case, this helps ensure that your work is backed by data, which is expressed in teh template itself.
+
+You can read through some of the capabilities of our postgres db, and some useful queries, in our: [[SQL Tips and Tricks]] page
+* Write a mock function
+  Once you've identified the endpoint(s) you want to test. You'll want to design a function that will hit the endpoint.  You can execute code blocks in the org file that can talk directly to your kubernetes cluster.  In the mock template is a sample go function that illustrates this.  When you execute the code block you'll see the return value in a block below it.  In addition, we have auditlogging enabled on the kubemacs kubernetes cluster, and so all events related to your live test writing will be inserted into the db too.    This enables you to check whether your function actually hit the endpoint you intended, and how that would effect coverage, in real time.
+
+  The go sample included in the template has a number of imports and code snippets that are commented out.  These sections are useful depending on the _type_ of test you're writing.  You can get a better understanding of when and how to use them in our [[Anatomy of our Go function]] page.
+* Test that the function hits the endpoints you intend
+  Once you've run your sample code, you can check it with a set of pre-built views.  In each one, they compare the live set of audit events versus the current coverage.  If any of the live events are hit by a useragent with 'live' in its name, we assume it is coming from the code you write, and mark it as a test hit.  This means if you are writing code from scratch, make sure you set the useragent to 'live-*'
+* Reset Test data as needed
+  It is likely that you will iterate over these last two steps repeatedly as you refine your mock test function.  We have a function to assist in this.  
+
+Whenever you want to reset your live test events, type ~SPC SPC~ then type the command ~apisnoop/reset-live-test-events~.  This deletes all entries from the live db, so you can run the code again knowing you have a clean slate.
+* Calculate the change in coverage
+  When you are happy with your function and the endpionts it hits, you can execute the codeblock in the coverage that run our our query ~projected_change_in_coverage~.  This combines the current test coverage with the endpoints hit by your above mock test function, to show what the overall testing coverage would be if this test was written and merged.
+* Export your results to github markdown
+  If you move through each section in the template and execute the code blocks in order, you'll end up with a niced document of interwoven code and resulting data.  all of this you can then export to github-flavored markdown using the command ~,eegG~ .   This will open a new buffer in kubemacs, and you can then copy the markdown included and paste as a new ticket in the kubernetes/kubernetes repo.  
+If tagged with area/conformance, this ticket will go into the backlog to be  triaged during the rgular sig conformance calls.  Depending on that discussion, you can then take this work and transpose it into a testing PR that is likely to be merged quickly.
+
+
