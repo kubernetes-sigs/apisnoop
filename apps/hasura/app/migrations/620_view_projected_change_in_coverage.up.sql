@@ -42,3 +42,11 @@ CREATE OR REPLACE VIEW "public"."projected_change_in_coverage" AS
    FROM baseline, coverage
           ;
 -- PROJECTED Change in Coverage ends here
+
+
+
+-- #+RESULTS: PROJECTED Change in Coverage
+
+-- [[file:~/apisnoop/apps/hasura/index.org::*620:Projected%20Change%20in%20Coverage][620:Projected Change in Coverage:2]]
+CREATE VIEW
+-- 620:Projected Change in Coverage:2 ends here
