@@ -3,11 +3,11 @@
 --     :header-args:sql-mode+: :tangle ./app/migrations/520_view_stable_endpoint_stats.up.sql
 --     :END:
 --     Based on the update we give to dan, developed in [[file:explorations/ticket_50_endpoint_coverage.org][ticket 50: endpoint coverage]]
-    
 --     #+NAME: Endpoint Stats View
 
 -- [[file:~/apisnoop/apps/hasura/index.org::Endpoint%20Stats%20View][Endpoint Stats View]]
 CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS
+  WITH stats as (
 SELECT
   ec.bucket,
   ec.job,
@@ -21,5 +21,15 @@ SELECT
   FROM endpoint_coverage ec
          JOIN bucket_job_swagger bjs on (bjs.bucket = ec.bucket AND bjs.job = ec.job)
     WHERE ec.level = 'stable'
- GROUP BY ec.date, ec.job, ec.bucket, bjs.job_version;
+ GROUP BY ec.date, ec.job, ec.bucket, bjs.job_version
+  )
+  SELECT
+    *,
+    test_hits - lag(test_hits) over (order by date) as test_hits_increase,
+    conf_hits - lag(conf_hits) over (order by date) as conf_hits_increase,
+    percent_tested - lag(percent_tested) over (order by date) as percent_tested_increase,
+    percent_conf_tested - lag(percent_conf_tested) over (order by date) as percent_conf_tested_increase
+    FROM
+        stats
+        ;
 -- Endpoint Stats View ends here
