@@ -12,9 +12,6 @@
 <script>
  import { onMount, afterUpdate } from 'svelte';
  export let payload;
-
- onMount(() => console.log('mount', payload));
- afterUpdate(() => console.log('mount', payload));
 </script>
 
 <h1>Web Page is Getting There</h1>

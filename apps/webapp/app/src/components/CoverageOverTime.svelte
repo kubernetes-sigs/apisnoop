@@ -2,7 +2,6 @@
  import dayjs from 'dayjs';
  import { isEmpty } from 'lodash-es';
  import { scaleLinear, scaleTime } from 'd3-scale';
- import { afterUpdate } from 'svelte';
  import { prefetch, goto } from '@sapper/app';
  import {
    dates,
@@ -42,8 +41,6 @@
  $: testedArea = `${testedPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
  $: confPath = `M${$coverage.map(c => `${xScale(c.timestamp)},${yScale(c.percent_conf_tested)}`).join('L')}`;
  $: confArea = `${confPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
-
- afterUpdate(()=> console.log({coverage: $coverage}));
 </script>
 
 <h1>Coverage Over Time</h1>

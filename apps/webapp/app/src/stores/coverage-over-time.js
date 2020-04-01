@@ -41,7 +41,6 @@ export const coverage = derived(
           .filter(stat => stat.job !== 'live')
           .map(stat => {
             let bucket = findKey($bjs, (o) => o.jobs.map(job => job.job).includes(stat.job))
-            console.log({bucket});
             return {
               ...stat,
               bucket,
