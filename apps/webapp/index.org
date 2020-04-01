@@ -195,6 +195,7 @@
        import { determineBucketAndJob } from '../lib/helpers.js';
        import {
          ALL_BUCKETS_AND_JOBS_SANS_LIVE,
+         ENDPOINTS_TESTS_AND_USERAGENTS,
          STABLE_ENDPOINT_STATS } from '../queries';
 
        export async function get(req, res) {
@@ -204,9 +205,18 @@
          let statsQuery = await client.query({query: STABLE_ENDPOINT_STATS});
          let stableEndpointStatsPayload = statsQuery.data.stable_endpoint_stats;
 
+         let {bucket, job} = determineBucketAndJob(rawBucketsAndJobsPayload);
+
+         let endpointsTestsAndUseragentsQuery = await client.query(
+           {query: ENDPOINTS_TESTS_AND_USERAGENTS,
+            variables: {bucket, job}
+           });
+         let endpointsTestsAndUseragentsPayload = endpointsTestsAndUseragentsQuery.data;
+
          const payload = JSON.stringify({
            stableEndpointStatsPayload,
-           rawBucketsAndJobsPayload
+           rawBucketsAndJobsPayload,
+           endpointsTestsAndUseragentsPayload
          });
 
          res.writeHead(200, {
@@ -220,6 +230,8 @@
      :PROPERTIES:
      :header-args: :tangle ./app/src/routes/index.svelte
      :END:
+     
+     We want to show the sunburst, the sunburst derives its bucket and endpoints from the store.  We've added the raw bucket and job, but need to also bring in all endpoints for the default bucket and job. 
      #+NAME: index.svelte
      #+begin_src web
        <script context="module">
@@ -232,26 +244,39 @@
 
        <script>
         import CoverageOverTime from '../components/CoverageOverTime.svelte'; 
+        import Sunburst from '../components/Sunburst.svelte';
         import { isEqual} from 'lodash-es';
-        export let payload;
         import {
           stableEndpointStats,
           rawBucketsAndJobs,
+          endpointsTestsAndUseragents
         } from '../stores';
 
-        rawBucketsAndJobs.update(raw => isEqual(raw, payload.rawBucketsAndJobsPayload)
-                                      ? raw
-                                      : payload.rawBucketsAndJobsPayload);
+        export let payload;
+        const {
+          rawBucketsAndJobsPayload,
+          stableEndpointStatsPayload,
+          endpointsTestsAndUseragentsPayload
+        } = payload;
 
-        stableEndpointStats.update(stats => isEqual(stats, payload.stableEndpointStatsPayload)
+        rawBucketsAndJobs.update(raw => isEqual(raw, rawBucketsAndJobsPayload)
+                                      ? raw
+                                      : rawBucketsAndJobsPayload);
+
+        stableEndpointStats.update(stats => isEqual(stats, stableEndpointStatsPayload)
                                           ? stats
-                                          : payload.stableEndpointStatsPayload);
+                                          : stableEndpointStatsPayload);
+
+        endpointsTestsAndUseragents.update(etu => isEqual(etu, endpointsTestsAndUseragentsPayload)
+                                                ? etu
+                                                : endpointsTestsAndUseragentsPayload);
        </script>
 
        <svelte:head>
          <title>APISnoop</title>
        </svelte:head>
        <CoverageOverTime />
+       <Sunburst />
        <h1>You got a webpage</h1>
 
 
@@ -518,6 +543,236 @@ Sapper has a naming convention for files that if they are in brackets they are t
 
     #+end_src
 *** Sunburst
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/Sunburst.svelte
+    :END:
+    
+    #+NAME: Sunburst
+    #+begin_src web 
+      <script>
+       import * as d3 from 'd3';
+       import {
+         compact,
+         join
+       } from 'lodash-es';
+       import {
+         activeBucketAndJob,
+         activeFilters,
+         mouseOverPath,
+         zoomedSunburst
+       } from '../stores';
+
+       $: activeDepth = determineDepth($activeFilters);
+
+       const format = d3.format(",d")
+       const width = 932
+       const radius = width / 8
+       const arc = d3.arc()
+                     .startAngle(d => d.x0)
+                     .endAngle(d => d.x1)
+                     .padAngle(d => Math.min((d.x1 - d.x0) / 2, 0.005))
+                     .padRadius(radius * 1.5)
+                     .innerRadius(d => d.y0 * radius)
+                     .outerRadius(d => Math.max(d.y0 * radius, d.y1 * radius - 1))
+
+       function determineDepth (filters) {
+         // check out depth based on which filters are set.
+         let { level, category, operation_id } = filters;
+         let setFilters = compact([level, category, operation_id]) // compact will remove falsy values.
+         if (setFilters.length === 3) {
+           return 'operation_id'
+         } else if (setFilters.length === 2) {
+           return 'category';
+         } else if (setFilters.length === 1) {
+           return 'level';
+         } else {
+           return 'root'
+         }
+       };
+
+       function depthUp () {
+         // reset the activeFilter for whatever is our current depth.  
+         // This will cause the sunburst to expand to the next previous filter, going up a level.
+         $mouseOverPath = [];
+         if (activeDepth === 'root') {
+           return null
+         } else if (activeDepth === 'operation_id') {
+           $activeFilters['operation_id'] = '';
+           $activeFilters['category'] === '';
+         } else {
+           $activeFilters[activeDepth] = '';
+         }
+         setURL();
+       };
+
+       function labelVisible(d) {
+         return d.y1 <= 3 && d.y0 >= 1 && (d.y1 - d.y0) * (d.x1 - d.x0) > 0.03;
+       }
+
+       function labelTransform(d) {
+         const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
+         const y = (d.y0 + d.y1) / 2 * radius;
+         return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
+       }
+
+       function mouseOver(d) {
+         $mouseOverPath = d.ancestors().reverse().slice(1);
+       }
+
+       function mouseLeave () {
+         $mouseOverPath = [];
+       }
+
+       function clicked (p) {
+         // upon clicking of a node, update the active filters and url.
+         let {
+           bucket,
+           job
+         } = $activeBucketAndJob;
+         let {
+           level,
+           category,
+           operation_id
+         } = p.data;
+         activeFilters.update(af => ({...af, bucket, job, level, category, operation_id}));
+         setURL();
+       };
+
+       function setURL () {
+         // push state without triggering a reload, using our active filters in order.
+         // this assumes that activeFilters were set correctly before calling this function.
+         let {
+           bucket,
+           job,
+           level,
+           category,
+           operation_id
+         } = $activeFilters;
+         let filterSegments = compact([bucket, job, level, category, operation_id]);
+         let urlPath = join(['coverage', ...filterSegments], '/');
+         goto(urlPath);
+       };
+
+       $: partition = data => {
+         const root = d3.hierarchy(data)
+                        .sum(d => d.value)
+                        .sort((a, b) => (b.data.tested - a.data.tested))
+                        .sort((a, b) => (b.data.conf_tested - a.data.tested));
+         return d3.partition()
+                  .size([2 * Math.PI, root.height + 1])
+         (root);
+       }
+       $: root = partition($zoomedSunburst).each(d=> d.current = d);
+       $: nodes = root
+         .descendants()
+         .slice(1)
+         .map((node) => {
+           // take node and determine its opacity based on if its visible and active
+           let currentOpacity = 1;
+           if ($activeFilters.operation_id !== '' && node.data.operation_id !== '') {
+             // if you and endpoint and we've filtered to endpoint, fade yrself if you aren't the filtered endpoint.
+             currentOpacity = ($activeFilters.operation_id === node.data.name)
+                            ? 1
+                            : 0.3
+           }
+           if ($mouseOverPath.length > 0) {
+             currentOpacity = ($mouseOverPath.indexOf(node) >= 0 || $activeFilters.operation_id === node.data.name)
+                            ? 1
+                            : 0.3
+           }
+           return {...node, currentOpacity};
+         })
+      </script>
+
+      <div class="chart">
+        <svg viewBox="0,0,932,932" style="font: 12px sans-serif;" on:mouseleave={mouseLeave}>
+          <g transform="translate({width/2},{width/2})" id='big-g'>
+            <g>
+              {#each nodes as node}
+              <path
+                fill={node.data.color}
+                fill-opacity={node.currentOpacity}
+                d={arc(node.current)}
+                on:mouseover={() => mouseOver(node.current)}
+                style="cursor: pointer;"
+                on:click={()=> clicked(node)} />
+              {/each}
+            </g>
+            <g pointer-events='none' text-anchor='middle' style='user-select: none;'>
+              {#each nodes as node}
+              <text
+                dy='0.35em'
+                fill-opacity = {+labelVisible(node.current)}
+                transform = {labelTransform(node.current)}
+              >
+                {node.children ? node.data.name : ''}
+              </text>
+              {/each}
+            </g>
+            <circle
+              r={radius}
+              fill={root.data.color}
+              pointer-events="all"
+              on:click={depthUp}
+            />
+
+            <text
+              text-anchor='middle'
+              font-size='2em'
+              fill='white'
+              transform={$activeFilters.category.length > 0 ? "translate(0, -15)" : ""} >
+              {$activeFilters.level}
+            </text>
+            <text
+              text-anchor='middle'
+              font-size='2em'
+              fill='white'
+              transform="translate(0,15)">
+              {$activeFilters.category}
+            </text>
+          </g>
+        </svg>
+      </div>
+
+      <style>
+       .chart {
+         position: relative;
+         grid-column: 1;
+       }
+
+       #explanation {
+         position: absolute;
+         top: calc(100% / 2.25);
+         left: 0;
+         width: 100%;
+         text-align: center;
+         color: #eeeeee;
+         z-index: 2;
+         display: flex;
+         flex-flow: column;
+         justify-content: center;
+         align-items: center;
+       }
+
+       @media(max-width: 667px) {
+         #explanation {
+           font-size: 0.75em;
+         }
+       }
+
+       #level , #category {
+         margin: 0;
+         padding: 0;
+       }
+       #level {
+         font-size: 1.5em;
+       }
+       #category {
+         font-size: 1.25em;
+       }
+      </style>
+    #+end_src
+    
 ** Queries
    :PROPERTIES:
    :header-args: :tangle ./app/src/queries/index.js
@@ -1094,120 +1349,120 @@ Sapper has a naming convention for files that if they are in brackets they are t
     :END:
    #+NAME: helpers
    #+begin_src js
-import {
-  forEach,
-  trimEnd,
-  groupBy,
-  mapValues,
-  trimStart,
-  flatten,
-  uniq
-} from 'lodash-es';
+     import {
+       forEach,
+       trimEnd,
+       groupBy,
+       mapValues,
+       trimStart,
+       flatten,
+       uniq
+     } from 'lodash-es';
 
-export const updateQueryParams = (page, query) => {
-  // given a sapper page store, and new queries
-  // construct a url string with old and new queries.
-  let newQueries = {
-    ...page.query,
-    ...query
-  };
+     export const updateQueryParams = (page, query) => {
+       // given a sapper page store, and new queries
+       // construct a url string with old and new queries.
+       let newQueries = {
+         ...page.query,
+         ...query
+       };
 
-  let queryStrings = {};
-  forEach(newQueries, (v, k) => {
-    queryStrings[k] = trimStart(v.reduce((acc, cur) => `${acc}${k}=${cur}&`, ''), '&');
-  });
+       let queryStrings = {};
+       forEach(newQueries, (v, k) => {
+         queryStrings[k] = trimStart(v.reduce((acc, cur) => `${acc}${k}=${cur}&`, ''), '&');
+       });
 
-  let queryNames = Object.keys(queryStrings);
-  let fullQueryString = trimEnd(queryNames.reduce((acc, cur) => `${acc}${queryStrings[cur]}`, '?'), '&');
-  return fullQueryString;
-};
+       let queryNames = Object.keys(queryStrings);
+       let fullQueryString = trimEnd(queryNames.reduce((acc, cur) => `${acc}${queryStrings[cur]}`, '?'), '&');
+       return fullQueryString;
+     };
 
-export const toBoolean = (str) => {
-  str = str.toString().toLowerCase();
-  let truths = ["true", "t", "yes", "1", "truth"]
-  return truths.includes(str)
-}
+     export const toBoolean = (str) => {
+       str = str.toString().toLowerCase();
+       let truths = ["true", "t", "yes", "1", "truth"]
+       return truths.includes(str)
+     }
 
-export const isValidRegex = (regex) => {
-  try {
-    new RegExp(regex);
-  } catch (e) {
-    return false;
-  }
-  return true;
-};
+     export const isValidRegex = (regex) => {
+       try {
+         new RegExp(regex);
+       } catch (e) {
+         return false;
+       }
+       return true;
+     };
 
-export const hitByMatchingItems = (items, key,  regex, endpoint) => {
-  // given an array of objects, items, a key to compare, and the regex to match.
-  // return true if endpoint is hit by any item whose key value matches the regex.
-  regex = new RegExp(regex);
-  let matchingItems = items.filter(ua => regex.test(ua[key]));
-  let endpointsHitByItems = uniq(flatten(matchingItems.map(item => item.operation_ids)));
-  return endpointsHitByItems.includes(endpoint.operation_id);
-};
+     export const hitByMatchingItems = (items, key,  regex, endpoint) => {
+       // given an array of objects, items, a key to compare, and the regex to match.
+       // return true if endpoint is hit by any item whose key value matches the regex.
+       regex = new RegExp(regex);
+       let matchingItems = items.filter(ua => regex.test(ua[key]));
+       let endpointsHitByItems = uniq(flatten(matchingItems.map(item => item.operation_ids)));
+       return endpointsHitByItems.includes(endpoint.operation_id);
+     };
 
-export const hitByMatchingTestTags = (tests, regex, endpoint) => {
-  // given an array of tests, each containing an array of test_tags, and the regex to match.
-  // filter tests by those with at least one tag that matches regex filter.
-  // return true if endpoint is hit by any of these filtered tests.
-  regex = new RegExp(regex);
-  let matchingTests = tests.filter(test => test.test_tags.some((tag) => regex.test(tag)));
-  let endpointsHitByTests = uniq(flatten(matchingTests.map(test => test.operation_ids)));
-  return endpointsHitByTests.includes(endpoint.operation_id);
-};
+     export const hitByMatchingTestTags = (tests, regex, endpoint) => {
+       // given an array of tests, each containing an array of test_tags, and the regex to match.
+       // filter tests by those with at least one tag that matches regex filter.
+       // return true if endpoint is hit by any of these filtered tests.
+       regex = new RegExp(regex);
+       let matchingTests = tests.filter(test => test.test_tags.some((tag) => regex.test(tag)));
+       let endpointsHitByTests = uniq(flatten(matchingTests.map(test => test.operation_ids)));
+       return endpointsHitByTests.includes(endpoint.operation_id);
+     };
 
-export const determineBucketAndJob = (bucketsAndJobs, bucketParam, jobParam) => {
-  let bucket;
-  let job;
-  let buckets = groupBy(bucketsAndJobs, 'bucket');
-  let bj = mapValues(buckets, (allJobs) => {
-    let jobs = allJobs
-        .sort((a,b) => new Date(b.job_timestamp) > new Date(a.job_timestamp))
-        .map(j => ({job: j.job, timestamp: j.job_timestamp}));
-    let [latestJob] = allJobs.map(j => ({job: j.job, timestamp: j.job_timestamp}));
-    return {
-      latestJob,
-      jobs
-    };
-  });
+     export const determineBucketAndJob = (bucketsAndJobs, bucketParam, jobParam) => {
+       let bucket;
+       let job;
+       let buckets = groupBy(bucketsAndJobs, 'bucket');
+       let bj = mapValues(buckets, (allJobs) => {
+         let jobs = allJobs
+             .sort((a,b) => new Date(b.job_timestamp) > new Date(a.job_timestamp))
+             .map(j => ({job: j.job, timestamp: j.job_timestamp}));
+         let [latestJob] = allJobs.map(j => ({job: j.job, timestamp: j.job_timestamp}));
+         return {
+           latestJob,
+           jobs
+         };
+       });
 
-  let releaseBlocking = 'ci-kubernetes-e2e-gci-gce';
-  let defaultBucket = Object.keys(bj).includes(releaseBlocking)
-      ? releaseBlocking
-      : Object.keys(bj)[0];
-  let defaultJob = bj[defaultBucket]['latestJob'].job;
+       let releaseBlocking = 'ci-kubernetes-e2e-gci-gce';
+       let defaultBucket = Object.keys(bj).includes(releaseBlocking)
+           ? releaseBlocking
+           : Object.keys(bj)[0];
+       let defaultJob = bj[defaultBucket]['latestJob'].job;
 
-  if (!bucketParam) {
-    bucket = defaultBucket;
-    job = defaultJob;
-  } else if (bucketParam && !jobParam) {
-    bucket = isValidBucket(bucketParam, bj)
-      ? bucketParam
-      : defaultBucket;
-    job = bj[bucket]['latestJob'].job
-  } else {
-    bucket = isValidBucket(bucketParam, bj)
-      ? bucketParam
-      : defaultBucket;
-    job = isValidJob(bj[bucket], jobParam)
-      ? jobParam
-      : bj[bucket]['latestJob'].job
-  }
-  return {
-    bucket,
-    job
-  };
-}
+       if (!bucketParam) {
+         bucket = defaultBucket;
+         job = defaultJob;
+       } else if (bucketParam && !jobParam) {
+         bucket = isValidBucket(bucketParam, bj)
+           ? bucketParam
+           : defaultBucket;
+         job = bj[bucket]['latestJob'].job
+       } else {
+         bucket = isValidBucket(bucketParam, bj)
+           ? bucketParam
+           : defaultBucket;
+         job = isValidJob(bj[bucket], jobParam)
+           ? jobParam
+           : bj[bucket]['latestJob'].job
+       }
+       return {
+         bucket,
+         job
+       };
+     }
 
-function isValidBucket (bucket, bjs) {
-  return Object.keys(bjs).includes(bucket);
-}
+     function isValidBucket (bucket, bjs) {
+       return Object.keys(bjs).includes(bucket);
+     }
 
-function isValidJob  (bucket, job) {
-  let jobs = bucket.jobs.map(job => job.job);
-  return jobs.includes(job);
-}
-   
+     function isValidJob  (bucket, job) {
+       let jobs = bucket.jobs.map(job => job.job);
+       return jobs.includes(job);
+     }
+
    #+end_src
    
 *** colours
