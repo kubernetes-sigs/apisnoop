@@ -1,14 +1,14 @@
 <script context="module">
  export function preload({ params, query }) {
-   return this.fetch(`index.json`).then(r => r.json()).then(payload => {
-     return { payload };
-   });
+   return this.fetch(`index.json`)
+              .then(r => r.json())
+              .then(payload => ({ payload }));
  }
 </script>
 
 <script>
  import CoverageOverTime from '../components/CoverageOverTime.svelte'; 
- import Sunburst from '../components/Sunburst.svelte';
+ import SunburstContainer from '../components/SunburstContainer.svelte';
  import { isEqual} from 'lodash-es';
  import {
    stableEndpointStats,
@@ -40,5 +40,4 @@
   <title>APISnoop</title>
 </svelte:head>
 <CoverageOverTime />
-<Sunburst />
-<h1>You got a webpage</h1>
+<SunburstContainer />

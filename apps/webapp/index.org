@@ -183,7 +183,7 @@
 
    #+end_src
 ** Routes
-*** index /
+*** index ('/')
    The home page.  This should show a coverage over time graph and a sunburst beneath it, the sunburst being set to the latest job on sig-release-blocking.
 **** index.json.js
      :PROPERTIES:
@@ -236,15 +236,15 @@
      #+begin_src web
        <script context="module">
         export function preload({ params, query }) {
-          return this.fetch(`index.json`).then(r => r.json()).then(payload => {
-            return { payload };
-          });
+          return this.fetch(`index.json`)
+                     .then(r => r.json())
+                     .then(payload => ({ payload }));
         }
        </script>
 
        <script>
         import CoverageOverTime from '../components/CoverageOverTime.svelte'; 
-        import Sunburst from '../components/Sunburst.svelte';
+        import SunburstContainer from '../components/SunburstContainer.svelte';
         import { isEqual} from 'lodash-es';
         import {
           stableEndpointStats,
@@ -276,10 +276,7 @@
          <title>APISnoop</title>
        </svelte:head>
        <CoverageOverTime />
-       <Sunburst />
-       <h1>You got a webpage</h1>
-
-
+       <SunburstContainer />
      #+end_src
      
 *** [...params]
@@ -542,6 +539,139 @@ Sapper has a naming convention for files that if they are in brackets they are t
       </style>
 
     #+end_src
+*** Sunburst Container
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/SunburstContainer.svelte
+    :END:
+    #+NAME: SunburstContainer
+    #+begin_src web 
+      <script>
+       import Sunburst from './Sunburst.svelte';
+       import SunburstHeader from './SunburstHeader.svelte';
+       import SunburstStats from './SunburstStats.svelte';
+       import Breadcrumb from './Breadcrumb.svelte';
+       import TestsList from './TestsList.svelte';
+      </script>
+
+      <section id='coverage'>
+        <SunburstHeader />
+        <Breadcrumb />
+        <Sunburst />
+        <SunburstStats />
+        <TestsList />
+      </section>
+
+      <style>
+       section {
+         display: grid;
+         grid-template-columns: 700px 1fr;
+       }
+       @media (max-width: 667px) {
+         section {
+           display: flex;
+           flex-flow: column;
+         }
+       }
+      </style>
+    #+end_src
+    
+*** SectionHeader 
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/SunburstHeader.svelte
+    :END:
+    #+NAME: SunburstHeader
+    #+begin_src web 
+      <script>
+       import dayjs from 'dayjs';
+       import { goto } from '@sapper/app';
+       import { activeBucketAndJob } from '../stores';
+
+       $: bucket = $activeBucketAndJob.bucket;
+       $: job = $activeBucketAndJob.job;
+       $: timestamp = dayjs($activeBucketAndJob.timestamp).format('DD MMMM, YYYY');
+      </script>
+
+      <header>
+        <h2>{bucket}</h2>
+        <p>{timestamp}</p>
+      </header>
+
+      <style>
+       header {
+         margin-bottom: 1.5em;
+         grid-column: 1;
+       }
+
+       h2 {
+         padding: 0;
+         font-variant-caps: small-caps;
+         margin-bottom: 0;
+       }
+
+       p {
+         margin-top: 0;
+         font-variant-caps: small-caps;
+         padding-left: 0.25em;
+       }
+      </style>
+
+
+    #+end_src
+*** Breadcrumb
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/Breadcrumb.svelte
+    :END:
+    #+NAME: Breadcrumb
+    #+begin_src web
+      <script>
+       import {
+         breadcrumb,
+         mouseOverPath,
+         opIDs
+       } from '../stores';
+       import {
+         levelColours,
+         categoryColours,
+         endpointColour
+       } from '../lib/colours.js';
+
+       $: [level, category, operation_id] = $breadcrumb;
+       $: lColour = levelColours[level] || 'white';
+       $: cColour = categoryColours[category] || 'white';
+       $: eColour = $opIDs[operation_id]
+                  ? endpointColour($opIDs[operation_id]) 
+                  : 'white';
+       $: eTextColour = $opIDs[operation_id]
+                      ? $opIDs[operation_id]['tested'] ? endpointColour($opIDs[operation_id]) : 'gray'
+                      : 'white';
+      </script>
+
+      <div id='breadcrumb'>
+        {#if $mouseOverPath.length > 0}
+        <p>{#if level}<span style='border-color: {lColour}; background-color: {lColour};'>{level}</span>{/if}{#if category}<span style='background-Color: {cColour}; border-color: {cColour};'>{category}</span>{/if}{#if operation_id}<span style='border-color: {eColour}; color: {eTextColour};'> {operation_id}</span>{/if}</p>
+        {/if}
+      </div>
+
+      <style>
+       div{
+         height: 3em;
+         grid-column: 1/2;
+         margin-bottom: 1em;
+       }
+       p {
+         font-size: 1.3em;
+         font-color: aliceblue;
+       }
+       span {
+         margin: 0;
+         color: #EEEEEE;
+         padding: 0.25em;
+         border: 1px solid;
+       }
+      </style>
+
+
+    #+end_src
 *** Sunburst
     :PROPERTIES:
     :header-args: :tangle ./app/src/components/Sunburst.svelte
@@ -773,6 +903,381 @@ Sapper has a naming convention for files that if they are in brackets they are t
       </style>
     #+end_src
     
+*** Sunburst Stats
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/SunburstStats.svelte
+    :END:
+    #+NAME: SunburstStats
+    #+begin_src web 
+      <script>
+       import EndpointCoverageStats from './EndpointCoverageStats.svelte';
+       import { isEmpty } from 'lodash-es';
+       import { currentDepth, breadcrumb, coverageAtDepth } from '../stores';
+
+       let percentage = (sum, total) => ((sum / total) * 100).toFixed(2);
+       $: total = $coverageAtDepth.totalEndpoints;
+       $: tested = $coverageAtDepth.testedEndpoints;
+       $: confTested = $coverageAtDepth.confTestedEndpoints;
+       $: percentTested = `${percentage(tested,total)}%`;
+       $: percentConfTested = `${percentage(confTested, total)}%`;
+       $: level = $breadcrumb[0] || '';
+       $: category= $breadcrumb[1] || '';
+       $: endpoint = $breadcrumb[2] || '';
+      </script>
+
+      {#if $currentDepth === 'endpoint'}
+      <EndpointCoverageStats />
+      {:else}
+      <div id='coverage-stats'>
+        <p class='breadcrumb'>{level} {category}</p>
+        <h2> Coverage</h2>
+        <ul>
+          <li><strong>{total}</strong> total endpoints</li>
+          <li> <strong>{percentTested}</strong> tested ({tested} endpoints)</li>
+          <li><strong>{percentConfTested}</strong> conformance tested ({confTested} endpoints)</li>
+        </ul>
+      </div>
+      {/if}
+
+
+
+      <style>
+       div {
+         grid-column: 2;
+         padding-left: 1em;
+         padding-right: 1em;
+       }
+
+       h2 {
+         margin-bottom: 0;
+       }
+
+       p {
+         margin-top: 0;
+         margin-bottom: 0;
+         padding: 0;
+         font-weight: 200;
+         font-size: 1.3em;
+         height: 1.5em;
+         font-variant-caps: small-caps;
+       }
+
+
+       ul {
+         padding-left: 0;
+         list-style-type: none;
+       }
+
+       strong {
+         font-family: monospace;
+       }
+
+      </style>
+
+
+
+    #+end_src
+*** EndpointCoverageStats
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/EndpointCoverageStats.svelte
+    :END:
+    #+NAME: EndpointStats
+    #+begin_src web
+      <script>
+       import { endpointCoverage } from '../stores';
+       import Icon from 'fa-svelte';
+       import { faCheckCircle } from '@fortawesome/free-solid-svg-icons/faCheckCircle';
+       import TestTagsList from './TestTagsList.svelte';
+
+       let checkmark = faCheckCircle;
+
+       $: ({
+         operation_id,
+         tested,
+         confTested,
+         description,
+         path,
+         group,
+         version,
+         kind
+       } = $endpointCoverage);
+      </script>
+
+
+      <div id='coverage-stats'>
+        <p class='path'>{path}</p>
+        <h2>{operation_id}</h2>
+
+        <dl id='endpoint-details'>
+          <dt>description</dt><dd>{description}</dd>
+          {#if group}<dt>group</dt><dd>{group}</dd>{/if}
+          {#if version}<dt>version</dt><dd>{version}</dd>{/if}
+          {#if kind}<dt>kind</dt><dd>{kind}</dd>{/if}
+        </dl>
+
+        {#if tested}
+        <p class='stat'> <span><Icon class='success check' icon={checkmark} /></span> Tested!</p>
+        {:else}
+        <p class='stat'> <span><Icon class='check fail' icon={checkmark} /></span> Untested</p>
+        {/if}
+
+        {#if confTested}
+        <p class='stat'> <span><Icon class='check success' icon={checkmark} /></span> Conformance Tested</p>
+        {:else}
+        <p class='stat'> <span><Icon class='check fail' icon={checkmark} /></span> No Conformance Tests</p>
+        {/if}
+
+        <TestTagsList />
+
+      </div>
+
+      <style>
+       div#coverage-stats {
+         grid-column: 2;
+         padding-left: 1em;
+         padding-right: 1em;
+       }
+
+       h2 {
+         margin-bottom: 1em;
+       }
+
+       p.path {
+         margin-top: 0;
+         margin-bottom: 0;
+         padding: 0;
+         font-weight: 200;
+         font-size: 1.3em;
+         font-variant-caps: small-caps;
+       }
+
+       p.stat {
+         display: flex;
+         align-items: center;
+         font-size: 1.3em;
+         margin: 0;
+         font-style: italic;
+         font-weight: 200;
+       }
+
+       div :global(.check) {
+         font-size: 1.3em;
+         padding-right: 0.25em;
+         margin-top: 0.1em;
+       }
+       div :global(.success) {
+         color: rgba(60, 180, 75, 1);
+       }
+
+       div :global(.fail) {
+         color: rgba(233, 233, 233, 1);
+       }
+
+       ul {
+         padding-left: 0;
+         list-style-type: none;
+       }
+
+       strong {
+         font-family: monospace;
+       }
+
+       dl {
+         display: grid;
+         font-size: 0.85em;
+         grid-template-columns: 5rem 1fr;
+         grid-template-rows: 1fr 1fr 1fr;
+         width: 90%;
+       }
+
+       dt {
+         border: 1px solid black;
+         border-top: none;
+         border-right: none;
+         display: flex;
+         justify-content: center;
+         align-items: center;
+         padding: 0;
+         margin: 0;
+         background: #CCCCCC;
+       }
+
+       dd {
+         border: 1px solid black;
+         border-top: none;
+         display: inloine;
+         padding: 0;
+         padding-left: 1em;
+         margin: 0;
+         font-family: monospace;
+       }
+
+       dt:first-of-type , dd:first-of-type {
+         border-top: 1px solid black;
+       }
+
+
+
+
+
+
+      </style>
+
+
+    #+end_src
+    
+*** TestTagsList
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/TestTagsList.svelte
+    :END:
+    #+begin_src web
+      <script>
+       import {
+         activeFilters,
+         testTagsForEndpoint
+       } from '../stores';
+       import { goto, stores } from '@sapper/app';
+       import { updateQueryParams } from '../lib/helpers.js';
+
+       const { page} = stores();
+
+       function handleClick (tag) {
+         let queryParams = updateQueryParams($page, {test_tags: [tag]});
+         let url = `${$page.path}${queryParams}#tests`;
+
+         activeFilters.update(af => ({...af, test_tags: [tag]}))
+         document.getElementById('tests').scrollIntoView();
+
+         goto(url)
+           .then(() => {
+             document.getElementById('tests').scrollIntoView();
+           });
+       };
+      </script>
+
+
+      {#if $testTagsForEndpoint.length > 0}
+      <div id='test-tags'>
+        <ul>
+          {#each $testTagsForEndpoint as testTag}
+          <li role='button' on:click={() => handleClick(testTag)}>{testTag}</li>
+          {/each}
+        </ul>
+      </div>
+      {/if}
+
+
+      <style>
+       li {
+         cursor: pointer;
+       }
+      </style>
+
+
+    #+end_src
+*** Tests List
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/TestsList.svelte
+    :END:
+    
+    #+begin_src web
+<script>
+ import { 
+        activeFilters,
+        breadcrumb,
+        testsForEndpoint,
+        testTagsForEndpoint,
+        filteredTests
+ } from '../stores';
+ import { goto, stores } from '@sapper/app';
+ import { updateQueryParams } from '../lib/helpers.js';
+ import { isEmpty} from 'lodash-es';
+
+ const { page } = stores();
+
+
+ $: isActiveTag = (tag) => $activeFilters.test_tags.includes(tag);
+ $: endpoint = $breadcrumb[2] || 'this Endpoint';
+
+ function toggleFilter (tag) {
+     let testTags = $activeFilters.test_tags;
+     let activeFilter = isActiveTag(tag);
+     testTags = activeFilter
+                  ? testTags.filter(t => t !== tag)
+                  : testTags.concat(tag);
+     let queryParams = updateQueryParams($page, {test_tags: [...testTags]});
+     let url = `${$page.path}${queryParams}#tests`;
+     activeFilters.update(af => ({...af, test_tags: testTags}))
+     document.getElementById('tests').scrollIntoView();
+     goto(url)
+         .then(() => {
+             document.getElementById('tests').scrollIntoView();
+         });
+ };
+
+</script>
+
+{#if $testsForEndpoint.length > 0 }
+    <div id='tests'>
+        <h2>Tests for {$breadcrumb[2]}</h2>
+        <div class='tag-filter'>
+        <p>filter by test tag:</p>
+        <ul>
+        {#each $testTagsForEndpoint as testTag}
+        <li class:active={isActiveTag(testTag)} on:click={() => toggleFilter(testTag)}>{testTag}</li>
+        {/each}
+        </ul>
+        </div>
+        <ul id='tests'>
+            {#each $filteredTests as fTest}
+                <li>{fTest.test}</li>
+            {/each}
+        </ul>
+    </div>
+{/if}
+
+
+<style>
+
+ div#tests {
+     min-height: 100vh;
+ }
+
+ div.tag-filter {
+     padding: 0.55em;
+     border: 1px solid #cccccc;
+     font-size: 0.9em;
+ }
+
+ div.tag-filter p {
+     font-variant-caps: small-caps;
+     font-weight: 800;
+ }
+
+ div.tag-filter ul {
+     display: flex;
+     flex-wrap: wrap;
+     list-style-type: none;
+     padding-left: 0;
+ }
+
+ div.tag-filter li {
+     margin: 0.25em;
+     background: #f4f4f4;
+     cursor: pointer;
+     font-weight: 200;
+ }
+
+ div.tag-filter li.active {
+     font-weight: 500;
+     background: #96ccff;
+     color: #001B44;
+ }
+</style>
+
+
+    
+    #+end_src
 ** Queries
    :PROPERTIES:
    :header-args: :tangle ./app/src/queries/index.js
