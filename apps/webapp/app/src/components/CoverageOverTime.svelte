@@ -112,7 +112,7 @@
 </div>
 
 <style>
- .chart, h2, p {
+ .chart {
    max-width: 900px;
    margin-left: auto;
    margin-right: auto;
@@ -176,10 +176,5 @@
  }
  circle.point.conf {
    fill: green;
- }
-
- rect.tooltip {
-   fill: white;
-   stroke: black;
  }
 </style>

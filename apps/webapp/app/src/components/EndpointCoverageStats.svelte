@@ -88,15 +88,6 @@
    color: rgba(233, 233, 233, 1);
  }
 
- ul {
-   padding-left: 0;
-   list-style-type: none;
- }
-
- strong {
-   font-family: monospace;
- }
-
  dl {
    display: grid;
    font-size: 0.85em;

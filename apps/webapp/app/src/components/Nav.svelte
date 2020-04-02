@@ -1,3 +1,8 @@
+<nav>
+  <img src='logo.png' alt="apisnoop logo, a magnifying glass with a 3 color pie chart inside." />
+  <a href='/' class='title'>APISnoop</a>
+</nav>
+
 <style>
  nav {
    background: #9EEBCF; 
@@ -6,10 +11,11 @@
    align-items: center;
    padding: 0.25em;
  }
- p.title {
+ a.title {
    margin: 0;
    font-size: 1.5em;
-
+   color: inherit;
+   text-decoration: none;
  }
 
  img {
@@ -17,8 +23,3 @@
    margin-right: 0.5em;
  }
 </style>
-
-<nav>
-  <img src='logo.png' alt="apisnoop logo, a magnifying glass with a 3 color pie chart inside." />
-  <p class='title'>APISnoop</p>
-</nav>

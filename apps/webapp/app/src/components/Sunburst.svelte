@@ -188,35 +188,4 @@
    position: relative;
    grid-column: 1;
  }
-
- #explanation {
-   position: absolute;
-   top: calc(100% / 2.25);
-   left: 0;
-   width: 100%;
-   text-align: center;
-   color: #eeeeee;
-   z-index: 2;
-   display: flex;
-   flex-flow: column;
-   justify-content: center;
-   align-items: center;
- }
-
- @media(max-width: 667px) {
-   #explanation {
-     font-size: 0.75em;
-   }
- }
-
- #level , #category {
-   margin: 0;
-   padding: 0;
- }
- #level {
-   font-size: 1.5em;
- }
- #category {
-   font-size: 1.25em;
- }
 </style>
