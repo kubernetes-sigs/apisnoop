@@ -206,7 +206,6 @@
      </style>
 
      <Nav />
-
      <main>
        <slot></slot>
      </main>
@@ -309,60 +308,148 @@
      #+end_src
      
 *** [...params]
-**** [...index].json.js
+**** [...params].json.js
      :PROPERTIES:
-     :header-args: :tangle ./app/src/routes/[...index].json.js
+     :header-args: :tangle ./app/src/routes/[...params].json.js
      :END:
-     #+NAME: [...index].json.js
+     #+NAME: [...params].json.js
      #+begin_src js 
        import client from "../apollo.js";
-       // import { determineBucketAndJob } from '../lib/helpers.js';
-       // import { ALL_BUCKETS_AND_JOBS_SANS_LIVE, STABLE_ENDPOINT_STATS } from '../queries';
+       import { determineBucketAndJob } from '../lib/helpers.js';
+       import {
+         ALL_BUCKETS_AND_JOBS_SANS_LIVE,
+         ENDPOINTS_TESTS_AND_USERAGENTS,
+         STABLE_ENDPOINT_STATS } from '../queries';
 
-       export async function get(req, res) {
-         // let bucketAndJobsQuery = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE});
-         // let statsQuery = await client.query({query: STABLE_ENDPOINT_STATS});
-         // let rawBucketsAndJobsPayload = bucketAndJobsQuery.data.bucket_job_swagger;
-         // let stableEndpointStatsPayload = statsQuery.data.stable_endpoint_stats;
-         // let statsAndBucketsAndJob = {stableEndpointStatsPayload, rawBucketsAndJobsPayload}
-         let params = req.params.index;
-         const payload = JSON.stringify(params);
+       export async function get (req, res, next) {
+         let bucketAndJobsQuery = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE});
+         let rawBucketsAndJobsPayload = bucketAndJobsQuery.data.bucket_job_swagger;
+
+         let statsQuery = await client.query({query: STABLE_ENDPOINT_STATS});
+         let stableEndpointStatsPayload = statsQuery.data.stable_endpoint_stats;
+
+         let query = req.query;
+         let [bucketParam, jobParam, level, category, operation_id] = req.params.params;
+         let {bucket, job} = determineBucketAndJob(rawBucketsAndJobsPayload, bucketParam, jobParam);
+
+         let endpointsTestsAndUseragentsFromQuery = await client.query(
+           {query: ENDPOINTS_TESTS_AND_USERAGENTS,
+            variables: {bucket, job}
+           });
+         let endpointsTestsAndUseragentsPayload = endpointsTestsAndUseragentsFromQuery.data
+
+         let allTheThings = {
+           bucket,
+           bucketParam,
+           category,
+           endpointsTestsAndUseragentsPayload,
+           job,
+           jobParam,
+           level,
+           operation_id,
+           query,
+           rawBucketsAndJobsPayload,
+           stableEndpointStatsPayload
+         };
+
+         let payload = JSON.stringify(allTheThings);
 
          res.writeHead(200, {
-           'Content-Type': 'application/json'
+           'Content-Type': 'application/json' ,
          });
          res.end(payload);
-       }
+       };
      #+end_src
      
-   
-    
-**** [...index].svelte
+**** [...params].svelte
      :PROPERTIES:
-     :header-args: :tangle ./app/src/routes/[...index].svelte
+     :header-args: :tangle ./app/src/routes/[...params].svelte
      :END:
      
-    #+NAME: [...index].svelte
+    #+NAME: [...params].svelte
     #+begin_src web
       <script context="module">
        import { join } from 'lodash-es';
        export function preload ({ params, query }) {
-         let path = join(params.coverage, '/');
+         let path = join(params.params, '/');
          return this
-           .fetch(`/${path}.json`)
+           .fetch(`${path}.json`)
            .then(r => r.json())
            .then(payload => ({ payload }));
        };
       </script>
 
       <script>
+       import SunburstContainer from '../components/SunburstContainer.svelte';
+       import CoverageOverTime from '../components/CoverageOverTime.svelte';
        import { onMount, afterUpdate } from 'svelte';
+       import { isEqual } from 'lodash-es';
+       import {
+         activeFilters,
+         endpointsTestsAndUseragents,
+         rawBucketsAndJobs,
+         stableEndpointStats,
+         warnings
+       } from '../stores';
+
        export let payload;
+       const  {
+         bucket,
+         bucketParam,
+         category,
+         endpointsTestsAndUseragentsPayload,
+         job,
+         jobParam,
+         level,
+         operation_id,
+         query,
+         rawBucketsAndJobsPayload,
+         stableEndpointStatsPayload
+       } = payload;
+
+       rawBucketsAndJobs.update(raw => isEqual(raw, rawBucketsAndJobsPayload)
+                                     ? raw
+                                     : rawBucketsAndJobsPayload);
+
+       stableEndpointStats.update(stats => isEqual(stats, stableEndpointStatsPayload)
+                                         ? stats
+                                         : stableEndpointStatsPayload);
+
+       endpointsTestsAndUseragents.update(etu => isEqual(etu, endpointsTestsAndUseragentsPayload)
+                                               ? etu
+                                               : endpointsTestsAndUseragentsPayload);
+
+       activeFilters.update(af => ({
+         ...af,
+         bucket,
+         job: job || '',
+         level: level || '',
+         category: category || '',
+         operation_id: operation_id || ''
+         ,
+         ...query
+       }));
+
+       onMount(() => {
+         console.log({payload});
+         if (bucketParam && bucketParam !== bucket) {
+           warnings.update(warnings => ({...warnings, invalidBucket: true}));
+         }
+         if (jobParam && jobParam !== job) {
+           warnings.update(warnings => ({...warnings, invalidJob: true}));
+         }
+       })
       </script>
-
-      <h1>Web Page is Getting There</h1>
-
-
+      {#if $warnings.invalidBucket}
+      <p><strong>Note: </strong><em>Could not find data for <code>{bucketParam}</code>. Displaying latest job for {bucket} instead.</em></p>
+      <button on:click={() => $warnings.invalidBucket = false}>Got it</button>
+      {/if}
+      {#if !$warnings.invalidBucket && $warnings.invalidJob}
+      <p><strong>Note: </strong><em>Could not find data for <code>{jobParam}</code>. Displaying latest job for {bucket} instead.</em></p>
+      <button on:click={() => $warnings.invalidJob = false}>Got it</button>
+      {/if}
+      <CoverageOverTime />
+      <SunburstContainer />
     #+end_src
    We want to be able to have dynamic url routes that spring from home like '/bucket/job/stable'.  We also want to have all fetches of our data spring from the server instead of the client (as the client won't be able to access the endpoint if it is an internal k8s address).
    
@@ -489,7 +576,7 @@ Sapper has a naming convention for files that if they are in brackets they are t
       </div>
 
       <style>
-       .chart, h2, p {
+       .chart {
          max-width: 900px;
          margin-left: auto;
          margin-right: auto;
@@ -554,11 +641,6 @@ Sapper has a naming convention for files that if they are in brackets they are t
        circle.point.conf {
          fill: green;
        }
-
-       rect.tooltip {
-         fill: white;
-         stroke: black;
-       }
       </style>
 
     #+end_src
@@ -568,6 +650,11 @@ Sapper has a naming convention for files that if they are in brackets they are t
     :END:
     #+NAME: Nav
     #+begin_src web
+      <nav>
+        <img src='logo.png' alt="apisnoop logo, a magnifying glass with a 3 color pie chart inside." />
+        <a href='/' class='title'>APISnoop</a>
+      </nav>
+
       <style>
        nav {
          background: #9EEBCF; 
@@ -576,10 +663,11 @@ Sapper has a naming convention for files that if they are in brackets they are t
          align-items: center;
          padding: 0.25em;
        }
-       p.title {
+       a.title {
          margin: 0;
          font-size: 1.5em;
-
+         color: inherit;
+         text-decoration: none;
        }
 
        img {
@@ -588,10 +676,6 @@ Sapper has a naming convention for files that if they are in brackets they are t
        }
       </style>
 
-      <nav>
-        <img src='logo.png' alt="apisnoop logo, a magnifying glass with a 3 color pie chart inside." />
-        <p class='title'>APISnoop</p>
-      </nav>
 
     #+end_src
 *** Sunburst Container
@@ -924,37 +1008,6 @@ Sapper has a naming convention for files that if they are in brackets they are t
          position: relative;
          grid-column: 1;
        }
-
-       #explanation {
-         position: absolute;
-         top: calc(100% / 2.25);
-         left: 0;
-         width: 100%;
-         text-align: center;
-         color: #eeeeee;
-         z-index: 2;
-         display: flex;
-         flex-flow: column;
-         justify-content: center;
-         align-items: center;
-       }
-
-       @media(max-width: 667px) {
-         #explanation {
-           font-size: 0.75em;
-         }
-       }
-
-       #level , #category {
-         margin: 0;
-         padding: 0;
-       }
-       #level {
-         font-size: 1.5em;
-       }
-       #category {
-         font-size: 1.25em;
-       }
       </style>
     #+end_src
     
@@ -1126,15 +1179,6 @@ Sapper has a naming convention for files that if they are in brackets they are t
 
        div :global(.fail) {
          color: rgba(233, 233, 233, 1);
-       }
-
-       ul {
-         padding-left: 0;
-         list-style-type: none;
-       }
-
-       strong {
-         font-family: monospace;
        }
 
        dl {
@@ -2231,3 +2275,17 @@ spec:
 #+end_src
 
 * Footnotes
+** Scratch sql
+   #+begin_src sql-mode
+   select bucket from bucket_job_swagger; 
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src sql-mode
+             bucket           
+   ---------------------------
+    ci-kubernetes-e2e-gci-gce
+    apisnoop
+   (2 rows)
+
+   #+end_src
