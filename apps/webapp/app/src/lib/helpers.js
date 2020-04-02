@@ -111,3 +111,8 @@ function isValidJob  (bucket, job) {
   let jobs = bucket.jobs.map(job => job.job);
   return jobs.includes(job);
 }
+
+// SemverString Number -> SemVerString
+// SemverString : Numbers separated by points, representing a software release
+// Given SemverString s and number n, return string of n level specificity
+export const releasePrecision = (s , n) => s.split('.').slice(0,n).join('.');

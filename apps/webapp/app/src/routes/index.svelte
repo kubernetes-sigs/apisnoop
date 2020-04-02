@@ -7,7 +7,7 @@
 </script>
 
 <script>
- import CoverageOverTime from '../components/CoverageOverTime.svelte'; 
+ import CoverageOverTimeContainer from '../components/CoverageOverTimeContainer.svelte'; 
  import SunburstContainer from '../components/SunburstContainer.svelte';
  import { isEqual} from 'lodash-es';
  import {
@@ -39,5 +39,5 @@
 <svelte:head>
   <title>APISnoop</title>
 </svelte:head>
-<CoverageOverTime />
+<CoverageOverTimeContainer />
 <SunburstContainer />

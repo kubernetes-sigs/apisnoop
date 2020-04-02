@@ -6,8 +6,8 @@
 <style>
  main {
    position: relative;
-   max-width: 100%;
-   background-color: white;
+   max-width: 1080px;
+   margin: auto;
    padding: 2em;
    box-sizing: border-box;
  }

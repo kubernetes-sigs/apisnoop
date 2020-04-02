@@ -43,8 +43,6 @@
  $: confArea = `${confPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
 </script>
 
-<h1>Coverage Over Time</h1>
-
 <div class="chart" bind:clientWidth={width} bind:clientHeight={height}>
   <svg>
     <!-- y axis -->
@@ -174,6 +172,7 @@
    stroke: rgba(0,0,0,0.5);
    cursor: pointer;
  }
+
  circle.point.conf {
    fill: green;
  }

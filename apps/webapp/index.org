@@ -198,8 +198,8 @@
      <style>
       main {
         position: relative;
-        max-width: 100%;
-        background-color: white;
+        max-width: 1080px;
+        margin: auto;
         padding: 2em;
         box-sizing: border-box;
       }
@@ -271,7 +271,7 @@
        </script>
 
        <script>
-        import CoverageOverTime from '../components/CoverageOverTime.svelte'; 
+        import CoverageOverTimeContainer from '../components/CoverageOverTimeContainer.svelte'; 
         import SunburstContainer from '../components/SunburstContainer.svelte';
         import { isEqual} from 'lodash-es';
         import {
@@ -303,7 +303,7 @@
        <svelte:head>
          <title>APISnoop</title>
        </svelte:head>
-       <CoverageOverTime />
+       <CoverageOverTimeContainer />
        <SunburstContainer />
      #+end_src
      
@@ -507,8 +507,6 @@ Sapper has a naming convention for files that if they are in brackets they are t
        $: confArea = `${confPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
       </script>
 
-      <h1>Coverage Over Time</h1>
-
       <div class="chart" bind:clientWidth={width} bind:clientHeight={height}>
         <svg>
           <!-- y axis -->
@@ -638,11 +636,71 @@ Sapper has a naming convention for files that if they are in brackets they are t
          stroke: rgba(0,0,0,0.5);
          cursor: pointer;
        }
+
        circle.point.conf {
          fill: green;
        }
       </style>
 
+    #+end_src
+*** CoverageOverTimeContainer
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/CoverageOverTimeContainer.svelte
+    :END:
+    #+NAME: CoverageOverTimeContainer
+    #+begin_src web
+      <script>
+       import SectionHeader from './SectionHeader.svelte';
+       import CoverageOverTime from './CoverageOverTime.svelte';
+       import { dates, coverage } from '../stores/coverage-over-time.js';
+       import { first, last } from 'lodash-es';
+       import { releasePrecision } from '../lib/helpers.js';
+       import dayjs from 'dayjs';
+
+       $: releases = $coverage
+         .map(stat => ({release: stat.release , date: stat.date}))
+         .sort((a,b) => new Date(a.date) - new Date(b.date));
+
+       $: latestRelease = last(releases);
+       $: latestUpdate = dayjs(latestRelease.date)
+         .format('DD MMMM, YYYY');
+
+       $: otherReleases = releases
+         .filter(release => (
+           release.date !== latestRelease.date
+           && release.release !== latestRelease.release))
+       $: test = releasePrecision(latestRelease.release, 2)
+       $: pastReleaseSpread = () => {
+         let uniqRels = [...new Set(otherReleases.map(r => releasePrecision(r.release, 2)))];
+         return uniqRels.length > 1
+                                ? `last ${uniqRels.length} releases, from ${first(uniqRels)} to ${last(uniqRels)}`
+                                : `last release, ${uniqRels[0]}`
+       }
+      </script>
+
+      <section>
+        <SectionHeader title="Kubernetes Test Coverage Over Time">
+          <em>Updated on {latestUpdate}</em>
+        </SectionHeader>
+        <p>
+          Below shows the the testing coverage for standard and conformance tests (where coverage is defined as the percentage of kubernetes endpoints hit by at least one test during an e2e test suite run).
+          {#if releases.length > 1}
+          The data includes the {pastReleaseSpread()} along with the latest test run for {releasePrecision(latestRelease.release, 2)}.
+          {:else}
+          The data includes the latest test run for {releasePrecision(latestRelease.release, 2)}
+          {/if}
+        </p>
+
+        <p>The current goal, as reflected in the y-axis,  is to have at least 50% of kubernetes endpoints hit by tests.</p>
+        <strong>Click on any data point to see an in-depth look at that release's coverage</strong>
+        <CoverageOverTime />
+      </section>
+
+      <style>
+       section {
+         padding: 1rem;
+       }
+      </style>
     #+end_src
 *** Nav
     :PROPERTIES:
@@ -714,7 +772,7 @@ Sapper has a naming convention for files that if they are in brackets they are t
       </style>
     #+end_src
     
-*** SectionHeader 
+*** SunburstHeader 
     :PROPERTIES:
     :header-args: :tangle ./app/src/components/SunburstHeader.svelte
     :END:
@@ -1377,97 +1435,116 @@ Sapper has a naming convention for files that if they are in brackets they are t
 
     
     #+end_src
+*** Section Header
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/SectionHeader.svelte
+    :END:
+    This is to set consistent styling and spacing for each part of our homepage 
+    I will be an h2 tag with particular styling, plus slots for explanatory text and timestamps and what not.
+    #+NAME: Section Header
+    #+begin_src web 
+      <script>
+      export let title;
+      </script>
+
+      <header>
+        <h2>{title}</h2>
+        <slot></slot>
+      </header>
+
+      <style>
+       h2 {
+         font-size: 1.66rem;
+         font-weight: 300;
+         margin: 0;
+         padding: 0;
+       }
+      </style>
+    #+end_src
+    
+    
+    
 ** Queries
    :PROPERTIES:
    :header-args: :tangle ./app/src/queries/index.js
    :END:
+   These are graphql queries to our postgres db.  At this moment, there is not alot of graphql magic going on, they map pretty direct to the underlying postgres sql statement.
    
-   #+NAME: Queries
-   #+begin_src js 
+   We use apollo boost for our graphql connection
+   
+   #+NAME: import apollo-boost
+   #+begin_src js
      import { gql } from 'apollo-boost';
-     export const ENDPOINTS_USERAGENTS_AND_TESTS = gql`
-     query ENDPOINTS_TESTS_AND_USERAGENTS($bucket: String, $job: String) {
-       endpoints: endpoint_coverage(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
-         operation_id
-         level
-         category
-         conf_tested
-         tested
-         hit
-         details {
-           description
-           path
-           k8s_group
-           k8s_kind
-         }
-       }
-       tests(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
-         test
-         test_tags
-         operation_ids
-       }
-       useragents(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
-         useragent
-         operation_ids
-       }
-     }
-     `
 
-     export const ENDPOINTS_TESTS_AND_USERAGENTS = gql`
-     query ENDPOINTS_TESTS_AND_USERAGENTS($bucket: String, $job: String) {
-       endpoints: endpoint_coverage(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
-         operation_id
-         level
-         category
-         conf_tested
-         tested
-         hit
-         details {
-           description
-           path
-           k8s_group
-           k8s_kind
-         }
-       }
-       tests(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
-         test
-         test_tags
-         operation_ids
-       }
-       useragents(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
-         useragent
-         operation_ids
-       }
-     }
-     `
-
-
-     // All buckets and jobs available in db that are not 'live'
-     export const ALL_BUCKETS_AND_JOBS_SANS_LIVE = gql`
-     {
-       bucket_job_swagger(where: {bucket: {_neq: "apisnoop"}}) {
-         bucket
-         job
-         job_timestamp
-       }
-     }
-     `;
-
-     export const STABLE_ENDPOINT_STATS = gql`
-     query STABLE_ENDPOINT_STATS {
-       stable_endpoint_stats(where: {job: {_neq: "live"}}) {
-         conf_hits
-         date
-         job
-         percent_conf_tested
-         percent_tested
-         test_hits
-         total_endpoints
-       }
-     }
-     `;
-   
    #+end_src
+   
+*** Endpoints Tests and Useragents
+    #+NAME: ENDPOINTS_TESTS_AND_USERAGENTS
+    #+begin_src js
+      export const ENDPOINTS_TESTS_AND_USERAGENTS = gql`
+      query ENDPOINTS_TESTS_AND_USERAGENTS($bucket: String, $job: String) {
+        endpoints: endpoint_coverage(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
+          operation_id
+          level
+          category
+          conf_tested
+          tested
+          hit
+          details {
+            description
+            path
+            k8s_group
+            k8s_kind
+          }
+        }
+        tests(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
+          test
+          test_tags
+          operation_ids
+        }
+        useragents(where: {bucket: {_eq: $bucket}, job: {_eq: $job}}) {
+          useragent
+          operation_ids
+        }
+      }
+      `
+    #+end_src
+*** All Buckets and Jobs, Sans Live    
+    #+NAME: ALL_BUCKETS_AND_JOBS_SANS_LIVE
+    #+begin_src js
+      // All buckets and jobs available in db that are not 'live'
+      export const ALL_BUCKETS_AND_JOBS_SANS_LIVE = gql`
+      {
+        bucket_job_swagger(where: {bucket: {_neq: "apisnoop"}}) {
+          bucket
+          job
+          job_timestamp
+        }
+      }
+      `;
+    #+end_src
+*** Stable Endpoint Stats    
+    #+NAME: STABLE_ENDPOINT_STATS
+    #+begin_src js
+      export const STABLE_ENDPOINT_STATS = gql`
+      query STABLE_ENDPOINT_STATS {
+        stable_endpoint_stats(where: {job: {_neq: "live"}}) {
+          conf_hits
+          conf_hits_increase
+          date
+          job
+          percent_conf_tested
+          percent_conf_tested_increase
+          percent_tested
+          percent_tested_increase
+          release
+          test_hits
+          test_hits_increase
+          total_endpoints
+        }
+      }
+      `;
+    #+end_src
 ** Stores
 *** index
     :PROPERTIES:
@@ -2067,91 +2144,14 @@ Sapper has a naming convention for files that if they are in brackets they are t
      }
 
    #+end_src
-   
-*** colours
-    :PROPERTIES:
-    :header-args: :tangle ./app/src/lib/colours.js
-    :END:
-    
-    #+NAME: Colours
-    #+begin_src js
-      import {
-        inRange,
-        parseInt,
-        words
-      } from 'lodash-es';
-
-      export const GRAY = 'rgba(244, 244, 244, 1)';
-
-      export const levelColours = {
-        alpha: 'rgba(230, 25, 75, 1)',
-        beta: 'rgba(0, 130, 200, 1)',
-        stable: 'rgba(60, 180, 75, 1)',
-        unused: 'rgba(244, 244, 244, 1)'
-      };
-
-
-      export const categoryColours = {
-        admissionregistration: 'rgba(183, 28, 28, 1)',
-        apiextensions: 'rgba(49, 27, 146, 1)',
-        apiregistration: 'rgba(1, 87, 155, 1)',
-        apis: 'rgba(27, 94, 32, 1)',
-        apps: 'rgba(245, 127, 23, 1)',
-        authentication: 'rgba(191, 54, 12, 1)',
-        authorization: 'rgba(156, 39, 176, 1)',
-        autoscaling: 'rgba(33, 150, 243, 1)',
-        batch: 'rgba(0, 150, 136, 1)',
-        certificates: 'rgba(205, 220, 57, 1)',
-        core: 'rgba(255, 152, 0, 1)',
-        discovery: 'rgba(136, 14, 79, 1)',
-        events: 'rgba(136, 14, 79, 1)',
-        extensions: 'rgba(26, 35, 126, 1)',
-        logs: 'rgba(0, 96, 100, 1)',
-        networking: 'rgba(51, 105, 30, 1)',
-        node: 'rgba(53, 105, 30, 1)',
-        policy: 'rgba(255, 111, 0, 1)',
-        rbacAuthorization: 'rgba(244, 67, 54, 1)',
-        scheduling: 'rgba(103, 58, 183, 1)',
-        settings: 'rgba(3, 169, 244, 1)',
-        storage: 'rgba(255, 215, 0, 1)',
-        version: 'rgba(255, 235, 59, 1)',
-        auditregistration: 'rgba(255, 87, 34, 1)',
-        coordination: 'rgba(74, 20, 140, 1)'
-      };
-
-      export function endpointColour (endpoint) {
-        let endpointColor = categoryColours[endpoint.category]
-        if (!endpoint.tested) {
-          return GRAY;
-        } else if (!endpoint.conf_tested) {
-          return fadeColour(endpointColor, 0.75);
-        } else {
-          return endpointColor;
-        }
-      };
-
-      export function fadeColour (colour, desiredOpacity) {
-        let rgbaPattern = /rgba\([0-9]{1,3},[0-9]{1,3},[0-9]{1,3},(1|0\.[0-9])\)/g
-        let rgbaIsValid = rgbaPattern.test(colour.replace(/\s+/g, ''));
-        let opacityIsValid = inRange(parseInt(desiredOpacity), 0, 1.1);
-        if (!rgbaIsValid) {
-          console.log('color given to fadeColour does not match rgba pattern: ', colour);
-          return `rgba(244,244,244,1)`
-        } else if (!opacityIsValid) {
-          console.log('opacity is not valid: ', desiredOpacity);
-          return `rgba(244,244,244,1)`
-        } else {
-          let rgba = words(colour);
-          let c = {
-            red: rgba[1],
-            green: rgba[2],
-            blue: rgba[3]
-          };
-          return `rgba(${c.red}, ${c.green}, ${c.blue}, ${desiredOpacity})`
-        };
-      };
-
-    #+end_src
+**** releasePrecision
+     #+NAME: releasePrecision
+     #+begin_src js
+       // SemverString Number -> SemVerString
+       // SemverString : Numbers separated by points, representing a software release
+       // Given SemverString s and number n, return string of n level specificity
+       export const releasePrecision = (s , n) => s.split('.').slice(0,n).join('.');
+     #+end_src
 ** Routes
 ** Stores
 ** Queries
