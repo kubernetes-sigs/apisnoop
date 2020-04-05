@@ -59,7 +59,7 @@
      timestamp: c.timestamp
    })), 'release');
 
-afterUpdate(() => console.log({releases}));
+ afterUpdate(() => console.log({releases}));
 </script>
 
 <div class="chart" bind:clientWidth={width} bind:clientHeight={height}>
@@ -135,6 +135,10 @@ afterUpdate(() => console.log({releases}));
     {/if}
   </svg>
 </div>
+<div id="legend">
+  <p><span class='tests'></span> Coverage by tests</p>
+  <p><span class='conformance'></span>Coverage by conformance tests</p>
+</div>
 
 <style>
  .chart {
@@ -207,5 +211,32 @@ afterUpdate(() => console.log({releases}));
 
  circle.point.conf {
    fill: green;
+ }
+
+ #legend {
+   width: 25%;
+   border: 1px solid black;
+   padding: 0.25rem;
+   font-size: 0.75rem;
+   margin-top: 1.25rem;
+ }
+ #legend p {
+   display: flex;
+   align-items: center;
+   margin: 0;
+   padding: 0;
+ }
+ #legend span {
+   display: block;
+   width: 2rem;
+   height: 0.75rem;
+   margin-right: 0.75rem;
+ }
+ #legend span.tests {
+   background: rgba(234, 226, 108, 0.5);
+ }
+
+ #legend span.conformance {
+   background: rgba(0, 100, 100, 0.5);
  }
 </style>
