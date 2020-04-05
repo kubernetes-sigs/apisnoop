@@ -1,6 +1,13 @@
 <script>
  import dayjs from 'dayjs';
- import { isEmpty } from 'lodash-es';
+ import {
+   first,
+   last,
+   isEmpty,
+   uniqBy
+ } from 'lodash-es';
+ import { releasePrecision } from '../lib/helpers.js';
+ import { afterUpdate } from 'svelte';
  import { scaleLinear, scaleTime } from 'd3-scale';
  import { prefetch, goto } from '@sapper/app';
  import {
@@ -21,28 +28,38 @@
  // X ticks will be from oldest audit run to today.
  $: xTicks = [
    dayjs($coverage[0].timestamp).subtract(1, 'day'),
-   dayjs().subtract(9, 'month'),
-   dayjs().subtract(6, 'month'),
-   dayjs().subtract(3, 'month'),
-   dayjs()
+   dayjs().subtract(8, 'month'),
+   dayjs().subtract(4, 'month'),
+   dayjs().subtract(2, 'month'),
+   dayjs().add(1,'week')
  ];
 
  let width = 900;
  let height = 600;
 
  $: activeJob = {};
- $: minX = dayjs($dates[0]);
- $: maxX = dayjs($dates[$dates.length - 1]);
+ $: minX = dayjs(first($dates));
+ $: maxX = dayjs(last($dates));
  $: xScale = scaleTime()
    .domain([minX, maxX])
    .range([padding.left, width - padding.right]);
  $: yScale = scaleLinear()
    .domain([Math.min.apply(null, yTicks), Math.max.apply(null, yTicks)])
    .range([height - padding.bottom, padding.top]);
+
  $: testedPath = `M${$coverage.map(c => `${xScale(c.timestamp)},${yScale(c.percent_tested)}`).join('L')}`;
  $: testedArea = `${testedPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
+
  $: confPath = `M${$coverage.map(c => `${xScale(c.timestamp)},${yScale(c.percent_conf_tested)}`).join('L')}`;
  $: confArea = `${confPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
+
+ $: releases = uniqBy($coverage
+   .map(c => ({
+     release: releasePrecision(c.release, 2),
+     timestamp: c.timestamp
+   })), 'release');
+
+afterUpdate(() => console.log({releases}));
 </script>
 
 <div class="chart" bind:clientWidth={width} bind:clientHeight={height}>
@@ -62,6 +79,14 @@
       <g class="tick tick-{ tick}" transform="translate({xScale(tick)},{height})">
         <line y1="-{height}" y2="-{padding.bottom}" x1="0" x2="0"></line>
         <text y="-2">{dayjs(tick).format('DD MMM, YY')}</text>
+      </g>
+      {/each}
+    </g>
+    <!-- Releases -->
+    <g class="releases">
+      {#each releases as r}
+      <g class="release release-{r.release}" transform="translate({xScale(r.timestamp)},{height - 20})">
+        <text y="-2">{r.release}</text>
       </g>
       {/each}
     </g>
@@ -146,6 +171,11 @@
 
  .x-axis .tick text {
    text-anchor: middle;
+ }
+
+ .releases .release text {
+   fill: gray;
+   font-style: italic;
  }
 
  .path-line {

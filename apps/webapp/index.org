@@ -457,6 +457,65 @@
 
 Sapper has a naming convention for files that if they are in brackets they are treated as dynamic, with the name in the brackets mapping to the url params.  So we name our files [...index] which lets us be able to go to a route like '/bucket/job/stable' and we'll get a url params in a list [bucket, job, stable].  Helpful!
 ** Components
+*** CoverageOverTimeContainer
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/CoverageOverTimeContainer.svelte
+    :END:
+    #+NAME: CoverageOverTimeContainer
+    #+begin_src web
+      <script>
+       import SectionHeader from './SectionHeader.svelte';
+       import CoverageOverTime from './CoverageOverTime.svelte';
+       import { dates, coverage } from '../stores/coverage-over-time.js';
+       import { first, last } from 'lodash-es';
+       import { releasePrecision } from '../lib/helpers.js';
+       import dayjs from 'dayjs';
+
+       $: releases = $coverage
+         .map(stat => ({release: stat.release , date: stat.date}))
+         .sort((a,b) => new Date(a.date) - new Date(b.date));
+
+       $: latestRelease = last(releases);
+       $: latestUpdate = dayjs(latestRelease.date)
+         .format('DD MMMM, YYYY');
+
+       $: otherReleases = releases
+         .filter(release => (
+           release.date !== latestRelease.date
+           && release.release !== latestRelease.release))
+       $: test = releasePrecision(latestRelease.release, 2)
+       $: pastReleaseSpread = () => {
+         let uniqRels = [...new Set(otherReleases.map(r => releasePrecision(r.release, 2)))];
+         return uniqRels.length > 1
+                                ? `last ${uniqRels.length} releases, from ${first(uniqRels)} to ${last(uniqRels)}, `
+                                : `last release, ${uniqRels[0]}`
+       }
+      </script>
+
+      <section>
+        <SectionHeader title="Kubernetes Test Coverage Over Time">
+          <em>Updated on {latestUpdate}</em>
+        </SectionHeader>
+        <p>
+          Below shows the the testing coverage for standard and conformance tests (where coverage is defined as the percentage of kubernetes endpoints hit by at least one test during an e2e test suite run).
+          {#if releases.length > 1}
+          The data includes the {pastReleaseSpread()} along with the latest test run for {releasePrecision(latestRelease.release, 2)}.
+          {:else}
+          The data includes the latest test run for {releasePrecision(latestRelease.release, 2)}.
+          {/if}
+        </p>
+
+        <p>The current goal, as reflected in the y-axis,  is to have at least 50% of kubernetes endpoints hit by tests.</p>
+        <strong>Click on any data point to see an in-depth look at that release's coverage</strong>
+        <CoverageOverTime />
+      </section>
+
+      <style>
+       section {
+         padding: 1rem;
+       }
+      </style>
+    #+end_src
 *** CoverageOverTime.svelte
     :PROPERTIES:
     :header-args: :tangle ./app/src/components/CoverageOverTime.svelte
@@ -464,7 +523,14 @@ Sapper has a naming convention for files that if they are in brackets they are t
     #+begin_src web 
       <script>
        import dayjs from 'dayjs';
-       import { isEmpty } from 'lodash-es';
+       import {
+         first,
+         last,
+         isEmpty,
+         uniqBy
+       } from 'lodash-es';
+       import { releasePrecision } from '../lib/helpers.js';
+       import { afterUpdate } from 'svelte';
        import { scaleLinear, scaleTime } from 'd3-scale';
        import { prefetch, goto } from '@sapper/app';
        import {
@@ -485,28 +551,38 @@ Sapper has a naming convention for files that if they are in brackets they are t
        // X ticks will be from oldest audit run to today.
        $: xTicks = [
          dayjs($coverage[0].timestamp).subtract(1, 'day'),
-         dayjs().subtract(9, 'month'),
-         dayjs().subtract(6, 'month'),
-         dayjs().subtract(3, 'month'),
-         dayjs()
+         dayjs().subtract(8, 'month'),
+         dayjs().subtract(4, 'month'),
+         dayjs().subtract(2, 'month'),
+         dayjs().add(1,'week')
        ];
 
        let width = 900;
        let height = 600;
 
        $: activeJob = {};
-       $: minX = dayjs($dates[0]);
-       $: maxX = dayjs($dates[$dates.length - 1]);
+       $: minX = dayjs(first($dates));
+       $: maxX = dayjs(last($dates));
        $: xScale = scaleTime()
          .domain([minX, maxX])
          .range([padding.left, width - padding.right]);
        $: yScale = scaleLinear()
          .domain([Math.min.apply(null, yTicks), Math.max.apply(null, yTicks)])
          .range([height - padding.bottom, padding.top]);
+
        $: testedPath = `M${$coverage.map(c => `${xScale(c.timestamp)},${yScale(c.percent_tested)}`).join('L')}`;
        $: testedArea = `${testedPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
+
        $: confPath = `M${$coverage.map(c => `${xScale(c.timestamp)},${yScale(c.percent_conf_tested)}`).join('L')}`;
        $: confArea = `${confPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
+
+       $: releases = uniqBy($coverage
+         .map(c => ({
+           release: releasePrecision(c.release, 2),
+           timestamp: c.timestamp
+         })), 'release');
+
+      afterUpdate(() => console.log({releases}));
       </script>
 
       <div class="chart" bind:clientWidth={width} bind:clientHeight={height}>
@@ -526,6 +602,14 @@ Sapper has a naming convention for files that if they are in brackets they are t
             <g class="tick tick-{ tick}" transform="translate({xScale(tick)},{height})">
               <line y1="-{height}" y2="-{padding.bottom}" x1="0" x2="0"></line>
               <text y="-2">{dayjs(tick).format('DD MMM, YY')}</text>
+            </g>
+            {/each}
+          </g>
+          <!-- Releases -->
+          <g class="releases">
+            {#each releases as r}
+            <g class="release release-{r.release}" transform="translate({xScale(r.timestamp)},{height - 20})">
+              <text y="-2">{r.release}</text>
             </g>
             {/each}
           </g>
@@ -612,6 +696,11 @@ Sapper has a naming convention for files that if they are in brackets they are t
          text-anchor: middle;
        }
 
+       .releases .release text {
+         fill: gray;
+         font-style: italic;
+       }
+
        .path-line {
          fill: none;
          stroke: rgb(234,226,108);
@@ -644,65 +733,6 @@ Sapper has a naming convention for files that if they are in brackets they are t
        }
       </style>
 
-    #+end_src
-*** CoverageOverTimeContainer
-    :PROPERTIES:
-    :header-args: :tangle ./app/src/components/CoverageOverTimeContainer.svelte
-    :END:
-    #+NAME: CoverageOverTimeContainer
-    #+begin_src web
-      <script>
-       import SectionHeader from './SectionHeader.svelte';
-       import CoverageOverTime from './CoverageOverTime.svelte';
-       import { dates, coverage } from '../stores/coverage-over-time.js';
-       import { first, last } from 'lodash-es';
-       import { releasePrecision } from '../lib/helpers.js';
-       import dayjs from 'dayjs';
-
-       $: releases = $coverage
-         .map(stat => ({release: stat.release , date: stat.date}))
-         .sort((a,b) => new Date(a.date) - new Date(b.date));
-
-       $: latestRelease = last(releases);
-       $: latestUpdate = dayjs(latestRelease.date)
-         .format('DD MMMM, YYYY');
-
-       $: otherReleases = releases
-         .filter(release => (
-           release.date !== latestRelease.date
-           && release.release !== latestRelease.release))
-       $: test = releasePrecision(latestRelease.release, 2)
-       $: pastReleaseSpread = () => {
-         let uniqRels = [...new Set(otherReleases.map(r => releasePrecision(r.release, 2)))];
-         return uniqRels.length > 1
-                                ? `last ${uniqRels.length} releases, from ${first(uniqRels)} to ${last(uniqRels)}`
-                                : `last release, ${uniqRels[0]}`
-       }
-      </script>
-
-      <section>
-        <SectionHeader title="Kubernetes Test Coverage Over Time">
-          <em>Updated on {latestUpdate}</em>
-        </SectionHeader>
-        <p>
-          Below shows the the testing coverage for standard and conformance tests (where coverage is defined as the percentage of kubernetes endpoints hit by at least one test during an e2e test suite run).
-          {#if releases.length > 1}
-          The data includes the {pastReleaseSpread()} along with the latest test run for {releasePrecision(latestRelease.release, 2)}.
-          {:else}
-          The data includes the latest test run for {releasePrecision(latestRelease.release, 2)}
-          {/if}
-        </p>
-
-        <p>The current goal, as reflected in the y-axis,  is to have at least 50% of kubernetes endpoints hit by tests.</p>
-        <strong>Click on any data point to see an in-depth look at that release's coverage</strong>
-        <CoverageOverTime />
-      </section>
-
-      <style>
-       section {
-         padding: 1rem;
-       }
-      </style>
     #+end_src
 *** Nav
     :PROPERTIES:

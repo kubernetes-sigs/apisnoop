@@ -22,7 +22,7 @@
  $: pastReleaseSpread = () => {
    let uniqRels = [...new Set(otherReleases.map(r => releasePrecision(r.release, 2)))];
    return uniqRels.length > 1
-                          ? `last ${uniqRels.length} releases, from ${first(uniqRels)} to ${last(uniqRels)}`
+                          ? `last ${uniqRels.length} releases, from ${first(uniqRels)} to ${last(uniqRels)}, `
                           : `last release, ${uniqRels[0]}`
  }
 </script>
@@ -36,7 +36,7 @@
     {#if releases.length > 1}
     The data includes the {pastReleaseSpread()} along with the latest test run for {releasePrecision(latestRelease.release, 2)}.
     {:else}
-    The data includes the latest test run for {releasePrecision(latestRelease.release, 2)}
+    The data includes the latest test run for {releasePrecision(latestRelease.release, 2)}.
     {/if}
   </p>
 
