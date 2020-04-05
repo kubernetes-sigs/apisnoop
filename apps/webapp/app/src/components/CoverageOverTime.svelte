@@ -12,8 +12,10 @@
  } from '../stores';
 
  const padding = { top: 20, right: 15, bottom: 20, left: 25 };
+ // create an array of numbers from 0 to max, incremented by step
+ const range = (max, step) => [...Array(max + 1).keys()].filter(n => n % step === 0)
  // y is total percentage, from 0 to 100
- const yTicks = [0, 10, 20, 30, 40, 50, 60,70,80,90, 100];
+ const yTicks = range(50, 5);
 
  // Coverage is sorted by timestamp, with oldest at [0]
  // X ticks will be from oldest audit run to today.
