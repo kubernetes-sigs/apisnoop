@@ -1,5 +1,6 @@
 <script>
  import * as d3 from 'd3';
+ import { goto } from '@sapper/app';
  import {
    compact,
    join
@@ -83,8 +84,8 @@
      category,
      operation_id
    } = p.data;
-   activeFilters.update(af => ({...af, bucket, job, level, category, operation_id}));
    setURL();
+   activeFilters.update(af => ({...af, bucket, job, level, category, operation_id}));
  };
 
  function setURL () {
@@ -98,7 +99,7 @@
      operation_id
    } = $activeFilters;
    let filterSegments = compact([bucket, job, level, category, operation_id]);
-   let urlPath = join(['coverage', ...filterSegments], '/');
+   let urlPath = join([...filterSegments], '/');
    goto(urlPath);
  };
 
@@ -143,6 +144,7 @@
           d={arc(node.current)}
           on:mouseover={() => mouseOver(node.current)}
           style="cursor: pointer;"
+          sapper-noscroll
           on:click={()=> clicked(node)} />
         {/each}
       </g>

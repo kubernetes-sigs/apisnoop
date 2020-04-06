@@ -12,6 +12,7 @@
 <script>
  import SunburstContainer from '../components/SunburstContainer.svelte';
  import CoverageOverTime from '../components/CoverageOverTime/Wrapper.svelte';
+ import { goto } from '@sapper/app';
  import { onMount, afterUpdate } from 'svelte';
  import { isEqual } from 'lodash-es';
  import {
@@ -23,6 +24,7 @@
  } from '../stores';
 
  export let payload;
+ let isLoading = false;
  const  {
    bucket,
    bucketParam,
@@ -68,6 +70,13 @@
      warnings.update(warnings => ({...warnings, invalidJob: true}));
    }
  })
+
+ const navigateToDataPoint = async ({bucket, job}) => {
+   isLoading = true;
+   activeFilters.update(af => ({...af, bucket, job, level: '', category: '', operation_id: ''}))
+   await goto(`${bucket}/${job}`);
+   isLoading = false;
+ }
 </script>
 {#if $warnings.invalidBucket}
 <p><strong>Note: </strong><em>Could not find data for <code>{bucketParam}</code>. Displaying latest job for {bucket} instead.</em></p>
@@ -77,5 +86,9 @@
 <p><strong>Note: </strong><em>Could not find data for <code>{jobParam}</code>. Displaying latest job for {bucket} instead.</em></p>
 <button on:click={() => $warnings.invalidJob = false}>Got it</button>
 {/if}
-<CoverageOverTime />
+<CoverageOverTime on:dataClick={({detail}) => navigateToDataPoint(detail)}/>
+{#if isLoading}
+<p>loading sunburst with data...</p>
+{:else}
 <SunburstContainer />
+{/if}
