@@ -11,7 +11,7 @@
 
 <script>
  import SunburstContainer from '../components/SunburstContainer.svelte';
- import CoverageOverTime from '../components/CoverageOverTime.svelte';
+ import CoverageOverTime from '../components/CoverageOverTime/Wrapper.svelte';
  import { onMount, afterUpdate } from 'svelte';
  import { isEqual } from 'lodash-es';
  import {
@@ -61,7 +61,6 @@
  }));
 
  onMount(() => {
-   console.log({payload});
    if (bucketParam && bucketParam !== bucket) {
      warnings.update(warnings => ({...warnings, invalidBucket: true}));
    }

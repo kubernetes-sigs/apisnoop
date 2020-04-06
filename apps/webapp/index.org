@@ -271,9 +271,10 @@
        </script>
 
        <script>
-        import CoverageOverTimeContainer from '../components/CoverageOverTimeContainer.svelte'; 
+        import CoverageOverTime from '../components/CoverageOverTime/Wrapper.svelte'; 
         import SunburstContainer from '../components/SunburstContainer.svelte';
         import { isEqual} from 'lodash-es';
+        import { goto } from '@sapper/app';
         import {
           stableEndpointStats,
           rawBucketsAndJobs,
@@ -286,6 +287,7 @@
           stableEndpointStatsPayload,
           endpointsTestsAndUseragentsPayload
         } = payload;
+        let isLoading = false;
 
         rawBucketsAndJobs.update(raw => isEqual(raw, rawBucketsAndJobsPayload)
                                       ? raw
@@ -298,13 +300,23 @@
         endpointsTestsAndUseragents.update(etu => isEqual(etu, endpointsTestsAndUseragentsPayload)
                                                 ? etu
                                                 : endpointsTestsAndUseragentsPayload);
+
+        const navigateToDataPoint = async ({bucket, job}) => {
+          isLoading = true;
+          await goto(`${bucket}/${job}`);
+          isLoading = false;
+        }
        </script>
 
        <svelte:head>
          <title>APISnoop</title>
        </svelte:head>
-       <CoverageOverTimeContainer />
+       <CoverageOverTime on:dataClick={({detail}) => navigateToDataPoint(detail)}/>
+       {#if isLoading}
+       <p>loading sunburst with data...</p>
+       {:else}
        <SunburstContainer />
+       {/if}
      #+end_src
      
 *** [...params]
@@ -381,7 +393,7 @@
 
       <script>
        import SunburstContainer from '../components/SunburstContainer.svelte';
-       import CoverageOverTime from '../components/CoverageOverTime.svelte';
+       import CoverageOverTime from '../components/CoverageOverTime/Wrapper.svelte';
        import { onMount, afterUpdate } from 'svelte';
        import { isEqual } from 'lodash-es';
        import {
@@ -431,7 +443,6 @@
        }));
 
        onMount(() => {
-         console.log({payload});
          if (bucketParam && bucketParam !== bucket) {
            warnings.update(warnings => ({...warnings, invalidBucket: true}));
          }
@@ -457,68 +468,121 @@
 
 Sapper has a naming convention for files that if they are in brackets they are treated as dynamic, with the name in the brackets mapping to the url params.  So we name our files [...index] which lets us be able to go to a route like '/bucket/job/stable' and we'll get a url params in a list [bucket, job, stable].  Helpful!
 ** Components
-*** CoverageOverTimeContainer
+*** Outline of a Section
+    What does a general graph section look like?
+    It will be a section wrapper, plus a title, some explanatory text, and the graph.
+    The graph could be made of a breakoutsection (like the sunburst's legend on the right), or just a simple legend. 
+    
+    This format would cover our CoverOVerTime, Sunburst, and TestsList.
+    
+    I feel that each title is different enough that a title component is more confusing than good, instead there should be a shared style for h2 tags, and a general style for section spacing.  So this is reduced futher to 
+    #+begin_example web
+    <section>
+      <sectionHeader />
+      <sectionGraphContainer />
+    </section>
+    #+end_example
+    
+    Each one will want to communicate url changes too, so we can update it to
+    
+    #+begin_example web
+    
+    <section>
+      <sectionHeader on:dataClick{updateFiltersAndPath}/>
+      <sectionGraphContainer on:dataClick{updateFiltersAndPath} />
+    </section>
+    #+end_example
+    
+    Which even cleaner would be to have our route bea ble to look something like:
+    
+    #+begin_example web
+    
+    <main>
+      <CoverageOverTime on:dataClick{updateFiltersAndPath}/>
+      <Sunburst on:dataClick{updateFiltersAndPath}/>
+      <TestsList on:dataClick{updateFiltersAndPath} />
+    </main>
+    #+end_example
+    
+    And then we could only maintain path update logic in one place, the route component itself. 
+    
+*** CoverageOverTime
+**** Wrapper
     :PROPERTIES:
-    :header-args: :tangle ./app/src/components/CoverageOverTimeContainer.svelte
+    :header-args: :tangle ./app/src/components/CoverageOverTime/Wrapper.svelte
     :END:
-    #+NAME: CoverageOverTimeContainer
+    #+NAME: CoverageOverTime Wrapper
     #+begin_src web
       <script>
-       import SectionHeader from './SectionHeader.svelte';
-       import CoverageOverTime from './CoverageOverTime.svelte';
-       import { dates, coverage } from '../stores/coverage-over-time.js';
-       import { first, last } from 'lodash-es';
-       import { releasePrecision } from '../lib/helpers.js';
-       import dayjs from 'dayjs';
-
-       $: releases = $coverage
-         .map(stat => ({release: stat.release , date: stat.date}))
-         .sort((a,b) => new Date(a.date) - new Date(b.date));
-
-       $: latestRelease = last(releases);
-       $: latestUpdate = dayjs(latestRelease.date)
-         .format('DD MMMM, YYYY');
-
-       $: otherReleases = releases
-         .filter(release => (
-           release.date !== latestRelease.date
-           && release.release !== latestRelease.release))
-       $: test = releasePrecision(latestRelease.release, 2)
-       $: pastReleaseSpread = () => {
-         let uniqRels = [...new Set(otherReleases.map(r => releasePrecision(r.release, 2)))];
-         return uniqRels.length > 1
-                                ? `last ${uniqRels.length} releases, from ${first(uniqRels)} to ${last(uniqRels)}, `
-                                : `last release, ${uniqRels[0]}`
-       }
+       import Prologue from './Prologue.svelte';
+       import Graph from './Graph.svelte';
       </script>
 
-      <section>
-        <SectionHeader title="Kubernetes Test Coverage Over Time">
-          <em>Updated on {latestUpdate}</em>
-        </SectionHeader>
-        <p>
-          Below shows the the testing coverage for standard and conformance tests (where coverage is defined as the percentage of kubernetes endpoints hit by at least one test during an e2e test suite run).
-          {#if releases.length > 1}
-          The data includes the {pastReleaseSpread()} along with the latest test run for {releasePrecision(latestRelease.release, 2)}.
-          {:else}
-          The data includes the latest test run for {releasePrecision(latestRelease.release, 2)}.
-          {/if}
-        </p>
+       <section id='coverage-over-time'>
+         <Prologue />
+         <Graph on:dataClick />
+       </section>
 
-        <p>The current goal, as reflected in the y-axis,  is to have at least 50% of kubernetes endpoints hit by tests.</p>
-        <strong>Click on any data point to see an in-depth look at that release's coverage</strong>
-        <CoverageOverTime />
-      </section>
 
       <style>
        section {
+         margin-top: var(--section-spacing);
+         margin-bottom: var(--section-spacing);
          padding: 1rem;
        }
       </style>
     #+end_src
-*** CoverageOverTime.svelte
+**** Prologue
     :PROPERTIES:
-    :header-args: :tangle ./app/src/components/CoverageOverTime.svelte
+    :header-args: :tangle ./app/src/components/CoverageOverTime/Prologue.svelte
+    :END:
+    #+NAME: CoverageOverTime Wrapper
+    #+begin_src web
+      <script>
+       import SectionHeader from '../SectionHeader.svelte';
+       import { dates, coverage } from '../../stores/coverage-over-time.js';
+       import { first, last } from 'lodash-es';
+       import { releasePrecision } from '../../lib/helpers.js';
+       import dayjs from 'dayjs';
+
+       $: releases = $coverage
+         .map(stat => ({release: releasePrecision(stat.release, 2) , date: stat.date}))
+         .sort((a,b) => new Date(a.date) - new Date(b.date));
+       $: latestRelease = last(releases);
+       $: otherReleases = releases
+         .filter(release => (
+           release.date !== latestRelease.date
+           && release.release !== latestRelease.release))
+
+       $: pastReleaseSpread = () => {
+         let uniqueReleases = [...new Set(otherReleases)]
+           .map(r => r.release);
+
+         return uniqueReleases.length > 1
+           ? ` last ${uniqueReleases.length} releases, from ${first(uniqueReleases)} to ${last(uniqueReleases)}, `
+           : `last release, ${first(uniqueReleases)}`;
+       }
+       $: latestUpdate = dayjs(latestRelease.date)
+         .format('DD MMMM, YYYY');
+      </script>
+
+      <SectionHeader title="Kubernetes Test Coverage Over Time">
+        <em>Updated on {latestUpdate}</em>
+      </SectionHeader>
+
+      <p>Below shows the the testing coverage for standard and conformance tests (where coverage is defined as the percentage of kubernetes endpoints hit by at least one test during an e2e test suite run).
+        {#if releases.length > 1}
+        The data includes the {pastReleaseSpread()} along with the latest test run for {releasePrecision(latestRelease.release, 2)}.
+        {:else}
+        The data includes the latest test run for {releasePrecision(latestRelease.release, 2)}.
+        {/if}
+      </p>
+
+      <p>The current goal, as reflected in the y-axis,  is to have at least 50% of kubernetes endpoints hit by tests.</p>
+    #+end_src
+**** Graph
+    :PROPERTIES:
+    :header-args: :tangle ./app/src/components/CoverageOverTime/Graph.svelte
     :END:
     #+begin_src web 
       <script>
@@ -529,17 +593,18 @@ Sapper has a naming convention for files that if they are in brackets they are t
          isEmpty,
          uniqBy
        } from 'lodash-es';
-       import { releasePrecision } from '../lib/helpers.js';
-       import { afterUpdate } from 'svelte';
+       import { releasePrecision } from '../../lib/helpers.js';
+       import { afterUpdate, createEventDispatcher } from 'svelte';
        import { scaleLinear, scaleTime } from 'd3-scale';
        import { prefetch, goto } from '@sapper/app';
        import {
          dates,
          coverage
-       } from '../stores/coverage-over-time.js';
+       } from '../../stores/coverage-over-time.js';
        import {
          bucketsAndJobs
-       } from '../stores';
+       } from '../../stores';
+       const dispatch = createEventDispatcher();
 
        const padding = { top: 20, right: 15, bottom: 20, left: 25 };
        // create an array of numbers from 0 to max, incremented by step
@@ -582,7 +647,7 @@ Sapper has a naming convention for files that if they are in brackets they are t
            timestamp: c.timestamp
          })), 'release');
 
-       afterUpdate(() => console.log({releases}));
+       const dispatchDataClick = (payload) => dispatch('dataClick', payload);
       </script>
 
       <div class="chart" bind:clientWidth={width} bind:clientHeight={height}>
@@ -624,11 +689,11 @@ Sapper has a naming convention for files that if they are in brackets they are t
             r='5'
             class='point'
             on:mouseover={() => {
-            prefetch(`coverage/ci-kubernetes-e2e-gci-gce/${point.job}`)
+            prefetch(`${point.bucket}/${point.job}`)
             activeJob = point
             }}
             on:mouseleave={() => activeJob = {}}
-            on:click={() => goto(`coverage/${point.bucket}/${point.job}`)}
+            on:click={() => dispatchDataClick({bucket: point.bucket, job: point.job})}
           />
           <circle
             cx='{xScale(point.timestamp)}'
@@ -636,11 +701,11 @@ Sapper has a naming convention for files that if they are in brackets they are t
             r='5'
             class='point conf'
             on:mouseover={() => {
-            prefetch(`coverage/ci-kubernetes-e2e-gci-gce/${point.job}`)
+            prefetch(`${point.bucket}/${point.job}`)
             activeJob = point
             }}
             on:mouseleave={() => activeJob = {}}
-            on:click={() => goto(`coverage/${point.bucket}/${point.job}`)}
+            on:click={() => dispatchDataClick({bucket: point.bucket, job: point.job})}
           />
           {/each}
           {#if !isEmpty(activeJob)}
@@ -1073,7 +1138,6 @@ Sapper has a naming convention for files that if they are in brackets they are t
            return {...node, currentOpacity};
          })
       </script>
-
       <div class="chart">
         <svg viewBox="0,0,932,932" style="font: 12px sans-serif;" on:mouseleave={mouseLeave}>
           <g transform="translate({width/2},{width/2})" id='big-g'>
@@ -1524,8 +1588,6 @@ Sapper has a naming convention for files that if they are in brackets they are t
        }
       </style>
     #+end_src
-    
-    
     
 ** Queries
    :PROPERTIES:

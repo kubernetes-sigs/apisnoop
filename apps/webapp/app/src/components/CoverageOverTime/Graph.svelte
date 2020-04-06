@@ -6,17 +6,18 @@
    isEmpty,
    uniqBy
  } from 'lodash-es';
- import { releasePrecision } from '../lib/helpers.js';
- import { afterUpdate } from 'svelte';
+ import { releasePrecision } from '../../lib/helpers.js';
+ import { afterUpdate, createEventDispatcher } from 'svelte';
  import { scaleLinear, scaleTime } from 'd3-scale';
  import { prefetch, goto } from '@sapper/app';
  import {
    dates,
    coverage
- } from '../stores/coverage-over-time.js';
+ } from '../../stores/coverage-over-time.js';
  import {
    bucketsAndJobs
- } from '../stores';
+ } from '../../stores';
+ const dispatch = createEventDispatcher();
 
  const padding = { top: 20, right: 15, bottom: 20, left: 25 };
  // create an array of numbers from 0 to max, incremented by step
@@ -59,7 +60,7 @@
      timestamp: c.timestamp
    })), 'release');
 
- afterUpdate(() => console.log({releases}));
+ const dispatchDataClick = (payload) => dispatch('dataClick', payload);
 </script>
 
 <div class="chart" bind:clientWidth={width} bind:clientHeight={height}>
@@ -101,11 +102,11 @@
       r='5'
       class='point'
       on:mouseover={() => {
-      prefetch(`coverage/ci-kubernetes-e2e-gci-gce/${point.job}`)
+      prefetch(`${point.bucket}/${point.job}`)
       activeJob = point
       }}
       on:mouseleave={() => activeJob = {}}
-      on:click={() => goto(`coverage/${point.bucket}/${point.job}`)}
+      on:click={() => dispatchDataClick({bucket: point.bucket, job: point.job})}
     />
     <circle
       cx='{xScale(point.timestamp)}'
@@ -113,11 +114,11 @@
       r='5'
       class='point conf'
       on:mouseover={() => {
-      prefetch(`coverage/ci-kubernetes-e2e-gci-gce/${point.job}`)
+      prefetch(`${point.bucket}/${point.job}`)
       activeJob = point
       }}
       on:mouseleave={() => activeJob = {}}
-      on:click={() => goto(`coverage/${point.bucket}/${point.job}`)}
+      on:click={() => dispatchDataClick({bucket: point.bucket, job: point.job})}
     />
     {/each}
     {#if !isEmpty(activeJob)}

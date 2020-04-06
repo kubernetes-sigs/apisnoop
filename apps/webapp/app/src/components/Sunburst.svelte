@@ -132,7 +132,6 @@
      return {...node, currentOpacity};
    })
 </script>
-
 <div class="chart">
   <svg viewBox="0,0,932,932" style="font: 12px sans-serif;" on:mouseleave={mouseLeave}>
     <g transform="translate({width/2},{width/2})" id='big-g'>

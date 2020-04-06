@@ -7,9 +7,10 @@
 </script>
 
 <script>
- import CoverageOverTimeContainer from '../components/CoverageOverTimeContainer.svelte'; 
+ import CoverageOverTime from '../components/CoverageOverTime/Wrapper.svelte'; 
  import SunburstContainer from '../components/SunburstContainer.svelte';
  import { isEqual} from 'lodash-es';
+ import { goto } from '@sapper/app';
  import {
    stableEndpointStats,
    rawBucketsAndJobs,
@@ -22,6 +23,7 @@
    stableEndpointStatsPayload,
    endpointsTestsAndUseragentsPayload
  } = payload;
+ let isLoading = false;
 
  rawBucketsAndJobs.update(raw => isEqual(raw, rawBucketsAndJobsPayload)
                                ? raw
@@ -34,10 +36,20 @@
  endpointsTestsAndUseragents.update(etu => isEqual(etu, endpointsTestsAndUseragentsPayload)
                                          ? etu
                                          : endpointsTestsAndUseragentsPayload);
+
+ const navigateToDataPoint = async ({bucket, job}) => {
+   isLoading = true;
+   await goto(`${bucket}/${job}`);
+   isLoading = false;
+ }
 </script>
 
 <svelte:head>
   <title>APISnoop</title>
 </svelte:head>
-<CoverageOverTimeContainer />
+<CoverageOverTime on:dataClick={({detail}) => navigateToDataPoint(detail)}/>
+{#if isLoading}
+<p>loading sunburst with data...</p>
+{:else}
 <SunburstContainer />
+{/if}
