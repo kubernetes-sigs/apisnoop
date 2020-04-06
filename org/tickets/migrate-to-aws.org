@@ -41,6 +41,56 @@
 
     #+end_example
 
+*** create clusters
+    #+begin_src yaml :tangle eks-cluster.yaml :comments no
+      apiVersion: eksctl.io/v1alpha5
+      kind: ClusterConfig
+
+      metadata:
+        name: apisnoop
+        region: ap-southeast-2
+        version: '1.16'
+
+      nodeGroups:
+        - name: bigs
+          instanceType: m5d.24xlarge
+          # instanceType: m5.large
+          minSize: 1
+          desiredCapacity: 2
+          maxSize: 3
+          volumeSize: 1000
+          volumeType: gp2
+          # volumeType: io1
+          # volumeIOPS: 2000
+          iam:
+            withAddonPolicies:
+              externalDNS: true
+              certManager: true
+              imageBuilder: true
+              ebs: true
+              albIngress: true
+              cloudWatch: true
+          ssh:
+            # publicKeyPath: ~/.ssh/id_rsa-4096-20090605-ccc.pub
+            publicKey: "ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAgEAsUXHYuDzE6fs2KkCj91qSqpMXyxozb9gDKcx3mlh87hCegevld75gQAhujVYGRgJLsdf7W0/lX81clCRP1FjbaYYrPkVWGR291U6K5rkL9kZqd9dC0h9iCvFTKdKC7sA/uaolFPWav3QFWdEp3geNNuAm/NKSckUs9yGgr1inANQNsHFl0JFzU34D2Kt43rKA0Qz3kkDKCnXzl+wltIKq5f1SH1HDlv0hoLgikVwg5CLLKCsZ8IFuxur1pdb26uM0vtFp2LJUNad6hK8RsU6p/NeTtOLjbKGsLkqCgSvoPxCAIbFKWIRuAfGd6CrNc2kAD4qM45jAvI9dLuzbopVfhXS16F0i3EzL8/VWuCk7l2mYRdjHAy+9fJksx1zx2wfeEXSoSUX8/ROxpWZaDA8gLAxUrp/hqHU351QDDEdunMfmlrGc6ixyIaxMugRuNsNB4eY91mmbiljeoSCs1GFbVRhC8KejdKpo266hSDdS7f1sV9dnxVhHBhCxWzN7+mfk4KzpjEVFoDR73X8IUOLGFikORl918i86bH2uqJ5zZLvOA4a0BqaRIExmAi7wQrm4iLcDH3THMpvEuy4965JZz1uPJYtGBD/Zj1O2sMA8K6zvSB/8q86fe1VdwIJxOHh50HqAH1jPHHfkxIdrL4nBmvF9Pkzpg/OWlyVjqWmWj0= hh
+      "
+
+      # cloudWatch:
+      #   clusterLogging:
+      #     # enable specific types of cluster control plane logs
+      #     enableTypes: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+      #     # all supported types: "api", "audit", "authenticator", "controllerManager", "scheduler"
+      #     # supported special values: "*" and "all"
+    #+end_src
+    #+begin_src tmate :session hh :window create
+      eksctl create cluster --config-file eks-cluster.yaml
+   #+end_src
+
+    #+RESULTS:
+    #+begin_src shell
+    No clusters found
+    #+end_src
+
 *** get clusters
     #+begin_src shell
       eksctl get clusters
@@ -48,13 +98,13 @@
 
     #+RESULTS:
     #+begin_example
-    NAME				REGION
-    exciting-mongoose-1584470894	us-east-1
+    NAME		REGION
+    apisnoop-prod	ap-southeast-2
     #+end_example
 
 *** delete cluster
     #+begin_src tmate
-      eksctl delete cluster exciting-mongoose-1584470894
+      eksctl delete cluster apisnoop-prod
     #+end_src
 
     #+RESULTS:
@@ -71,6 +121,62 @@
 
    #+RESULTS:
 
+* eks gitops
+  #+begin_src tmate :session hh :window create
+    export EKSCTL_EXPERIMENTAL=true
+    eksctl \
+        enable profile app-dev \
+        --git-user "CNCF-CI" \
+        --git-email cncf-ci@ii.coop \
+        --git-url git@github.com:ii/apisnoop-deploy \
+        --cluster apisnoop-prod \
+        --region ap-southeast-2
+  #+end_src
+* helm
+  #+begin_src shell
+    helm install alb-ingress \
+     incubator/aws-alb-ingress-controller \
+     --set autoDiscoverAwsRegion=true \
+     --set autoDiscoverAwsVpcID=true \
+     --set clusterName=apisnoop-prod
+  #+end_src
+* fluxctl
+  #+begin_src shell
+  export GHUSER="hh"
+  export FLUX_FORWARD_NAMESPACE=flux
+  kubectl create ns flux
+  fluxctl install --git-user=${GHUSER} \
+    --git-name="Flux Capacitor"
+    --git-name="cncf-ci@ii.coop"
+    --git-url=git@github.com:hh/apisnoop \
+    --git-path=namespaces,workloads
+    --namespace=${FLUX_FORWARD_NAMESPACE} \
+  | kubectl apply -f -
+    # --git-email=${GHUSER}@users.noreply.github.com \
+  #+end_src
+  #+begin_src shell
+    kubectl -n ${FLUX_FORWARD_NAMESPACE} rollout status deployment/flux
+  #+end_src
+Put this into github
+  #+begin_src shell
+    fluxctl identity
+  #+end_src
+  #+begin_src shell
+    fluxctl sync
+  #+end_src
+  #+begin_src shell
+    kubectl -n demo port-forward deployment/podinfo 9898:9898 &
+    sleep 1
+    curl localhost:9898
+  #+end_src
+* ingress
+  #+begin_src tmate :session hh :window ingress
+     # brew install helm
+     helm repo add incubator http://storage.googleapis.com/kubernetes-charts-incubator
+  #+end_src
+  #+begin_src tmate :session hh :window ingress
+     helm install incubator/aws-alb-ingress-controller --set autoDiscoverAwsRegion=true --set autoDiscoverAwsVpcID=true --set clusterName=apisnoop-prod alb-ingress
+  #+end_src
 * Move Site
 ** dns records
 *** apisnoop.cncf.io CNAMEs to apisnoop.ii.coop
