@@ -8,7 +8,8 @@ import {
 import {
   bucketsAndJobs,
   defaultBucketAndJob,
-  stableEndpointStats
+  stableEndpointStats,
+  activeFilters
 } from './index.js';
 
 
@@ -52,3 +53,14 @@ export const coverage = derived(
     }
   }
 );
+
+export const activeRelease = derived(
+  [activeFilters, coverage],
+  ([$af, $c], set) => {
+    if ($af.bucket && $c.length >0) {
+      let active = $c.find(cov => cov.bucket === $af.bucket && cov.job === $af.job)
+      set(active)
+    } else {
+      set({})
+    }
+  });

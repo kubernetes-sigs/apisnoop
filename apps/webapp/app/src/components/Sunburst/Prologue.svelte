@@ -1,34 +1,29 @@
 <script>
  import dayjs from 'dayjs';
  import { goto } from '@sapper/app';
- import { activeBucketAndJob } from '../../stores';
+ import SectionHeader from '../SectionHeader.svelte';
+ import { activeRelease } from '../../stores/coverage-over-time.js';
 
- $: bucket = $activeBucketAndJob.bucket;
- $: job = $activeBucketAndJob.job;
- $: timestamp = dayjs($activeBucketAndJob.timestamp)
-   .format('DD MMMM, YYYY');
-</script>
+ const SPYGLASS_URL = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs'
 
-<header>
-  <h2>{bucket}</h2>
-  <p>{timestamp}</p>
-</header>
+ $: ({
+   bucket,
+   job,
+   release,
+   date,
+   test_hits_increase,
+   conf_hits_increase,
+   total_endpoints
+ } = $activeRelease);
+
+ $: link = `${SPYGLASS_URL}/${bucket}/${job}`
+
+  </script>
+  {#if release}
+  <SectionHeader title='{release} In Depth'>
+    <em>Data from <a href="{link}" title="spyglass link" target="_blank_" rel="noreferrer noopener">an e2e test suite run</a>, from {date}</em>
+  </SectionHeader>
+  {/if}
 
 <style>
- header {
-   margin-bottom: 1.5em;
-   grid-column: 1;
- }
-
- h2 {
-   padding: 0;
-   font-variant-caps: small-caps;
-   margin-bottom: 0;
- }
-
- p {
-   margin-top: 0;
-   font-variant-caps: small-caps;
-   padding-left: 0.25em;
- }
 </style>
