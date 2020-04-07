@@ -19,8 +19,8 @@
      .map(r => r.release);
 
    return uniqueReleases.length > 1
-     ? ` last ${uniqueReleases.length} releases, from ${first(uniqueReleases)} to ${last(uniqueReleases)}, `
-     : `last release, ${first(uniqueReleases)}`;
+                                ? ` last ${uniqueReleases.length} releases, from ${first(uniqueReleases)} to ${last(uniqueReleases)}, `
+                                : `last release, ${first(uniqueReleases)}`;
  }
  $: latestUpdate = dayjs(latestRelease.date)
    .format('DD MMMM, YYYY');

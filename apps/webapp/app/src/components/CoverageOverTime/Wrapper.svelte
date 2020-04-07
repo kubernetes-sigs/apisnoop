@@ -3,10 +3,10 @@
  import Graph from './Graph.svelte';
 </script>
 
- <section id='coverage-over-time'>
-   <Prologue />
-   <Graph on:dataClick />
- </section>
+<section id='coverage-over-time'>
+  <Prologue />
+  <Graph on:dataClick />
+</section>
 
 
 <style>
