@@ -1,7 +1,3 @@
--- Index
---  #+NAME: index the api_operation_material
-
--- [[file:~/apisnoop/apps/hasura/index.org::index%20the%20api_operation_material][index the api_operation_material]]
 CREATE INDEX api_operation_materialized_bucket      ON api_operation_material            (bucket);
 CREATE INDEX api_operation_materialized_event_verb  ON api_operation_material            (event_verb);
 CREATE INDEX api_operation_materialized_k8s_action  ON api_operation_material            (k8s_action);
@@ -18,4 +14,3 @@ CREATE INDEX api_operation_materialized_parameters_ops   ON api_operation_materi
 CREATE INDEX api_operation_materialized_parameters_path  ON api_operation_material USING GIN  (parameters jsonb_path_ops);
 CREATE INDEX api_operation_materialized_responses_ops   ON api_operation_material USING GIN  (responses jsonb_ops);
 CREATE INDEX api_operation_materialized_responses_path  ON api_operation_material USING GIN  (responses jsonb_path_ops);
--- index the api_operation_material ends here

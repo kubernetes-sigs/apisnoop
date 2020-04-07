@@ -1,7 +1,14 @@
 <script>
- import { afterUpdate } from 'svelte';
- import { breadcrumb, mouseOverPath, opIDs } from '../stores';
- import { levelColours, categoryColours, endpointColour } from '../lib/colours.js';
+ import {
+   breadcrumb,
+   mouseOverPath,
+   opIDs
+ } from '../../stores';
+ import {
+   levelColours,
+   categoryColours,
+   endpointColour
+ } from '../../lib/colours.js';
 
  $: [level, category, operation_id] = $breadcrumb;
  $: lColour = levelColours[level] || 'white';
@@ -10,8 +17,8 @@
             ? endpointColour($opIDs[operation_id]) 
             : 'white';
  $: eTextColour = $opIDs[operation_id]
-          ? $opIDs[operation_id]['tested'] ? endpointColour($opIDs[operation_id]) : 'gray'
-          : 'white';
+                ? $opIDs[operation_id]['tested'] ? endpointColour($opIDs[operation_id]) : 'gray'
+                : 'white';
 </script>
 
 <div id='breadcrumb'>
@@ -22,19 +29,18 @@
 
 <style>
  div{
-     height: 3em;
-     grid-column: 1/2;
-     margin-bottom: 1em;
+   height: 3em;
+   grid-column: 1/2;
+   margin-bottom: 1em;
  }
  p {
-     font-size: 1.3em;
-     font-color: aliceblue;
+   font-size: 1.3em;
+   font-color: aliceblue;
  }
  span {
-     margin: 0;
-     color: #EEEEEE;
-     padding: 0.25em;
-     border: 1px solid;
+   margin: 0;
+   color: #EEEEEE;
+   padding: 0.25em;
+   border: 1px solid;
  }
 </style>
-

@@ -1,5 +1,7 @@
 <script>
+
  import * as d3 from 'd3';
+ import { goto } from '@sapper/app';
  import {
    compact,
    join
@@ -9,8 +11,9 @@
    activeFilters,
    mouseOverPath,
    zoomedSunburst
- } from '../stores';
-
+ } from '../../stores';
+ import { createEventDispatcher } from 'svelte';
+ const dispatch = createEventDispatcher();
  $: activeDepth = determineDepth($activeFilters);
 
  const format = d3.format(",d")
@@ -48,10 +51,10 @@
    } else if (activeDepth === 'operation_id') {
      $activeFilters['operation_id'] = '';
      $activeFilters['category'] === '';
-     } else {
+   } else {
      $activeFilters[activeDepth] = '';
    }
-   setURL();
+   dispatch('newPathRequest', { params: $activeFilters })
  };
 
  function labelVisible(d) {
@@ -72,7 +75,7 @@
    $mouseOverPath = [];
  }
 
- function clicked (p) {
+ function clicked (node, e) {
    // upon clicking of a node, update the active filters and url.
    let {
      bucket,
@@ -82,9 +85,9 @@
      level,
      category,
      operation_id
-   } = p.data;
-   activeFilters.update(af => ({...af, bucket, job, level, category, operation_id}));
-   setURL();
+   } = node.data;
+   let params = { bucket, job, level, category, operation_id}
+   dispatch('newPathRequest', { params })
  };
 
  function setURL () {
@@ -98,7 +101,7 @@
      operation_id
    } = $activeFilters;
    let filterSegments = compact([bucket, job, level, category, operation_id]);
-   let urlPath = join(['coverage', ...filterSegments], '/');
+   let urlPath = join([...filterSegments], '/');
    goto(urlPath);
  };
 
@@ -132,9 +135,8 @@
      return {...node, currentOpacity};
    })
 </script>
-
 <div class="chart">
-  <svg viewBox="0,0,932,932" style="font: 12px sans-serif;" on:mouseleave={mouseLeave}>
+  <svg viewBox="0,0,932,932" style="font: 12px sans-serif;" on:mouseleave={mouseLeave} id='sunburst'>
     <g transform="translate({width/2},{width/2})" id='big-g'>
       <g>
         {#each nodes as node}
@@ -144,7 +146,7 @@
           d={arc(node.current)}
           on:mouseover={() => mouseOver(node.current)}
           style="cursor: pointer;"
-          on:click={()=> clicked(node)} />
+          on:mousedown={(e)=> clicked(node, e)} />
         {/each}
       </g>
       <g pointer-events='none' text-anchor='middle' style='user-select: none;'>
@@ -187,36 +189,5 @@
  .chart {
    position: relative;
    grid-column: 1;
- }
-
- #explanation {
-   position: absolute;
-   top: calc(100% / 2.25);
-   left: 0;
-   width: 100%;
-   text-align: center;
-   color: #eeeeee;
-   z-index: 2;
-   display: flex;
-   flex-flow: column;
-   justify-content: center;
-   align-items: center;
- }
-
- @media(max-width: 667px) {
-   #explanation {
-     font-size: 0.75em;
-   }
- }
-
- #level , #category {
-   margin: 0;
-   padding: 0;
- }
- #level {
-   font-size: 1.5em;
- }
- #category {
-   font-size: 1.25em;
  }
 </style>

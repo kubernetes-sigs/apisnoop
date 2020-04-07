@@ -1,7 +1,3 @@
--- Create
---  #+NAME: tests view
-
--- [[file:~/apisnoop/apps/hasura/index.org::tests%20view][tests view]]
 CREATE OR REPLACE VIEW "public"."tests" AS
   WITH raw_tests AS (
     SELECT audit_event.operation_id,
@@ -19,4 +15,3 @@ CREATE OR REPLACE VIEW "public"."tests" AS
                   array_agg(DISTINCT raw_tests.test_tag) AS test_tags
     FROM raw_tests
    GROUP BY raw_tests.test, raw_tests.bucket, raw_tests.job;
--- tests view ends here

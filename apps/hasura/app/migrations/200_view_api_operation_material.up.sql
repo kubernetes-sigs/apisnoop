@@ -1,8 +1,3 @@
-
-
--- #+NAME: regex_from_path.sql
-
--- [[file:~/apisnoop/apps/hasura/index.org::regex_from_path.sql][regex_from_path.sql]]
 set role dba;
 CREATE OR REPLACE FUNCTION regex_from_path(path text)
 RETURNS text AS $$
@@ -22,13 +17,7 @@ else:
 return path_regex
 $$ LANGUAGE plpython3u ;
 reset role;
--- regex_from_path.sql ends here
 
--- Create
-
---  #+NAME: api_operation_material
-
--- [[file:~/apisnoop/apps/hasura/index.org::api_operation_material][api_operation_material]]
 CREATE MATERIALIZED VIEW "public"."api_operation_material" AS
   SELECT
     (d.value ->> 'operationId'::text) AS operation_id,
@@ -77,4 +66,3 @@ CREATE MATERIALIZED VIEW "public"."api_operation_material" AS
          , jsonb_array_elements((d.value -> 'schemes'::text)) schemestring(value)
    GROUP BY bjs.bucket, bjs.job, paths.key, d.key, d.value, cat_tag.value
    ORDER BY paths.key;
--- api_operation_material ends here

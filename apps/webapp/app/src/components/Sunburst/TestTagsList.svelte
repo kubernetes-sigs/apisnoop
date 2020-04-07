@@ -2,9 +2,9 @@
  import {
    activeFilters,
    testTagsForEndpoint
- } from '../stores';
+ } from '../../stores';
  import { goto, stores } from '@sapper/app';
- import { updateQueryParams } from '../lib/helpers.js';
+ import { updateQueryParams } from '../../lib/helpers.js';
 
  const { page} = stores();
 

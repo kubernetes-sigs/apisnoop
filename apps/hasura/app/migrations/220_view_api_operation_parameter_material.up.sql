@@ -1,8 +1,3 @@
--- Create
---  Using our api_operation_material view, look into the parameters field in each one.
---  #+NAME: api_operation_parameter_material view
-
--- [[file:~/apisnoop/apps/hasura/index.org::api_operation_parameter_material%20view][api_operation_parameter_material view]]
 CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS
   SELECT ao.operation_id AS param_op,
   (param.entry ->> 'name'::text) AS param_name,
@@ -32,11 +27,5 @@ CREATE MATERIALIZED VIEW "public"."api_operation_parameter_material" AS
     FROM api_operation_material ao
          , jsonb_array_elements(ao.parameters) WITH ORDINALITY param(entry, index)
           WHERE ao.parameters IS NOT NULL;
--- api_operation_parameter_material view ends here
 
--- Index
---  #+NAME: index the api_operation_material
-
--- [[file:~/apisnoop/apps/hasura/index.org::index%20the%20api_operation_material][index the api_operation_material]]
 CREATE INDEX api_parameters_materialized_schema      ON api_operation_parameter_material            (param_schema);
--- index the api_operation_material ends here
