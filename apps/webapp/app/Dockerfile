@@ -1,7 +1,7 @@
 FROM node:slim
 
 RUN addgroup --system --gid 1001 appuser \
-    &&  adduser --system --uid 1001 --ingroup appuser appuser
+  &&  adduser --system --uid 1001 --ingroup appuser appuser
 
 COPY . /webapp
 
