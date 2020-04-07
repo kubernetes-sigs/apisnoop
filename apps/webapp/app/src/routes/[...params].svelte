@@ -10,11 +10,11 @@
 </script>
 
 <script>
- import SunburstContainer from '../components/SunburstContainer.svelte';
+ import Sunburst from '../components/Sunburst/Wrapper.svelte';
  import CoverageOverTime from '../components/CoverageOverTime/Wrapper.svelte';
  import { goto } from '@sapper/app';
  import { onMount, afterUpdate } from 'svelte';
- import { isEqual } from 'lodash-es';
+ import { isEqual, compact } from 'lodash-es';
  import {
    activeFilters,
    endpointsTestsAndUseragents,
@@ -63,6 +63,7 @@
  }));
 
  onMount(() => {
+   console.log('mounted');
    if (bucketParam && bucketParam !== bucket) {
      warnings.update(warnings => ({...warnings, invalidBucket: true}));
    }
@@ -70,12 +71,20 @@
      warnings.update(warnings => ({...warnings, invalidJob: true}));
    }
  })
-
  const navigateToDataPoint = async ({bucket, job}) => {
    isLoading = true;
    activeFilters.update(af => ({...af, bucket, job, level: '', category: '', operation_id: ''}))
    await goto(`${bucket}/${job}`);
    isLoading = false;
+ }
+ const updatePath = async (event) => {
+   let {bucket, job, level, category, operation_id} = event.detail.params;
+   activeFilters.update(af => ({...af, ...event.detail.params}));
+   let filterSegments = compact([bucket, job, level, category, operation_id]);
+   let urlPath = join([...filterSegments], '/');
+   let x = window.pageXOffset;
+   let y = window.pageYOffset;
+   goto(urlPath).then(() => window.scrollTo(x,y));
  }
 </script>
 {#if $warnings.invalidBucket}
@@ -90,5 +99,5 @@
 {#if isLoading}
 <p>loading sunburst with data...</p>
 {:else}
-<SunburstContainer />
+<Sunburst on:newPathRequest={updatePath} />
 {/if}

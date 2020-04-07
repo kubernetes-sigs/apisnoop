@@ -8,10 +8,11 @@
 
 <script>
  import CoverageOverTime from '../components/CoverageOverTime/Wrapper.svelte'; 
- import SunburstContainer from '../components/SunburstContainer.svelte';
+ import Sunburst from '../components/Sunburst/Wrapper.svelte';
  import { isEqual} from 'lodash-es';
  import { goto } from '@sapper/app';
  import {
+   activeFilters,
    stableEndpointStats,
    rawBucketsAndJobs,
    endpointsTestsAndUseragents
@@ -42,6 +43,15 @@
    await goto(`${bucket}/${job}`);
    isLoading = false;
  }
+ const updatePath = async (event) => {
+   let {bucket, job, level, category, operation_id} = event.detail.params;
+   activeFilters.update(af => ({...af, ...event.detail.params}));
+   let filterSegments = compact([bucket, job, level, category, operation_id]);
+   let urlPath = join([...filterSegments], '/');
+   let x = window.pageXOffset;
+   let y = window.pageYOffset;
+   goto(urlPath).then(() => window.scrollTo(x,y));
+ }
 </script>
 
 <svelte:head>
@@ -51,5 +61,5 @@
 {#if isLoading}
 <p>loading sunburst with data...</p>
 {:else}
-<SunburstContainer />
+<Sunburst on:newPathRequest={updatePath} />
 {/if}
