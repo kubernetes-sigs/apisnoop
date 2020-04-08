@@ -61,15 +61,15 @@ May realign to match the k8s release cycle.
 
 ## Prepare to Gate cncf/k8s-conformance PRs
 
-### KR1 Setup prow.cncf.ci
+### KR1 Setup prow.cncf.io
 
 This repo is outside kubernetes org.
 
 We'll need to set this up in a sustainable/supportable way.
 
-### KR2 Connect cncf/k8s-conformance to prow.cncf.ci
+### KR2 Connect cncf/k8s-conformance to prow.cncf.io
 
-Comments and admin actions from prow.cncf.ci
+Comments and admin actions from prow.cncf.io
 
 Will be made using the [cncf-ci](https://github.com/cncf-ci) bot/github account.
 
