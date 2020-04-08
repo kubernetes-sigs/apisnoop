@@ -37,6 +37,7 @@ export async function get (req, res, next) {
   };
 
   let payload = JSON.stringify(allTheThings);
+  console.log('payload! from server', bucket, job, endpointsTestsAndUseragentsPayload.endpoints.length);
   res.writeHead(200, {
     'Content-Type': 'application/json' ,
   });
