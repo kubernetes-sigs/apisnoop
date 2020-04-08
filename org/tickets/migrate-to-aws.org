@@ -141,10 +141,10 @@
     fluxctl install \
             --namespace=${FLUX_FORWARD_NAMESPACE} \
             --manifest-generation=true \
-            --git-branch=flux \
+            --git-branch=apisnoop.cncf.io \
             --git-email=${EMAIL} \
-            --git-label=flux \
-            --git-path kustomize \
+            --git-label=production \
+            --git-path production \
             --git-url=git@github.com:${USER}/apisnoop \
             --git-user="${NAME}" > flux-manifest.yaml
   #+end_src
@@ -191,13 +191,14 @@ Put this into github as a deploy key for the repo in question and allow write:
 https://github.com/cncf/apisnoop/settings/keys/new
 
   #+begin_src shell
-    fluxctl identity
+    fluxctl identity || echo FAIL
   #+end_src
 
   #+RESULTS:
   #+begin_example
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDf12Aqb1ZOoi2S817dW19Jo+PcvprkXKinYyxcEjCvxH7jzcF/n5X+/lP4fom3uqp1VaZmmyWjanR7N4BlkQ6PgeHhzW1CsD0UXjzqzpajwp2DR0YgHNhDrswLAeUb4L0k+PHVvERvq7DLgpuH2Y6XfbthORSY07oHG0ThKeou0DtOp7ejuKllwBPzuhUmLF2Nx4nQOPXzIyB1M+DD0inMTlDiaI3tzrPMM2lXivXbDFZ5EA9vQAIqvKalVZHee/ttfyxzUX4x2Z20PQ0bojiohSft35kHpXDOf/nCpmPfpWaAr48m3uz8fdddiPgn2DJrHL2IYS1QEF2aTo6Kpk+IcubWN/1zmVCRwvb2USV4JHkxEuv/KHeJpcf8z+CWT96kHuD89+UHHxWs0Sqn1TFfERSMnbFjDqQcb+ijS7K/Osw3NOqWTAmGnYTur/u0bzVq/Jb/de3XdkNRfJdjP9W1W5OWxjjqZj0w8A7skBzPI4BWcNjorPnkMaQhel30ir8= root@flux-7484776998-t4r6x
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCzavZXDyMWaNmQWTXXjzmtU5SKBViEk4ym9AFgxoY554E+jE/Kuj7G5iI8gNZccKj76zkn8waG2yojOHqiSbDDpVoupFsr5dosKelxa1ZBQULy9XsJ8PhfCFoI5ovA4B1Pug6bNA/eILD/UVr6WlQXTv0y+8Phh2YQRWl3xr9lvIj5pU+IQcY5aNwvusN1gwh5F++KYSCd+QTVnL3D03GtxIfbiDxR2ow3gW/m6yMg4NtCfG72rVYJrpEYk7FrME+ubM9D0tUcxMY+Q4wIn2snmPjx73KwCXKcnlTw4pptns2ek7KUTBarW7IZ74RVLX62pMhAU+wsRjQ32OO1gxK5rizjduG/8uPcuXj5kp+94sP2Wfa08qT/wljvBm2RzN0+vEa78fU6AIk619UQizqK+C+0uifitSQktBe38iaIwTmbvbJwZzPoyoNow6NRpajJ9to+R02qwvar8HN8VZht1Gk5klEQ3qMQmqlrUpkFd/5tD1d2gp5mGkAiQzXp2yc= root@flux-cc649b69f-m6pdl
   #+end_example
+
 
 ** force sync
 
@@ -207,6 +208,104 @@ You could push and wait for the sync to happen... or fluxctl sync
     fluxctl sync
   #+end_src
 * ingress
+** nginx
+https://kubernetes.github.io/ingress-nginx/deploy/#aws
+#+begin_src shell
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/nginx-0.30.0/deploy/static/mandatory.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/nginx-0.30.0/deploy/static/provider/aws/service-nlb.yaml
+#+end_src
+
+#+RESULTS:
+#+begin_example
+namespace/ingress-nginx created
+configmap/nginx-configuration created
+configmap/tcp-services created
+configmap/udp-services created
+serviceaccount/nginx-ingress-serviceaccount created
+clusterrole.rbac.authorization.k8s.io/nginx-ingress-clusterrole created
+role.rbac.authorization.k8s.io/nginx-ingress-role created
+rolebinding.rbac.authorization.k8s.io/nginx-ingress-role-nisa-binding created
+clusterrolebinding.rbac.authorization.k8s.io/nginx-ingress-clusterrole-nisa-binding created
+deployment.apps/nginx-ingress-controller created
+limitrange/ingress-nginx created
+service/ingress-nginx created
+#+end_example
+** nginx-verify
+   #+begin_src shell
+     POD_NAMESPACE=ingress-nginx
+     POD_NAME=$(kubectl get pods -n $POD_NAMESPACE -l app.kubernetes.io/name=ingress-nginx -o jsonpath='{.items[0].metadata.name}')
+
+     kubectl exec -it $POD_NAME -n $POD_NAMESPACE -- /nginx-ingress-controller --version
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   -------------------------------------------------------------------------------
+   NGINX Ingress controller
+     Release:       0.30.0
+     Build:         git-7e65b90c4
+     Repository:    https://github.com/kubernetes/ingress-nginx
+     nginx version: nginx/1.17.8
+
+   -------------------------------------------------------------------------------
+
+   #+end_example
+
+** ensure load balancer
+   #+begin_src shell
+     kubectl describe service/ingress-nginx -n ingress-nginx
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   Name:                     ingress-nginx
+   Namespace:                ingress-nginx
+   Labels:                   app.kubernetes.io/name=ingress-nginx
+                             app.kubernetes.io/part-of=ingress-nginx
+   Annotations:              kubectl.kubernetes.io/last-applied-configuration:
+                               {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{"service.beta.kubernetes.io/aws-load-balancer-type":"nlb"},"labels":{"app.k...
+                             service.beta.kubernetes.io/aws-load-balancer-type: nlb
+   Selector:                 app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/part-of=ingress-nginx
+   Type:                     LoadBalancer
+   IP:                       10.100.204.123
+   LoadBalancer Ingress:     a1ad497f3010a4d8ca88db5b561d85b2-8c2535b384bbaf36.elb.ap-southeast-2.amazonaws.com
+   Port:                     http  80/TCP
+   TargetPort:               http/TCP
+   NodePort:                 http  32615/TCP
+   Endpoints:                192.168.76.191:80
+   Port:                     https  443/TCP
+   TargetPort:               https/TCP
+   NodePort:                 https  31654/TCP
+   Endpoints:                192.168.76.191:443
+   Session Affinity:         None
+   External Traffic Policy:  Local
+   HealthCheck NodePort:     30836
+   Events:
+     Type    Reason                Age   From                Message
+     ----    ------                ----  ----                -------
+     Normal  EnsuringLoadBalancer  28m   service-controller  Ensuring load balancer
+     Normal  EnsuredLoadBalancer   28m   service-controller  Ensured load balancer
+   #+end_example
+
+** load balancer dns
+You'll want to ensure any hostnames you want to use on this ingress use the following as a CNAME in dns.
+
+   #+name: elb-dnsname
+   #+begin_src shell
+     kubectl get service/ingress-nginx -n ingress-nginx -o json \
+       | jq -r .status.loadBalancer.ingress[0].hostname
+   #+end_src
+
+   #+RESULTS: elb-dnsname
+   #+begin_example
+   a1ad497f3010a4d8ca88db5b561d85b2-8c2535b384bbaf36.elb.ap-southeast-2.amazonaws.com
+   #+end_example
+
+** Install Cert-Manager  
+   #+begin_src tmate :window cert
+     kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v0.14.1/cert-manager.yaml
+   #+end_src
+
 * image building
   #+begin_src tmate :window image
     for APP in auditlogger webapp postgres hasura ; do
@@ -216,6 +315,49 @@ You could push and wait for the sync to happen... or fluxctl sync
         docker push $IMAGE
     done
   #+end_src
+* cert-manager
+** cert
+  #+begin_src shell
+    kubectl describe certs/letsencrypt-prod -n apisnoop
+  #+end_src
+
+** orders
+   #+name: order
+   #+begin_src shell
+     echo -n $(kubectl get orders -A \
+       | grep -v NAMESPACE \
+       | awk '{print $2}')
+   #+end_src
+
+   #+RESULTS: order
+   #+begin_example
+   letsencrypt-prod-41213390-3382021347
+   #+end_example
+   #+begin_src shell :result silent
+     kubectl describe -n apisnoop order/<<order()>>
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   #+end_example
+
+** challenges
+   #+name: challenge
+   #+begin_src shell
+     echo -n $(kubectl get challenge -A \
+       | grep -v NAMESPACE \
+       | awk '{print $2}')
+   #+end_src
+
+   #+RESULTS: challenge
+   #+begin_example
+   letsencrypt-prod-41213390-3382021347-1739274342
+   #+end_example
+   #+begin_src shell :results silent
+     kubectl describe -n apisnoop challenge/<<challenge()>>
+   #+end_src
+
+
 * Move Site
 ** dns records
 *** apisnoop.cncf.io CNAMEs to apisnoop.ii.coop
@@ -356,11 +498,6 @@ Name Server: NS-1407.AWSDNS-47.ORG
       --set autoDiscoverAwsVpcID=true \
       --set clusterName=apisnoop
   #+end_src
-** Install Cert-Manager  
-   #+begin_src tmate :window cert
-     kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v0.14.1/cert-manager.yaml
-   #+end_src
-
 ** eks gitops
    #+begin_src tmate :session hh :window create
      export EKSCTL_EXPERIMENTAL=true
@@ -371,12 +508,4 @@ Name Server: NS-1407.AWSDNS-47.ORG
          --git-url git@github.com:ii/apisnoop-deploy \
          --cluster apisnoop-prod \
          --region ap-southeast-2
-   #+end_src
-** helm
-   #+begin_src shell
-     helm install alb-ingress \
-      incubator/aws-alb-ingress-controller \
-      --set autoDiscoverAwsRegion=true \
-      --set autoDiscoverAwsVpcID=true \
-      --set clusterName=apisnoop-prod
    #+end_src
