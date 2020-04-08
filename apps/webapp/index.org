@@ -375,6 +375,7 @@
          };
 
          let payload = JSON.stringify(allTheThings);
+         console.log('payload! from server', bucket, job, endpointsTestsAndUseragentsPayload.endpoints.length);
          res.writeHead(200, {
            'Content-Type': 'application/json' ,
          });
@@ -416,7 +417,7 @@
 
         export let payload;
         let isLoading = false;
-        const  {
+        let  {
           bucket,
           bucketParam,
           category,
@@ -430,6 +431,16 @@
           stableEndpointStatsPayload
         } = payload;
 
+        activeFilters.update(af => ({
+          ...af,
+          bucket,
+          job: job || '',
+          level: level || '',
+          category: category || '',
+          operation_id: operation_id || ''
+          ,
+          ...query
+        }));
         rawBucketsAndJobs.update(raw => isEqual(raw, rawBucketsAndJobsPayload)
                                       ? raw
                                       : rawBucketsAndJobsPayload);
@@ -442,17 +453,6 @@
                                                 ? etu
                                                 : endpointsTestsAndUseragentsPayload);
 
-        activeFilters.update(af => ({
-          ...af,
-          bucket,
-          job: job || '',
-          level: level || '',
-          category: category || '',
-          operation_id: operation_id || ''
-          ,
-          ...query
-        }));
-
         onMount(() => {
           console.log('mounted');
           if (bucketParam && bucketParam !== bucket) {
@@ -462,6 +462,13 @@
             warnings.update(warnings => ({...warnings, invalidJob: true}));
           }
         })
+        afterUpdate(() => {
+          if (!isEqual(payload.endpointsTestsAndUseragentsPayload, $endpointsTestsAndUseragents)) {
+            $endpointsTestsAndUseragents = payload.endpointsTestsAndUseragentsPayload
+            $stableEndpointStats = payload.stableEndpointStatsPayload
+            $rawBucketsAndJobs = payload.rawBucketsAndJobsPayload
+            }
+          })
         const navigateToDataPoint = async ({bucket, job}) => {
           isLoading = true;
           activeFilters.update(af => ({...af, bucket, job, level: '', category: '', operation_id: ''}))
@@ -597,11 +604,11 @@
           .format('DD MMMM, YYYY');
        </script>
 
-       <SectionHeader title="Kubernetes Test Coverage Over Time">
+       <SectionHeader title="Coverage For Stable Endpoints, Over Time">
          <em>Updated on {latestUpdate}</em>
        </SectionHeader>
 
-       <p>Below shows the the testing coverage for standard and conformance tests (where coverage is defined as the percentage of kubernetes endpoints hit by at least one test during an e2e test suite run).
+       <p>Below shows the testing coverage for stable Kubernetes endoints (where coverage is defined as the percentage of kubernetes endpoints hit by at least one test during an e2e test suite run).  We show coverage for both standard and conformance tests.
          {#if releases.length > 1}
          The data includes the {pastReleaseSpread()} along with the latest test run for {releasePrecision(latestRelease.release, 2)}.
          {:else}
@@ -610,6 +617,7 @@
        </p>
 
        <p>The current goal, as reflected in the y-axis,  is to have at least 50% of kubernetes endpoints hit by tests.</p>
+       <strong>Click on any data point to see that release's coverage in depth</strong>
      #+end_src
 **** Graph
      :PROPERTIES:
@@ -654,7 +662,7 @@
         ];
 
         let width = 900;
-        let height = 600;
+        let height = 400;
 
         $: activeJob = {};
         $: minX = dayjs(first($dates));
@@ -713,7 +721,30 @@
            <path class='path-line' d={testedPath}></path>
            <path class='path-line conf' d={confPath}></path>
            <path class='path-area conf' d={confArea}></path>
-           {#each $coverage as point}
+           {#each $coverage as point, index}
+           {#if index !== 0}
+           <text
+             x={xScale(point.timestamp)}
+             y={yScale(point.percent_tested) - 20}
+             text-anchor="middle"
+             class="change {point.test_hits_increase >= 0 ? 'increase' : 'decrease'}"
+           >
+
+             {point.test_hits_increase > 0
+             ? `+${point.test_hits_increase}`
+             : point.test_hits_increase}
+           </text>
+           <text
+             x={xScale(point.timestamp)}
+             y={yScale(point.percent_tested) - 6}
+             text-anchor="middle"
+             class="change {point.percent_tested_increase >= 0 ? 'increase' : 'decrease'}"
+           >
+             {point.percent_tested_increase > 0
+             ? `+${point.percent_tested_increase}%`
+             : `${point.percent_tested_increase}%`}
+           </text>
+           {/if}
            <circle
              cx='{xScale(point.timestamp)}'
              cy='{yScale(point.percent_tested)}'
@@ -726,6 +757,29 @@
              on:mouseleave={() => activeJob = {}}
              on:click={() => dispatchDataClick({bucket: point.bucket, job: point.job})}
            />
+           {#if index !== 0}
+           <text
+             x={xScale(point.timestamp)}
+             y={yScale(point.percent_conf_tested) - 20}
+             text-anchor="middle"
+             class="change {point.conf_hits_increase >= 0 ? 'increase' : 'decrease'}"
+           >
+
+             {point.conf_hits_increase > 0
+             ? `+${point.conf_hits_increase}`
+             : point.conf_hits_increase}
+           </text>
+           <text
+             x={xScale(point.timestamp)}
+             y={yScale(point.percent_conf_tested) - 6}
+             text-anchor="middle"
+             class="change {point.percent_conf_tested_increase >= 0 ? 'increase' : 'decrease'}"
+           >
+             {point.percent_conf_tested_increase > 0
+             ? `+${point.percent_conf_tested_increase}%`
+             : `${point.percent_conf_tested_increase}%`}
+           </text>
+           {/if}
            <circle
              cx='{xScale(point.timestamp)}'
              cy='{yScale(point.percent_conf_tested)}'
@@ -857,6 +911,18 @@
 
         #legend span.conformance {
           background: rgba(0, 100, 100, 0.5);
+        }
+
+        text.change {
+          font-size: 0.75em;
+          font-weight: 200;
+        }
+
+        text.increase {
+          fill: green;
+        }
+        text.decrease {
+          fill: red;
         }
        </style>
 
