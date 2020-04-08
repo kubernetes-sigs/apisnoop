@@ -21,7 +21,7 @@ We are confident they will merge shortly.
 
     This number should increase to the full 6% in ~2 weeks.
 
-## complete cncf/apisnoop prow.k8s.io + EKS migration (Score:0.5)
+## complete cncf/apisnoop prow.k8s.io + Amazon migration (Score:0.5)
 
 ### KR1=0.5 All cncf/apisnoop artifacts created by prow.k8s.io
 
@@ -31,9 +31,11 @@ Definitions in prow, but need to do our Q1 release&#x2026; this week.
 
 -   [ ] PR Merged managed via prow (VS pushing to master or manual merging)
 
-### KR3=1.0 All cncf/apisnoop non-prow infra moved to EKS/Packet
+### KR3=1.0 All cncf/apisnoop non-prow infra moved to Amazon/Packet
 
-We aren't hosting anything on Google (except via prow). Everything is on EKS on Packet!
+We aren't hosting anything on Google (except via prow).
+
+Everything is on EKS on Packet!
 
 ## Mentor/Teach test-writing workflow at Contributer Summit / KubeConEU (Score:0.5)
 
@@ -59,9 +61,25 @@ May realign to match the k8s release cycle.
 
 ## Prepare to Gate cncf/k8s-conformance PRs
 
-### KR1 gate+comment w/ list of unrun conformance tests
+### KR1 Setup prow.cncf.ci
 
-Dims has something helpful going forward. We've run the process Aaron as well.
+This repo is outside kubernetes org.
+
+We'll need to set this up in a sustainable/supportable way.
+
+### KR2 Connect cncf/k8s-conformance to prow.cncf.ci
+
+Comments and admin actions from prow.cncf.ci
+
+Will be made using the [cncf-ci](https://github.com/cncf-ci) bot/github account.
+
+### KR3 gate+comment w/ list of unrun conformance tests
+
+Defined by the [user stories for KEP-960](https://github.com/kubernetes/enhancements/blob/2c19ec7627e326d1c75306dcaa3d2f14002301fa/keps/sig-architecture/960-conformance-behaviors/README.md#role-cncf-conformance-program)
+
+    Must confirm that the version of the tests being run matches...
+    Must confirm the set of tests being run matches...
+    Must confirm that all behaviors are covered by a test...
 
 ## Prepare to Gate k/k PRs touching test/e2e or API
 
@@ -71,15 +89,30 @@ while continuing to focus on endpoints.
 
 -   We should donate APISnoop to sig-arch
 
-### KR1 gate+comment w/ list of increase/decrease of stable endpoints
+### KR1 Identify a PR as requiring conformance review
 
--   Analyze all PRs
+PR must touch file in conformance-specific directory
+
 -   (initially /area-conformance + /sig-arch)
--   Only comment on PRs that touch swagger.json or tests/e2e
 
-COMMENT: alpha beta
+    eg: update test/conformance/behaviors/..
+    eg: mv from test/e2e to test/conformance
 
-BLOCK: stable
+### KR2 Identify list of endpoints added/removed
+
+Tooling will compare `path/operation_id` in `api/openapi-spec/swagger.json`
+
+### KR3 Run APISnoop against PR to generate endpoint coverage
+
+Tooling will provide a list of tested and conformant endpoints.
+
+### KR4 bot comment w/ list of increase/decrease of endpoints
+
+Tooling will comment directly on PR
+
+-   alpha : comment endpoints needing tests
+-   beta : comment endpoints needing tests
+-   stable : comment and block via tag
 
 ## Increase Stable Test Coverage Velocity 50% over Q1
 
