@@ -36,7 +36,7 @@
  ];
 
  let width = 900;
- let height = 600;
+ let height = 400;
 
  $: activeJob = {};
  $: minX = dayjs(first($dates));
@@ -95,7 +95,30 @@
     <path class='path-line' d={testedPath}></path>
     <path class='path-line conf' d={confPath}></path>
     <path class='path-area conf' d={confArea}></path>
-    {#each $coverage as point}
+    {#each $coverage as point, index}
+    {#if index !== 0}
+    <text
+      x={xScale(point.timestamp)}
+      y={yScale(point.percent_tested) - 20}
+      text-anchor="middle"
+      class="change {point.test_hits_increase >= 0 ? 'increase' : 'decrease'}"
+    >
+
+      {point.test_hits_increase > 0
+      ? `+${point.test_hits_increase}`
+      : point.test_hits_increase}
+    </text>
+    <text
+      x={xScale(point.timestamp)}
+      y={yScale(point.percent_tested) - 6}
+      text-anchor="middle"
+      class="change {point.percent_tested_increase >= 0 ? 'increase' : 'decrease'}"
+    >
+      {point.percent_tested_increase > 0
+      ? `+${point.percent_tested_increase}%`
+      : `${point.percent_tested_increase}%`}
+    </text>
+    {/if}
     <circle
       cx='{xScale(point.timestamp)}'
       cy='{yScale(point.percent_tested)}'
@@ -108,6 +131,29 @@
       on:mouseleave={() => activeJob = {}}
       on:click={() => dispatchDataClick({bucket: point.bucket, job: point.job})}
     />
+    {#if index !== 0}
+    <text
+      x={xScale(point.timestamp)}
+      y={yScale(point.percent_conf_tested) - 20}
+      text-anchor="middle"
+      class="change {point.conf_hits_increase >= 0 ? 'increase' : 'decrease'}"
+    >
+
+      {point.conf_hits_increase > 0
+      ? `+${point.conf_hits_increase}`
+      : point.conf_hits_increase}
+    </text>
+    <text
+      x={xScale(point.timestamp)}
+      y={yScale(point.percent_conf_tested) - 6}
+      text-anchor="middle"
+      class="change {point.percent_conf_tested_increase >= 0 ? 'increase' : 'decrease'}"
+    >
+      {point.percent_conf_tested_increase > 0
+      ? `+${point.percent_conf_tested_increase}%`
+      : `${point.percent_conf_tested_increase}%`}
+    </text>
+    {/if}
     <circle
       cx='{xScale(point.timestamp)}'
       cy='{yScale(point.percent_conf_tested)}'
@@ -239,5 +285,17 @@
 
  #legend span.conformance {
    background: rgba(0, 100, 100, 0.5);
+ }
+
+ text.change {
+   font-size: 0.75em;
+   font-weight: 200;
+ }
+
+ text.increase {
+   fill: green;
+ }
+ text.decrease {
+   fill: red;
  }
 </style>
