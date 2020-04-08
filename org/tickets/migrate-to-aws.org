@@ -4,49 +4,14 @@
 #+PROPERTY: header-args:tmate+  :window deploy
 #+PROPERTY: header-args:shell+  :var FLUX_FORWARD_NAMESPACE="flux"
 #+PROPERTY: header-args:shell+  :prologue "export FLUX_FORWARD_NAMESPACE"
-* aws / eksctl cli
-** install
+* cluster - aws / eksctl cli
+** install eksctl
    #+begin_src tmate
      brew tap weaveworks/tap
      brew install weaveworks/tap/eksctl
    #+end_src
-** eksctl
-*** help
-    #+begin_src shell
-      eksctl help
-    #+end_src
-
-    #+RESULTS:
-    #+begin_example
-    The official CLI for Amazon EKS
-
-    Usage: eksctl [command] [flags]
-
-    Commands:
-      eksctl create                  Create resource(s)
-      eksctl get                     Get resource(s)
-      eksctl update                  Update resource(s)
-      eksctl upgrade                 Upgrade resource(s)
-      eksctl delete                  Delete resource(s)
-      eksctl set                     Set values
-      eksctl unset                   Unset values
-      eksctl scale                   Scale resources(s)
-      eksctl drain                   Drain resource(s)
-      eksctl utils                   Various utils
-      eksctl completion              Generates shell completion scripts
-      eksctl version                 Output the version of eksctl
-      eksctl help                    Help about any command
-
-    Common flags:
-      -C, --color string   toggle colorized logs (valid options: true, false, fabulous) (default "true")
-      -h, --help           help for this command
-      -v, --verbose int    set log level, use 0 to silence, 4 for debugging and 5 for debugging with AWS debug logging (default 3)
-
-    Use 'eksctl [command] --help' for more information about a command.
-
-    #+end_example
-
-*** create clusters
+** eksctl create cluster
+*** cluster config
     #+begin_src yaml :tangle eks-cluster.yaml :comments no
       apiVersion: eksctl.io/v1alpha5
       kind: ClusterConfig
@@ -87,14 +52,10 @@
       #     # all supported types: "api", "audit", "authenticator", "controllerManager", "scheduler"
       #     # supported special values: "*" and "all"
     #+end_src
+*** create cluster
     #+begin_src tmate :session hh :window create
       eksctl create cluster --config-file eks-cluster.yaml
    #+end_src
-
-    #+RESULTS:
-    #+begin_src shell
-    No clusters found
-    #+end_src
 
 *** get clusters
     #+begin_src shell
@@ -107,106 +68,21 @@
     apisnoop	ap-southeast-2
     #+end_example
 
-*** delete cluster
-    #+begin_src tmate
-      eksctl delete cluster apisnoop-prod
-    #+end_src
-
-    #+RESULTS:
-    #+begin_example
-    NAME				REGION
-    exciting-mongoose-1584470894	us-east-1
-    #+end_example
-
-** aws
+** aws eks list-clusters
    #+begin_src shell
-     aws list-clusters
+     aws eks list-clusters
    #+end_src
 
 
    #+RESULTS:
    #+begin_example
+   {
+       "clusters": [
+           "apisnoop"
+       ]
+   }
    #+end_example
 
-* flux
-** flux-manifest.yaml
-  #+name: generate k8s manifest for flux
-  #+begin_src shell
-    export USER=cncf # fork for your own fun
-    export NAME="Flux for APISnoop"
-    export EMAIL=cncf-ci@ii.coop
-    export BRANCH=cncf-ci@ii.coop
-            --git-branch=flux \
-    export FLUX_FORWARD_NAMESPACE=flux
-    fluxctl install \
-            --namespace=${FLUX_FORWARD_NAMESPACE} \
-            --manifest-generation=true \
-            --git-branch=apisnoop.cncf.io \
-            --git-email=${EMAIL} \
-            --git-label=production \
-            --git-path production \
-            --git-url=git@github.com:${USER}/apisnoop \
-            --git-user="${NAME}" > flux-manifest.yaml
-  #+end_src
-
-Some minor changes were made to the yaml:
-
-#+begin_src yaml
-        - --git-poll-interval=150
-        - --ci-skip
-        - --ci-skip-message='[ci skip]'
-        - --sync-garbage-collection=true
-#+end_src
-
-** deploy
-  #+begin_src shell :dir "."
-    # possibly editing before you run
-    kubectl apply -f flux-manifest.yaml
-  #+end_src
-
-  #+RESULTS:
-  #+begin_example
-  serviceaccount/flux created
-  clusterrole.rbac.authorization.k8s.io/flux created
-  clusterrolebinding.rbac.authorization.k8s.io/flux created
-  deployment.apps/flux created
-  secret/flux-git-deploy created
-  deployment.apps/memcached created
-  service/memcached created
-  #+end_example
-
-** delpoyment status
-  #+begin_src shell
-    kubectl -n ${FLUX_FORWARD_NAMESPACE} rollout status deployment/flux
-  #+end_src
-
-  #+RESULTS:
-  #+begin_example
-  Waiting for deployment "flux" rollout to finish: 0 of 1 updated replicas are available...
-  deployment "flux" successfully rolled out
-  #+end_example
-
-** ssh-pubkey for deployment
-Put this into github as a deploy key for the repo in question and allow write:
-https://github.com/cncf/apisnoop/settings/keys/new
-
-  #+begin_src shell
-    fluxctl identity || echo FAIL
-  #+end_src
-
-  #+RESULTS:
-  #+begin_example
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCzavZXDyMWaNmQWTXXjzmtU5SKBViEk4ym9AFgxoY554E+jE/Kuj7G5iI8gNZccKj76zkn8waG2yojOHqiSbDDpVoupFsr5dosKelxa1ZBQULy9XsJ8PhfCFoI5ovA4B1Pug6bNA/eILD/UVr6WlQXTv0y+8Phh2YQRWl3xr9lvIj5pU+IQcY5aNwvusN1gwh5F++KYSCd+QTVnL3D03GtxIfbiDxR2ow3gW/m6yMg4NtCfG72rVYJrpEYk7FrME+ubM9D0tUcxMY+Q4wIn2snmPjx73KwCXKcnlTw4pptns2ek7KUTBarW7IZ74RVLX62pMhAU+wsRjQ32OO1gxK5rizjduG/8uPcuXj5kp+94sP2Wfa08qT/wljvBm2RzN0+vEa78fU6AIk619UQizqK+C+0uifitSQktBe38iaIwTmbvbJwZzPoyoNow6NRpajJ9to+R02qwvar8HN8VZht1Gk5klEQ3qMQmqlrUpkFd/5tD1d2gp5mGkAiQzXp2yc= root@flux-cc649b69f-m6pdl
-  #+end_example
-
-
-** force sync
-
-You could push and wait for the sync to happen... or fluxctl sync
-
-  #+begin_src tmate :window sync
-    fluxctl sync
-  #+end_src
 * ingress
 ** nginx
 https://kubernetes.github.io/ingress-nginx/deploy/#aws
@@ -306,15 +182,141 @@ You'll want to ensure any hostnames you want to use on this ingress use the foll
      kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v0.14.1/cert-manager.yaml
    #+end_src
 
-* image building
-  #+begin_src tmate :window image
-    for APP in auditlogger webapp postgres hasura ; do
-        cd ~/apisnoop/apps/$APP/app
-        export IMAGE=raiinbow/$APP:v2020.04.08-2
-        docker build -t $IMAGE .
-        docker push $IMAGE
-    done
+* flux
+** flux-manifest.yaml
+  #+name: generate k8s manifest for flux
+  #+begin_src shell
+    export USER=cncf # fork for your own fun
+    export NAME="Flux for APISnoop"
+    export EMAIL=cncf-ci@ii.coop
+    export BRANCH=cncf-ci@ii.coop
+            --git-branch=flux \
+    export FLUX_FORWARD_NAMESPACE=flux
+    fluxctl install \
+            --namespace=${FLUX_FORWARD_NAMESPACE} \
+            --manifest-generation=true \
+            --git-branch=apisnoop.cncf.io \
+            --git-email=${EMAIL} \
+            --git-label=production \
+            --git-path production \
+            --git-url=git@github.com:${USER}/apisnoop \
+            --git-user="${NAME}" > flux-manifest.yaml
   #+end_src
+
+Some minor changes were made to the yaml:
+
+#+begin_src yaml
+        - --git-poll-interval=150
+        - --ci-skip
+        - --ci-skip-message='[ci skip]'
+        - --sync-garbage-collection=true
+#+end_src
+
+** deploy
+  #+begin_src shell :dir "."
+    # possibly editing before you run
+    kubectl apply -f flux-manifest.yaml
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  serviceaccount/flux created
+  clusterrole.rbac.authorization.k8s.io/flux created
+  clusterrolebinding.rbac.authorization.k8s.io/flux created
+  deployment.apps/flux created
+  secret/flux-git-deploy created
+  deployment.apps/memcached created
+  service/memcached created
+  #+end_example
+
+** delpoyment status
+  #+begin_src shell
+    kubectl -n ${FLUX_FORWARD_NAMESPACE} rollout status deployment/flux
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  Waiting for deployment "flux" rollout to finish: 0 of 1 updated replicas are available...
+  deployment "flux" successfully rolled out
+  #+end_example
+
+** ssh-pubkey for deployment
+Put this into github as a deploy key for the repo in question and allow write:
+https://github.com/cncf/apisnoop/settings/keys/new
+
+  #+begin_src shell
+    fluxctl identity || echo FAIL
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCzavZXDyMWaNmQWTXXjzmtU5SKBViEk4ym9AFgxoY554E+jE/Kuj7G5iI8gNZccKj76zkn8waG2yojOHqiSbDDpVoupFsr5dosKelxa1ZBQULy9XsJ8PhfCFoI5ovA4B1Pug6bNA/eILD/UVr6WlQXTv0y+8Phh2YQRWl3xr9lvIj5pU+IQcY5aNwvusN1gwh5F++KYSCd+QTVnL3D03GtxIfbiDxR2ow3gW/m6yMg4NtCfG72rVYJrpEYk7FrME+ubM9D0tUcxMY+Q4wIn2snmPjx73KwCXKcnlTw4pptns2ek7KUTBarW7IZ74RVLX62pMhAU+wsRjQ32OO1gxK5rizjduG/8uPcuXj5kp+94sP2Wfa08qT/wljvBm2RzN0+vEa78fU6AIk619UQizqK+C+0uifitSQktBe38iaIwTmbvbJwZzPoyoNow6NRpajJ9to+R02qwvar8HN8VZht1Gk5klEQ3qMQmqlrUpkFd/5tD1d2gp5mGkAiQzXp2yc= root@flux-cc649b69f-m6pdl
+  #+end_example
+
+** force sync
+
+You could push and wait for the sync to happen... or fluxctl sync
+
+  #+begin_src tmate :window sync
+    fluxctl sync
+  #+end_src
+* status
+** workflows
+  #+begin_src shell
+    fluxctl list-workloads -n apisnoop
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  WORKLOAD                      CONTAINER           IMAGE                            RELEASE  POLICY
+  apisnoop:deployment/hasura    hasura              raiinbow/hasura:v2020.04.08-2    ready    locked
+  apisnoop:deployment/pgadmin   pgadmin             dpage/pgadmin4:4.17              ready    locked
+                                cp-servers-json     alpine:3.6                                
+                                chmod-servers-json  alpine:3.6                                
+                                cp-pgpass           alpine:3.6                                
+                                chmod-pgpass        alpine:3.6                                
+  apisnoop:deployment/postgres  postgres            raiinbow/postgres:v2020.04.08-2  ready    locked
+  apisnoop:deployment/webapp    webapp              raiinbow/webapp:v2020.04.08-2    ready    locked
+  #+end_example
+
+** images
+  #+begin_src shell
+    fluxctl list-images -n apisnoop -l 1 2>/dev/null
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  WORKLOAD                      CONTAINER           IMAGE                    CREATED
+  apisnoop:deployment/hasura    hasura              raiinbow/hasura          
+                                                    |   v2020.04.08-1        07 Apr 20 21:47 UTC
+                                                    '-> v2020.04.08-2        07 Apr 20 21:47 UTC
+  apisnoop:deployment/pgadmin   pgadmin             dpage/pgadmin4           
+                                                    |   snapshot             07 Apr 20 00:01 UTC
+                                                    : (11 image(s) omitted)  
+                                                    '-> 4.17                 07 Jan 20 13:31 UTC
+                                cp-servers-json     alpine                   
+                                                    |   3                    23 Mar 20 21:19 UTC
+                                                    : (28 image(s) omitted)  
+                                                    '-> 3.6                  07 Mar 19 22:20 UTC
+                                chmod-servers-json  alpine                   
+                                                    |   3                    23 Mar 20 21:19 UTC
+                                                    : (28 image(s) omitted)  
+                                                    '-> 3.6                  07 Mar 19 22:20 UTC
+                                cp-pgpass           alpine                   
+                                                    |   3                    23 Mar 20 21:19 UTC
+                                                    : (28 image(s) omitted)  
+                                                    '-> 3.6                  07 Mar 19 22:20 UTC
+                                chmod-pgpass        alpine                   
+                                                    |   3                    23 Mar 20 21:19 UTC
+                                                    : (28 image(s) omitted)  
+                                                    '-> 3.6                  07 Mar 19 22:20 UTC
+  apisnoop:deployment/postgres  postgres            raiinbow/postgres        
+                                                    |   v2020.04.08-1        07 Apr 20 21:51 UTC
+                                                    '-> v2020.04.08-2        07 Apr 20 21:51 UTC
+  apisnoop:deployment/webapp    webapp              raiinbow/webapp          
+                                                    '-> v2020.04.08-2        07 Apr 20 22:33 UTC
+  #+end_example
+
 * cert-manager
 ** cert
   #+begin_src shell
@@ -357,63 +359,63 @@ You'll want to ensure any hostnames you want to use on this ingress use the foll
      kubectl describe -n apisnoop challenge/<<challenge()>>
    #+end_src
 
-
-* Move Site
+* DNS
 ** dns records
-*** apisnoop.cncf.io CNAMEs to apisnoop.ii.coop
-#+name: apisnoop.cncf.io dns CNAMEs to IP
-#+begin_src shell
-  dig apisnoop.cncf.io | grep -v \; | sed '/^\s*$/d'
-#+end_src
+*** Original
+**** apisnoop.cncf.io CNAMEs to apisnoop.ii.coop
+ #+name: apisnoop.cncf.io dns CNAMEs to IP
+ #+begin_src shell
+   dig apisnoop.cncf.io | grep -v \; | sed '/^\s*$/d'
+ #+end_src
 
-#+RESULTS: apisnoop.cncf.io dns CNAMEs to IP
-#+begin_src shell
-apisnoop.cncf.io.	115	IN	CNAME	apisnoop.ii.coop.
-apisnoop.ii.coop.	25	IN	CNAME	apisnoop.cncf.ci.
-apisnoop.cncf.ci.	25	IN	CNAME	www.apisnoop.io.
-www.apisnoop.io.	116	IN	A	35.189.36.228
-#+end_src
-*** apisnoop.ii.coop CNAMEs to apisnoop.cncf.ci
-#+name: apisnoop.ii.coop dns CNAMEs to IP
-#+begin_src shell
-  dig apisnoop.ii.coop | grep -v \; | sed '/^\s*$/d'
-#+end_src
+ #+RESULTS: apisnoop.cncf.io dns CNAMEs to IP
+ #+begin_src shell
+ apisnoop.cncf.io.	115	IN	CNAME	apisnoop.ii.coop.
+ apisnoop.ii.coop.	25	IN	CNAME	apisnoop.cncf.ci.
+ apisnoop.cncf.ci.	25	IN	CNAME	www.apisnoop.io.
+ www.apisnoop.io.	116	IN	A	35.189.36.228
+ #+end_src
+**** apisnoop.ii.coop CNAMEs to apisnoop.cncf.ci
+ #+name: apisnoop.ii.coop dns CNAMEs to IP
+ #+begin_src shell
+   dig apisnoop.ii.coop | grep -v \; | sed '/^\s*$/d'
+ #+end_src
 
-#+RESULTS: apisnoop.ii.coop dns CNAMEs to IP
-#+begin_src shell
-apisnoop.ii.coop.	59	IN	CNAME	apisnoop.cncf.ci.
-apisnoop.cncf.ci.	59	IN	CNAME	www.apisnoop.io.
-www.apisnoop.io.	299	IN	A	35.189.36.228
-#+end_src
+ #+RESULTS: apisnoop.ii.coop dns CNAMEs to IP
+ #+begin_src shell
+ apisnoop.ii.coop.	59	IN	CNAME	apisnoop.cncf.ci.
+ apisnoop.cncf.ci.	59	IN	CNAME	www.apisnoop.io.
+ www.apisnoop.io.	299	IN	A	35.189.36.228
+ #+end_src
 
-*** apisnoop.cncf.ci CNAMEs to www.apisnoop.io
-#+name: apisnoop.cncf.ci dns CNAMEs to IP
-#+begin_src shell
-  dig apisnoop.cncf.ci | grep -v \; | sed '/^\s*$/d'
-#+end_src
+**** apisnoop.cncf.ci CNAMEs to www.apisnoop.io
+ #+name: apisnoop.cncf.ci dns CNAMEs to IP
+ #+begin_src shell
+   dig apisnoop.cncf.ci | grep -v \; | sed '/^\s*$/d'
+ #+end_src
 
-#+RESULTS: apisnoop.cncf.ci dns CNAMEs to IP
-#+begin_src shell
-apisnoop.cncf.ci.	59	IN	CNAME	www.apisnoop.io.
-www.apisnoop.io.	299	IN	A	35.189.36.228
-#+end_src
+ #+RESULTS: apisnoop.cncf.ci dns CNAMEs to IP
+ #+begin_src shell
+ apisnoop.cncf.ci.	59	IN	CNAME	www.apisnoop.io.
+ www.apisnoop.io.	299	IN	A	35.189.36.228
+ #+end_src
 
-*** www.apisnoop.io A to 35.189.36.228
-#+name: www.apisnoop.io dns CNAMEs to IP
-#+begin_src shell
-  dig www.apisnoop.io | grep -v \; | sed '/^\s*$/d'
-#+end_src
+**** www.apisnoop.io A to 35.189.36.228
+ #+name: www.apisnoop.io dns CNAMEs to IP
+ #+begin_src shell
+   dig www.apisnoop.io | grep -v \; | sed '/^\s*$/d'
+ #+end_src
 
-#+RESULTS: www.apisnoop.io dns CNAMEs to IP
-#+begin_src shell
-www.apisnoop.io.	299	IN	A	35.189.36.228
-#+end_src
+ #+RESULTS: www.apisnoop.io dns CNAMEs to IP
+ #+begin_src shell
+ www.apisnoop.io.	299	IN	A	35.189.36.228
+ #+end_src
 
-#+RESULTS: apisnoop.cncf.ci dns CNAMEs to IP
-#+begin_src shell
-apisnoop.cncf.ci.	59	IN	CNAME	www.apisnoop.io.
-www.apisnoop.io.	299	IN	A	35.189.36.228
-#+end_src
+ #+RESULTS: apisnoop.cncf.ci dns CNAMEs to IP
+ #+begin_src shell
+ apisnoop.cncf.ci.	59	IN	CNAME	www.apisnoop.io.
+ www.apisnoop.io.	299	IN	A	35.189.36.228
+ #+end_src
 
 ** dns domains IPs
 *** dns servers for cncf.io
@@ -486,7 +488,8 @@ Name Server: NS-1407.AWSDNS-47.ORG
    Organization:   Google LLC (GOOGL-2)
    #+end_src
 * Footnotes
-** ingress
+** alb-ingress
+I'm not sure we need this
   #+begin_src tmate :window ingress
      # brew install helm
      helm repo add incubator http://storage.googleapis.com/kubernetes-charts-incubator
@@ -498,14 +501,12 @@ Name Server: NS-1407.AWSDNS-47.ORG
       --set autoDiscoverAwsVpcID=true \
       --set clusterName=apisnoop
   #+end_src
-** eks gitops
-   #+begin_src tmate :session hh :window create
-     export EKSCTL_EXPERIMENTAL=true
-     eksctl \
-         enable profile app-dev \
-         --git-user "CNCF-CI" \
-         --git-email cncf-ci@ii.coop \
-         --git-url git@github.com:ii/apisnoop-deploy \
-         --cluster apisnoop-prod \
-         --region ap-southeast-2
+** image building
+   #+begin_src tmate :window image
+     for APP in auditlogger webapp postgres hasura ; do
+         cd ~/apisnoop/apps/$APP/app
+         export IMAGE=raiinbow/$APP:v2020.04.08-2
+         docker build -t $IMAGE .
+         docker push $IMAGE
+     done
    #+end_src
