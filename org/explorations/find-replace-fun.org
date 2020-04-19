@@ -3,4 +3,242 @@
 
 * Purpose
   In our mock ticket template we have the text string RESOURCENAME which is a fill in until someone determines what exactly they are going to be writing a test for.  when that happens, the current flow is to select all the text and do a find/replace for resource name.  THis is a good simple pattern to replace with an apisnoop elisp function, and opportunity to learn a bit more elisp.
-* 
+* Creating a function
+  This is based m ostly on lessons gleaned from [[https://www.gnu.org/software/emacs/manual/html_node/eintr/index.html][An Intro to Programming in Elisp]], and their walkthroughs on buffer functions.
+
+We want to do a find replace on the entire buffer, and can do this by going to the top of the buffer (point-min) and then running replace-string (we don't wanna do query-replace, because we don't wanna have to confirm every change).
+
+I am referencing RESOURCENAME as the initial from-string value.  this variable is set in our dir-locals with setq-local.  This makes it easier to run the command multiple times if you change your mind.
+  #+begin_src elisp
+    (defun apisnoop/set-resource-name ()
+        "Replace instances of goback with inputted resource name."
+      (interactive)
+      (let ((from-string RESOURCENAME)
+            (to-string (read-string "Enter new resource: ")))
+        (save-excursion
+        (progn
+          (goto-char (point-min))
+          (replace-string from-string to-string)
+          (setq RESOURCENAME to-string)
+          (message (concat "Replaced all instances of " from-string " to " to-string))))))
+  #+end_src
+
+* Things I learned
+  you can set a local variable in our dir-locals with ~setq-local~.  This is nice  as we can set the resourename when it changes, making it easier to set a new one, and not clutter up the global space. 
+  
+  save-excursion is a common wrapper function (like how progn and let are common).  Save excursion marks your current point, runs the body of the function, and then returns you to the point.  this lets us do a fully buffer search and not lose our place.
+
+you can use replace-string instead of query-replace to not have to confirm every instance of your find/replace.
+* Conclusions
+This ended up being a simple function, once I learned more about text manipulation with points and buffers in emacs lisp.  I am v. grateful for the intro to programing elisp docs and the tone in which they're written.
+* Sample
+** TODO Progress [0/4]                                               :export:
+ - [ ] [[#][mock ticket]]
+ - [ ] [[#][issue created]]
+ - [ ] [[#][PR created]]
+ - [ ] [[#][promotion created]]
+** Identifying an untested feature Using APISnoop                    :export:
+
+ According to this APIsnoop query, there are still some remaining goback endpoints which are untested.
+
+   #+NAME: untested_stable_core_endpoints
+   #+begin_src sql-mode :eval never-export :exports both :session none
+     SELECT
+       operation_id,
+       -- k8s_action,
+       -- path,
+       -- description,
+       kind
+       FROM untested_stable_core_endpoints
+       -- FROM untested_stable_endpoints
+       where path not like '%volume%'
+       -- and kind like ''
+       -- and operation_id ilike '%%'
+      ORDER BY kind,operation_id desc
+      LIMIT 25
+            ;
+   #+end_src
+
+  #+RESULTS: untested_stable_core_endpoints
+  #+begin_SRC example
+                  operation_id                |      kind       
+  --------------------------------------------+-----------------
+   createCoreV1NamespacedPodBinding           | Binding
+   createCoreV1NamespacedBinding              | Binding
+   readCoreV1ComponentStatus                  | ComponentStatus
+   listCoreV1ComponentStatus                  | ComponentStatus
+   replaceCoreV1NamespacedEndpoints           | Endpoints
+   patchCoreV1NamespacedEndpoints             | Endpoints
+   listCoreV1EndpointsForAllNamespaces        | Endpoints
+   deleteCoreV1CollectionNamespacedEndpoints  | Endpoints
+   replaceCoreV1NamespacedEvent               | Event
+   readCoreV1NamespacedEvent                  | Event
+   patchCoreV1NamespacedEvent                 | Event
+   listCoreV1NamespacedEvent                  | Event
+   listCoreV1EventForAllNamespaces            | Event
+   deleteCoreV1NamespacedEvent                | Event
+   deleteCoreV1CollectionNamespacedEvent      | Event
+   createCoreV1NamespacedEvent                | Event
+   patchCoreV1NamespacedLimitRange            | LimitRange
+   listCoreV1LimitRangeForAllNamespaces       | LimitRange
+   deleteCoreV1CollectionNamespacedLimitRange | LimitRange
+   replaceCoreV1NamespaceStatus               | Namespace
+   replaceCoreV1NamespaceFinalize             | Namespace
+   readCoreV1NamespaceStatus                  | Namespace
+   patchCoreV1NamespaceStatus                 | Namespace
+   patchCoreV1Namespace                       | Namespace
+   listCoreV1Namespace                        | Namespace
+  (25 rows)
+
+  #+end_SRC
+
+** API Reference and feature documentation                           :export:
+ - [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+ - [[https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/RESOURCENAME.go][client-go - goback]] 
+
+** The mock test                                                     :export:
+*** Test outline
+ 1. Create a goback with a static label
+
+ 2. Patch the goback with a new label and updated data
+
+ 3. Get the goback to ensure it's patched
+
+ 4. List all gobacks in all Namespaces with a static label
+    find the goback
+    ensure that the goback is found and is patched
+
+ 5. Delete Namespaced goback via a Collection with a LabelSelector
+
+*** Test the functionality in Go
+    #+begin_src go
+      package main
+
+      import (
+        // "encoding/json"
+        "fmt"
+        "flag"
+        "os"
+        v1 "k8s.io/api/core/v1"
+        // "k8s.io/client-go/dynamic"
+        // "k8s.io/apimachinery/pkg/runtime/schema"
+        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+        "k8s.io/client-go/kubernetes"
+        // "k8s.io/apimachinery/pkg/types"
+        "k8s.io/client-go/tools/clientcmd"
+      )
+
+      func main() {
+        // uses the current context in kubeconfig
+        kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+        flag.Parse()
+        config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+        if err != nil {
+            fmt.Println(err)
+            return
+        }
+        // make our work easier to find in the audit_event queries
+        config.UserAgent = "live-test-writing"
+        // creates the clientset
+        ClientSet, _ := kubernetes.NewForConfig(config)
+        // DynamicClientSet, _ := dynamic.NewForConfig(config)
+        // podResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+
+        // TEST BEGINS HERE
+
+        testPodName := "test-pod"
+        testPodImage := "nginx"
+        testNamespaceName := "default"
+
+        fmt.Println("creating a Pod")
+        testPod := v1.Pod{
+          ObjectMeta: metav1.ObjectMeta{
+            Name: testPodName,
+            Labels: map[string]string{"test-pod-static": "true"},
+          },
+          Spec: v1.PodSpec{
+            Containers: []v1.Container{{
+              Name: testPodName,
+              Image: testPodImage,
+            }},
+          },
+        }
+        _, err = ClientSet.CoreV1().Pods(testNamespaceName).Create(&testPod)
+        if err != nil {
+            fmt.Println(err, "failed to create Pod")
+            return
+        }
+
+        fmt.Println("listing Pods")
+        pods, err := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{LabelSelector: "test-pod-static=true"})
+        if err != nil {
+            fmt.Println(err, "failed to list Pods")
+            return
+        }
+        podCount := len(pods.Items)
+        if podCount == 0 {
+            fmt.Println("there are no Pods found")
+            return
+        }
+        fmt.Println(podCount, "Pod(s) found")
+
+        fmt.Println("deleting Pod")
+        err = ClientSet.CoreV1().Pods(testNamespaceName).Delete(testPodName, &metav1.DeleteOptions{})
+        if err != nil {
+            fmt.Println(err, "failed to delete the Pod")
+            return
+        }
+
+        // TEST ENDS HERE
+
+        fmt.Println("[status] complete")
+
+      }
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src go
+    creating a Pod
+    listing Pods
+    1 Pods found
+    deleting Pod
+    [status] complete
+    #+end_src
+
+** Verifying increase in coverage with APISnoop                      :export:
+ Discover useragents:
+   #+begin_src sql-mode :eval never-export :exports both :session none
+     select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+   #+end_src
+
+ List endpoints hit by the test:
+ #+begin_src sql-mode :exports both :session none
+ select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+ #+end_src
+
+ Display endpoint coverage change:
+   #+begin_src sql-mode :eval never-export :exports both :session none
+     select * from projected_change_in_coverage;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+      category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+   ---------------+-----------------+--------------+--------------+------------------
+    test_coverage |             438 |          183 |          183 |                0
+   (1 row)
+
+   #+end_SRC
+
+** Final notes                                                       :export:
+ If a test with these calls gets merged, **test coverage will go up by N points**
+
+ This test is also created with the goal of conformance promotion.
+
+ -----  
+ /sig testing  
+
+ /sig architecture  
+
+ /area conformance  
+
