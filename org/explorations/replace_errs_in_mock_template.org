@@ -3,8 +3,6 @@
 * Purpose
 This is part of our work to transpose a mock test it a ginkgo framework compliant test.
 One common pattern is to replace our err checking statment with an ExpectNoError statement.  This org explores how one might do this using elsip functions that will utlimately reside in  [[file:~/apisnoop/tickets/k8s/.dir-locals.el][tickets/k8s/.dir-locals.el]] 
-* Something cool
-and type text
 * Context
   In our mock-template we write a mock test in go.  If it gets approved, we adjust it to work for the ginkgo.
 ** The mock test                                                     :export:
@@ -133,7 +131,7 @@ framework.ExpectNoError(err, "failed to update ReplicationControllerStatus")
         flag.Parse()
         config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
         if err != nil {
-            fmt.Println(err)
+            fmt.Println(err, "the first error")
             return
         }
         // make our work easier to find in the audit_event queries
@@ -197,6 +195,11 @@ framework.ExpectNoError(err, "failed to update ReplicationControllerStatus")
    (1 row)
 
    #+end_SRC
+
+** Gingko Test
+   :PROPERTIES:
+   :CUSTOM_ID: test-test-test
+   :END:
 
 * Process
 ** TODO Confirm we can select just a specially marked code block for find replace
@@ -578,9 +581,135 @@ framework.ExpectNoError(err, "failed to update ReplicationControllerStatus")
 I could spend time figurikng this out, but i think it'll ultimately be misguided.  At the end of the day we wanna dd new text to the org file, which will by extension update the AST.  If we try to copy and insert the AST, it has too many specific properties that the new one will inherit(like buffer position and parent).  best to just do some basic string parsing.
 
 ** Grab value of mock test in go and insert it as a new code block under heading "Gingko Test"
-   I imagine we will want to do something like this  [[https://stackoverflow.com/questions/52121961/emacs-org-mode-insert-text-after-heading-properties][stackoverflow question]] 
-** Copy this code block and paste into buffer with new name/id
-   You can also translate an AST back into an org document.  
+   I imagine we will want to do something like this [[https://stackoverflow.com/questions/52121961/emacs-org-mode-insert-text-after-heading-properties][stackoverflow question]]
+   We want to find the heading with local custom id and then insert after its property drawer, since it will likely have one
+   
+   If we assume there is one gingko test per ticket (which is a safe assumption), and we assume people are bringing in the mock template and not adjusting some key headlines (less safe, but still fair), then this function can be real simple.  
+   
+   here we jump our point to the headline called "Gingko Test"
+   #+NAME: Jump to correct headline
+   #+begin_src elisp
+   (goto-char (org-find-exact-headline-in-buffer "Gingko Test"))
+   #+end_src
+   
+   We can then make sure we are placing test _after_ the properties drawer (just in case people wanna put in properties for export or what have you).
+
+   #+NAME: Insert text into heading
+   #+begin_src elisp
+     (save-excursion
+     (goto-char (org-find-exact-headline-in-buffer "Gingko Test"))
+     (goto-char (org-element-property :contents-begin (org-element-at-point)))
+     (let ((first-element (org-element-at-point)))
+       (when (eq 'property-drawer (car first-element))
+         (goto-char (org-element-property :end first-element))))
+     (insert  "\nIT WORKS!\n\n"))
+   #+end_src
+
+   (future note: we could do is a simple if/else.  if the headline matches, awesome keep going.  if not write message of "can not find gingkto test headline, please make it.")
+   
+   So we now know how to go to our headline and insert text.  Next we wanna generate some text of src block then the value of our mock test and then end_block, basically.
+   
+  #+NAME: Insert src code block into heading 
+  #+begin_src elisp
+    (save-excursion
+      (let* ((test "fmt.println('test')\n")
+             (src-code-block (concat "#+NAME: Gingkto Test\n"
+                                     "#+begin_src go\n"
+                                     test
+                                     "#+end_src\n")))
+             (goto-char (org-find-exact-headline-in-buffer "Gingko Test"))
+             (goto-char (org-element-property :contents-begin (org-element-at-point)))
+             (let ((first-element (org-element-at-point)))
+               (when (eq 'property-drawer (car first-element))
+                 (goto-char (org-element-property :end first-element))))
+             (insert  src-code-block)))
+  #+end_src
+
+  We got it!  now we just need to make test be mock all made in gingko style. Time to jump into some regex
+   
 ** Develop regex for finding all instances of if err!=nil in selected text
+   So we can get the text from our mock like this:
+   #+NAME: get text
+   #+begin_src elisp
+     (car (org-element-map (org-element-parse-buffer) 'src-block
+      (lambda (src-block) 
+        (let ((name (org-element-property :name src-block))
+              (value (org-element-property :value src-block)))
+          (if (string= name "Mock Test In Go" )
+              value)))))
+   #+end_src
+   our text string is:
+   : \n        if err != nil {\n            fmt.Println(err, \"failed to list Pods\")\n            return\n        }\n
+   
+   I'll throw that in regexr to get the match.
+  this initial regexp will work:
+: \\n *if err != nil {\\n *fmt.Println\(err,.\\"([a-zA-Z0-9.!? ]+\\"\)\\n *return\\n *\}\\n)
+it's a bit monstrous. I'll try it in parts to see if the basic find replace works at the start and slowly build out to its true form.
+
+let bring this in and do a replace- to "
+: framework.ExpectNoError(err, "failed to update ReplicationControllerStatus")\n
+
+#+NAME: replace text
+#+begin_src elisp
+  (save-excursion
+    (let* ((mock-test (car (org-element-map (org-element-parse-buffer) 'src-block
+                             (lambda (src-block) 
+                               (let ((name (org-element-property :name src-block))
+                                     (value (org-element-property :value src-block)))
+                                 (if (string= name "Mock Test In Go" )
+                                     value))))))
+           (match " *if err != nil {\n *fmt.Println(err, \"[a-z A-Z]*\")\n *return\n *}")
+           (replace "\n        framework.ExpectNoError(err, \"cool error\")\n")
+           (gingko-test (replace-regexp-in-string match replace mock-test))
+
+           (src-code-block (concat "#+NAME: Gingkto Test\n"
+                                   "#+begin_src go\n"
+                                   gingko-test
+                                   "#+end_src\n")))
+      (goto-char (org-find-exact-headline-in-buffer "Gingko Test"))
+      (goto-char (org-element-property :contents-begin (org-element-at-point)))
+      (let ((first-element (org-element-at-point)))
+        (when (eq 'property-drawer (car first-element))
+          (goto-char (org-element-property :end first-element))))
+      (insert  src-code-block)))
+#+end_src
+
+Awesome, this function works, though we have a hardcoded error...so really we need to somehow capture what's in the text for the error function and make that part of our replacement...this gets more interesting.  
+
 ** Isolate error message from these blocks
+replace-regexp in string allows for the replacement arg to be a function, one that is passed whatever text is matched by the regex.  so we could make a function that isolates the error and message and constructs the appropriate replacement.
+
+Let's try it
+#+begin_src elisp
+  (save-excursion
+    (let* ((mock-test (car (org-element-map (org-element-parse-buffer) 'src-block
+                             (lambda (src-block) 
+                               (let ((name (org-element-property :name src-block))
+                                     (value (org-element-property :value src-block)))
+                                 (if (string= name "Mock Test In Go" )
+                                     value))))))
+           (match " *if err != nil {\n *fmt.Println(err, \"[a-z A-Z]*\")\n *return\n *}")
+           (replace "\n        framework.ExpectNoError(err, \"cool error\")\n")
+           (gingko-test (replace-regexp-in-string match (lambda (s)
+                                                          (let ((error-message (car (split-string s "[(]"))))
+                                                            error-message)) mock-test))
+           (src-code-block (concat "#+NAME: Gingkto Test\n"
+                                   "#+begin_src go\n"
+                                   gingko-test
+                                   "#+end_src\n")))
+      (goto-char (org-find-exact-headline-in-buffer "Gingko Test"))
+      (goto-char (org-element-property :contents-begin (org-element-at-point)))
+      (let ((first-element (org-element-at-point)))
+        (when (eq 'property-drawer (car first-element))
+          (goto-char (org-element-property :end first-element))))
+      (insert  src-code-block)))
+#+end_src
+
+#+RESULTS:
+#+begin_src elisp
+nil
+#+end_src
+
 ** Copy and paste code block, but changing err statements
+   
+   
