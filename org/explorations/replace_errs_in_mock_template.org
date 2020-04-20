@@ -1,0 +1,586 @@
+#+TITLE: Replace err statements in mock test
+
+* Purpose
+This is part of our work to transpose a mock test it a ginkgo framework compliant test.
+One common pattern is to replace our err checking statment with an ExpectNoError statement.  This org explores how one might do this using elsip functions that will utlimately reside in  [[file:~/apisnoop/tickets/k8s/.dir-locals.el][tickets/k8s/.dir-locals.el]] 
+* Something cool
+and type text
+* Context
+  In our mock-template we write a mock test in go.  If it gets approved, we adjust it to work for the ginkgo.
+** The mock test                                                     :export:
+   Here is an example for our mock template
+    #+begin_src go
+      package main
+
+      import (
+	      // "encoding/json"
+        "fmt"
+        "flag"
+        "os"
+        // v1 "k8s.io/api/core/v1"
+        // "k8s.io/client-go/dynamic"
+        // "k8s.io/apimachinery/pkg/runtime/schema"
+        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+        "k8s.io/client-go/kubernetes"
+        // "k8s.io/apimachinery/pkg/types"
+        "k8s.io/client-go/tools/clientcmd"
+      )
+
+      func main() {
+        // uses the current context in kubeconfig
+        kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+        flag.Parse()
+        config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+        if err != nil {
+            fmt.Println(err)
+            return
+        }
+        // make our work easier to find in the audit_event queries
+        config.UserAgent = "live-test-writing"
+        // creates the clientset
+        ClientSet, _ := kubernetes.NewForConfig(config)
+        // DynamicClientSet, _ := dynamic.NewForConfig(config)
+        // podResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+
+        // TEST BEGINS HERE
+
+        fmt.Println("listing Pods")
+        pods, err := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{})
+        if err != nil {
+            fmt.Println(err, "failed to list Pods")
+            return
+        }
+        podCount := len(pods.Items)
+        if podCount == 0 {
+            fmt.Println("there are no Pods found")
+            return
+        }
+        fmt.Println(podCount, "Pods found")
+
+        // TEST ENDS HERE
+
+        // write test here
+        fmt.Println("[status] complete")
+
+      }
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src go
+    listing Pods
+    20 Pods found
+    [status] complete
+    #+end_src
+
+** Error checks
+   Throughout the mock test are statments like so...
+   
+   #+NAME: example error check
+   #+begin_src go
+  if err != nil {
+    fmt.Println(err, "failed to update ReplicationControllerStatus")
+    return
+} 
+   #+end_src
+   
+In the gingko framework this becomes
+#+NAME: example error in ginkgo
+#+begin_src go
+framework.ExpectNoError(err, "failed to update ReplicationControllerStatus")
+#+end_src
+* Sample
+  This is for some testing purposes, a nice section of text from our mock template to see if we can find and parse
+** API Reference and feature documentation                           :export:
+ - [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+ - [[https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/RESOURCENAME.go][client-go - RESOURCENAME]] 
+
+** The mock test                                                     :export:
+*** Test outline
+ 1. Create a RESOURCENAME with a static label
+
+ 2. Patch the RESOURCENAME with a new Label and updated data
+
+ 3. Get the RESOURCENAME to ensure it's patched
+
+ 4. List all RESOURCENAMEs in all Namespaces
+    find the RESOURCENAME(1)
+    ensure that the RESOURCENAME is found and is patched
+
+ 5. Delete Namespaced RESOURCENAME(1) via a Collection with a LabelSelector
+
+*** Test the functionality in Go
+    #+NAME: Mock Test In Go
+    #+begin_src go
+      package main
+
+      import (
+	      // "encoding/json"
+        "fmt"
+        "flag"
+        "os"
+        // v1 "k8s.io/api/core/v1"
+        // "k8s.io/client-go/dynamic"
+        // "k8s.io/apimachinery/pkg/runtime/schema"
+        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+        "k8s.io/client-go/kubernetes"
+        // "k8s.io/apimachinery/pkg/types"
+        "k8s.io/client-go/tools/clientcmd"
+      )
+
+      func main() {
+        // uses the current context in kubeconfig
+        kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+        flag.Parse()
+        config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+        if err != nil {
+            fmt.Println(err)
+            return
+        }
+        // make our work easier to find in the audit_event queries
+        config.UserAgent = "live-test-writing"
+        // creates the clientset
+        ClientSet, _ := kubernetes.NewForConfig(config)
+        // DynamicClientSet, _ := dynamic.NewForConfig(config)
+        // podResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+
+        // TEST BEGINS HERE
+
+        fmt.Println("listing Pods")
+        pods, err := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{})
+        if err != nil {
+            fmt.Println(err, "failed to list Pods")
+            return
+        }
+        podCount := len(pods.Items)
+        if podCount == 0 {
+            fmt.Println("there are no Pods found")
+            return
+        }
+        fmt.Println(podCount, "Pods found")
+
+        // TEST ENDS HERE
+
+        // write test here
+        fmt.Println("[status] complete")
+
+      }
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src go
+    listing Pods
+    20 Pods found
+    [status] complete
+    #+end_src
+
+** Verifying increase in coverage with APISnoop                      :export:
+ Discover useragents:
+   #+begin_src sql-mode :eval never-export :exports both :session none
+     select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+   #+end_src
+
+ List endpoints hit by the test:
+ #+begin_src sql-mode :exports both :session none
+ select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+ #+end_src
+
+ Display endpoint coverage change:
+   #+begin_src sql-mode :eval never-export :exports both :session none
+     select * from projected_change_in_coverage;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+      category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+   ---------------+-----------------+--------------+--------------+------------------
+    test_coverage |             438 |          183 |          183 |                0
+   (1 row)
+
+   #+end_SRC
+
+* Process
+** TODO Confirm we can select just a specially marked code block for find replace
+   We don't want to 
+  
+   We can do an org-find query, let's try a few out!
+   
+   So the entire buffer we are in is also just a lisp list of lists, or specificially an AST(abstract syntax tree).  
+   #+NAME: find in org
+   #+begin_src elisp
+   (org-element-parse-buffer) 
+   #+end_src
+
+   #+RESULTS: find in org
+   #+begin_src elisp
+     (org-data nil
+               (section
+                (:begin 1 :end 47 :contents-begin 1 :contents-end 46 :post-blank 1 :post-affiliated 1 :parent #0)
+                (keyword
+                 (:key "TITLE" :value "Replace err statements in mock test" :begin 1 :end 46 :post-blank 0 :post-affiliated 1 :parent #1)))
+               (headline
+                (:raw-value "Purpose" :begin 47 :end 408 :pre-blank 0 :contents-begin 57 :contents-end 408 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 47 :title
+                            (#("Purpose" 0 7
+                               (:parent #1)))
+                            :parent #0)
+                (section
+                 (:begin 57 :end 408 :contents-begin 57 :contents-end 408 :post-blank 0 :post-affiliated 57 :parent #1)
+                 (paragraph
+                  (:begin 57 :end 408 :contents-begin 57 :contents-end 408 :post-blank 0 :post-affiliated 57 :parent #2)
+                  #("This is part of our work to transpose a mock test it a ginkgo framework compliant test.\nOne common pattern is to replace our err checking statment with an ExpectNoError statement.  This org explores how one might do this using elsip functions that will utlimately reside in  " 0 275
+                    (:parent #3))
+                  (link
+                   (:type "file" :path "~/apisnoop/tickets/k8s/.dir-locals.el" :format bracket :raw-link "file:~/apisnoop/tickets/k8s/.dir-locals.el" :application nil :search-option nil :begin 332 :end 407 :contents-begin 378 :contents-end 404 :post-blank 1 :parent #3)
+                   #("tickets/k8s/.dir-locals.el" 0 26
+                     (:parent #4)))
+                  #("\n" 0 1
+                    (:parent #3)))))
+               (headline
+                (:raw-value "Something cool" :begin 408 :end 439 :pre-blank 0 :contents-begin 425 :contents-end 439 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 408 :title
+                            (#("Something cool" 0 14
+                               (:parent #1)))
+                            :parent #0)
+                (section
+                 (:begin 425 :end 439 :contents-begin 425 :contents-end 439 :post-blank 0 :post-affiliated 425 :parent #1)
+                 (paragraph
+                  (:begin 425 :end 439 :contents-begin 425 :contents-end 439 :post-blank 0 :post-affiliated 425 :parent #2)
+                  #("and type text\n" 0 14
+                    (:parent #3)))))
+               (headline
+                (:raw-value "Context" :begin 439 :end 2956 :pre-blank 0 :contents-begin 449 :contents-end 2956 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 439 :title
+                            (#("Context" 0 7
+                               (:parent #1)))
+                            :parent #0)
+                (section
+                 (:begin 449 :end 559 :contents-begin 449 :contents-end 559 :post-blank 0 :post-affiliated 449 :parent #1)
+                 (paragraph
+                  (:begin 449 :end 559 :contents-begin 449 :contents-end 559 :post-blank 0 :post-affiliated 449 :parent #2)
+                  #("  In our mock-template we write a mock test in go.  If it gets approved, we adjust it to work for the ginkgo.\n" 0 110
+                    (:parent #3))))
+                (headline
+                 (:raw-value "The mock test" :begin 559 :end 2545 :pre-blank 0 :contents-begin 637 :contents-end 2544 :level 2 :priority nil :tags
+                             (#("export" 0 6
+                                (fontified nil)))
+                             :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 559 :title
+                             (#("The mock test" 0 13
+                                (:parent #2)))
+                             :parent #1)
+                 (section
+                  (:begin 637 :end 2545 :contents-begin 637 :contents-end 2544 :post-blank 1 :post-affiliated 637 :parent #2)
+                  (paragraph
+                   (:begin 637 :end 681 :contents-begin 637 :contents-end 681 :post-blank 0 :post-affiliated 637 :parent #3)
+                   #("   Here is an example for our mock template\n" 0 44
+                     (:parent #4)))
+                  (src-block
+                   (:language "go" :switches nil :parameters nil :begin 681 :end 2439 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "      package main\n\n      import (\n	      // \"encoding/json\"\n        \"fmt\"\n        \"flag\"\n        \"os\"\n        // v1 \"k8s.io/api/core/v1\"\n        // \"k8s.io/client-go/dynamic\"\n        // \"k8s.io/apimachinery/pkg/runtime/schema\"\n        metav1 \"k8s.io/apimachinery/pkg/apis/meta/v1\"\n        \"k8s.io/client-go/kubernetes\"\n        // \"k8s.io/apimachinery/pkg/types\"\n        \"k8s.io/client-go/tools/clientcmd\"\n      )\n\n      func main() {\n        // uses the current context in kubeconfig\n        kubeconfig := flag.String(\"kubeconfig\", fmt.Sprintf(\"%v/%v/%v\", os.Getenv(\"HOME\"), \".kube\", \"config\"), \"(optional) absolute path to the kubeconfig file\")\n        flag.Parse()\n        config, err := clientcmd.BuildConfigFromFlags(\"\", *kubeconfig)\n        if err != nil {\n            fmt.Println(err)\n            return\n        }\n        // make our work easier to find in the audit_event queries\n        config.UserAgent = \"live-test-writing\"\n        // creates the clientset\n        ClientSet, _ := kubernetes.NewForConfig(config)\n        // DynamicClientSet, _ := dynamic.NewForConfig(config)\n        // podResource := schema.GroupVersionResource{Group: \"\", Version: \"v1\", Resource: \"pods\"}\n\n        // TEST BEGINS HERE\n\n        fmt.Println(\"listing Pods\")\n        pods, err := ClientSet.CoreV1().Pods(\"\").List(metav1.ListOptions{})\n        if err != nil {\n            fmt.Println(err, \"failed to list Pods\")\n            return\n        }\n        podCount := len(pods.Items)\n        if podCount == 0 {\n            fmt.Println(\"there are no Pods found\")\n            return\n        }\n        fmt.Println(podCount, \"Pods found\")\n\n        // TEST ENDS HERE\n\n        // write test here\n        fmt.Println(\"[status] complete\")\n\n      }\n" :post-blank 1 :post-affiliated 681 :parent #3))
+                  (src-block
+                   (:language "go" :switches nil :parameters nil :begin 2439 :end 2544 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "    listing Pods\n    20 Pods found\n    [status] complete\n" :post-blank 0 :post-affiliated 2454 :results
+                              ("")
+                              :parent #3))))
+                (headline
+                 (:raw-value "Error checks" :begin 2545 :end 2956 :pre-blank 0 :contents-begin 2561 :contents-end 2956 :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 2545 :title
+                             (#("Error checks" 0 12
+                                (:parent #2)))
+                             :parent #1)
+                 (section
+                  (:begin 2561 :end 2956 :contents-begin 2561 :contents-end 2956 :post-blank 0 :post-affiliated 2561 :parent #2)
+                  (paragraph
+                   (:begin 2561 :end 2618 :contents-begin 2561 :contents-end 2614 :post-blank 1 :post-affiliated 2561 :parent #3)
+                   #("   Throughout the mock test are statments like so...\n" 0 53
+                     (:parent #4)))
+                  (src-block
+                   (:language "go" :switches nil :parameters nil :begin 2618 :end 2785 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "  if err != nil {\n    fmt.Println(err, \"failed to update ReplicationControllerStatus\")\n    return\n} \n" :post-blank 1 :post-affiliated 2649 :name "example error check" :parent #3))
+                  (paragraph
+                   (:begin 2785 :end 2822 :contents-begin 2785 :contents-end 2822 :post-blank 0 :post-affiliated 2785 :parent #3)
+                   #("In the gingko framework this becomes\n" 0 37
+                     (:parent #4)))
+                  (src-block
+                   (:language "go" :switches nil :parameters nil :begin 2822 :end 2956 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "framework.ExpectNoError(err, \"failed to update ReplicationControllerStatus\")\n" :post-blank 0 :post-affiliated 2854 :name "example error in ginkgo" :parent #3)))))
+               (headline
+                (:raw-value "Sample" :begin 2956 :end 6805 :pre-blank 0 :contents-begin 2965 :contents-end 6804 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 2956 :title
+                            (#("Sample" 0 6
+                               (:parent #1)))
+                            :parent #0)
+                (section
+                 (:begin 2965 :end 3080 :contents-begin 2965 :contents-end 3080 :post-blank 0 :post-affiliated 2965 :parent #1)
+                 (paragraph
+                  (:begin 2965 :end 3080 :contents-begin 2965 :contents-end 3080 :post-blank 0 :post-affiliated 2965 :parent #2)
+                  #("  This is for some testing purposes, a nice section of text from our mock template to see if we can find and parse\n" 0 115
+                    (:parent #3))))
+                (headline
+                 (:raw-value "API Reference and feature documentation" :begin 3080 :end 3377 :pre-blank 0 :contents-begin 3158 :contents-end 3376 :level 2 :priority nil :tags
+                             (#("export" 0 6
+                                (keymap
+                                 (keymap
+                                  (follow-link . mouse-face)
+                                  (mouse-3 . org-find-file-at-mouse)
+                                  (mouse-2 . org-open-at-mouse))
+                                 mouse-face highlight face
+                                 (org-tag org-level-2)
+                                 fontified t)))
+                             :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3080 :title
+                             (#("API Reference and feature documentation" 0 39
+                                (:parent #2)))
+                             :parent #1)
+                 (section
+                  (:begin 3158 :end 3377 :contents-begin 3158 :contents-end 3376 :post-blank 1 :post-affiliated 3158 :parent #2)
+                  (plain-list
+                   (:type unordered :begin 3158 :end 3376 :contents-begin 3158 :contents-end 3376 :structure
+                          ((3158 1 "- " nil nil nil 3249)
+                           (3249 1 "- " nil nil nil 3376))
+                          :post-blank 0 :post-affiliated 3158 :parent #3)
+                   (item
+                    (:bullet "- " :begin 3158 :end 3249 :contents-begin 3161 :contents-end 3249 :checkbox nil :counter nil :structure
+                             ((3158 1 "- " nil nil nil 3249)
+                              (3249 1 "- " nil nil nil 3376))
+                             :pre-blank 0 :post-blank 0 :post-affiliated 3158 :tag nil :parent #4)
+                    (paragraph
+                     (:begin 3161 :end 3249 :contents-begin 3161 :contents-end 3249 :post-blank 0 :post-affiliated 3161 :parent #5)
+                     (link
+                      (:type "https" :path "//kubernetes.io/docs/reference/kubernetes-api/" :format bracket :raw-link "https://kubernetes.io/docs/reference/kubernetes-api/" :application nil :search-option nil :begin 3161 :end 3248 :contents-begin 3217 :contents-end 3246 :post-blank 0 :parent #6)
+                      #("Kubernetes API Reference Docs" 0 29
+                        (:parent #7)))
+                     #("\n" 0 1
+                       (:parent #6))))
+                   (item
+                    (:bullet "- " :begin 3249 :end 3376 :contents-begin 3252 :contents-end 3376 :checkbox nil :counter nil :structure
+                             ((3158 1 "- " nil nil nil 3249)
+                              (3249 1 "- " nil nil nil 3376))
+                             :pre-blank 0 :post-blank 0 :post-affiliated 3249 :tag nil :parent #4)
+                    (paragraph
+                     (:begin 3252 :end 3376 :contents-begin 3252 :contents-end 3376 :post-blank 0 :post-affiliated 3252 :parent #5)
+                     (link
+                      (:type "https" :path "//github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/RESOURCENAME.go" :format bracket :raw-link "https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/RESOURCENAME.go" :application nil :search-option nil :begin 3252 :end 3375 :contents-begin 3348 :contents-end 3372 :post-blank 1 :parent #6)
+                      #("client-go - RESOURCENAME" 0 24
+                        (:parent #7)))
+                     #("\n" 0 1
+                       (:parent #6)))))))
+                (headline
+                 (:raw-value "The mock test" :begin 3377 :end 5764 :pre-blank 0 :contents-begin 3455 :contents-end 5763 :level 2 :priority nil :tags
+                             (#("export" 0 6
+                                (keymap
+                                 (keymap
+                                  (follow-link . mouse-face)
+                                  (mouse-3 . org-find-file-at-mouse)
+                                  (mouse-2 . org-open-at-mouse))
+                                 mouse-face highlight face
+                                 (org-tag org-level-2)
+                                 fontified t)))
+                             :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3377 :title
+                             (#("The mock test" 0 13
+                                (:parent #2)))
+                             :parent #1)
+                 (headline
+                  (:raw-value "Test outline" :begin 3455 :end 3839 :pre-blank 0 :contents-begin 3472 :contents-end 3838 :level 3 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3455 :title
+                              (#("Test outline" 0 12
+                                 (:parent #3)))
+                              :parent #2)
+                  (section
+                   (:begin 3472 :end 3839 :contents-begin 3472 :contents-end 3838 :post-blank 1 :post-affiliated 3472 :parent #3)
+                   (plain-list
+                    (:type ordered :begin 3472 :end 3838 :contents-begin 3472 :contents-end 3838 :structure
+                           ((3472 1 "1. " nil nil nil 3519)
+                            (3519 1 "2. " nil nil nil 3581)
+                            (3581 1 "3. " nil nil nil 3630)
+                            (3630 1 "4. " nil nil nil 3762)
+                            (3762 1 "5. " nil nil nil 3838))
+                           :post-blank 0 :post-affiliated 3472 :parent #4)
+                    (item
+                     (:bullet "1. " :begin 3472 :end 3519 :contents-begin 3476 :contents-end 3518 :checkbox nil :counter nil :structure
+                              ((3472 1 "1. " nil nil nil 3519)
+                               (3519 1 "2. " nil nil nil 3581)
+                               (3581 1 "3. " nil nil nil 3630)
+                               (3630 1 "4. " nil nil nil 3762)
+                               (3762 1 "5. " nil nil nil 3838))
+                              :pre-blank 0 :post-blank 1 :post-affiliated 3472 :tag nil :parent #5)
+                     (paragraph
+                      (:begin 3476 :end 3518 :contents-begin 3476 :contents-end 3518 :post-blank 0 :post-affiliated 3476 :parent #6)
+                      #("Create a RESOURCENAME with a static label\n" 0 42
+                        (:parent #7))))
+                    (item
+                     (:bullet "2. " :begin 3519 :end 3581 :contents-begin 3523 :contents-end 3580 :checkbox nil :counter nil :structure
+                              ((3472 1 "1. " nil nil nil 3519)
+                               (3519 1 "2. " nil nil nil 3581)
+                               (3581 1 "3. " nil nil nil 3630)
+                               (3630 1 "4. " nil nil nil 3762)
+                               (3762 1 "5. " nil nil nil 3838))
+                              :pre-blank 0 :post-blank 1 :post-affiliated 3519 :tag nil :parent #5)
+                     (paragraph
+                      (:begin 3523 :end 3580 :contents-begin 3523 :contents-end 3580 :post-blank 0 :post-affiliated 3523 :parent #6)
+                      #("Patch the RESOURCENAME with a new Label and updated data\n" 0 57
+                        (:parent #7))))
+                    (item
+                     (:bullet "3. " :begin 3581 :end 3630 :contents-begin 3585 :contents-end 3629 :checkbox nil :counter nil :structure
+                              ((3472 1 "1. " nil nil nil 3519)
+                               (3519 1 "2. " nil nil nil 3581)
+                               (3581 1 "3. " nil nil nil 3630)
+                               (3630 1 "4. " nil nil nil 3762)
+                               (3762 1 "5. " nil nil nil 3838))
+                              :pre-blank 0 :post-blank 1 :post-affiliated 3581 :tag nil :parent #5)
+                     (paragraph
+                      (:begin 3585 :end 3629 :contents-begin 3585 :contents-end 3629 :post-blank 0 :post-affiliated 3585 :parent #6)
+                      #("Get the RESOURCENAME to ensure it's patched\n" 0 44
+                        (:parent #7))))
+                    (item
+                     (:bullet "4. " :begin 3630 :end 3762 :contents-begin 3634 :contents-end 3761 :checkbox nil :counter nil :structure
+                              ((3472 1 "1. " nil nil nil 3519)
+                               (3519 1 "2. " nil nil nil 3581)
+                               (3581 1 "3. " nil nil nil 3630)
+                               (3630 1 "4. " nil nil nil 3762)
+                               (3762 1 "5. " nil nil nil 3838))
+                              :pre-blank 0 :post-blank 1 :post-affiliated 3630 :tag nil :parent #5)
+                     (paragraph
+                      (:begin 3634 :end 3761 :contents-begin 3634 :contents-end 3761 :post-blank 0 :post-affiliated 3634 :parent #6)
+                      #("List all RESOURCENAMEs in all Namespaces\n    find the RESOURCENAME(1)\n    ensure that the RESOURCENAME is found and is patched\n" 0 127
+                        (:parent #7))))
+                    (item
+                     (:bullet "5. " :begin 3762 :end 3838 :contents-begin 3766 :contents-end 3838 :checkbox nil :counter nil :structure
+                              ((3472 1 "1. " nil nil nil 3519)
+                               (3519 1 "2. " nil nil nil 3581)
+                               (3581 1 "3. " nil nil nil 3630)
+                               (3630 1 "4. " nil nil nil 3762)
+                               (3762 1 "5. " nil nil nil 3838))
+                              :pre-blank 0 :post-blank 0 :post-affiliated 3762 :tag nil :parent #5)
+                     (paragraph
+                      (:begin 3766 :end 3838 :contents-begin 3766 :contents-end 3838 :post-blank 0 :post-affiliated 3766 :parent #6)
+                      #("Delete Namespaced RESOURCENAME(1) via a Collection with a LabelSelector\n" 0 72
+                        (:parent #7)))))))
+                 (headline
+                  (:raw-value "Test the functionality in Go" :begin 3839 :end 5763 :pre-blank 0 :contents-begin 3872 :contents-end 5763 :level 3 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3839 :title
+                              (#("Test the functionality in Go" 0 28
+                                 (:parent #3)))
+                              :parent #2)
+                  (section
+                   (:begin 3872 :end 5764 :contents-begin 3872 :contents-end 5763 :post-blank 1 :post-affiliated 3872 :parent #3)
+                   (src-block
+                    (:language "go" :switches nil :parameters nil :begin 3872 :end 5658 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "      package main\n\n      import (\n	      // \"encoding/json\"\n        \"fmt\"\n        \"flag\"\n        \"os\"\n        // v1 \"k8s.io/api/core/v1\"\n        // \"k8s.io/client-go/dynamic\"\n        // \"k8s.io/apimachinery/pkg/runtime/schema\"\n        metav1 \"k8s.io/apimachinery/pkg/apis/meta/v1\"\n        \"k8s.io/client-go/kubernetes\"\n        // \"k8s.io/apimachinery/pkg/types\"\n        \"k8s.io/client-go/tools/clientcmd\"\n      )\n\n      func main() {\n        // uses the current context in kubeconfig\n        kubeconfig := flag.String(\"kubeconfig\", fmt.Sprintf(\"%v/%v/%v\", os.Getenv(\"HOME\"), \".kube\", \"config\"), \"(optional) absolute path to the kubeconfig file\")\n        flag.Parse()\n        config, err := clientcmd.BuildConfigFromFlags(\"\", *kubeconfig)\n        if err != nil {\n            fmt.Println(err)\n            return\n        }\n        // make our work easier to find in the audit_event queries\n        config.UserAgent = \"live-test-writing\"\n        // creates the clientset\n        ClientSet, _ := kubernetes.NewForConfig(config)\n        // DynamicClientSet, _ := dynamic.NewForConfig(config)\n        // podResource := schema.GroupVersionResource{Group: \"\", Version: \"v1\", Resource: \"pods\"}\n\n        // TEST BEGINS HERE\n\n        fmt.Println(\"listing Pods\")\n        pods, err := ClientSet.CoreV1().Pods(\"\").List(metav1.ListOptions{})\n        if err != nil {\n            fmt.Println(err, \"failed to list Pods\")\n            return\n        }\n        podCount := len(pods.Items)\n        if podCount == 0 {\n            fmt.Println(\"there are no Pods found\")\n            return\n        }\n        fmt.Println(podCount, \"Pods found\")\n\n        // TEST ENDS HERE\n\n        // write test here\n        fmt.Println(\"[status] complete\")\n\n      }\n" :post-blank 1 :post-affiliated 3900 :name "Mock Test In Go" :parent #4))
+                   (src-block
+                    (:language "go" :switches nil :parameters nil :begin 5658 :end 5763 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "    listing Pods\n    20 Pods found\n    [status] complete\n" :post-blank 0 :post-affiliated 5673 :results
+                               ("")
+                               :parent #4)))))
+                (headline
+                 (:raw-value "Verifying increase in coverage with APISnoop" :begin 5764 :end 6804 :pre-blank 0 :contents-begin 5842 :contents-end 6804 :level 2 :priority nil :tags
+                             (#("export" 0 6
+                                (fontified nil)))
+                             :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 5764 :title
+                             (#("Verifying increase in coverage with APISnoop" 0 44
+                                (:parent #2)))
+                             :parent #1)
+                 (section
+                  (:begin 5842 :end 6805 :contents-begin 5842 :contents-end 6804 :post-blank 1 :post-affiliated 5842 :parent #2)
+                  (paragraph
+                   (:begin 5842 :end 5864 :contents-begin 5842 :contents-end 5864 :post-blank 0 :post-affiliated 5842 :parent #3)
+                   #(" Discover useragents:\n" 0 22
+                     (:parent #4)))
+                  (src-block
+                   (:language "sql-mode" :switches nil :parameters ":eval never-export :exports both :session none" :begin 5864 :end 6149 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "     select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';\n" :post-blank 1 :post-affiliated 5864 :parent #3))
+                  (paragraph
+                   (:begin 6149 :end 6182 :contents-begin 6149 :contents-end 6182 :post-blank 0 :post-affiliated 6149 :parent #3)
+                   #(" List endpoints hit by the test:\n" 0 33
+                     (:parent #4)))
+                  (src-block
+                   (:language "sql-mode" :switches nil :parameters ":exports both :session none" :begin 6182 :end 6316 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value " select * from endpoints_hit_by_new_test where useragent like 'live%'; \n" :post-blank 1 :post-affiliated 6182 :parent #3))
+                  (paragraph
+                   (:begin 6316 :end 6351 :contents-begin 6316 :contents-end 6351 :post-blank 0 :post-affiliated 6316 :parent #3)
+                   #(" Display endpoint coverage change:\n" 0 35
+                     (:parent #4)))
+                  (src-block
+                   (:language "sql-mode" :switches nil :parameters ":eval never-export :exports both :session none" :begin 6351 :end 6485 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "     select * from projected_change_in_coverage;\n" :post-blank 1 :post-affiliated 6351 :parent #3))
+                  (src-block
+                   (:language "example" :switches nil :parameters nil :begin 6485 :end 6804 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "      category    | total_endpoints | old_coverage | new_coverage | change_in_number \n   ---------------+-----------------+--------------+--------------+------------------\n    test_coverage |             438 |          183 |          183 |                0\n   (1 row)\n\n" :post-blank 0 :post-affiliated 6499 :results
+                              ("")
+                              :parent #3)))))
+               (headline
+                (:raw-value "Process" :begin 6805 :end 68780 :pre-blank 0 :contents-begin 6815 :contents-end 68780 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 6805 :title
+                            (#("Process" 0 7
+                               (:parent #1)))
+                            :parent #0)
+                (headline
+                 (:raw-value "Confirm we can select just a specially marked code block for find replace" :begin 6815 :end 68541 :pre-blank 0 :contents-begin 6897 :contents-end 68540 :level 2 :priority nil :tags nil :todo-keyword
+                             #("TODO" 0 4
+                               (fontified t org-todo-head "TODO" face org-todo))
+                             :todo-type todo :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 6815 :title
+                             (#("Confirm we can select just a specially marked code block for find replace" 0 73
+                                (:parent #2)))
+                             :parent #1)
+                 (section
+                  (:begin 6897 :end 68541 :contents-begin 6897 :contents-end 68540 :post-blank 1 :post-affiliated 6897 :parent #2)
+                  (paragraph
+                   (:begin 6897 :end 6921 :contents-begin 6897 :contents-end 6918 :post-blank 1 :post-affiliated 6897 :parent #3)
+                   #("   We don't want to \n" 0 21
+                     (:parent #4)))
+                  (paragraph
+                   (:begin 6921 :end 6978 :contents-begin 6921 :contents-end 6974 :post-blank 1 :post-affiliated 6921 :parent #3)
+                   #("   We can do an org-find query, let's try a few out!\n" 0 53
+                     (:parent #4)))
+                  (src-block
+                   (:language "elisp" :switches nil :parameters nil :begin 6978 :end 7067 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "   (org-element-parse-buffer) \n" :post-blank 1 :post-affiliated 7001 :name "find in org" :parent #3))
+                  (src-block
+                   (:language "elisp" :switches nil :parameters nil :begin 7067 :end 68540 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value "   (org-data nil\n             (section\n              (:begin 1 :end 47 :contents-begin 1 :contents-end 46 :post-blank 1 :post-affiliated 1 :parent #0)\n              (keyword\n               (:key \"TITLE\" :value \"Replace err statements in mock test\" :begin 1 :end 46 :post-blank 0 :post-affiliated 1 :parent #1)))\n             (headline\n              (:raw-value \"Purpose\" :begin 47 :end 408 :pre-blank 0 :contents-begin 57 :contents-end 408 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 47 :title\n                          (#(\"Purpose\" 0 7\n                             (:parent #1)))\n                          :parent #0)\n              (section\n               (:begin 57 :end 408 :contents-begin 57 :contents-end 408 :post-blank 0 :post-affiliated 57 :parent #1)\n               (paragraph\n                (:begin 57 :end 408 :contents-begin 57 :contents-end 408 :post-blank 0 :post-affiliated 57 :parent #2)\n                #(\"This is part of our work to transpose a mock test it a ginkgo framework compliant test.\\nOne common pattern is to replace our err checking statment with an ExpectNoError statement.  This org explores how one might do this using elsip functions that will utlimately reside in  \" 0 275\n                  (:parent #3))\n                (link\n                 (:type \"file\" :path \"~/apisnoop/tickets/k8s/.dir-locals.el\" :format bracket :raw-link \"file:~/apisnoop/tickets/k8s/.dir-locals.el\" :application nil :search-option nil :begin 332 :end 407 :contents-begin 378 :contents-end 404 :post-blank 1 :parent #3)\n                 #(\"tickets/k8s/.dir-locals.el\" 0 26\n                   (:parent #4)))\n                #(\"\\n\" 0 1\n                  (:parent #3)))))\n             (headline\n              (:raw-value \"Context\" :begin 408 :end 2925 :pre-blank 0 :contents-begin 418 :contents-end 2925 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 408 :title\n                          (#(\"Context\" 0 7\n                             (:parent #1)))\n                          :parent #0)\n              (section\n               (:begin 418 :end 528 :contents-begin 418 :contents-end 528 :post-blank 0 :post-affiliated 418 :parent #1)\n               (paragraph\n                (:begin 418 :end 528 :contents-begin 418 :contents-end 528 :post-blank 0 :post-affiliated 418 :parent #2)\n                #(\"  In our mock-template we write a mock test in go.  If it gets approved, we adjust it to work for the ginkgo.\\n\" 0 110\n                  (:parent #3))))\n              (headline\n               (:raw-value \"The mock test\" :begin 528 :end 2514 :pre-blank 0 :contents-begin 606 :contents-end 2513 :level 2 :priority nil :tags\n                           (#(\"export\" 0 6\n                              (keymap\n                               (keymap\n                                (follow-link . mouse-face)\n                                (mouse-3 . org-find-file-at-mouse)\n                                (mouse-2 . org-open-at-mouse))\n                               mouse-face highlight face\n                               (org-tag org-level-2)\n                               fontified t)))\n                           :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 528 :title\n                           (#(\"The mock test\" 0 13\n                              (:parent #2)))\n                           :parent #1)\n               (section\n                (:begin 606 :end 2514 :contents-begin 606 :contents-end 2513 :post-blank 1 :post-affiliated 606 :parent #2)\n                (paragraph\n                 (:begin 606 :end 650 :contents-begin 606 :contents-end 650 :post-blank 0 :post-affiliated 606 :parent #3)\n                 #(\"   Here is an example for our mock template\\n\" 0 44\n                   (:parent #4)))\n                (src-block\n                 (:language \"go\" :switches nil :parameters nil :begin 650 :end 2408 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"      package main\\n\\n      import (\\n	      // \\\"encoding/json\\\"\\n        \\\"fmt\\\"\\n        \\\"flag\\\"\\n        \\\"os\\\"\\n        // v1 \\\"k8s.io/api/core/v1\\\"\\n        // \\\"k8s.io/client-go/dynamic\\\"\\n        // \\\"k8s.io/apimachinery/pkg/runtime/schema\\\"\\n        metav1 \\\"k8s.io/apimachinery/pkg/apis/meta/v1\\\"\\n        \\\"k8s.io/client-go/kubernetes\\\"\\n        // \\\"k8s.io/apimachinery/pkg/types\\\"\\n        \\\"k8s.io/client-go/tools/clientcmd\\\"\\n      )\\n\\n      func main() {\\n        // uses the current context in kubeconfig\\n        kubeconfig := flag.String(\\\"kubeconfig\\\", fmt.Sprintf(\\\"%v/%v/%v\\\", os.Getenv(\\\"HOME\\\"), \\\".kube\\\", \\\"config\\\"), \\\"(optional) absolute path to the kubeconfig file\\\")\\n        flag.Parse()\\n        config, err := clientcmd.BuildConfigFromFlags(\\\"\\\", *kubeconfig)\\n        if err != nil {\\n            fmt.Println(err)\\n            return\\n        }\\n        // make our work easier to find in the audit_event queries\\n        config.UserAgent = \\\"live-test-writing\\\"\\n        // creates the clientset\\n        ClientSet, _ := kubernetes.NewForConfig(config)\\n        // DynamicClientSet, _ := dynamic.NewForConfig(config)\\n        // podResource := schema.GroupVersionResource{Group: \\\"\\\", Version: \\\"v1\\\", Resource: \\\"pods\\\"}\\n\\n        // TEST BEGINS HERE\\n\\n        fmt.Println(\\\"listing Pods\\\")\\n        pods, err := ClientSet.CoreV1().Pods(\\\"\\\").List(metav1.ListOptions{})\\n        if err != nil {\\n            fmt.Println(err, \\\"failed to list Pods\\\")\\n            return\\n        }\\n        podCount := len(pods.Items)\\n        if podCount == 0 {\\n            fmt.Println(\\\"there are no Pods found\\\")\\n            return\\n        }\\n        fmt.Println(podCount, \\\"Pods found\\\")\\n\\n        // TEST ENDS HERE\\n\\n        // write test here\\n        fmt.Println(\\\"[status] complete\\\")\\n\\n      }\\n\" :post-blank 1 :post-affiliated 650 :parent #3))\n                (src-block\n                 (:language \"go\" :switches nil :parameters nil :begin 2408 :end 2513 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"    listing Pods\\n    20 Pods found\\n    [status] complete\\n\" :post-blank 0 :post-affiliated 2423 :results\n                            (\"\")\n                            :parent #3))))\n              (headline\n               (:raw-value \"Error checks\" :begin 2514 :end 2925 :pre-blank 0 :contents-begin 2530 :contents-end 2925 :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 2514 :title\n                           (#(\"Error checks\" 0 12\n                              (:parent #2)))\n                           :parent #1)\n               (section\n                (:begin 2530 :end 2925 :contents-begin 2530 :contents-end 2925 :post-blank 0 :post-affiliated 2530 :parent #2)\n                (paragraph\n                 (:begin 2530 :end 2587 :contents-begin 2530 :contents-end 2583 :post-blank 1 :post-affiliated 2530 :parent #3)\n                 #(\"   Throughout the mock test are statments like so...\\n\" 0 53\n                   (:parent #4)))\n                (src-block\n                 (:language \"go\" :switches nil :parameters nil :begin 2587 :end 2754 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"  if err != nil {\\n    fmt.Println(err, \\\"failed to update ReplicationControllerStatus\\\")\\n    return\\n} \\n\" :post-blank 1 :post-affiliated 2618 :name \"example error check\" :parent #3))\n                (paragraph\n                 (:begin 2754 :end 2791 :contents-begin 2754 :contents-end 2791 :post-blank 0 :post-affiliated 2754 :parent #3)\n                 #(\"In the gingko framework this becomes\\n\" 0 37\n                   (:parent #4)))\n                (src-block\n                 (:language \"go\" :switches nil :parameters nil :begin 2791 :end 2925 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"framework.ExpectNoError(err, \\\"failed to update ReplicationControllerStatus\\\")\\n\" :post-blank 0 :post-affiliated 2823 :name \"example error in ginkgo\" :parent #3)))))\n             (headline\n              (:raw-value \"Sample\" :begin 2925 :end 6774 :pre-blank 0 :contents-begin 2934 :contents-end 6773 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 2925 :title\n                          (#(\"Sample\" 0 6\n                             (:parent #1)))\n                          :parent #0)\n              (section\n               (:begin 2934 :end 3049 :contents-begin 2934 :contents-end 3049 :post-blank 0 :post-affiliated 2934 :parent #1)\n               (paragraph\n                (:begin 2934 :end 3049 :contents-begin 2934 :contents-end 3049 :post-blank 0 :post-affiliated 2934 :parent #2)\n                #(\"  This is for some testing purposes, a nice section of text from our mock template to see if we can find and parse\\n\" 0 115\n                  (:parent #3))))\n              (headline\n               (:raw-value \"API Reference and feature documentation\" :begin 3049 :end 3346 :pre-blank 0 :contents-begin 3127 :contents-end 3345 :level 2 :priority nil :tags\n                           (#(\"export\" 0 6\n                              (keymap\n                               (keymap\n                                (follow-link . mouse-face)\n                                (mouse-3 . org-find-file-at-mouse)\n                                (mouse-2 . org-open-at-mouse))\n                               mouse-face highlight face\n                               (org-tag org-level-2)\n                               fontified t)))\n                           :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3049 :title\n                           (#(\"API Reference and feature documentation\" 0 39\n                              (:parent #2)))\n                           :parent #1)\n               (section\n                (:begin 3127 :end 3346 :contents-begin 3127 :contents-end 3345 :post-blank 1 :post-affiliated 3127 :parent #2)\n                (plain-list\n                 (:type unordered :begin 3127 :end 3345 :contents-begin 3127 :contents-end 3345 :structure\n                        ((3127 1 \"- \" nil nil nil 3218)\n                         (3218 1 \"- \" nil nil nil 3345))\n                        :post-blank 0 :post-affiliated 3127 :parent #3)\n                 (item\n                  (:bullet \"- \" :begin 3127 :end 3218 :contents-begin 3130 :contents-end 3218 :checkbox nil :counter nil :structure\n                           ((3127 1 \"- \" nil nil nil 3218)\n                            (3218 1 \"- \" nil nil nil 3345))\n                           :pre-blank 0 :post-blank 0 :post-affiliated 3127 :tag nil :parent #4)\n                  (paragraph\n                   (:begin 3130 :end 3218 :contents-begin 3130 :contents-end 3218 :post-blank 0 :post-affiliated 3130 :parent #5)\n                   (link\n                    (:type \"https\" :path \"//kubernetes.io/docs/reference/kubernetes-api/\" :format bracket :raw-link \"https://kubernetes.io/docs/reference/kubernetes-api/\" :application nil :search-option nil :begin 3130 :end 3217 :contents-begin 3186 :contents-end 3215 :post-blank 0 :parent #6)\n                    #(\"Kubernetes API Reference Docs\" 0 29\n                      (:parent #7)))\n                   #(\"\\n\" 0 1\n                     (:parent #6))))\n                 (item\n                  (:bullet \"- \" :begin 3218 :end 3345 :contents-begin 3221 :contents-end 3345 :checkbox nil :counter nil :structure\n                           ((3127 1 \"- \" nil nil nil 3218)\n                            (3218 1 \"- \" nil nil nil 3345))\n                           :pre-blank 0 :post-blank 0 :post-affiliated 3218 :tag nil :parent #4)\n                  (paragraph\n                   (:begin 3221 :end 3345 :contents-begin 3221 :contents-end 3345 :post-blank 0 :post-affiliated 3221 :parent #5)\n                   (link\n                    (:type \"https\" :path \"//github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/RESOURCENAME.go\" :format bracket :raw-link \"https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/RESOURCENAME.go\" :application nil :search-option nil :begin 3221 :end 3344 :contents-begin 3317 :contents-end 3341 :post-blank 1 :parent #6)\n                    #(\"client-go - RESOURCENAME\" 0 24\n                      (:parent #7)))\n                   #(\"\\n\" 0 1\n                     (:parent #6)))))))\n              (headline\n               (:raw-value \"The mock test\" :begin 3346 :end 5733 :pre-blank 0 :contents-begin 3424 :contents-end 5732 :level 2 :priority nil :tags\n                           (#(\"export\" 0 6\n                              (keymap\n                               (keymap\n                                (follow-link . mouse-face)\n                                (mouse-3 . org-find-file-at-mouse)\n                                (mouse-2 . org-open-at-mouse))\n                               mouse-face highlight face\n                               (org-tag org-level-2)\n                               fontified t)))\n                           :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3346 :title\n                           (#(\"The mock test\" 0 13\n                              (:parent #2)))\n                           :parent #1)\n               (headline\n                (:raw-value \"Test outline\" :begin 3424 :end 3808 :pre-blank 0 :contents-begin 3441 :contents-end 3807 :level 3 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3424 :title\n                            (#(\"Test outline\" 0 12\n                               (:parent #3)))\n                            :parent #2)\n                (section\n                 (:begin 3441 :end 3808 :contents-begin 3441 :contents-end 3807 :post-blank 1 :post-affiliated 3441 :parent #3)\n                 (plain-list\n                  (:type ordered :begin 3441 :end 3807 :contents-begin 3441 :contents-end 3807 :structure\n                         ((3441 1 \"1. \" nil nil nil 3488)\n                          (3488 1 \"2. \" nil nil nil 3550)\n                          (3550 1 \"3. \" nil nil nil 3599)\n                          (3599 1 \"4. \" nil nil nil 3731)\n                          (3731 1 \"5. \" nil nil nil 3807))\n                         :post-blank 0 :post-affiliated 3441 :parent #4)\n                  (item\n                   (:bullet \"1. \" :begin 3441 :end 3488 :contents-begin 3445 :contents-end 3487 :checkbox nil :counter nil :structure\n                            ((3441 1 \"1. \" nil nil nil 3488)\n                             (3488 1 \"2. \" nil nil nil 3550)\n                             (3550 1 \"3. \" nil nil nil 3599)\n                             (3599 1 \"4. \" nil nil nil 3731)\n                             (3731 1 \"5. \" nil nil nil 3807))\n                            :pre-blank 0 :post-blank 1 :post-affiliated 3441 :tag nil :parent #5)\n                   (paragraph\n                    (:begin 3445 :end 3487 :contents-begin 3445 :contents-end 3487 :post-blank 0 :post-affiliated 3445 :parent #6)\n                    #(\"Create a RESOURCENAME with a static label\\n\" 0 42\n                      (:parent #7))))\n                  (item\n                   (:bullet \"2. \" :begin 3488 :end 3550 :contents-begin 3492 :contents-end 3549 :checkbox nil :counter nil :structure\n                            ((3441 1 \"1. \" nil nil nil 3488)\n                             (3488 1 \"2. \" nil nil nil 3550)\n                             (3550 1 \"3. \" nil nil nil 3599)\n                             (3599 1 \"4. \" nil nil nil 3731)\n                             (3731 1 \"5. \" nil nil nil 3807))\n                            :pre-blank 0 :post-blank 1 :post-affiliated 3488 :tag nil :parent #5)\n                   (paragraph\n                    (:begin 3492 :end 3549 :contents-begin 3492 :contents-end 3549 :post-blank 0 :post-affiliated 3492 :parent #6)\n                    #(\"Patch the RESOURCENAME with a new Label and updated data\\n\" 0 57\n                      (:parent #7))))\n                  (item\n                   (:bullet \"3. \" :begin 3550 :end 3599 :contents-begin 3554 :contents-end 3598 :checkbox nil :counter nil :structure\n                            ((3441 1 \"1. \" nil nil nil 3488)\n                             (3488 1 \"2. \" nil nil nil 3550)\n                             (3550 1 \"3. \" nil nil nil 3599)\n                             (3599 1 \"4. \" nil nil nil 3731)\n                             (3731 1 \"5. \" nil nil nil 3807))\n                            :pre-blank 0 :post-blank 1 :post-affiliated 3550 :tag nil :parent #5)\n                   (paragraph\n                    (:begin 3554 :end 3598 :contents-begin 3554 :contents-end 3598 :post-blank 0 :post-affiliated 3554 :parent #6)\n                    #(\"Get the RESOURCENAME to ensure it's patched\\n\" 0 44\n                      (:parent #7))))\n                  (item\n                   (:bullet \"4. \" :begin 3599 :end 3731 :contents-begin 3603 :contents-end 3730 :checkbox nil :counter nil :structure\n                            ((3441 1 \"1. \" nil nil nil 3488)\n                             (3488 1 \"2. \" nil nil nil 3550)\n                             (3550 1 \"3. \" nil nil nil 3599)\n                             (3599 1 \"4. \" nil nil nil 3731)\n                             (3731 1 \"5. \" nil nil nil 3807))\n                            :pre-blank 0 :post-blank 1 :post-affiliated 3599 :tag nil :parent #5)\n                   (paragraph\n                    (:begin 3603 :end 3730 :contents-begin 3603 :contents-end 3730 :post-blank 0 :post-affiliated 3603 :parent #6)\n                    #(\"List all RESOURCENAMEs in all Namespaces\\n    find the RESOURCENAME(1)\\n    ensure that the RESOURCENAME is found and is patched\\n\" 0 127\n                      (:parent #7))))\n                  (item\n                   (:bullet \"5. \" :begin 3731 :end 3807 :contents-begin 3735 :contents-end 3807 :checkbox nil :counter nil :structure\n                            ((3441 1 \"1. \" nil nil nil 3488)\n                             (3488 1 \"2. \" nil nil nil 3550)\n                             (3550 1 \"3. \" nil nil nil 3599)\n                             (3599 1 \"4. \" nil nil nil 3731)\n                             (3731 1 \"5. \" nil nil nil 3807))\n                            :pre-blank 0 :post-blank 0 :post-affiliated 3731 :tag nil :parent #5)\n                   (paragraph\n                    (:begin 3735 :end 3807 :contents-begin 3735 :contents-end 3807 :post-blank 0 :post-affiliated 3735 :parent #6)\n                    #(\"Delete Namespaced RESOURCENAME(1) via a Collection with a LabelSelector\\n\" 0 72\n                      (:parent #7)))))))\n               (headline\n                (:raw-value \"Test the functionality in Go\" :begin 3808 :end 5732 :pre-blank 0 :contents-begin 3841 :contents-end 5732 :level 3 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3808 :title\n                            (#(\"Test the functionality in Go\" 0 28\n                               (:parent #3)))\n                            :parent #2)\n                (section\n                 (:begin 3841 :end 5733 :contents-begin 3841 :contents-end 5732 :post-blank 1 :post-affiliated 3841 :parent #3)\n                 (src-block\n                  (:language \"go\" :switches nil :parameters nil :begin 3841 :end 5627 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"      package main\\n\\n      import (\\n	      // \\\"encoding/json\\\"\\n        \\\"fmt\\\"\\n        \\\"flag\\\"\\n        \\\"os\\\"\\n        // v1 \\\"k8s.io/api/core/v1\\\"\\n        // \\\"k8s.io/client-go/dynamic\\\"\\n        // \\\"k8s.io/apimachinery/pkg/runtime/schema\\\"\\n        metav1 \\\"k8s.io/apimachinery/pkg/apis/meta/v1\\\"\\n        \\\"k8s.io/client-go/kubernetes\\\"\\n        // \\\"k8s.io/apimachinery/pkg/types\\\"\\n        \\\"k8s.io/client-go/tools/clientcmd\\\"\\n      )\\n\\n      func main() {\\n        // uses the current context in kubeconfig\\n        kubeconfig := flag.String(\\\"kubeconfig\\\", fmt.Sprintf(\\\"%v/%v/%v\\\", os.Getenv(\\\"HOME\\\"), \\\".kube\\\", \\\"config\\\"), \\\"(optional) absolute path to the kubeconfig file\\\")\\n        flag.Parse()\\n        config, err := clientcmd.BuildConfigFromFlags(\\\"\\\", *kubeconfig)\\n        if err != nil {\\n            fmt.Println(err)\\n            return\\n        }\\n        // make our work easier to find in the audit_event queries\\n        config.UserAgent = \\\"live-test-writing\\\"\\n        // creates the clientset\\n        ClientSet, _ := kubernetes.NewForConfig(config)\\n        // DynamicClientSet, _ := dynamic.NewForConfig(config)\\n        // podResource := schema.GroupVersionResource{Group: \\\"\\\", Version: \\\"v1\\\", Resource: \\\"pods\\\"}\\n\\n        // TEST BEGINS HERE\\n\\n        fmt.Println(\\\"listing Pods\\\")\\n        pods, err := ClientSet.CoreV1().Pods(\\\"\\\").List(metav1.ListOptions{})\\n        if err != nil {\\n            fmt.Println(err, \\\"failed to list Pods\\\")\\n            return\\n        }\\n        podCount := len(pods.Items)\\n        if podCount == 0 {\\n            fmt.Println(\\\"there are no Pods found\\\")\\n            return\\n        }\\n        fmt.Println(podCount, \\\"Pods found\\\")\\n\\n        // TEST ENDS HERE\\n\\n        // write test here\\n        fmt.Println(\\\"[status] complete\\\")\\n\\n      }\\n\" :post-blank 1 :post-affiliated 3869 :name \"Mock Test In Go\" :parent #4))\n                 (src-block\n                  (:language \"go\" :switches nil :parameters nil :begin 5627 :end 5732 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"    listing Pods\\n    20 Pods found\\n    [status] complete\\n\" :post-blank 0 :post-affiliated 5642 :results\n                             (\"\")\n                             :parent #4)))))\n              (headline\n               (:raw-value \"Verifying increase in coverage with APISnoop\" :begin 5733 :end 6773 :pre-blank 0 :contents-begin 5811 :contents-end 6773 :level 2 :priority nil :tags\n                           (#(\"export\" 0 6\n                              (keymap\n                               (keymap\n                                (follow-link . mouse-face)\n                                (mouse-3 . org-find-file-at-mouse)\n                                (mouse-2 . org-open-at-mouse))\n                               mouse-face highlight face\n                               (org-tag org-level-2)\n                               fontified t)))\n                           :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 5733 :title\n                           (#(\"Verifying increase in coverage with APISnoop\" 0 44\n                              (:parent #2)))\n                           :parent #1)\n               (section\n                (:begin 5811 :end 6774 :contents-begin 5811 :contents-end 6773 :post-blank 1 :post-affiliated 5811 :parent #2)\n                (paragraph\n                 (:begin 5811 :end 5833 :contents-begin 5811 :contents-end 5833 :post-blank 0 :post-affiliated 5811 :parent #3)\n                 #(\" Discover useragents:\\n\" 0 22\n                   (:parent #4)))\n                (src-block\n                 (:language \"sql-mode\" :switches nil :parameters \":eval never-export :exports both :session none\" :begin 5833 :end 6118 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"     select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';\\n\" :post-blank 1 :post-affiliated 5833 :parent #3))\n                (paragraph\n                 (:begin 6118 :end 6151 :contents-begin 6118 :contents-end 6151 :post-blank 0 :post-affiliated 6118 :parent #3)\n                 #(\" List endpoints hit by the test:\\n\" 0 33\n                   (:parent #4)))\n                (src-block\n                 (:language \"sql-mode\" :switches nil :parameters \":exports both :session none\" :begin 6151 :end 6285 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \" select * from endpoints_hit_by_new_test where useragent like 'live%'; \\n\" :post-blank 1 :post-affiliated 6151 :parent #3))\n                (paragraph\n                 (:begin 6285 :end 6320 :contents-begin 6285 :contents-end 6320 :post-blank 0 :post-affiliated 6285 :parent #3)\n                 #(\" Display endpoint coverage change:\\n\" 0 35\n                   (:parent #4)))\n                (src-block\n                 (:language \"sql-mode\" :switches nil :parameters \":eval never-export :exports both :session none\" :begin 6320 :end 6454 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"     select * from projected_change_in_coverage;\\n\" :post-blank 1 :post-affiliated 6320 :parent #3))\n                (src-block\n                 (:language \"example\" :switches nil :parameters nil :begin 6454 :end 6773 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"      category    | total_endpoints | old_coverage | new_coverage | change_in_number \\n   ---------------+-----------------+--------------+--------------+------------------\\n    test_coverage |             438 |          183 |          183 |                0\\n   (1 row)\\n\\n\" :post-blank 0 :post-affiliated 6468 :results\n                            (\"\")\n                            :parent #3)))))\n             (headline\n              (:raw-value \"Process\" :begin 6774 :end 37204 :pre-blank 0 :contents-begin 6784 :contents-end 37204 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 6774 :title\n                          (#(\"Process\" 0 7\n                             (:parent #1)))\n                          :parent #0)\n              (headline\n               (:raw-value \"Confirm we can select just a specially marked code block for find replace\" :begin 6784 :end 36965 :pre-blank 0 :contents-begin 6866 :contents-end 36964 :level 2 :priority nil :tags nil :todo-keyword\n                           #(\"TODO\" 0 4\n                             (fontified t org-todo-head \"TODO\" face org-todo))\n                           :todo-type todo :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 6784 :title\n                           (#(\"Confirm we can select just a specially marked code block for find replace\" 0 73\n                              (:parent #2)))\n                           :parent #1)\n               (section\n                (:begin 6866 :end 36965 :contents-begin 6866 :contents-end 36964 :post-blank 1 :post-affiliated 6866 :parent #2)\n                (paragraph\n                 (:begin 6866 :end 6890 :contents-begin 6866 :contents-end 6887 :post-blank 1 :post-affiliated 6866 :parent #3)\n                 #(\"   We don't want to \\n\" 0 21\n                   (:parent #4)))\n                (paragraph\n                 (:begin 6890 :end 6947 :contents-begin 6890 :contents-end 6943 :post-blank 1 :post-affiliated 6890 :parent #3)\n                 #(\"   We can do an org-find query, let's try a few out!\\n\" 0 53\n                   (:parent #4)))\n                (src-block\n                 (:language \"elisp\" :switches nil :parameters nil :begin 6947 :end 7036 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"   (org-element-parse-buffer) \\n\" :post-blank 1 :post-affiliated 6970 :name \"find in org\" :parent #3))\n                (src-block\n                 (:language \"elisp\" :switches nil :parameters nil :begin 7036 :end 36964 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \"   (org-data nil\\n             (section\\n              (:begin 1 :end 47 :contents-begin 1 :contents-end 46 :post-blank 1 :post-affiliated 1 :parent #0)\\n              (keyword\\n               (:key \\\"TITLE\\\" :value \\\"Replace err statements in mock test\\\" :begin 1 :end 46 :post-blank 0 :post-affiliated 1 :parent #1)))\\n             (headline\\n              (:raw-value \\\"Purpose\\\" :begin 47 :end 408 :pre-blank 0 :contents-begin 57 :contents-end 408 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 47 :title\\n                          (#(\\\"Purpose\\\" 0 7\\n                             (:parent #1)))\\n                          :parent #0)\\n              (section\\n               (:begin 57 :end 408 :contents-begin 57 :contents-end 408 :post-blank 0 :post-affiliated 57 :parent #1)\\n               (paragraph\\n                (:begin 57 :end 408 :contents-begin 57 :contents-end 408 :post-blank 0 :post-affiliated 57 :parent #2)\\n                #(\\\"This is part of our work to transpose a mock test it a ginkgo framework compliant test.\\\\nOne common pattern is to replace our err checking statment with an ExpectNoError statement.  This org explores how one might do this using elsip functions that will utlimately reside in  \\\" 0 275\\n                  (:parent #3))\\n                (link\\n                 (:type \\\"file\\\" :path \\\"~/apisnoop/tickets/k8s/.dir-locals.el\\\" :format bracket :raw-link \\\"file:~/apisnoop/tickets/k8s/.dir-locals.el\\\" :application nil :search-option nil :begin 332 :end 407 :contents-begin 378 :contents-end 404 :post-blank 1 :parent #3)\\n                 #(\\\"tickets/k8s/.dir-locals.el\\\" 0 26\\n                   (:parent #4)))\\n                #(\\\"\\\\n\\\" 0 1\\n                  (:parent #3)))))\\n             (headline\\n              (:raw-value \\\"Context\\\" :begin 408 :end 2925 :pre-blank 0 :contents-begin 418 :contents-end 2925 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 408 :title\\n                          (#(\\\"Context\\\" 0 7\\n                             (:parent #1)))\\n                          :parent #0)\\n              (section\\n               (:begin 418 :end 528 :contents-begin 418 :contents-end 528 :post-blank 0 :post-affiliated 418 :parent #1)\\n               (paragraph\\n                (:begin 418 :end 528 :contents-begin 418 :contents-end 528 :post-blank 0 :post-affiliated 418 :parent #2)\\n                #(\\\"  In our mock-template we write a mock test in go.  If it gets approved, we adjust it to work for the ginkgo.\\\\n\\\" 0 110\\n                  (:parent #3))))\\n              (headline\\n               (:raw-value \\\"The mock test\\\" :begin 528 :end 2514 :pre-blank 0 :contents-begin 606 :contents-end 2513 :level 2 :priority nil :tags\\n                           (#(\\\"export\\\" 0 6\\n                              (keymap\\n                               (keymap\\n                                (follow-link . mouse-face)\\n                                (mouse-3 . org-find-file-at-mouse)\\n                                (mouse-2 . org-open-at-mouse))\\n                               mouse-face highlight face\\n                               (org-tag org-level-2)\\n                               fontified t)))\\n                           :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 528 :title\\n                           (#(\\\"The mock test\\\" 0 13\\n                              (:parent #2)))\\n                           :parent #1)\\n               (section\\n                (:begin 606 :end 2514 :contents-begin 606 :contents-end 2513 :post-blank 1 :post-affiliated 606 :parent #2)\\n                (paragraph\\n                 (:begin 606 :end 650 :contents-begin 606 :contents-end 650 :post-blank 0 :post-affiliated 606 :parent #3)\\n                 #(\\\"   Here is an example for our mock template\\\\n\\\" 0 44\\n                   (:parent #4)))\\n                (src-block\\n                 (:language \\\"go\\\" :switches nil :parameters nil :begin 650 :end 2408 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\"      package main\\\\n\\\\n      import (\\\\n	      // \\\\\\\"encoding/json\\\\\\\"\\\\n        \\\\\\\"fmt\\\\\\\"\\\\n        \\\\\\\"flag\\\\\\\"\\\\n        \\\\\\\"os\\\\\\\"\\\\n        // v1 \\\\\\\"k8s.io/api/core/v1\\\\\\\"\\\\n        // \\\\\\\"k8s.io/client-go/dynamic\\\\\\\"\\\\n        // \\\\\\\"k8s.io/apimachinery/pkg/runtime/schema\\\\\\\"\\\\n        metav1 \\\\\\\"k8s.io/apimachinery/pkg/apis/meta/v1\\\\\\\"\\\\n        \\\\\\\"k8s.io/client-go/kubernetes\\\\\\\"\\\\n        // \\\\\\\"k8s.io/apimachinery/pkg/types\\\\\\\"\\\\n        \\\\\\\"k8s.io/client-go/tools/clientcmd\\\\\\\"\\\\n      )\\\\n\\\\n      func main() {\\\\n        // uses the current context in kubeconfig\\\\n        kubeconfig := flag.String(\\\\\\\"kubeconfig\\\\\\\", fmt.Sprintf(\\\\\\\"%v/%v/%v\\\\\\\", os.Getenv(\\\\\\\"HOME\\\\\\\"), \\\\\\\".kube\\\\\\\", \\\\\\\"config\\\\\\\"), \\\\\\\"(optional) absolute path to the kubeconfig file\\\\\\\")\\\\n        flag.Parse()\\\\n        config, err := clientcmd.BuildConfigFromFlags(\\\\\\\"\\\\\\\", *kubeconfig)\\\\n        if err != nil {\\\\n            fmt.Println(err)\\\\n            return\\\\n        }\\\\n        // make our work easier to find in the audit_event queries\\\\n        config.UserAgent = \\\\\\\"live-test-writing\\\\\\\"\\\\n        // creates the clientset\\\\n        ClientSet, _ := kubernetes.NewForConfig(config)\\\\n        // DynamicClientSet, _ := dynamic.NewForConfig(config)\\\\n        // podResource := schema.GroupVersionResource{Group: \\\\\\\"\\\\\\\", Version: \\\\\\\"v1\\\\\\\", Resource: \\\\\\\"pods\\\\\\\"}\\\\n\\\\n        // TEST BEGINS HERE\\\\n\\\\n        fmt.Println(\\\\\\\"listing Pods\\\\\\\")\\\\n        pods, err := ClientSet.CoreV1().Pods(\\\\\\\"\\\\\\\").List(metav1.ListOptions{})\\\\n        if err != nil {\\\\n            fmt.Println(err, \\\\\\\"failed to list Pods\\\\\\\")\\\\n            return\\\\n        }\\\\n        podCount := len(pods.Items)\\\\n        if podCount == 0 {\\\\n            fmt.Println(\\\\\\\"there are no Pods found\\\\\\\")\\\\n            return\\\\n        }\\\\n        fmt.Println(podCount, \\\\\\\"Pods found\\\\\\\")\\\\n\\\\n        // TEST ENDS HERE\\\\n\\\\n        // write test here\\\\n        fmt.Println(\\\\\\\"[status] complete\\\\\\\")\\\\n\\\\n      }\\\\n\\\" :post-blank 1 :post-affiliated 650 :parent #3))\\n                (src-block\\n                 (:language \\\"go\\\" :switches nil :parameters nil :begin 2408 :end 2513 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\"    listing Pods\\\\n    20 Pods found\\\\n    [status] complete\\\\n\\\" :post-blank 0 :post-affiliated 2423 :results\\n                            (\\\"\\\")\\n                            :parent #3))))\\n              (headline\\n               (:raw-value \\\"Error checks\\\" :begin 2514 :end 2925 :pre-blank 0 :contents-begin 2530 :contents-end 2925 :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 2514 :title\\n                           (#(\\\"Error checks\\\" 0 12\\n                              (:parent #2)))\\n                           :parent #1)\\n               (section\\n                (:begin 2530 :end 2925 :contents-begin 2530 :contents-end 2925 :post-blank 0 :post-affiliated 2530 :parent #2)\\n                (paragraph\\n                 (:begin 2530 :end 2587 :contents-begin 2530 :contents-end 2583 :post-blank 1 :post-affiliated 2530 :parent #3)\\n                 #(\\\"   Throughout the mock test are statments like so...\\\\n\\\" 0 53\\n                   (:parent #4)))\\n                (src-block\\n                 (:language \\\"go\\\" :switches nil :parameters nil :begin 2587 :end 2754 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\"  if err != nil {\\\\n    fmt.Println(err, \\\\\\\"failed to update ReplicationControllerStatus\\\\\\\")\\\\n    return\\\\n} \\\\n\\\" :post-blank 1 :post-affiliated 2618 :name \\\"example error check\\\" :parent #3))\\n                (paragraph\\n                 (:begin 2754 :end 2791 :contents-begin 2754 :contents-end 2791 :post-blank 0 :post-affiliated 2754 :parent #3)\\n                 #(\\\"In the gingko framework this becomes\\\\n\\\" 0 37\\n                   (:parent #4)))\\n                (src-block\\n                 (:language \\\"go\\\" :switches nil :parameters nil :begin 2791 :end 2925 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\"framework.ExpectNoError(err, \\\\\\\"failed to update ReplicationControllerStatus\\\\\\\")\\\\n\\\" :post-blank 0 :post-affiliated 2823 :name \\\"example error in ginkgo\\\" :parent #3)))))\\n             (headline\\n              (:raw-value \\\"Sample\\\" :begin 2925 :end 6746 :pre-blank 0 :contents-begin 2934 :contents-end 6745 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 2925 :title\\n                          (#(\\\"Sample\\\" 0 6\\n                             (:parent #1)))\\n                          :parent #0)\\n              (section\\n               (:begin 2934 :end 3049 :contents-begin 2934 :contents-end 3049 :post-blank 0 :post-affiliated 2934 :parent #1)\\n               (paragraph\\n                (:begin 2934 :end 3049 :contents-begin 2934 :contents-end 3049 :post-blank 0 :post-affiliated 2934 :parent #2)\\n                #(\\\"  This is for some testing purposes, a nice section of text from our mock template to see if we can find and parse\\\\n\\\" 0 115\\n                  (:parent #3))))\\n              (headline\\n               (:raw-value \\\"API Reference and feature documentation\\\" :begin 3049 :end 3346 :pre-blank 0 :contents-begin 3127 :contents-end 3345 :level 2 :priority nil :tags\\n                           (#(\\\"export\\\" 0 6\\n                              (keymap\\n                               (keymap\\n                                (follow-link . mouse-face)\\n                                (mouse-3 . org-find-file-at-mouse)\\n                                (mouse-2 . org-open-at-mouse))\\n                               mouse-face highlight face\\n                               (org-tag org-level-2)\\n                               fontified t)))\\n                           :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3049 :title\\n                           (#(\\\"API Reference and feature documentation\\\" 0 39\\n                              (:parent #2)))\\n                           :parent #1)\\n               (section\\n                (:begin 3127 :end 3346 :contents-begin 3127 :contents-end 3345 :post-blank 1 :post-affiliated 3127 :parent #2)\\n                (plain-list\\n                 (:type unordered :begin 3127 :end 3345 :contents-begin 3127 :contents-end 3345 :structure\\n                        ((3127 1 \\\"- \\\" nil nil nil 3218)\\n                         (3218 1 \\\"- \\\" nil nil nil 3345))\\n                        :post-blank 0 :post-affiliated 3127 :parent #3)\\n                 (item\\n                  (:bullet \\\"- \\\" :begin 3127 :end 3218 :contents-begin 3130 :contents-end 3218 :checkbox nil :counter nil :structure\\n                           ((3127 1 \\\"- \\\" nil nil nil 3218)\\n                            (3218 1 \\\"- \\\" nil nil nil 3345))\\n                           :pre-blank 0 :post-blank 0 :post-affiliated 3127 :tag nil :parent #4)\\n                  (paragraph\\n                   (:begin 3130 :end 3218 :contents-begin 3130 :contents-end 3218 :post-blank 0 :post-affiliated 3130 :parent #5)\\n                   (link\\n                    (:type \\\"https\\\" :path \\\"//kubernetes.io/docs/reference/kubernetes-api/\\\" :format bracket :raw-link \\\"https://kubernetes.io/docs/reference/kubernetes-api/\\\" :application nil :search-option nil :begin 3130 :end 3217 :contents-begin 3186 :contents-end 3215 :post-blank 0 :parent #6)\\n                    #(\\\"Kubernetes API Reference Docs\\\" 0 29\\n                      (:parent #7)))\\n                   #(\\\"\\\\n\\\" 0 1\\n                     (:parent #6))))\\n                 (item\\n                  (:bullet \\\"- \\\" :begin 3218 :end 3345 :contents-begin 3221 :contents-end 3345 :checkbox nil :counter nil :structure\\n                           ((3127 1 \\\"- \\\" nil nil nil 3218)\\n                            (3218 1 \\\"- \\\" nil nil nil 3345))\\n                           :pre-blank 0 :post-blank 0 :post-affiliated 3218 :tag nil :parent #4)\\n                  (paragraph\\n                   (:begin 3221 :end 3345 :contents-begin 3221 :contents-end 3345 :post-blank 0 :post-affiliated 3221 :parent #5)\\n                   (link\\n                    (:type \\\"https\\\" :path \\\"//github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/RESOURCENAME.go\\\" :format bracket :raw-link \\\"https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/RESOURCENAME.go\\\" :application nil :search-option nil :begin 3221 :end 3344 :contents-begin 3317 :contents-end 3341 :post-blank 1 :parent #6)\\n                    #(\\\"client-go - RESOURCENAME\\\" 0 24\\n                      (:parent #7)))\\n                   #(\\\"\\\\n\\\" 0 1\\n                     (:parent #6)))))))\\n              (headline\\n               (:raw-value \\\"The mock test\\\" :begin 3346 :end 5705 :pre-blank 0 :contents-begin 3424 :contents-end 5704 :level 2 :priority nil :tags\\n                           (#(\\\"export\\\" 0 6\\n                              (keymap\\n                               (keymap\\n                                (follow-link . mouse-face)\\n                                (mouse-3 . org-find-file-at-mouse)\\n                                (mouse-2 . org-open-at-mouse))\\n                               mouse-face highlight face\\n                               (org-tag org-level-2)\\n                               fontified t)))\\n                           :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3346 :title\\n                           (#(\\\"The mock test\\\" 0 13\\n                              (:parent #2)))\\n                           :parent #1)\\n               (headline\\n                (:raw-value \\\"Test outline\\\" :begin 3424 :end 3808 :pre-blank 0 :contents-begin 3441 :contents-end 3807 :level 3 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 1 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3424 :title\\n                            (#(\\\"Test outline\\\" 0 12\\n                               (:parent #3)))\\n                            :parent #2)\\n                (section\\n                 (:begin 3441 :end 3808 :contents-begin 3441 :contents-end 3807 :post-blank 1 :post-affiliated 3441 :parent #3)\\n                 (plain-list\\n                  (:type ordered :begin 3441 :end 3807 :contents-begin 3441 :contents-end 3807 :structure\\n                         ((3441 1 \\\"1. \\\" nil nil nil 3488)\\n                          (3488 1 \\\"2. \\\" nil nil nil 3550)\\n                          (3550 1 \\\"3. \\\" nil nil nil 3599)\\n                          (3599 1 \\\"4. \\\" nil nil nil 3731)\\n                          (3731 1 \\\"5. \\\" nil nil nil 3807))\\n                         :post-blank 0 :post-affiliated 3441 :parent #4)\\n                  (item\\n                   (:bullet \\\"1. \\\" :begin 3441 :end 3488 :contents-begin 3445 :contents-end 3487 :checkbox nil :counter nil :structure\\n                            ((3441 1 \\\"1. \\\" nil nil nil 3488)\\n                             (3488 1 \\\"2. \\\" nil nil nil 3550)\\n                             (3550 1 \\\"3. \\\" nil nil nil 3599)\\n                             (3599 1 \\\"4. \\\" nil nil nil 3731)\\n                             (3731 1 \\\"5. \\\" nil nil nil 3807))\\n                            :pre-blank 0 :post-blank 1 :post-affiliated 3441 :tag nil :parent #5)\\n                   (paragraph\\n                    (:begin 3445 :end 3487 :contents-begin 3445 :contents-end 3487 :post-blank 0 :post-affiliated 3445 :parent #6)\\n                    #(\\\"Create a RESOURCENAME with a static label\\\\n\\\" 0 42\\n                      (:parent #7))))\\n                  (item\\n                   (:bullet \\\"2. \\\" :begin 3488 :end 3550 :contents-begin 3492 :contents-end 3549 :checkbox nil :counter nil :structure\\n                            ((3441 1 \\\"1. \\\" nil nil nil 3488)\\n                             (3488 1 \\\"2. \\\" nil nil nil 3550)\\n                             (3550 1 \\\"3. \\\" nil nil nil 3599)\\n                             (3599 1 \\\"4. \\\" nil nil nil 3731)\\n                             (3731 1 \\\"5. \\\" nil nil nil 3807))\\n                            :pre-blank 0 :post-blank 1 :post-affiliated 3488 :tag nil :parent #5)\\n                   (paragraph\\n                    (:begin 3492 :end 3549 :contents-begin 3492 :contents-end 3549 :post-blank 0 :post-affiliated 3492 :parent #6)\\n                    #(\\\"Patch the RESOURCENAME with a new Label and updated data\\\\n\\\" 0 57\\n                      (:parent #7))))\\n                  (item\\n                   (:bullet \\\"3. \\\" :begin 3550 :end 3599 :contents-begin 3554 :contents-end 3598 :checkbox nil :counter nil :structure\\n                            ((3441 1 \\\"1. \\\" nil nil nil 3488)\\n                             (3488 1 \\\"2. \\\" nil nil nil 3550)\\n                             (3550 1 \\\"3. \\\" nil nil nil 3599)\\n                             (3599 1 \\\"4. \\\" nil nil nil 3731)\\n                             (3731 1 \\\"5. \\\" nil nil nil 3807))\\n                            :pre-blank 0 :post-blank 1 :post-affiliated 3550 :tag nil :parent #5)\\n                   (paragraph\\n                    (:begin 3554 :end 3598 :contents-begin 3554 :contents-end 3598 :post-blank 0 :post-affiliated 3554 :parent #6)\\n                    #(\\\"Get the RESOURCENAME to ensure it's patched\\\\n\\\" 0 44\\n                      (:parent #7))))\\n                  (item\\n                   (:bullet \\\"4. \\\" :begin 3599 :end 3731 :contents-begin 3603 :contents-end 3730 :checkbox nil :counter nil :structure\\n                            ((3441 1 \\\"1. \\\" nil nil nil 3488)\\n                             (3488 1 \\\"2. \\\" nil nil nil 3550)\\n                             (3550 1 \\\"3. \\\" nil nil nil 3599)\\n                             (3599 1 \\\"4. \\\" nil nil nil 3731)\\n                             (3731 1 \\\"5. \\\" nil nil nil 3807))\\n                            :pre-blank 0 :post-blank 1 :post-affiliated 3599 :tag nil :parent #5)\\n                   (paragraph\\n                    (:begin 3603 :end 3730 :contents-begin 3603 :contents-end 3730 :post-blank 0 :post-affiliated 3603 :parent #6)\\n                    #(\\\"List all RESOURCENAMEs in all Namespaces\\\\n    find the RESOURCENAME(1)\\\\n    ensure that the RESOURCENAME is found and is patched\\\\n\\\" 0 127\\n                      (:parent #7))))\\n                  (item\\n                   (:bullet \\\"5. \\\" :begin 3731 :end 3807 :contents-begin 3735 :contents-end 3807 :checkbox nil :counter nil :structure\\n                            ((3441 1 \\\"1. \\\" nil nil nil 3488)\\n                             (3488 1 \\\"2. \\\" nil nil nil 3550)\\n                             (3550 1 \\\"3. \\\" nil nil nil 3599)\\n                             (3599 1 \\\"4. \\\" nil nil nil 3731)\\n                             (3731 1 \\\"5. \\\" nil nil nil 3807))\\n                            :pre-blank 0 :post-blank 0 :post-affiliated 3731 :tag nil :parent #5)\\n                   (paragraph\\n                    (:begin 3735 :end 3807 :contents-begin 3735 :contents-end 3807 :post-blank 0 :post-affiliated 3735 :parent #6)\\n                    #(\\\"Delete Namespaced RESOURCENAME(1) via a Collection with a LabelSelector\\\\n\\\" 0 72\\n                      (:parent #7)))))))\\n               (headline\\n                (:raw-value \\\"Test the functionality in Go\\\" :begin 3808 :end 5704 :pre-blank 0 :contents-begin 3841 :contents-end 5704 :level 3 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 3808 :title\\n                            (#(\\\"Test the functionality in Go\\\" 0 28\\n                               (:parent #3)))\\n                            :parent #2)\\n                (section\\n                 (:begin 3841 :end 5705 :contents-begin 3841 :contents-end 5704 :post-blank 1 :post-affiliated 3841 :parent #3)\\n                 (src-block\\n                  (:language \\\"go\\\" :switches nil :parameters nil :begin 3841 :end 5599 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\"      package main\\\\n\\\\n      import (\\\\n	      // \\\\\\\"encoding/json\\\\\\\"\\\\n        \\\\\\\"fmt\\\\\\\"\\\\n        \\\\\\\"flag\\\\\\\"\\\\n        \\\\\\\"os\\\\\\\"\\\\n        // v1 \\\\\\\"k8s.io/api/core/v1\\\\\\\"\\\\n        // \\\\\\\"k8s.io/client-go/dynamic\\\\\\\"\\\\n        // \\\\\\\"k8s.io/apimachinery/pkg/runtime/schema\\\\\\\"\\\\n        metav1 \\\\\\\"k8s.io/apimachinery/pkg/apis/meta/v1\\\\\\\"\\\\n        \\\\\\\"k8s.io/client-go/kubernetes\\\\\\\"\\\\n        // \\\\\\\"k8s.io/apimachinery/pkg/types\\\\\\\"\\\\n        \\\\\\\"k8s.io/client-go/tools/clientcmd\\\\\\\"\\\\n      )\\\\n\\\\n      func main() {\\\\n        // uses the current context in kubeconfig\\\\n        kubeconfig := flag.String(\\\\\\\"kubeconfig\\\\\\\", fmt.Sprintf(\\\\\\\"%v/%v/%v\\\\\\\", os.Getenv(\\\\\\\"HOME\\\\\\\"), \\\\\\\".kube\\\\\\\", \\\\\\\"config\\\\\\\"), \\\\\\\"(optional) absolute path to the kubeconfig file\\\\\\\")\\\\n        flag.Parse()\\\\n        config, err := clientcmd.BuildConfigFromFlags(\\\\\\\"\\\\\\\", *kubeconfig)\\\\n        if err != nil {\\\\n            fmt.Println(err)\\\\n            return\\\\n        }\\\\n        // make our work easier to find in the audit_event queries\\\\n        config.UserAgent = \\\\\\\"live-test-writing\\\\\\\"\\\\n        // creates the clientset\\\\n        ClientSet, _ := kubernetes.NewForConfig(config)\\\\n        // DynamicClientSet, _ := dynamic.NewForConfig(config)\\\\n        // podResource := schema.GroupVersionResource{Group: \\\\\\\"\\\\\\\", Version: \\\\\\\"v1\\\\\\\", Resource: \\\\\\\"pods\\\\\\\"}\\\\n\\\\n        // TEST BEGINS HERE\\\\n\\\\n        fmt.Println(\\\\\\\"listing Pods\\\\\\\")\\\\n        pods, err := ClientSet.CoreV1().Pods(\\\\\\\"\\\\\\\").List(metav1.ListOptions{})\\\\n        if err != nil {\\\\n            fmt.Println(err, \\\\\\\"failed to list Pods\\\\\\\")\\\\n            return\\\\n        }\\\\n        podCount := len(pods.Items)\\\\n        if podCount == 0 {\\\\n            fmt.Println(\\\\\\\"there are no Pods found\\\\\\\")\\\\n            return\\\\n        }\\\\n        fmt.Println(podCount, \\\\\\\"Pods found\\\\\\\")\\\\n\\\\n        // TEST ENDS HERE\\\\n\\\\n        // write test here\\\\n        fmt.Println(\\\\\\\"[status] complete\\\\\\\")\\\\n\\\\n      }\\\\n\\\" :post-blank 1 :post-affiliated 3841 :parent #4))\\n                 (src-block\\n                  (:language \\\"go\\\" :switches nil :parameters nil :begin 5599 :end 5704 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\"    listing Pods\\\\n    20 Pods found\\\\n    [status] complete\\\\n\\\" :post-blank 0 :post-affiliated 5614 :results\\n                             (\\\"\\\")\\n                             :parent #4)))))\\n              (headline\\n               (:raw-value \\\"Verifying increase in coverage with APISnoop\\\" :begin 5705 :end 6745 :pre-blank 0 :contents-begin 5783 :contents-end 6745 :level 2 :priority nil :tags\\n                           (#(\\\"export\\\" 0 6\\n                              (fontified nil face\\n                                         (org-tag org-level-2))))\\n                           :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 5705 :title\\n                           (#(\\\"Verifying increase in coverage with APISnoop\\\" 0 44\\n                              (:parent #2)))\\n                           :parent #1)\\n               (section\\n                (:begin 5783 :end 6746 :contents-begin 5783 :contents-end 6745 :post-blank 1 :post-affiliated 5783 :parent #2)\\n                (paragraph\\n                 (:begin 5783 :end 5805 :contents-begin 5783 :contents-end 5805 :post-blank 0 :post-affiliated 5783 :parent #3)\\n                 #(\\\" Discover useragents:\\\\n\\\" 0 22\\n                   (:parent #4)))\\n                (src-block\\n                 (:language \\\"sql-mode\\\" :switches nil :parameters \\\":eval never-export :exports both :session none\\\" :begin 5805 :end 6090 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\"     select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';\\\\n\\\" :post-blank 1 :post-affiliated 5805 :parent #3))\\n                (paragraph\\n                 (:begin 6090 :end 6123 :contents-begin 6090 :contents-end 6123 :post-blank 0 :post-affiliated 6090 :parent #3)\\n                 #(\\\" List endpoints hit by the test:\\\\n\\\" 0 33\\n                   (:parent #4)))\\n                (src-block\\n                 (:language \\\"sql-mode\\\" :switches nil :parameters \\\":exports both :session none\\\" :begin 6123 :end 6257 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\" select * from endpoints_hit_by_new_test where useragent like 'live%'; \\\\n\\\" :post-blank 1 :post-affiliated 6123 :parent #3))\\n                (paragraph\\n                 (:begin 6257 :end 6292 :contents-begin 6257 :contents-end 6292 :post-blank 0 :post-affiliated 6257 :parent #3)\\n                 #(\\\" Display endpoint coverage change:\\\\n\\\" 0 35\\n                   (:parent #4)))\\n                (src-block\\n                 (:language \\\"sql-mode\\\" :switches nil :parameters \\\":eval never-export :exports both :session none\\\" :begin 6292 :end 6426 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\"     select * from projected_change_in_coverage;\\\\n\\\" :post-blank 1 :post-affiliated 6292 :parent #3))\\n                (src-block\\n                 (:language \\\"example\\\" :switches nil :parameters nil :begin 6426 :end 6745 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\"      category    | total_endpoints | old_coverage | new_coverage | change_in_number \\\\n   ---------------+-----------------+--------------+--------------+------------------\\\\n    test_coverage |             438 |          183 |          183 |                0\\\\n   (1 row)\\\\n\\\\n\\\" :post-blank 0 :post-affiliated 6440 :results\\n                            (\\\"\\\")\\n                            :parent #3)))))\\n             (headline\\n              (:raw-value \\\"Process\\\" :begin 6746 :end 7246 :pre-blank 0 :contents-begin 6756 :contents-end 7246 :level 1 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 6746 :title\\n                          (#(\\\"Process\\\" 0 7\\n                             (:parent #1)))\\n                          :parent #0)\\n              (headline\\n               (:raw-value \\\"Confirm we can select just a specially marked code block for find replace\\\" :begin 6756 :end 7007 :pre-blank 0 :contents-begin 6838 :contents-end 7007 :level 2 :priority nil :tags nil :todo-keyword\\n                           #(\\\"TODO\\\" 0 4\\n                             (fontified t org-todo-head \\\"TODO\\\" face org-todo))\\n                           :todo-type todo :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 6756 :title\\n                           (#(\\\"Confirm we can select just a specially marked code block for find replace\\\" 0 73\\n                              (:parent #2)))\\n                           :parent #1)\\n               (section\\n                (:begin 6838 :end 7007 :contents-begin 6838 :contents-end 7007 :post-blank 0 :post-affiliated 6838 :parent #2)\\n                (paragraph\\n                 (:begin 6838 :end 6862 :contents-begin 6838 :contents-end 6859 :post-blank 1 :post-affiliated 6838 :parent #3)\\n                 #(\\\"   We don't want to \\\\n\\\" 0 21\\n                   (:parent #4)))\\n                (paragraph\\n                 (:begin 6862 :end 6919 :contents-begin 6862 :contents-end 6915 :post-blank 1 :post-affiliated 6862 :parent #3)\\n                 #(\\\"   We can do an org-find query, let's try a few out!\\\\n\\\" 0 53\\n                   (:parent #4)))\\n                (src-block\\n                 (:language \\\"elisp\\\" :switches nil :parameters nil :begin 6919 :end 7007 :number-lines nil :preserve-indent nil :retain-labels t :use-labels t :label-fmt nil :value \\\"   (org-element-parse-buffer) \\\\n\\\" :post-blank 0 :post-affiliated 6942 :name \\\"find in org\\\" :parent #3))))\\n              (headline\\n               (:raw-value \\\"Copy this code block and paste into buffer with new name/id\\\" :begin 7007 :end 7070 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 7007 :title\\n                           (#(\\\"Copy this code block and paste into buffer with new name/id\\\" 0 59\\n                              (:parent #2)))\\n                           :parent #1))\\n              (headline\\n               (:raw-value \\\"Develop regex for finding all instances of if err!=nil in selected text\\\" :begin 7070 :end 7145 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 7070 :title\\n                           (#(\\\"Develop regex for finding all instances of if err!=nil in selected text\\\" 0 71\\n                              (:parent #2)))\\n                           :parent #1))\\n              (headline\\n               (:raw-value \\\"Isolate error message from these blocks\\\" :begin 7145 :end 7188 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 7145 :title\\n                           (#(\\\"Isolate error message from these blocks\\\" 0 39\\n                              (:parent #2)))\\n                           :parent #1))\\n              (headline\\n               (:raw-value \\\"Copy and paste code block, but changing err statements\\\" :begin 7188 :end 7246 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 7188 :title\\n                           (#(\\\"Copy and paste code block, but changing err statements\\\" 0 54\\n                              (:parent #2)))\\n                           :parent #1))))\\n\" :post-blank 0 :post-affiliated 7062 :results\n                            (\"find in org\")\n                            :parent #3))))\n              (headline\n               (:raw-value \"Copy this code block and paste into buffer with new name/id\" :begin 36965 :end 37028 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 36965 :title\n                           (#(\"Copy this code block and paste into buffer with new name/id\" 0 59\n                              (:parent #2)))\n                           :parent #1))\n              (headline\n               (:raw-value \"Develop regex for finding all instances of if err!=nil in selected text\" :begin 37028 :end 37103 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 37028 :title\n                           (#(\"Develop regex for finding all instances of if err!=nil in selected text\" 0 71\n                              (:parent #2)))\n                           :parent #1))\n              (headline\n               (:raw-value \"Isolate error message from these blocks\" :begin 37103 :end 37146 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 37103 :title\n                           (#(\"Isolate error message from these blocks\" 0 39\n                              (:parent #2)))\n                           :parent #1))\n              (headline\n               (:raw-value \"Copy and paste code block, but changing err statements\" :begin 37146 :end 37204 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 37146 :title\n                           (#(\"Copy and paste code block, but changing err statements\" 0 54\n                              (:parent #2)))\n                           :parent #1))))\n" :post-blank 0 :post-affiliated 7093 :results
+                              ("find in org")
+                              :parent #3))))
+                (headline
+                 (:raw-value "Copy this code block and paste into buffer with new name/id" :begin 68541 :end 68604 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 68541 :title
+                             (#("Copy this code block and paste into buffer with new name/id" 0 59
+                                (:parent #2)))
+                             :parent #1))
+                (headline
+                 (:raw-value "Develop regex for finding all instances of if err!=nil in selected text" :begin 68604 :end 68679 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 68604 :title
+                             (#("Develop regex for finding all instances of if err!=nil in selected text" 0 71
+                                (:parent #2)))
+                             :parent #1))
+                (headline
+                 (:raw-value "Isolate error message from these blocks" :begin 68679 :end 68722 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 68679 :title
+                             (#("Isolate error message from these blocks" 0 39
+                                (:parent #2)))
+                             :parent #1))
+                (headline
+                 (:raw-value "Copy and paste code block, but changing err statements" :begin 68722 :end 68780 :pre-blank 0 :contents-begin nil :contents-end nil :level 2 :priority nil :tags nil :todo-keyword nil :todo-type nil :post-blank 0 :footnote-section-p nil :archivedp nil :commentedp nil :post-affiliated 68722 :title
+                             (#("Copy and paste code block, but changing err statements" 0 54
+                                (:parent #2)))
+                             :parent #1))))
+   #+end_src
+
+   Since we are in list we can do map,filter, reduce on this like we would any other function
+   
+   This is detailed in the org-mode docs: [[https://orgmode.org/worg/dev/org-element-api.html][org-element api]] 
+   
+   Here is a function that will return the value of  a src block with the name 'Mock Test in Go'
+   #+NAME: org-element-map headlines
+   #+begin_src elisp
+     (car (org-element-map (org-element-parse-buffer) 'src-block
+      (lambda (src-block) 
+        (let ((name (org-element-property :name src-block))
+              (value (org-element-property :value src-block)))
+          (if (string= name "Mock Test In Go" )
+              value)))))
+   #+end_src
+
+   #+RESULTS: org-element-map headlines
+   #+begin_src elisp
+   "      package main\n\n      import (\n	      // \"encoding/json\"\n        \"fmt\"\n        \"flag\"\n        \"os\"\n        // v1 \"k8s.io/api/core/v1\"\n        // \"k8s.io/client-go/dynamic\"\n        // \"k8s.io/apimachinery/pkg/runtime/schema\"\n        metav1 \"k8s.io/apimachinery/pkg/apis/meta/v1\"\n        \"k8s.io/client-go/kubernetes\"\n        // \"k8s.io/apimachinery/pkg/types\"\n        \"k8s.io/client-go/tools/clientcmd\"\n      )\n\n      func main() {\n        // uses the current context in kubeconfig\n        kubeconfig := flag.String(\"kubeconfig\", fmt.Sprintf(\"%v/%v/%v\", os.Getenv(\"HOME\"), \".kube\", \"config\"), \"(optional) absolute path to the kubeconfig file\")\n        flag.Parse()\n        config, err := clientcmd.BuildConfigFromFlags(\"\", *kubeconfig)\n        if err != nil {\n            fmt.Println(err)\n            return\n        }\n        // make our work easier to find in the audit_event queries\n        config.UserAgent = \"live-test-writing\"\n        // creates the clientset\n        ClientSet, _ := kubernetes.NewForConfig(config)\n        // DynamicClientSet, _ := dynamic.NewForConfig(config)\n        // podResource := schema.GroupVersionResource{Group: \"\", Version: \"v1\", Resource: \"pods\"}\n\n        // TEST BEGINS HERE\n\n        fmt.Println(\"listing Pods\")\n        pods, err := ClientSet.CoreV1().Pods(\"\").List(metav1.ListOptions{})\n        if err != nil {\n            fmt.Println(err, \"failed to list Pods\")\n            return\n        }\n        podCount := len(pods.Items)\n        if podCount == 0 {\n            fmt.Println(\"there are no Pods found\")\n            return\n        }\n        fmt.Println(podCount, \"Pods found\")\n\n        // TEST ENDS HERE\n\n        // write test here\n        fmt.Println(\"[status] complete\")\n\n      }\n"
+   #+end_src
+   
+   Which means we can set this to a variable when we want to search and find in text.
+** Change the values in AST tree  
+   I believe we can use element-set-element to change teh name of our code block.  This would be nice for when we do a copy and paste back into the buffer, so it can now be named 'Gingko Test'
+   
+   When I tried this though, I get onto a thorny patch, where the src selection included info about its parent which included all the info about its parent all the way to the root.  
+   #+NAME: org-extract-element
+   #+begin_example elisp
+            (org-element-map (org-element-parse-buffer) 'src-block
+             (lambda (src-block) 
+               (let ((name (org-element-property :name src-block))
+                     (value (org-element-property :value src-block)))
+                 (if (string= name "Mock Test In Go" )
+                     src-block))))
+   #+end_example
+
+I could spend time figurikng this out, but i think it'll ultimately be misguided.  At the end of the day we wanna dd new text to the org file, which will by extension update the AST.  If we try to copy and insert the AST, it has too many specific properties that the new one will inherit(like buffer position and parent).  best to just do some basic string parsing.
+
+** Grab value of mock test in go and insert it as a new code block under heading "Gingko Test"
+   I imagine we will want to do something like this  [[https://stackoverflow.com/questions/52121961/emacs-org-mode-insert-text-after-heading-properties][stackoverflow question]] 
+** Copy this code block and paste into buffer with new name/id
+   You can also translate an AST back into an org document.  
+** Develop regex for finding all instances of if err!=nil in selected text
+** Isolate error message from these blocks
+** Copy and paste code block, but changing err statements
