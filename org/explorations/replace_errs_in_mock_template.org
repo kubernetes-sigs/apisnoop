@@ -201,8 +201,59 @@ framework.ExpectNoError(err, "failed to update ReplicationControllerStatus")
    :CUSTOM_ID: test-test-test
    :END:
 
+#+NAME: Gingkto Test
+#+begin_src go
+      package main
+
+      import (
+	      // "encoding/json"
+        "fmt"
+        "flag"
+        "os"
+        // v1 "k8s.io/api/core/v1"
+        // "k8s.io/client-go/dynamic"
+        // "k8s.io/apimachinery/pkg/runtime/schema"
+        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+        "k8s.io/client-go/kubernetes"
+        // "k8s.io/apimachinery/pkg/types"
+        "k8s.io/client-go/tools/clientcmd"
+      )
+
+      func main() {
+        // uses the current context in kubeconfig
+        kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+        flag.Parse()
+        config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+        framework.ExpectNoError(err, "the first error")
+        // make our work easier to find in the audit_event queries
+        config.UserAgent = "live-test-writing"
+        // creates the clientset
+        ClientSet, _ := kubernetes.NewForConfig(config)
+        // DynamicClientSet, _ := dynamic.NewForConfig(config)
+        // podResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+
+        // TEST BEGINS HERE
+
+        fmt.Println("listing Pods")
+        pods, err := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{})
+        framework.ExpectNoError(err, "failed to list Pods")
+        podCount := len(pods.Items)
+        if podCount == 0 {
+            fmt.Println("there are no Pods found")
+            return
+        }
+        fmt.Println(podCount, "Pods found")
+
+        // TEST ENDS HERE
+
+        // write test here
+        fmt.Println("[status] complete")
+
+      }
+#+end_src
 * Process
-** TODO Confirm we can select just a specially marked code block for find replace
+** Confirm we can select just a specially marked code block for find replace
+   CLOSED: [2020-04-21 Tue 12:07]
    We don't want to 
   
    We can do an org-find query, let's try a few out!
@@ -676,7 +727,7 @@ let bring this in and do a replace- to "
 
 Awesome, this function works, though we have a hardcoded error...so really we need to somehow capture what's in the text for the error function and make that part of our replacement...this gets more interesting.  
 
-** Isolate error message from these blocks
+** Copy and paste code block, but changing err statements
 replace-regexp in string allows for the replacement arg to be a function, one that is passed whatever text is matched by the regex.  so we could make a function that isolates the error and message and constructs the appropriate replacement.
 
 Let's try it
@@ -689,10 +740,16 @@ Let's try it
                                  (if (string= name "Mock Test In Go" )
                                      value))))))
            (match " *if err != nil {\n *fmt.Println(err, \"[a-z A-Z]*\")\n *return\n *}")
+           (g-pre (s-concat (s-repeat 8 " ") "framework.ExpectNoError\("))
            (replace "\n        framework.ExpectNoError(err, \"cool error\")\n")
-           (gingko-test (replace-regexp-in-string match (lambda (s)
-                                                          (let ((error-message (car (split-string s "[(]"))))
-                                                            error-message)) mock-test))
+           (gingko-test (replace-regexp-in-string match
+                                                  (lambda (match)
+                                                          (save-match-data
+                                                            (let* (
+                                                                   (err (cadr (s-split "[()]" match)))
+                                                                   (g-err (s-concat g-pre err "\)")))
+                                                              g-err)))
+                                                  mock-test))
            (src-code-block (concat "#+NAME: Gingkto Test\n"
                                    "#+begin_src go\n"
                                    gingko-test
@@ -705,11 +762,14 @@ Let's try it
       (insert  src-code-block)))
 #+end_src
 
-#+RESULTS:
-#+begin_src elisp
-nil
-#+end_src
+This is working as we'd like!  The function is hard to read, but I think we can lift it out into separate parts and define each in our dir-locals and still have it work.
 
-** Copy and paste code block, but changing err statements
-   
-   
+Awesome things to note:
+- the s.el library is included in spacemacs, which makes string-manipulation a bit easier.
+- when using split-string (or s-split), it will alter the match data given, which creates unexpected results when used in combination with replace-regexp-in-string.  Because of this, you wanna use save-match-data which lets youdo the manipulation, but retain that match, making the replace act as expected.
+- our goto-char section is a bit neat, in that we go to the heading, then the first bit of content
+ and check whether thiks content is a drawer... if so, we skip past the drawer and insert what we want.
+** TODO Add "Convert to ginkgo test" section to mock-template
+** Add to dir-locals and check that it works.   
+** Separate into smaller modular functions in dir-locals
+** Document
