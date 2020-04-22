@@ -198,7 +198,7 @@ select * from projected_change_in_coverage;
 
 # Final notes
 
-If a test with these calls gets merged, ****test coverage will go up by N points****
+If a test with these calls gets merged, ****test coverage will go up by 2 points****
 
 This test is also created with the goal of conformance promotion.
 
