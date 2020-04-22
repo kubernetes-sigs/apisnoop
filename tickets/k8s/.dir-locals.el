@@ -46,20 +46,16 @@
                                                      value)))))))
                         mock-test))))
             (eval .
-                  (defun apisnoop/format-error-message (match)
-                    "Given a src block with an error message contained in the first set of parentheses, extract just the error message, and format it as a ginkgo ExpectNoError message"
-                      (save-match-data
-                        (let* ((err (cadr (s-split "[()]" match)))
-                               (g-pre (s-concat (s-repeat 7 " ") "framework.ExpectNoError\("))
-                               (g-err (s-concat g-pre err "\)")))
-                          g-err))))
-            (eval .
-                  (defun apisnoop/create-named-src-block (name lang body)
-                    "Generates org-mode src-block string, with given name, code language, and src-block body."
-                    (let* ((NAME (concat "#+NAME: " name "\n"))
-                           (BEGIN (concat "#+begin_src " lang "\n"))
-                           (END "#+end_src\n"))
-                      (concat NAME BEGIN body END))))
+                  (defun apisnoop/format-nil-errors (mock-test)
+                    (let* ((match " *if err != nil {\n *fmt.Println(err, \"[a-z A-Z]*\")\n *return\n *}")
+                           (g-pre (s-concat (s-repeat 7 " ") "framework.ExpectNoError\(")))
+                      (replace-regexp-in-string match
+                                                (lambda (match)
+                                                  (save-match-data
+                                                    (let* ((err (cadr (s-split "[()]" match)))
+                                                           (g-err (s-concat g-pre err "\)")))
+                                                      g-err)))
+                                                mock-test))))
             (eval .
                   (defun apisnoop/mock->ginkgo-test ()
                     "Takes the contents of the code block named 'Mock Test in Go' and runs it through a set of conversions so its body closer matches the ginkgo test framework.  It inputs this new code block beneath the heading named 'Ginkgo Test'.
@@ -68,13 +64,14 @@ This function assumes you have the appropriately named code block and heading, w
                     (interactive)
                     (save-excursion
                       (let* ((mock-test (apisnoop/get-mock-test-value)) 
-                             (match " *if err != nil {\n *fmt.Println(err, \"[a-z A-Z]*\")\n *return\n *}")
-                             (gingko-test (replace-regexp-in-string match (apisnoop/format-error-message match) mock-test))
-                             (src-code-block (apisnoop/create-named-src-block "Ginkgo Test" "go" gingko-test)))
+                             (ginkgo-test (apisnoop/format-nil-errors mock-test))
+                             (src-code-block (concat "#+NAME: Ginkgo Test\n"
+                                                     "#+begin_src go\n"
+                                                     ginkgo-test
+                                                     "#+end_src\n")))
                         (goto-char (org-find-entry-with-id "gt001"))
                         (goto-char (org-element-property :contents-begin (org-element-at-point)))
                         (let ((first-element (org-element-at-point)))
                           (when (eq 'property-drawer (car first-element))
                             (goto-char (org-element-property :end first-element))))
-                        (insert  src-code-block)))
-                    )))))
+                        (insert  src-code-block))))))))
