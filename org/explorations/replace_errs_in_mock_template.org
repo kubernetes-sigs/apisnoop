@@ -781,8 +781,306 @@ Awesome things to note:
    What was super helpful in this was the variable ~debug-on-error~  Make sure that's set to true when writing some elisp, as it makes finding the error so much easier!
 ** Separate into smaller modular functions in dir-locals
    Done and done.  One of them, "create-named-src-block" is easily reusable, but the main advantage is readability
+** Separate out the actual test from the boilerplate
+   we don't need to export a main function and import stuff and all that when adding a ginkgo test, since we are just adding a new assert statement in a long list of tests.  
+   We can separate out our test using s-split and regex since the test is commented with ~// TEST BEGINS HERE~ and ~//TEST ENDS HERE~
+   We do a regex on ~// TEST \\(BEGINS\\|ENDS\\) HERE~ (elisp requires a lot of escape characters)
+   
+   this will make our matching and formatting easier, which is sweet!
+** Match and format equalities like we did for err != nil
+   A common pattern in a test is to compare two values, raising an error if they don't match.
+   #+begin_src go
+  if rcStatus.Status.Replicas != testRcInitialReplicaCount {
+     fmt.Println("ReplicationController ReplicaSet count does not match initial Replica count")
+  } 
+   #+end_src
+   
+   This transposes to ginkgo as
+   #+begin_src go
+framework.ExpectEqual(rcStatus.Status.Replicas, testRcInitialReplicaCount, "ReplicationController ReplicaSet count does not match initial Replica count") 
+   #+end_src
+   
+   So we need to isolate the whole statement, then separate the error message and two values from it, to create the new message.
+   
+** Iteration for equalities   
+*** Test Sample
+   We don't need the full test, so let's use this sample
+   #+NAME: Equalities Test
+   #+begin_src go
+
+     // TEST BEGINS HERE
+
+     fmt.Println("listing Pods")
+     pods, err := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{})
+     if err != nil {
+       fmt.Println(err, "failed to list Pods")
+       return
+     }
+     rcStatusUjson, _ := json.Marshal(rcStatusUnstructured)
+     json.Unmarshal(rcStatusUjson, &rcStatus)
+     if rcStatus.Status.Replicas != testRcInitialReplicaCount {
+       fmt.Println("Replica count does not match initial Replica count")
+	     return
+     }
+     podCount := len(pods.Items)
+     if podCount == 0 {
+       fmt.Println("there are no Pods found")
+       return
+     }
+
+     fmt.Println(podCount, "Pods found")
+
+     // TEST ENDS HERE
+
+   #+end_src
+   
+*** Equalities go
+    :PROPERTIES:
+    :ID:       compgo
+    :END:
+#+NAME: Gingkto Test
+#+begin_src go
+
+     // TEST BEGINS HERE
+
+     fmt.Println("listing Pods")
+     pods, err := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{})
+     if err != nil {
+       fmt.Println(err, "failed to list Pods")
+       return
+     }
+     rcStatusUjson, _ := json.Marshal(rcStatusUnstructured)
+     json.Unmarshal(rcStatusUjson, &rcStatus)
+     c1: rcStatus.Status.Replicas and c2: testRcInitialReplicaCount err: "Replica count does not match initial Replica count"
+     podCount := len(pods.Items)
+     if podCount == 0 {
+       fmt.Println("there are no Pods found")
+       return
+     }
+
+     fmt.Println(podCount, "Pods found")
+
+     // TEST ENDS HERE
+
+#+end_src
+** Isolate equality match
+   First test, lets grab our test sample and isolate equalities errors, replacing them with word 'COMPARISON!'
+   #+begin_src elisp
+     (save-excursion
+       (let* ((mock-test (car (org-element-map (org-element-parse-buffer) 'src-block
+                                (lambda (src-block) 
+                                  (let ((name (org-element-property :name src-block))
+                                        (value (org-element-property :value src-block)))
+                                    (if (and (stringp name)(string= name "Equalities Test" ))
+                                        value))))))
+              (match "if \\([a-zA-Z0-9.,']+\\) != \\([a-zA-Z-0-9.,']+\\) *{\n *fmt.Println(.*)\n *}")
+              (gingko-test (replace-regexp-in-string match "EQUALITIES" mock-test))
+              (src-code-block (concat "#+NAME: Gingkto Test\n"
+                                      "#+begin_src go\n"
+                                      gingko-test
+                                      "#+end_src\n")))
+         (goto-char (org-find-entry-with-id "compgo"))
+         (goto-char (org-element-property :contents-begin (org-element-at-point)))
+         (let ((first-element (org-element-at-point)))
+           (when (eq 'property-drawer (car first-element))
+             (goto-char (org-element-property :end first-element))))
+         (insert  src-code-block)))
+   #+end_src
+
+   That'll do it!  I tried to get a regex going so there can be any amount of lines in the function body, but could not figure it out and it felt a bit like pre-optimization.  we just have to remember to have properly formatted text before doing the ginkgo function.  We'l see if that's okay, and if not, will level up my regex-fu.
+
+Next up is extracting the comparsions...which I think we can do with some s-slice-at magic.
+** Extract equalitiess
+   similar function, but a function instead of the string "EQUALITIES", a function we'll iterate on until it works.
+   
+   #+begin_src elisp
+     (save-excursion
+       (let* ((mock-test (car (org-element-map (org-element-parse-buffer) 'src-block
+                                (lambda (src-block) 
+                                  (let ((name (org-element-property :name src-block))
+                                        (value (org-element-property :value src-block)))
+                                    (if (and (stringp name)(string= name "Equalities Test" ))
+                                        value))))))
+              (match "if \\([a-zA-Z0-9.,']+\\) != \\([a-zA-Z-0-9.,']+\\) *{\n *fmt.Println(\"[a-z A-Z]*\")\n[\t| ]+return\n *}")
+              (gingko-test (replace-regexp-in-string match (lambda (match)
+                                                             (save-match-data
+                                                               (let* ((equalitiess (s-split " *!= *"(s-chop-prefix "if "(s-trim(car(s-slice-at "{" match))))))
+                                                                      (c1 (car equalitiess))
+                                                                      (c2 (cadr equalitiess))
+                                                                      (err (cadr(s-split "[()]" match))))
+                                                                      (concat "c1: " c1 " and c2: " c2 " err: " err))))
+                                                     mock-test))
+              (src-code-block (concat "#+NAME: Gingkto Test\n"
+                                      "#+begin_src go\n"
+                                      gingko-test
+                                      "#+end_src\n")))
+         (goto-char (org-find-entry-with-id "compgo"))
+         (goto-char (org-element-property :contents-begin (org-element-at-point)))
+         (let ((first-element (org-element-at-point)))
+           (when (eq 'property-drawer (car first-element))
+             (goto-char (org-element-property :end first-element))))
+         (insert  src-code-block)))
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src elisp
+   nil
+   #+end_src
+
+The replacement string shows we've  isolated the three parts we need. At this point, I would want to move this into the .dir-locals file, as it will be easier to write out the rest of the function. 
+** Match and format comparisons
+   A common pattern in a test is to compare two numeric values, raising an error if they don't match.
+   #+begin_src go
+  if podCount > 0 {
+     fmt.Println("There should not be more than 0 pods")
+  } 
+   #+end_src
+   
+   This transposes to ginkgo as
+   #+begin_src go
+framework.Expect(podCount > 0, true, "There should not be more than 0 pods") 
+   #+end_src
+   
+   So we need to isolate the whole statement, then separate the error message and two values from it, to create the new message.
+   
+   There are several qualities we wanna find:
+   - ==
+   - <=
+   - >=
+   - >
+   - <
+** Iteration for equalities   
+*** Test Sample
+   We don't need the full test, so let's use this sample
+   #+NAME: Comparisons Test
+   #+begin_src go
+
+     // TEST BEGINS HERE
+
+     fmt.Println("listing Pods")
+     pods, err := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{})
+     if err != nil {
+       fmt.Println(err, "failed to list Pods")
+       return
+     }
+     rcStatusUjson, _ := json.Marshal(rcStatusUnstructured)
+     json.Unmarshal(rcStatusUjson, &rcStatus)
+     if rcStatus.Status.Replicas != testRcInitialReplicaCount {
+       fmt.Println("Replica count does not match initial Replica count")
+       return
+     }
+     podCount := len(pods.Items)
+     if podCount == 0 {
+       fmt.Println("there are no Pods found")
+       return
+     }
+     fmt.prinLn(random teeeeext)
+     zodCount := len(zods.Items)
+     if zodCount >= 10 {
+       fmt.Println("there are too many Zods found")
+       return
+     }
+     fmt.prinLn(random teeeeext)
+     codCount := len(cods.Items)
+     if codCount <= 355 {
+       fmt.Println("there are not enough Cods found")
+       return
+     }
+     fmt.printLn(random teeeeext)
+     codCount := len(jods.Items)
+     if codCount < 42313 {
+       fmt.Println("there are def not enough Jods found")
+       return
+     }
+     fmt.printLn(random teeeeext)
+     codCount := len(fods.Items)
+     if codCount > 00012 {
+       fmt.Println("there are def too many Fods found")
+       return
+     }
+
+     fmt.Println(podCount, "Pods found")
+
+     // TEST ENDS HERE
+
+   #+end_src
+   
+*** Comparisons go
+    :PROPERTIES:
+    :ID:       compare
+    :END:
+#+NAME: Ginkgo Test
+#+begin_src go
+
+     // TEST BEGINS HERE
+
+     fmt.Println("listing Pods")
+     pods, err := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{})
+     if err != nil {
+       fmt.Println(err, "failed to list Pods")
+       return
+     }
+     rcStatusUjson, _ := json.Marshal(rcStatusUnstructured)
+     json.Unmarshal(rcStatusUjson, &rcStatus)
+     if rcStatus.Status.Replicas != testRcInitialReplicaCount {
+       fmt.Println("Replica count does not match initial Replica count")
+       return
+     }
+     podCount := len(pods.Items)
+COMPAREEEE
+     fmt.prinLn(random teeeeext)
+     zodCount := len(zods.Items)
+COMPAREEEE
+     fmt.prinLn(random teeeeext)
+     codCount := len(cods.Items)
+COMPAREEEE
+     fmt.printLn(random teeeeext)
+     codCount := len(jods.Items)
+COMPAREEEE
+     fmt.printLn(random teeeeext)
+     codCount := len(fods.Items)
+COMPAREEEE
+
+     fmt.Println(podCount, "Pods found")
+
+     // TEST ENDS HERE
+
+#+end_src
+** Isolate Comparison match
+   First test, lets grab our test sample and isolate equalities errors, replacing them with word 'COMPARISON!'
+   #+begin_src elisp
+     (save-excursion
+       (let* ((mock-test (car (org-element-map (org-element-parse-buffer) 'src-block
+                                (lambda (src-block) 
+                                  (let ((name (org-element-property :name src-block))
+                                        (value (org-element-property :value src-block)))
+                                    (if (and (stringp name)(string= name "Comparisons Test" ))
+                                        value))))))
+              (match " *if \\([a-zA-Z0-9.]+\\) *\\(==\\|>=\\|<=\\|>\\|<\\) *[0-9]+ *{\n[ \ta-zA-Z()\".,'!\n]*}")
+              (gingko-test (replace-regexp-in-string match "COMPAREEEE" mock-test))
+              (src-code-block (concat "#+NAME: Ginkgo Test\n"
+                                      "#+begin_src go\n"
+                                      gingko-test
+                                      "#+end_src\n")))
+         (goto-char (org-find-entry-with-id "compare"))
+         (goto-char (org-element-property :contents-begin (org-element-at-point)))
+         (let ((first-element (org-element-at-point)))
+           (when (eq 'property-drawer (car first-element))
+             (goto-char (org-element-property :end first-element))))
+         (insert  src-code-block)))
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src elisp
+   nil
+   #+end_src
+
+   Huzzah we got our match.  This would be much easier if I could use \w or \W, just to match bascally any characters between {}, once i've matched the comparison block, but could not get that regex to work.
+   At this point I think I can move straight to dir locals since the rest of this is near identical to the comparisons operator (which also means this could likely be turned into a nice reusable function).
+** Dir Locals modified to include comp formatting.
 ** Document
    The documentation is in the function descriptions currently, which is nice, but will need to write more still in our larger docs.
+   
 * Conclusion || Lessons || Next Steps
   We now have a function for formatting the first part of a ginkgo test.  It's just a basic change, but I know it can now be done and have better foundation for parsing/replacing the rest of the code block.
   
