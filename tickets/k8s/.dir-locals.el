@@ -46,7 +46,8 @@
                                                      value))))))
                              (separator "// TEST \\(BEGINS\\|ENDS\\) HERE")
                            (good-stuff (cadr (s-split separator  mock-test))))
-                        good-stuff)))
+                        good-stuff))))
+            (eval .
                   (defun apisnoop/format-nil-errors (mock-test)
                     "Formats general purpose errors (when err != null) to fit within ginkgo framework"
                     (let* ((match " *if err != nil {\n *fmt.Println(err, \"[a-z A-Z]*\")\n *return\n *}")
@@ -98,11 +99,11 @@ This function assumes you have the appropriately named code block and heading, w
                                               apisnoop/format-nil-errors
                                               apisnoop/format-eq-errors
                                               apisnoop/format-comp-errors))
-                             (src-code-block (concat "#+NAME: Ginkgo TTest\n"
+                             (src-code-block (concat "#+NAME: Ginkgo Test\n"
                                                      "#+begin_src go\n"
                                                      (s-trim-right ginkgo-test)
                                                      "\n#+end_src\n")))
-                        (goto-char (org-find-entry-with-id "gt001"))
+                        (goto-char (org-find-entry-with-id "gt001z4ch1sc00l"))
                         (goto-char (org-element-property :contents-begin (org-element-at-point)))
                         (let ((first-element (org-element-at-point)))
                           (when (eq 'property-drawer (car first-element))
