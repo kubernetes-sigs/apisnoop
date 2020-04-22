@@ -46,8 +46,7 @@
                                                      value))))))
                              (separator "// TEST \\(BEGINS\\|ENDS\\) HERE")
                            (good-stuff (cadr (s-split separator  mock-test))))
-                        good-stuff))))
-            (eval .
+                        good-stuff)))
                   (defun apisnoop/format-nil-errors (mock-test)
                     "Formats general purpose errors (when err != null) to fit within ginkgo framework"
                     (let* ((match " *if err != nil {\n *fmt.Println(err, \"[a-z A-Z]*\")\n *return\n *}")
@@ -84,7 +83,7 @@
                                                   (save-match-data
                                                     (let* ((comparison (s-chop-prefix "if "(s-trim(car(s-slice-at "{" match)))))
                                                            (err (cadr(s-split "[()]" match)))
-                                                           (g-err (s-concat g-pre comparison ", " err "\)")))
+                                                           (g-err (s-concat g-pre comparison ", true, " err "\)")))
                                                       g-err)))
                                                 mock-test))))
             (eval .
