@@ -1,9 +1,10 @@
-# Progress <code>[0/4]</code>
+# Progress <code>[2/5]</code>
 
--   [ ] mock ticket
--   [ ] issue created
--   [ ] PR created
--   [ ] promotion created
+-   [X] apisnoop pr : cncf/apisnoop#317
+-   [X] test issue : kubernetes/kubernetes#90348
+-   [ ] test pr : kuberenetes/kubernetes#?
+-   [ ] two weeks flake free : testgrid start YY/MM/DD
+-   [ ] test promotion pr : kubernetes/kubernetes#?
 
 # Identifying an untested feature Using APISnoop
 
@@ -45,15 +46,13 @@ SELECT
 
 ## Test outline
 
-1.  Create a Node with a static label
+1.  Creating a Node
 
-2.  Patch the Node with a new label and updated data
+2.  Listing Node
 
-3.  Get the Node to ensure it's patched
+3.  Find Node
 
-4.  List all Nodes in all Namespaces with a static label find the Node ensure that the Node is found and is patched
-
-5.  Delete Namespaced Node via a Collection with a LabelSelector
+4.  Deleting Node
 
 ## Test the functionality in Go
 
