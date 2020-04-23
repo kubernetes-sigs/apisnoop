@@ -1,9 +1,10 @@
 # Progress <code>[2/5]</code>
 
--   [X] apisnoop pr : cncf/apisnoop#317
--   [X] test issue : kubernetes/kubernetes#90348
+-   [X] APISnoop org-flow : [CoreV1NodeStatus.org](https://github.com/cncf/apisnoop/blob/master/tickets/k8s/CoreV1NodeStatus.org)
+-   [X] test approval issue : [kubernetes/kubernetes#90348](https://github.com/kubernetes/kubernetes/issues/90384)
 -   [ ] test pr : kuberenetes/kubernetes#?
--   [ ] two weeks flake free : testgrid start YY/MM/DD
+-   [ ] two weeks soak start date : testgrid-link
+-   [ ] two weeks soak end date :
 -   [ ] test promotion pr : kubernetes/kubernetes#?
 
 # Identifying an untested feature Using APISnoop
