@@ -1,14 +1,20 @@
-- [Current problem](#sec-1)
-- [Proposed solution](#sec-2)
+- [Ticket status](#sec-1)
+- [Current problem](#sec-2)
+- [Proposed solution](#sec-3)
 
 
-# Current problem<a id="sec-1"></a>
+# Ticket status<a id="sec-1"></a>
+
+-   [ ] [K8s watch events test tooling #323](https://github.com/cncf/apisnoop/pull/323)
+-   [ ] [Watch event test verification tooling #90574](https://github.com/kubernetes/kubernetes/issues/90574)
+
+# Current problem<a id="sec-2"></a>
 
 Watch events may be missed and the test may still pass. We need to ensure that all expected watch events are seen.
 
 Watch events are not collected and checked at the end of the test.
 
-# Proposed solution<a id="sec-2"></a>
+# Proposed solution<a id="sec-3"></a>
 
 In order to solve the problem, we must collect all watch events as they come in and perform a check at the end of the test to ensure that the order is correct and they contain no errors.
 
@@ -35,5 +41,52 @@ func main () {
   myWatchEvent = "DELETED"
   watchBox = append(watchBox, myWatchEvent)
 
+	fmt.Printf("\n")
+  fmt.Println("Verification will succeed")
+  expectedWatchBox := []string{
+   "ADDED",
+   "MODIFIED",
+   "DELETED",
+  }
+  failure := VerifyWatchEventOrder(expectedWatchBox, watchBox)
+  if failure != "" {
+    fmt.Println(failure, "watch events occured in the wrong or incorrect order")
+    return
+  }
+  fmt.Printf("Check complete\n\n")
 
+  fmt.Println("Verification will fail")
+  expectedWatchBox = []string{
+   "ADDED",
+   "MODIFIED",
+   "MODIFIED",
+   "DELETED",
+  }
+  failure = VerifyWatchEventOrder(expectedWatchBox, watchBox)
+  if failure != "" {
+    fmt.Println(failure, "watch events occured in the wrong or incorrect order")
+    return
+  }
+  fmt.Println("Check complete")
+}
+
+func VerifyWatchEventOrder(expectedWatchEvents []string, actualWatchEvents []string) (failure string) {
+  for watchEventInt, watchEvent := range actualWatchEvents {
+    if expectedWatchEvents[watchEventInt] != watchEvent {
+      failure = fmt.Sprintf("(index %v) %v not found, found %v instead", watchEventInt, expectedWatchEvents[watchEventInt], watchEvent)
+      break
+    }
+  }
+  return failure
+}
+```
+
+    An event takes place (1/3)
+    An event takes place (2/3)
+    An event takes place (3/3)
+    
+    Verification will succeed
+    Check complete
+    
+    Verification will fail
     (index 2) MODIFIED not found, found DELETED instead watch events occured in the wrong or incorrect order
