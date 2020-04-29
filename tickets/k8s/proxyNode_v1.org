@@ -26,8 +26,9 @@ According to this APIsnoop query, there are still some remaining RESOURCENAME en
       FROM untested_stable_core_endpoints
       -- FROM untested_stable_endpoints
       where path not like '%volume%'
-      -- and kind like ''
-      and operation_id ilike '%nodeProxy%'
+      -- and kind like 'NodeProxy%'
+      and kind like 'NodeProxyOptions'
+      -- and operation_id ilike '%nodeProxy%'
      ORDER BY kind,operation_id desc
      LIMIT 25
            ;
@@ -55,9 +56,14 @@ According to this APIsnoop query, there are still some remaining RESOURCENAME en
  #+end_SRC
 
 * API Reference and feature documentation                            :export:
+** kube-proxy k8s node binary/service
+
+https://kubernetes.io/docs/reference/command-line-tools-reference/kube-proxy/ T
+https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/
+https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#-strong-proxy-operations-node-v1-core-strong-
 - [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
 - [[https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/RESOURCENAME.go][client-go - RESOURCENAME]] 
-
+https://apisnoop.cncf.io/ci-kubernetes-e2e-gci-gce/1252317920617304064/stable/core/connectCoreV1PatchNodeProxy
 * The mock test                                                      :export:
 ** Test outline
 1. Create a RESOURCENAME with a static label
@@ -166,6 +172,131 @@ According to this APIsnoop query, there are still some remaining RESOURCENAME en
    deleting Pod
    [status] complete
    #+end_src
+
+* See what other apps hit NodeProxyOptions
+** Discover useragents live in cluster
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent from audit_event where bucket='apisnoop' 
+     and useragent not like 'kube%'
+     and useragent not like 'coredns%'
+     and useragent not like 'kindnetd%'
+     -- and useragent like 'live%'
+     ;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                              useragent                             
+  ------------------------------------------------------------------
+   local-path-provisioner/v0.0.0 (linux/amd64) kubernetes/$Format
+   nginx-ingress-controller/v0.0.0 (linux/amd64) kubernetes/$Format
+   tilt/v0.0.0 (linux/amd64) kubernetes/$Format
+  (3 rows)
+
+  #+end_SRC
+** describe the audit_event
+
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    \d audit_event
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                    Unlogged table "public.audit_event"
+             Column           |  Type   | Collation | Nullable | Default 
+  ----------------------------+---------+-----------+----------+---------
+   bucket                     | text    |           |          | 
+   job                        | text    |           |          | 
+   audit_id                   | text    |           | not null | 
+   stage                      | text    |           | not null | 
+   event_verb                 | text    |           | not null | 
+   request_uri                | text    |           | not null | 
+   operation_id               | text    |           |          | 
+   event_level                | text    |           |          | 
+   event_stage                | text    |           |          | 
+   api_version                | text    |           |          | 
+   useragent                  | text    |           |          | 
+   test_hit                   | boolean |           |          | 
+   conf_test_hit              | boolean |           |          | 
+   event_user                 | jsonb   |           |          | 
+   object_namespace           | text    |           |          | 
+   object_type                | text    |           |          | 
+   object_group               | text    |           |          | 
+   object_ver                 | text    |           |          | 
+   source_ips                 | jsonb   |           |          | 
+   annotations                | jsonb   |           |          | 
+   request_object             | jsonb   |           |          | 
+   response_object            | jsonb   |           |          | 
+   response_status            | jsonb   |           |          | 
+   stage_timestamp            | text    |           |          | 
+   request_received_timestamp | text    |           |          | 
+   data                       | jsonb   |           | not null | 
+  Indexes:
+      "idx_audit_event_bucket" btree (bucket)
+      "idx_audit_event_conf_test_hit" btree (conf_test_hit)
+      "idx_audit_event_job" btree (job)
+      "idx_audit_event_operation_id" btree (operation_id)
+      "idx_audit_event_test_hit" btree (test_hit)
+  Triggers:
+      add_op_id BEFORE INSERT ON audit_event FOR EACH ROW WHEN (new.job = 'live'::text) EXECUTE FUNCTION add_op_id()
+
+  #+end_SRC
+
+** look at what tilt does
+
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent
+      from audit_event
+     where bucket='apisnoop'
+       and useragent not like 'kube%'
+       and useragent not like 'coredns%'
+       and useragent not like 'kindnetd%'
+      -- and useragent like 'live%'
+       and operation_id in (
+         connectCoreV1PutNodeProxyWithPath,
+         connectCoreV1PutNodeProxy,
+         connectCoreV1PostNodeProxyWithPath,
+         connectCoreV1PostNodeProxy,
+         connectCoreV1PatchNodeProxyWithPath,
+         connectCoreV1PatchNodeProxy,
+         connectCoreV1OptionsNodeProxyWithPath,
+         connectCoreV1OptionsNodeProxy,
+         connectCoreV1HeadNodeProxyWithPath,
+         connectCoreV1HeadNodeProxy,
+         connectCoreV1GetNodeProxy,
+         connectCoreV1DeleteNodeProxyWithPath,
+         connectCoreV1DeleteNodeProxy
+         )
+        ;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  ERROR:  column "connectcorev1putnodeproxywithpath" does not exist
+  LINE 9:      connectCoreV1PutNodeProxyWithPath,
+               ^
+  #+end_SRC
+
+** later
+
+List endpoints hit by the test:
+#+begin_src sql-mode :exports both :session none
+select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+#+end_src
+
+Display endpoint coverage change:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select * from projected_change_in_coverage;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+  ---------------+-----------------+--------------+--------------+------------------
+   test_coverage |             438 |          183 |          183 |                0
+  (1 row)
+
+  #+end_SRC
 
 * Verifying increase in coverage with APISnoop                       :export:
 Discover useragents:

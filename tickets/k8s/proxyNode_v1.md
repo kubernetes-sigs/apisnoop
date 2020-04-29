@@ -21,8 +21,9 @@ SELECT
   FROM untested_stable_core_endpoints
   -- FROM untested_stable_endpoints
   where path not like '%volume%'
-  -- and kind like ''
-  and operation_id ilike '%nodeProxy%'
+  -- and kind like 'NodeProxy%'
+  and kind like 'NodeProxyOptions'
+  -- and operation_id ilike '%nodeProxy%'
  ORDER BY kind,operation_id desc
  LIMIT 25
        ;
@@ -50,8 +51,14 @@ SELECT
 
 # API Reference and feature documentation
 
+## kube-proxy k8s node binary/service
+
+<https://kubernetes.io/docs/reference/command-line-tools-reference/kube-proxy/> T <https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/> <https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#-strong-proxy-operations-node-v1-core-strong>-
+
 -   [Kubernetes API Reference Docs](https://kubernetes.io/docs/reference/kubernetes-api/)
 -   [client-go - RESOURCENAME](https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/RESOURCENAME.go)
+
+<https://apisnoop.cncf.io/ci-kubernetes-e2e-gci-gce/1252317920617304064/stable/core/connectCoreV1PatchNodeProxy>
 
 # The mock test
 
