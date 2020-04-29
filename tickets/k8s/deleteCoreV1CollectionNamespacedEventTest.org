@@ -1,0 +1,233 @@
+# -*- ii: apisnoop; -*-
+#+TITLE: deleteCoreV1CollectionNamespacedEvent Test Ticket
+#+AUTHOR: Stephen Heywood
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+#+OPTIONS: toc:nil tags:nil todo:nil
+#+EXPORT_SELECT_TAGS: export
+* TODO Progress [0/6]                                                :export:
+- [ ] APISnoop org-flow: [[https://github.com/cncf/apisnoop/blob/master/tickets/k8s/][MyEndpoint.org]]
+- [ ] Test approval issue: [[https://github.com/kubernetes/kubernetes/issues/][kubernetes/kubernetes#]]
+- [ ] Test pr: kuberenetes/kubernetes#
+- [ ] Two weeks soak start date: testgrid-link
+- [ ] Two weeks soak end date:
+- [ ] Test promotion pr: kubernetes/kubernetes#?
+* Identifying an untested feature Using APISnoop                     :export:
+
+According to this APIsnoop query, there are still an endpoint which is untested.
+
+  #+NAME: untested_stable_core_endpoints
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    SELECT
+      operation_id,
+      -- k8s_action,
+      -- path,
+      description,
+      kind
+      FROM untested_stable_core_endpoints
+      -- FROM untested_stable_endpoints
+      where path not like '%volume%'
+      -- and kind like ''
+      and operation_id ilike 'delete%CollectionNamespacedEvent'
+     ORDER BY kind,operation_id desc
+     LIMIT 25
+           ;
+  #+end_src
+
+ #+RESULTS: untested_stable_core_endpoints
+ #+begin_SRC example
+              operation_id              |        description         | kind  
+ ---------------------------------------+----------------------------+-------
+  deleteCoreV1CollectionNamespacedEvent | delete collection of Event | Event
+ (1 row)
+
+ #+end_SRC
+
+* API Reference and feature documentation                            :export:
+- [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+- [[https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#delete-collection-event-v1-core][Kubernetes API: v1.18 /deleteCoreV1CollectionNamespacedEvent]]
+- [[https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/event.go][client-go - Event: DeleteCollection]]
+
+* The mock test                                                      :export:
+** Test outline
+
+1. Create a set of 3 Events with a static label within a Namespace.
+
+2. Confirm that all 3 Events with the label in the Namespaces are created.
+
+3. Delete the set of Namespaced Events with a label via DeleteCollection.
+
+4. Confirm that all Events with the label have been deleted.
+
+** Test the functionality in Go
+   #+begin_src go
+               package main
+
+               import (
+                 // "encoding/json"
+                 "fmt"
+                 "strconv"
+                 // "time"
+                 "flag"
+                 "os"
+                 v1 "k8s.io/api/core/v1"
+                 // "k8s.io/client-go/dynamic"
+                 // "k8s.io/apimachinery/pkg/runtime/schema"
+                 metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+                 "k8s.io/client-go/kubernetes"
+                 // "k8s.io/apimachinery/pkg/types"
+                 "k8s.io/client-go/tools/clientcmd"
+               )
+
+               func main() {
+                 // uses the current context in kubeconfig
+                 kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+                 flag.Parse()
+                 config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+                 if err != nil {
+                   fmt.Println(err)
+                   return
+                 }
+                 // make our work easier to find in the audit_event queries
+                 config.UserAgent = "live-test-writing"
+                 // creates the clientset
+                 ClientSet, _ := kubernetes.NewForConfig(config)
+
+                 // TEST BEGINS HERE
+
+                 // create a set of event test names
+                 eventTestName := [3]string{"test-event-1", "test-event-2", "test-event-3"}
+
+                 // create a set of test events with a label in the default namespace
+                 for i := range eventTestName {
+                   eventMessage :=  "This is " + eventTestName[i]
+                   _, err = ClientSet.CoreV1().Events("default").Create(&v1.Event{
+                     ObjectMeta: metav1.ObjectMeta{
+                       Name: eventTestName[i],
+                       Labels: map[string]string{"type": "Testing"},
+                     },
+                     Message: eventMessage,
+                     Reason: "Test",
+                     Type: "Normal",
+                     Count: 1,
+                   })
+                   if err != nil {
+                     fmt.Println("[error]", err)
+                     return
+                   }
+                   fmt.Println("[status] created", eventTestName[i])
+                   // time.Sleep(3 * time.Second)
+                 }
+
+                 // get a list of Events with a label in the default namespace
+                 eventsList, err := ClientSet.CoreV1().Events("default").List(metav1.ListOptions{
+                     LabelSelector: "type=Testing"})
+
+                 if err != nil {
+                   fmt.Println("[error]", err)
+                   return
+                 }
+
+                 // check that there are 3 events found
+                 fmt.Println("[status] Found", strconv.Itoa(len(eventsList.Items)), "events")
+                 if len(eventsList.Items) != 3 {
+                   fmt.Println("[error] Incorrect number of Events found")
+                   return
+                 }
+
+                 // delete Collection Events for the label in the default namespace
+                 _  = ClientSet.CoreV1().Events("default").DeleteCollection(&metav1.DeleteOptions{}, metav1.ListOptions{
+                   LabelSelector: "type=Testing"})
+                 fmt.Println("[status] DeleteCollection processed")
+
+                 // get a list of Events default namespace with the label
+                 eventsList, err = ClientSet.CoreV1().Events("default").List(metav1.ListOptions{
+                     LabelSelector: "type=Testing"})
+                 if err != nil {
+                   fmt.Println("[error]", err)
+                   return
+                 }
+
+                 // check that there are zero events found
+                 fmt.Println("[status] Found", strconv.Itoa(len(eventsList.Items)), "events")
+                 if len(eventsList.Items) != 0 {
+                   fmt.Println("[error] Still found an Event(s)")
+                   return
+                 }
+
+                 // TEST ENDS HERE
+
+                 fmt.Println("[status] complete")
+
+               }
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
+   [status] created test-event-1
+   [status] created test-event-2
+   [status] created test-event-3
+   [status] Found 3 events
+   [status] DeleteCollection processed
+   [status] Found 0 events
+   [status] complete
+   #+end_src
+
+* Verifying increase in coverage with APISnoop                       :export:
+Discover useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+       useragent     
+  -------------------
+   live-test-writing
+  (1 row)
+
+  #+end_SRC
+
+List endpoints hit by the test:
+#+begin_src sql-mode :exports both :session none
+select * from endpoints_hit_by_new_test where useragent like 'live%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+     useragent     |             operation_id              | hit_by_ete | hit_by_new_test 
+-------------------+---------------------------------------+------------+-----------------
+ live-test-writing | createCoreV1NamespacedEvent           | f          |               3
+ live-test-writing | deleteCoreV1CollectionNamespacedEvent | f          |               1
+ live-test-writing | listCoreV1NamespacedEvent             | f          |               2
+(3 rows)
+
+#+end_SRC
+
+Display endpoint coverage change:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select * from projected_change_in_coverage;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+  ---------------+-----------------+--------------+--------------+------------------
+   test_coverage |             445 |          188 |          191 |                3
+  (1 row)
+
+  #+end_SRC
+
+Two other endpoints tested here have tests in progress to conformance already.
+
+* Final notes                                                        :export:
+If a test with these calls gets merged, **test coverage will go up by 1 points**
+
+This test is also created with the goal of conformance promotion.
+
+-----
+/sig testing
+
+/sig architecture
+
+/area conformance
+
