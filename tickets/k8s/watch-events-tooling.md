@@ -75,14 +75,14 @@ func VerifyWatchEventOrder(retries int, expectedWatchEvents []string, scenario f
   var attemptContainsFailure bool
 attempts:
   for try := 1; try <= retries; try++ {
+    if try == retries {
+      return failure
+    }
     actualWatchEvents := scenario()
     if len(expectedWatchEvents) != len(actualWatchEvents) {
       failure = "expected watch events count does not match the count of actual watch events"
       attemptContainsFailure = true
       continue
-    }
-    if try == retries {
-      return failure
     }
     for watchEventInt, watchEvent := range actualWatchEvents {
       if expectedWatchEvents[watchEventInt] != watchEvent {
@@ -106,15 +106,9 @@ attempts:
     An event takes place (1/3)
     An event takes place (2/3)
     An event takes place (3/3)
-    An event takes place (1/3)
-    An event takes place (2/3)
-    An event takes place (3/3)
     (index 1) ADDED not found, found MODIFIED instead. 2/3 attempts watch events occured in the wrong or incorrect order
     Check complete
     Running example 1
-    An event takes place (1/3)
-    An event takes place (2/3)
-    An event takes place (3/3)
     An event takes place (1/3)
     An event takes place (2/3)
     An event takes place (3/3)
