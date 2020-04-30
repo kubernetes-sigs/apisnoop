@@ -11,6 +11,39 @@
 - [ ] two weeks soak start date : testgrid-link
 - [ ] two weeks soak end date :
 - [ ] test promotion pr : kubernetes/kubernetes#?
+* Identifying untested kinds
+
+
+  #+NAME: untested_stable_core_kinds
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    SELECT
+      -- operation_id,
+      -- k8s_action,
+      -- path,
+      -- description,
+      distinct kind, operation_id
+      FROM untested_stable_core_endpoints
+      -- FROM untested_stable_endpoints
+      where path not like '%volume%'
+      and kind not like '%Options'
+      and kind = 'ComponentStatus'
+      -- and kind like 'NodeProxyOptions'
+      -- and operation_id ilike '%nodeProxy%'
+     ORDER BY kind desc
+     LIMIT 25
+           ;
+  #+end_src
+
+  #+RESULTS: untested_stable_core_kinds
+  #+begin_SRC example
+        kind       |       operation_id        
+  -----------------+---------------------------
+   ComponentStatus | listCoreV1ComponentStatus
+   ComponentStatus | readCoreV1ComponentStatus
+  (2 rows)
+
+  #+end_SRC
+
 * Identifying an untested feature Using APISnoop                     :export:
 
 According to this APIsnoop query, there are still some remaining RESOURCENAME endpoints which are untested.
@@ -176,12 +209,74 @@ https://apisnoop.cncf.io/ci-kubernetes-e2e-gci-gce/1252317920617304064/stable/co
    
 * See what other apps hit NodeProxyOptions
   
+* Discover buckets
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct bucket, job from audit_event where not bucket='apisnoop' 
+     ;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+            bucket           |         job         
+  ---------------------------+---------------------
+   ci-kubernetes-e2e-gci-gce | 1255574662646075392
+  (1 row)
+
+  #+end_SRC
+** describe the audit_event
+
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    \d audit_event
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                    Unlogged table "public.audit_event"
+             Column           |  Type   | Collation | Nullable | Default 
+  ----------------------------+---------+-----------+----------+---------
+   bucket                     | text    |           |          | 
+   job                        | text    |           |          | 
+   audit_id                   | text    |           | not null | 
+   stage                      | text    |           | not null | 
+   event_verb                 | text    |           | not null | 
+   request_uri                | text    |           | not null | 
+   operation_id               | text    |           |          | 
+   event_level                | text    |           |          | 
+   event_stage                | text    |           |          | 
+   api_version                | text    |           |          | 
+   useragent                  | text    |           |          | 
+   test_hit                   | boolean |           |          | 
+   conf_test_hit              | boolean |           |          | 
+   event_user                 | jsonb   |           |          | 
+   object_namespace           | text    |           |          | 
+   object_type                | text    |           |          | 
+   object_group               | text    |           |          | 
+   object_ver                 | text    |           |          | 
+   source_ips                 | jsonb   |           |          | 
+   annotations                | jsonb   |           |          | 
+   request_object             | jsonb   |           |          | 
+   response_object            | jsonb   |           |          | 
+   response_status            | jsonb   |           |          | 
+   stage_timestamp            | text    |           |          | 
+   request_received_timestamp | text    |           |          | 
+   data                       | jsonb   |           | not null | 
+  Indexes:
+      "idx_audit_event_bucket" btree (bucket)
+      "idx_audit_event_conf_test_hit" btree (conf_test_hit)
+      "idx_audit_event_job" btree (job)
+      "idx_audit_event_operation_id" btree (operation_id)
+      "idx_audit_event_test_hit" btree (test_hit)
+  Triggers:
+      add_op_id BEFORE INSERT ON audit_event FOR EACH ROW WHEN (new.job = 'live'::text) EXECUTE FUNCTION add_op_id()
+
+  #+end_SRC
+
 * Discover useragents live in cluster
   #+begin_src sql-mode :eval never-export :exports both :session none
     select distinct useragent from audit_event where bucket='apisnoop' 
      and useragent not like 'kube%'
      and useragent not like 'coredns%'
-     and useragent not like 'kindnetd%'
+                                                 and useragent not like 'kindnetd%'
      -- and useragent like 'live%'
      ;
   #+end_src
@@ -245,39 +340,47 @@ https://apisnoop.cncf.io/ci-kubernetes-e2e-gci-gce/1252317920617304064/stable/co
   #+end_SRC
 
   
-* look at what tilt does
+* What tests currently hit ANY NodeProxy endpoints
 
   #+begin_src sql-mode :eval never-export :exports both :session none
-    select distinct useragent
+    select distinct useragent, operation_id
       from audit_event
-     where bucket='apisnoop'
+     where bucket='ci-kubernetes-e2e-gci-gce'
+     -- where bucket='apisnoop'
        -- and useragent not like 'kube%'
-    --     and useragent not like 'coredns%'
-      -- and useragent not like 'kindnetd%'
+       -- and useragent not like 'coredns%'
+       -- and useragent not like 'kindnetd%'
+       -- and useragent not like 'kube-controller-manager%'
+       -- and useragent not like 'e2e.test%'
       -- and useragent like 'live%'
-         and operation_id in (
-           'connectCoreV1PutNodeProxyWithPath',
-          'connectCoreV1PutNodeProxy',
-          'connectCoreV1PostNodeProxyWithPat',
-          'connectCoreV1PostNodeProxy',
-          'connectCoreV1PatchNodeProxyWithPath',
-          'connectCoreV1PatchNodeProxy',
-          'connectCoreV1OptionsNodeProxyWithPath',
-          'connectCoreV1OptionsNodeProxy',
-          'connectCoreV1HeadNodeProxyWithPath',
-          'connectCoreV1HeadNodeProxy',
-          'connectCoreV1GetNodeProxy',
-          'connectCoreV1DeleteNodeProxyWithPath',
-          'connectCoreV1DeleteNodeProxy'
-          )
+         and operation_id like '%NodeProxy%'
+         -- and operation_id in (
+         --   'connectCoreV1PutNodeProxyWithPath',
+         --  'connectCoreV1PutNodeProxy',
+         --  'connectCoreV1PostNodeProxyWithPath',
+         --  'connectCoreV1PostNodeProxy',
+         --  'connectCoreV1PatchNodeProxyWithPath',
+         --  'connectCoreV1PatchNodeProxy',
+         --  'connectCoreV1OptionsNodeProxyWithPath',
+         --  'connectCoreV1OptionsNodeProxy',
+         --  'connectCoreV1HeadNodeProxyWithPath',
+         --  'connectCoreV1HeadNodeProxy',
+         --  'connectCoreV1GetNodeProxy',
+         --  'connectCoreV1DeleteNodeProxyWithPath',
+         --  'connectCoreV1DeleteNodeProxy'
+         --  )
         ;
   #+end_src
 
   #+RESULTS:
   #+begin_SRC example
-   useragent 
-  -----------
-  (0 rows)
+                                                                                         useragent                                                                                       |           operation_id            
+  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------
+   e2e.test/v1.19.0 (linux/amd64) kubernetes/3c082d5 -- [k8s.io] [sig-node] kubelet [k8s.io] [sig-node] Clean up pods on node kubelet should be able to delete 10 pods per node in 1m0s. | connectCoreV1GetNodeProxyWithPath
+   e2e.test/v1.19.0 (linux/amd64) kubernetes/3c082d5 -- [k8s.io] [sig-node] Pods Extended [k8s.io] Delete Grace Period should be submitted and removed                                   | connectCoreV1GetNodeProxyWithPath
+   e2e.test/v1.19.0 (linux/amd64) kubernetes/3c082d5 -- [sig-network] Proxy version v1 should proxy logs on node using proxy subresource  [Conformance]                                  | connectCoreV1GetNodeProxyWithPath
+   e2e.test/v1.19.0 (linux/amd64) kubernetes/3c082d5 -- [sig-network] Proxy version v1 should proxy logs on node with explicit kubelet port using proxy subresource  [Conformance]       | connectCoreV1GetNodeProxyWithPath
+  (4 rows)
 
   #+end_SRC
   
@@ -327,9 +430,11 @@ https://apisnoop.cncf.io/ci-kubernetes-e2e-gci-gce/1252317920617304064/stable/co
 
   #+RESULTS:
   #+begin_SRC example
-   useragent | operation_id 
-  -----------+--------------
-  (0 rows)
+                      useragent                     |               operation_id                
+  --------------------------------------------------+-------------------------------------------
+   kubectl/v1.17.2 (linux/amd64) kubernetes/59603c6 | connectCoreV1PostNamespacedPodPortforward
+  (1 row)
+
   #+end_SRC
 
   #+begin_src sql-mode :eval never-export :exports both :session none
@@ -357,6 +462,110 @@ https://apisnoop.cncf.io/ci-kubernetes-e2e-gci-gce/1252317920617304064/stable/co
 From the above results we can see audit event works and will list operations in list, but we have nothing in our cluster exercising connect, I am going to try to some live kubectl port forward commands
 
 
+* Lets try to run Kubectl
+** explore pods
+  #+begin_src bash
+    echo hello
+kubectl get  pods
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  hello
+  NAME                                   READY   STATUS                       RESTARTS   AGE
+  apisnoop-auditlogger-fbf56b5ff-2mw4f   1/1     Running                      5          3h22m
+  hasura-6c4f684498-pn67f                1/1     Running                      4          3h22m
+  kubemacs-0                             1/1     Running                      0          3h32m
+  master-0                               0/1     CreateContainerConfigError   0          3h32m
+  pgadmin-fbb7659d7-ftwrh                1/1     Running                      0          3h23m
+  postgres-58896767dc-48bnz              1/1     Running                      0          3h20m
+  session-64f44b86cd-q4p2g               1/2     CreateContainerConfigError   0          3h32m
+  webapp-858f4f9cf-97mhj                 1/1     Running                      0          3h22m
+  #+end_example
+** explore services
+  #+begin_src shell
+    kubectl get service
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  NAME                   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)             AGE
+  apisnoop-auditlogger   ClusterIP   10.96.96.96     <none>        9900/TCP            3h34m
+  hasura                 ClusterIP   None            <none>        8080/TCP            3h34m
+  kubemacs-tilt          ClusterIP   10.96.3.21      <none>        10350/TCP           3h43m
+  master                 ClusterIP   10.96.164.70    <none>        4000/TCP            3h43m
+  pgadmin                ClusterIP   10.96.223.84    <none>        80/TCP              3h34m
+  postgres               ClusterIP   10.96.50.248    <none>        5432/TCP            3h32m
+  session                ClusterIP   10.96.166.133   <none>        2200/TCP,4001/TCP   3h43m
+  webapp                 ClusterIP   10.96.94.43     <none>        3000/TCP            3h33m
+  #+end_example
+** explore ingress
+  #+begin_src shell
+    kubectl get ingress
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  NAME                    HOSTS                       ADDRESS        PORTS   AGE
+  graphql-ingress         *                           10.96.123.28   80      3h35m
+  hasura-ingress          hasura.127.0.0.1.xip.io     10.96.123.28   80      3h35m
+  pgadmin-ingress         pgadmin.127.0.0.1.xip.io    10.96.123.28   80      3h35m
+  tilt-ingress            tilt.127.0.0.1.xip.io       10.96.123.28   80      3h44m
+  tmate-master-ingress    tmate.local.ii.nz           10.96.123.28   80      3h44m
+  tmate-session-ingress   tmate-ws.local.ii.nz        10.96.123.28   80      3h44m
+  webapp-ingress          apisnoop.127.0.0.1.xip.io   10.96.123.28   80      3h35m
+  #+end_example
+** deployments
+  #+begin_src shell
+    kubectl get deployment
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  NAME                   READY   UP-TO-DATE   AVAILABLE   AGE
+  apisnoop-auditlogger   1/1     1            1           3h35m
+  hasura                 1/1     1            1           3h35m
+  pgadmin                1/1     1            1           3h35m
+  postgres               1/1     1            1           3h33m
+  session                0/1     1            0           3h44m
+  webapp                 1/1     1            1           3h34m
+  #+end_example
+** stateful sets  
+#+begin_src shell
+    kubectl get statefulset
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  NAME       READY   AGE
+  kubemacs   1/1     3h47m
+  master     0/1     3h47m
+  #+end_example
+** tilt service info
+   #+begin_src shell
+     kubectl describe service/kubemacs-tilt
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   Name:              kubemacs-tilt
+   Namespace:         kubemacs
+   Labels:            <none>
+   Annotations:       kubectl.kubernetes.io/last-applied-configuration:
+                        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"name":"kubemacs-tilt","namespace":"kubemacs"},"spec":{"ports":[{"name":"...
+   Selector:          app=kubemacs
+   Type:              ClusterIP
+   IP:                10.96.3.21
+   Port:              10350  10350/TCP
+   TargetPort:        10350/TCP
+   Endpoints:         10.244.1.3:10350
+   Session Affinity:  None
+   Events:            <none>
+   #+end_example
+** kubectl port forward into tilt
+   #+begin_src shell
+     kubectl port-forward service/kubemacs-tilt 12345:10350
+   #+end_src
 * later
 
 List endpoints hit by the test:
