@@ -26,11 +26,11 @@
    .format('DD MMMM, YYYY');
 </script>
 
-<SectionHeader title="Kubernetes Test Coverage Over Time">
+<SectionHeader title="Coverage For Stable Endpoints, Over Time">
   <em>Updated on {latestUpdate}</em>
 </SectionHeader>
 
-<p>Below shows the the testing coverage for standard and conformance tests (where coverage is defined as the percentage of kubernetes endpoints hit by at least one test during an e2e test suite run).
+<p>Below shows the testing coverage for stable Kubernetes endoints (where coverage is defined as the percentage of kubernetes endpoints hit by at least one test during an e2e test suite run).  We show coverage for both standard and conformance tests.
   {#if releases.length > 1}
   The data includes the {pastReleaseSpread()} along with the latest test run for {releasePrecision(latestRelease.release, 2)}.
   {:else}
@@ -39,3 +39,4 @@
 </p>
 
 <p>The current goal, as reflected in the y-axis,  is to have at least 50% of kubernetes endpoints hit by tests.</p>
+<strong>Click on any data point to see that release's coverage in depth</strong>

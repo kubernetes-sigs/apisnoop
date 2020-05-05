@@ -25,7 +25,7 @@
 
  export let payload;
  let isLoading = false;
- const  {
+ let  {
    bucket,
    bucketParam,
    category,
@@ -39,6 +39,16 @@
    stableEndpointStatsPayload
  } = payload;
 
+ activeFilters.update(af => ({
+   ...af,
+   bucket,
+   job: job || '',
+   level: level || '',
+   category: category || '',
+   operation_id: operation_id || ''
+   ,
+   ...query
+ }));
  rawBucketsAndJobs.update(raw => isEqual(raw, rawBucketsAndJobsPayload)
                                ? raw
                                : rawBucketsAndJobsPayload);
@@ -51,17 +61,6 @@
                                          ? etu
                                          : endpointsTestsAndUseragentsPayload);
 
- activeFilters.update(af => ({
-   ...af,
-   bucket,
-   job: job || '',
-   level: level || '',
-   category: category || '',
-   operation_id: operation_id || ''
-   ,
-   ...query
- }));
-
  onMount(() => {
    console.log('mounted');
    if (bucketParam && bucketParam !== bucket) {
@@ -71,6 +70,13 @@
      warnings.update(warnings => ({...warnings, invalidJob: true}));
    }
  })
+ afterUpdate(() => {
+   if (!isEqual(payload.endpointsTestsAndUseragentsPayload, $endpointsTestsAndUseragents)) {
+     $endpointsTestsAndUseragents = payload.endpointsTestsAndUseragentsPayload
+     $stableEndpointStats = payload.stableEndpointStatsPayload
+     $rawBucketsAndJobs = payload.rawBucketsAndJobsPayload
+     }
+   })
  const navigateToDataPoint = async ({bucket, job}) => {
    isLoading = true;
    activeFilters.update(af => ({...af, bucket, job, level: '', category: '', operation_id: ''}))
