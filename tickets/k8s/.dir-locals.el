@@ -39,7 +39,7 @@
                     "grabs value from code block title 'Mock Test In Go"
                     (save-excursion
                       (let* ((mock-test (car (org-element-map (org-element-parse-buffer) 'src-block
-                                             (lambda (src-block) 
+                                             (lambda (src-block)
                                                (let ((name (org-element-property :name src-block))
                                                      (value (org-element-property :value src-block)))
                                                  (if (and (stringp name) (string= name "Mock Test In Go"))
@@ -94,7 +94,7 @@
 This function assumes you have the appropriately named code block and heading, which, if you used our mock-template, you do.  For more details on writing a mock-test to be easier to convert to ginkgo, check out our docs page: docs/writing-a-mock-test.org"
                     (interactive)
                     (save-excursion
-                      (let* ((mock-test (apisnoop/get-mock-test-value)) 
+                      (let* ((mock-test (apisnoop/get-mock-test-value))
                              (ginkgo-test (-> mock-test
                                               apisnoop/format-nil-errors
                                               apisnoop/format-eq-errors
