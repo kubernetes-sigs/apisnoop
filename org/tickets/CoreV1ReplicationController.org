@@ -1,0 +1,482 @@
+# -*- ii: apisnoop; -*-
+#+TITLE: Mock Ticket Template
+#+AUTHOR: ii team
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+#+OPTIONS: toc:nil tags:nil todo:nil
+#+EXPORT_SELECT_TAGS: export
+* TODO [0%] In-Cluster Setup                                    :neverexport:
+  :PROPERTIES:
+  :LOGGING:  nil
+  :END:
+** TODO Connect demo to right eye
+
+   #+begin_src tmate :session foo:hello :eval never-export
+     echo "What parts of Kubernetes do you depend on $USER?"
+   #+end_src
+** Tilt Up
+   #+begin_src tmate :session foo:hello :eval never-export
+     cd ~/apisnoop
+     tilt up --host 0.0.0.0
+   #+end_src
+** TODO Verify Pods Running
+   #+begin_src shell
+     kubectl get pods
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   NAME                                    READY   STATUS    RESTARTS   AGE
+   apisnoop-auditlogger-6c6865b55c-rqgk6   1/1     Running   3          5m5s
+   hasura-75bf5b5869-jhwhs                 1/1     Running   2          4m53s
+   kubemacs-0                              1/1     Running   0          18m
+   pgadmin-fbb7659d7-slrc8                 1/1     Running   0          5m5s
+   postgres-6d9dbb6fc8-6cczj               1/1     Running   0          5m5s
+   webapp-864985fb7f-r5c4g                 1/1     Running   0          4m14s
+   #+end_example
+
+** TODO Check it all worked
+
+   #+begin_src sql-mode :results replace
+     \d+
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                                                              List of relations
+    Schema |               Name               |       Type        |  Owner   |  Size   |                                    Description                                    
+   --------+----------------------------------+-------------------+----------+---------+-----------------------------------------------------------------------------------
+    public | api_operation                    | view              | apisnoop | 0 bytes | 
+    public | api_operation_material           | materialized view | apisnoop | 3056 kB | details on each operation_id as taken from the openAPI spec
+    public | api_operation_parameter_material | materialized view | apisnoop | 5008 kB | the parameters for each operation_id in open API spec
+    public | audit_event                      | view              | apisnoop | 0 bytes | a record for each audit event in an audit log
+    public | bucket_job_swagger               | table             | apisnoop | 3128 kB | metadata for audit events  and their respective swagger.json
+    public | endpoint_coverage                | view              | apisnoop | 0 bytes | the test hits and conformance test hits per operation_id & other useful details
+    public | endpoint_coverage_material       | materialized view | apisnoop | 144 kB  | 
+    public | endpoints_hit_by_new_test        | view              | apisnoop | 0 bytes | list endpoints hit during our live auditing alongside their current test coverage
+    public | projected_change_in_coverage     | view              | apisnoop | 0 bytes | overview of coverage stats if the e2e suite included your tests
+    public | raw_audit_event                  | table             | apisnoop | 357 MB  | a record for each audit event in an audit log
+    public | stable_endpoint_stats            | view              | apisnoop | 0 bytes | coverage stats for entire test run, looking only at its stable endpoints
+    public | tests                            | view              | apisnoop | 0 bytes | 
+    public | untested_stable_core_endpoints   | view              | apisnoop | 0 bytes | list stable core endpoints not hit by any tests, according to their test run
+    public | useragents                       | view              | apisnoop | 0 bytes | 
+   (14 rows)
+
+   #+end_SRC
+
+** TODO Check current coverage
+   #+NAME: stable endpoint stats
+   #+begin_src sql-mode
+     select * from stable_endpoint_stats where job != 'live';
+   #+end_src
+
+* Identify an untested feature Using APISnoop                        :export:
+
+According to this APIsnoop query, there are still some remaining ReplicationController endpoints which are untested.
+
+  #+NAME: untested_stable_core_endpoints
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    SELECT
+      operation_id,
+      -- k8s_action,
+      path,
+      description
+      FROM untested_stable_core_endpoints
+      where path not like '%volume%'
+      and operation_id ilike '%ReplicationController%'
+     ORDER BY operation_id desc
+     -- LIMIT 25
+           ;
+  #+end_src
+
+  #+RESULTS: untested_stable_core_endpoints
+  #+begin_SRC example
+                       operation_id                      |                                path                                 |                          description                           
+  -------------------------------------------------------+---------------------------------------------------------------------+----------------------------------------------------------------
+   replaceCoreV1NamespacedReplicationControllerStatus    | /api/v1/namespaces/{namespace}/replicationcontrollers/{name}/status | replace status of the specified ReplicationController
+   readCoreV1NamespacedReplicationControllerStatus       | /api/v1/namespaces/{namespace}/replicationcontrollers/{name}/status | read status of the specified ReplicationController
+   patchCoreV1NamespacedReplicationControllerStatus      | /api/v1/namespaces/{namespace}/replicationcontrollers/{name}/status | partially update status of the specified ReplicationController
+   patchCoreV1NamespacedReplicationControllerScale       | /api/v1/namespaces/{namespace}/replicationcontrollers/{name}/scale  | partially update scale of the specified ReplicationController
+   patchCoreV1NamespacedReplicationController            | /api/v1/namespaces/{namespace}/replicationcontrollers/{name}        | partially update the specified ReplicationController
+   listCoreV1ReplicationControllerForAllNamespaces       | /api/v1/replicationcontrollers                                      | list or watch objects of kind ReplicationController
+   deleteCoreV1CollectionNamespacedReplicationController | /api/v1/namespaces/{namespace}/replicationcontrollers               | delete collection of ReplicationController
+  (7 rows)
+
+  #+end_SRC
+
+* Use API Reference to Lightly Document the Feature                  :export:
+- [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+- [client-go - ReplicationController](https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/replicationcontroller.go)
+
+* The mock test                                                      :export:
+** Test outline
+1. Create a ReplicationController with a static label
+
+2. Patch the ReplicationController with a new Label and updated data
+
+3. Patch the ReplicationController's status
+
+4. Patch/Scale the ReplicationController's Replica count to 2 Replicas
+
+5. Get the ReplicationController
+
+6. Replace the ReplicationController's Status
+
+7. List all ReplicationControllers in all Namespaces
+   find the ReplicationControllers(1)
+   ensure that the ReplicationController is found and is patched
+
+8. Delete Namespaced ReplicationControllers(1) via a Collection with a LabelSelector
+
+** Example in Go
+   #+begin_src go
+     package main
+
+     import (
+       "encoding/json"
+       "fmt"
+       "flag"
+       "os"
+
+       v1 "k8s.io/api/core/v1"
+       metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+       "k8s.io/client-go/kubernetes"
+       "k8s.io/apimachinery/pkg/runtime/schema"
+       "k8s.io/apimachinery/pkg/types"
+       autoscalingv1 "k8s.io/api/autoscaling/v1"
+       "k8s.io/client-go/dynamic"
+       "k8s.io/client-go/tools/clientcmd"
+       //"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+     )
+
+     func main() {
+       // uses the current context in kubeconfig
+       kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+       flag.Parse()
+       config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+       if err != nil {
+         fmt.Println(err)
+       }
+       // make our work easier to find in the audit_event queries
+       config.UserAgent = "live-test-writing"
+       // creates the clientset
+       ClientSet, _ := kubernetes.NewForConfig(config)
+       DynamicClientSet, _ := dynamic.NewForConfig(config)
+       rcResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "replicationcontrollers"}
+
+       testRcName := "rc-test"
+       testRcNamespace := "default"
+       testRcInitialReplicaCount := int32(1)
+       testRcMaxReplicaCount := int32(2)
+
+       rcTest := v1.ReplicationController{
+           ObjectMeta: metav1.ObjectMeta{
+               Name: testRcName,
+               Labels: map[string]string{"test-rc-static": "true"},
+           },
+           Spec: v1.ReplicationControllerSpec{
+               Replicas: &testRcInitialReplicaCount,
+               Selector: map[string]string{"test-rc-static": "true"},
+               Template: &v1.PodTemplateSpec{
+                   ObjectMeta: metav1.ObjectMeta{
+                       Name: testRcName,
+                       Labels: map[string]string{"test-rc-static": "true"},
+                   },
+                   Spec: v1.PodSpec{
+                       Containers: []v1.Container{{
+                           Name: testRcName,
+                           Image: "nginx",
+                       }},
+                   },
+               },
+           },
+       }
+
+       // Create a ReplicationController
+       _, err = ClientSet.CoreV1().ReplicationControllers(testRcNamespace).Create(&rcTest)
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       fmt.Println("[status] created ReplicationController")
+
+       // setup a watch for the RC
+       rcWatch, err := ClientSet.CoreV1().ReplicationControllers(testRcNamespace).Watch(metav1.ListOptions{LabelSelector: "test-rc-static=true"})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       rcWatchChan := rcWatch.ResultChan()
+
+       fmt.Println("[status] watching for all Replicas to be ready")
+       for event := range rcWatchChan {
+           rc, ok := event.Object.(*v1.ReplicationController)
+           if ok != true {
+               fmt.Println("Unable to fix type")
+               return
+           }
+           if rc.Status.Replicas == testRcInitialReplicaCount && rc.Status.ReadyReplicas == testRcInitialReplicaCount {
+               break
+           }
+       }
+
+       rcLabelPatchPayload, err := json.Marshal(v1.ReplicationController{
+           ObjectMeta: metav1.ObjectMeta{
+               Labels: map[string]string{"test-rc": "patched"},
+           },
+       })
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       // Patch the ReplicationController
+       _, err = ClientSet.CoreV1().ReplicationControllers(testRcNamespace).Patch(testRcName, types.StrategicMergePatchType, []byte(rcLabelPatchPayload))
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       fmt.Println("[status] patched ReplicationController")
+
+       rcStatusPatchPayload, err := json.Marshal(map[string]interface{}{
+         "status": map[string]interface{}{
+           "readyReplicas": 0,
+           "availableReplicas": 0,
+         },
+       })
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+
+       // Patch the ReplicationController's status
+       rcStatus, err := ClientSet.CoreV1().ReplicationControllers(testRcNamespace).Patch(testRcName, types.StrategicMergePatchType, []byte(rcStatusPatchPayload), "status")
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       if rcStatus.Status.ReadyReplicas != 0 {
+           fmt.Println("[error] failed to patch ReplicationController status; ReadyReplicas != 0")
+           return
+       }
+       fmt.Println("[status] patched status of ReplicationController")
+
+       rcStatusUnstructured, err := DynamicClientSet.Resource(rcResource).Namespace(testRcNamespace).Get(testRcName, metav1.GetOptions{}, "status")
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       rcStatusUjson, _ := json.Marshal(rcStatusUnstructured)
+	     json.Unmarshal(rcStatusUjson, &rcStatus)
+       if rcStatus.Status.Replicas != testRcInitialReplicaCount {
+          fmt.Println("[error] Replica count does not match initial Replica count")
+       }
+       fmt.Println("[status] fetched ReplicationController status")
+
+       rcScalePatchPayload, err := json.Marshal(autoscalingv1.Scale{
+           Spec: autoscalingv1.ScaleSpec{
+               Replicas: 2,
+           },
+       })
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+
+       // Patch the ReplicationController's scale
+       rcScale, err := ClientSet.CoreV1().ReplicationControllers(testRcNamespace).Patch(testRcName, types.StrategicMergePatchType, []byte(rcScalePatchPayload), "scale")
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       rcScaleReplicasExpect := int32(2)
+       if rcScale.Status.Replicas == rcScaleReplicasExpect {
+           fmt.Println("[error] failed to patch ReplicationController scale; ReadyReplicas != 2")
+           return
+       }
+       fmt.Println("[status] patched scale of ReplicationController")
+
+       fmt.Println("[status] watching for all Replicas to be ready")
+       for event := range rcWatchChan {
+           rc, ok := event.Object.(*v1.ReplicationController)
+           if ok != true {
+               fmt.Println("Unable to fix type")
+               return
+           }
+           if rc.Status.Replicas == testRcMaxReplicaCount && rc.Status.ReadyReplicas == testRcMaxReplicaCount {
+               break
+           }
+       }
+
+       // Get the ReplicationController
+       rc, err := ClientSet.CoreV1().ReplicationControllers(testRcNamespace).Get(testRcName, metav1.GetOptions{})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       if rc.ObjectMeta.Labels["test-rc"] != "patched" {
+           fmt.Println(err)
+           return
+       }
+       fmt.Println("[status] fetched ReplicationController")
+
+       rcStatusUpdatePayload := rc
+       rcStatusUpdatePayload.Status.AvailableReplicas = 1
+       rcStatusUpdatePayload.Status.ReadyReplicas = 1
+
+       // Replace the ReplicationController's status	
+       rcStatus, err = ClientSet.CoreV1().ReplicationControllers(testRcNamespace).UpdateStatus(rcStatusUpdatePayload)
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       if rcStatus.Status.ReadyReplicas != 1 {
+           fmt.Println("[error] failed to patch ReplicationController status; ReadyReplicas != 1")
+           return
+       }
+       fmt.Println("[status] updated ReplicationController status")
+
+       fmt.Println("[status] watching for all Replicas to be ready")
+       for event := range rcWatchChan {
+           rc, ok := event.Object.(*v1.ReplicationController)
+           if ok != true {
+               fmt.Println("Unable to fix type")
+               return
+           }
+           if rc.Status.Replicas == testRcMaxReplicaCount && rc.Status.ReadyReplicas == testRcMaxReplicaCount {
+               fmt.Println("[status] all Replicas are ready")
+               break
+           }
+       }
+
+       rcs, err := ClientSet.CoreV1().ReplicationControllers("").List(metav1.ListOptions{LabelSelector: "test-rc-static=true"})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       if len(rcs.Items) == 0 {
+           fmt.Println("[error] no ReplicationController were found")
+       }
+       foundRc := false
+       for _, rcItem := range rcs.Items {
+           if rcItem.ObjectMeta.Name == testRcName &&
+              rcItem.ObjectMeta.Namespace == testRcNamespace &&
+              rcItem.ObjectMeta.Labels["test-rc-static"] == "true" &&
+              rcItem.ObjectMeta.Labels["test-rc"] == "patched" && 
+              rcItem.Status.Replicas == testRcMaxReplicaCount &&
+              rcItem.Status.ReadyReplicas == testRcMaxReplicaCount {
+              foundRc = true
+           }
+       }
+       if foundRc == false {
+           fmt.Println("[error] unable to find ReplicationController")
+           return
+       }
+       fmt.Println("[status] retrieved all ReplicationControllers selecting with LabelSelector")
+
+       // Delete ReplicationController
+       err = ClientSet.CoreV1().ReplicationControllers(testRcNamespace).DeleteCollection(&metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: "test-rc-static=true"})
+       if err != nil {
+         fmt.Println(err)
+         return
+       }
+       fmt.Println("[status] deleted ReplicationController")
+
+       fmt.Println("[status] complete")
+
+     }
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
+   [status] created ReplicationController
+   [status] watching for all Replicas to be ready
+   [status] patched ReplicationController
+   [status] patched status of ReplicationController
+   [status] fetched ReplicationController status
+   [status] patched scale of ReplicationController
+   [status] watching for all Replicas to be ready
+   [status] fetched ReplicationController
+   [status] updated ReplicationController status
+   [status] watching for all Replicas to be ready
+   [status] all Replicas are ready
+   [status] retrieved all ReplicationControllers selecting with LabelSelector
+   [status] deleted ReplicationController
+   [status] complete
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
+   #+end_src
+
+* Verify Increase it Coverage with APISnoop                          :export:
+Discover useragents:
+#+begin_src sql-mode :eval never-export :exports both :session none
+  select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+       useragent     
+  -------------------
+   live-test-writing
+  (1 row)
+
+#+end_SRC
+
+See all endpoints hit from this test
+
+#+begin_src sql-mode :exports both :session none
+select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+     useragent     |                     operation_id                      | hit_by_ete | hit_by_new_test 
+-------------------+-------------------------------------------------------+------------+-----------------
+ live-test-writing | createCoreV1NamespacedReplicationController           | t          |               2
+ live-test-writing | deleteCoreV1CollectionNamespacedReplicationController | f          |               2
+ live-test-writing | listCoreV1NamespacedReplicationController             | t          |               1
+ live-test-writing | listCoreV1ReplicationControllerForAllNamespaces       | f          |               1
+ live-test-writing | patchCoreV1NamespacedReplicationController            | f          |               2
+ live-test-writing | patchCoreV1NamespacedReplicationControllerScale       | f          |               2
+ live-test-writing | patchCoreV1NamespacedReplicationControllerStatus      | f          |               2
+ live-test-writing | readCoreV1NamespacedReplicationController             | t          |               1
+ live-test-writing | readCoreV1NamespacedReplicationControllerStatus       | f          |               1
+ live-test-writing | replaceCoreV1NamespacedReplicationControllerStatus    | f          |               2
+(10 rows)
+
+#+end_SRC
+
+Display test coverage change
+
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select * from projected_change_in_coverage;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+  ---------------+-----------------+--------------+--------------+------------------
+   test_coverage |             438 |          190 |          197 |                7
+  (1 row)
+
+  #+end_SRC
+
+* Final notes :export:
+If a test with these calls gets merged, **test coverage will go up by 7 points**
+
+This test is also created with the goal of conformance promotion.
+
+-----  
+/sig testing  
+
+/sig architecture  
+
+/area conformance  
+
+* Open Tasks
+  Set any open tasks here, using org-todo
+** DONE Live Your Best Life
+* Footnotes                                                     :neverexport:
+  :PROPERTIES:
+  :CUSTOM_ID: footnotes
+  :END:
