@@ -17,11 +17,12 @@ Watch events are not collected and checked at the end of the test.
 
 In order to solve the problem, we must collect all watch events as they come in and perform a check at the end of the test to ensure that the order is correct and they contain no errors.
 
-#+begin_src go :wrap "example"
+#+begin_src go :wrap "example" :tangle /home/ii/watchEventsTooling.go
   package main
 
   import (
     "fmt"
+    "reflect"
   )
 
   func main() {
@@ -44,7 +45,7 @@ In order to solve the problem, we must collect all watch events as they come in 
       },
     }
     for expectedExampleInt, expectedWatchEvents := range expectedWatchEventsAll {
-	    fmt.Println("Running example", expectedExampleInt)
+      fmt.Println("Running example", expectedExampleInt)
       allowedAttempts := 3
       failure := VerifyWatchEventOrder(allowedAttempts, expectedWatchEvents, func() []string {
         var myWatchEvent string
@@ -63,14 +64,14 @@ In order to solve the problem, we must collect all watch events as they come in 
 
         return watchEvent
       })
-      if failure != "" {
+      if failure != nil {
         fmt.Println(failure, "watch events occured in the wrong or incorrect order")
       }
       fmt.Println("Check complete")
     }
   }
 
-  func VerifyWatchEventOrder(retries int, expectedWatchEvents []string, scenario func() []string) (failure string) {
+  func VerifyWatchEventOrder(retries int, expectedWatchEvents []string, scenario func() []string) (failure error) {
     var attemptContainsFailure bool
   attempts:
     for try := 1; try <= retries; try++ {
@@ -78,19 +79,38 @@ In order to solve the problem, we must collect all watch events as they come in 
         return failure
       }
       actualWatchEvents := scenario()
-      if len(expectedWatchEvents) != len(actualWatchEvents) {
-        failure = "expected watch events count does not match the count of actual watch events"
+      if len(expectedWatchEvents) < len(actualWatchEvents) {
+        failure = fmt.Errorf("expected watch events count is not equal to or greater than the count of actual watch events\n")
         attemptContainsFailure = true
         continue
       }
-      for watchEventInt, watchEvent := range actualWatchEvents {
-        if expectedWatchEvents[watchEventInt] != watchEvent {
-          failure = fmt.Sprintf("(index %v) %v not found, found %v instead. %v/%v attempts", watchEventInt, expectedWatchEvents[watchEventInt], watchEvent, try, retries)
-          attemptContainsFailure = true
+      var validWatchEvents []string
+    // expectedWatchEventsLoop:
+      for watchEventIndex, watchEvent := range expectedWatchEvents {
+      actualWatchEventsLoop:
+        for _, watchEventActual := range actualWatchEvents {
+          var validEventLast string
+          if len(validWatchEvents) == 0 {
+            validEventLast = ""
+          } else {
+            validEventLast = validWatchEvents[len(validWatchEvents) - 1]
+          }
+          fmt.Println(watchEvent == watchEventActual, watchEventActual != validEventLast, watchEventActual, watchEvent, validEventLast)
+
+          if watchEvent == watchEventActual || expectedWatchEvents[watchEventIndex - 1] == watchEventActual { //&& watchEventActual != validEventLast {
+            validWatchEvents = append(validWatchEvents, watchEvent)
+            break actualWatchEventsLoop
+          }
         }
       }
+      fmt.Println("try", try, "- validWatchEvents:", validWatchEvents)
+      if reflect.DeepEqual(validWatchEvents, expectedWatchEvents) == false {
+        attemptContainsFailure = true
+        failure = fmt.Errorf("watch events are not valid; subject to incorrect: order or event count\n")
+        continue attempts
+      }
       if attemptContainsFailure == false {
-        failure = ""
+        failure = nil
         break attempts
       }
     }
@@ -104,23 +124,31 @@ Running example 0
 An event takes place (1/3)
 An event takes place (2/3)
 An event takes place (3/3)
-An event takes place (1/3)
-An event takes place (2/3)
-An event takes place (3/3)
-(index 1) ADDED not found, found MODIFIED instead. 2/3 attempts watch events occured in the wrong or incorrect order
+true true ADDED ADDED 
+true false ADDED ADDED ADDED
+false false ADDED DELETED ADDED
+try 1 - validWatchEvents: [ADDED ADDED DELETED]
 Check complete
 Running example 1
 An event takes place (1/3)
 An event takes place (2/3)
 An event takes place (3/3)
-An event takes place (1/3)
-An event takes place (2/3)
-An event takes place (3/3)
-expected watch events count does not match the count of actual watch events watch events occured in the wrong or incorrect order
+true true ADDED ADDED 
+false false ADDED MODIFIED ADDED
+false true ADDED MODIFIED MODIFIED
+true false MODIFIED MODIFIED MODIFIED
+false true ADDED DELETED MODIFIED
+false false MODIFIED DELETED MODIFIED
+try 1 - validWatchEvents: [ADDED MODIFIED MODIFIED DELETED]
 Check complete
 Running example 2
 An event takes place (1/3)
 An event takes place (2/3)
 An event takes place (3/3)
+true true ADDED ADDED 
+false false ADDED MODIFIED ADDED
+false true ADDED DELETED MODIFIED
+false false MODIFIED DELETED MODIFIED
+try 1 - validWatchEvents: [ADDED MODIFIED DELETED]
 Check complete
 #+end_example
