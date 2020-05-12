@@ -20,11 +20,10 @@ The prologue above can note this change.
   - [[file:~/apisnoop/apps/webapp/index.org::*Graph][Graph]] uses the coverage data store
   - [[file:~/apisnoop/apps/webapp/index.org::*CoverageOverTime][Coverage is derived from stableEndpointStats query]]
   - [[file:~/apisnoop/apps/webapp/index.org::*Stable Endpoint Stats][Stable Endpoint Stats Query pulls from sql view stable_endpoint_stats]] 
-** Understand how stablle_endpoint_stats gathers data
-   We then need to see how stable_endpoint_stats gets its data, which is tracked in our hasura org file:  [[file:~/apisnoop/apps/hasura/index.org::*520: stable endpoint_stats_view][520: stable endpoint_stats_view]] 
-   
-   This view pulls from coverage and does a set of counts on endpoints with conf_hit t and test_hit t.  It can do these counts quickly because endopint_coverage is materalized.
-   We can add an additional count here for eligible_conf_hits (meaning eligibel endpoints hit by a conformance test).  This would filter out any of the endpoints we deemed ineligible.
+** Understand how stable_endpoint_stats gathers data
+   Our webapp draws from the sql view `stable_endpoint_stats`, which is defined in our hasura org file:  [[file:~/apisnoop/apps/hasura/index.org::*520: stable endpoint_stats_view][520: stable endpoint_stats_view]] 
+   This view does a set of counts on endpoints with conf_hit and test_hits.  It can do these counts quickly because its source, endpoint_coverage, is materalized.
+   the percentage increase is hits / total endpoints.  our modified percentage would be hits / total endpoints less ineligible endpoints.
    So we will want to build up a new stable_endpoint_stats that includes this filter
 ** Understand query for catching ineligible endpoints
    Ineligible endpoints would be one whose quality prohibits them from being conformance, as outlined in the  [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/writing-good-conformance-tests.md][writing good conformance tests]] guidelines.
@@ -80,22 +79,12 @@ We can combine these together into one 'ineligible endpoiunts' view
   #+end_SRC
   
   This gives us a nice list of endpoitns we can use as a subquery to our stable_endpoint_stats
-
 ** Adjust stable_endpoint_stats to include eligible_conf_hits filter
    I've brought in the initial view, which we can then iterate over.  I think this may be as simple as adding an inegible endpoints "with clause", then using that to create a column for "total eligible endpoints" and basing our eligible conf percentage on that lowered set of endpoints.
 
    
    If it works, then total_eligible_endpoints should be[[*Understand query for catching ineligible endpoints][ 26 points]] less than total endpoints.
    
-   #+begin_src sql-mode
-  drop view ztable_endpoint_stats;
-   #+end_src
-
-   #+RESULTS:
-   #+begin_SRC example
-   DROP VIEW
-   #+end_SRC
-
     #+NAME: Endpoint Stats View
     #+BEGIN_SRC sql-mode
       CREATE OR REPLACE VIEW "public"."ztable_endpoint_stats" AS
@@ -161,9 +150,13 @@ We can combine these together into one 'ineligible endpoiunts' view
 ** Update hasura migrations with new view.
    this will just move replace the stable_endpoint_stats query adn then commit index.org and the new migration file
 ** Update webapp query to use new eligible_conf_hits filter
+   this means simply adding our new columns to the query string
 ** Update graph component to have eligible_conf_hits line
+   I elected to remove the conf test line, showiong just the colored area, and to move the data points up to our eligible coverage.  This reduces the noise in the graph a bit.
 ** Add eligible conf hits to legend
+   I went verbose with the legend, but I think it assists in explaining the difference.  It is confusing a bit that 'overall conformance coverage' is lower than 'eligible conformance coverage' without knowing we are visualizing percentages not totals.
 ** Explain eligible conf hits in prologue
+   Same as above.
 * Links and references
 - [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/writing-good-conformance-tests.md][Writing Good Conformance Tests for Kubernetes]]
 - [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/writing-good-e2e-tests.md][Writing good e2e tests for Kubernetes]]
