@@ -39,4 +39,5 @@
 </p>
 
 <p>The current goal, as reflected in the y-axis,  is to have at least 50% of kubernetes endpoints hit by tests.</p>
+<p>We make a distinction in conformance coverage for eligible endpoints, where eligible is defined as any endpoint that wouldn't break the guidelines in <a href='https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/writing-good-conformance-tests.md' target='_blank' rel='noreferrer noopener'>Writing Good Conformance Tests</a>.</p>
 <strong>Click on any data point to see that release's coverage in depth</strong>
