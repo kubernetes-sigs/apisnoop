@@ -1,0 +1,209 @@
+# -*- ii: apisnoop; -*-
+#+TITLE:  335: +16 endpoints on coverage over time graph
+#+AUTHOR: Zach Mandeville
+
+* Ticket
+  #+begin_quote
+  During the last conformance meeting we confirmed 16 endpoints that are not eligible for conformance testing.
+
+    https://github.com/cncf/apisnoop/blob/master/tickets/k8s/EndpointsToNotTest.org
+
+The graph can move the existing stable/conformance line +16 points, and the related percentages.
+
+The existing line can be made a slightly different color, does not need the calculations.
+
+The prologue above can note this change.
+  #+end_quote
+* Process
+** Understand data flow for current coveage over time graph
+  Graph will pull from data store which pulls from query.  You can follow this path in our webapp.
+  - [[file:~/apisnoop/apps/webapp/index.org::*Graph][Graph]] uses the coverage data store
+  - [[file:~/apisnoop/apps/webapp/index.org::*CoverageOverTime][Coverage is derived from stableEndpointStats query]]
+  - [[file:~/apisnoop/apps/webapp/index.org::*Stable Endpoint Stats][Stable Endpoint Stats Query pulls from sql view stable_endpoint_stats]] 
+** Understand how stablle_endpoint_stats gathers data
+   We then need to see how stable_endpoint_stats gets its data, which is tracked in our hasura org file:  [[file:~/apisnoop/apps/hasura/index.org::*520: stable endpoint_stats_view][520: stable endpoint_stats_view]] 
+   
+   This view pulls from coverage and does a set of counts on endpoints with conf_hit t and test_hit t.  It can do these counts quickly because endopint_coverage is materalized.
+   We can add an additional count here for eligible_conf_hits (meaning eligibel endpoints hit by a conformance test).  This would filter out any of the endpoints we deemed ineligible.
+   So we will want to build up a new stable_endpoint_stats that includes this filter
+** Understand query for catching ineligible endpoints
+   Ineligible endpoints would be one whose quality prohibits them from being conformance, as outlined in the  [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/writing-good-conformance-tests.md][writing good conformance tests]] guidelines.
+   Caleb isolated endpoints that would be ineligible due to:
+   - vendoring (kind like volume)
+   - possible inconsistencies between clusters (kind like component status)
+   - are node endpoints whose actions are create or delete (as registration is handled by kubelet/node)
+
+We can combine these together into one 'ineligible endpoiunts' view
+  #+name: ineligible endpoints
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct
+      operation_id
+      from untested_stable_endpoints
+      where path like '%volume%'
+      OR kind like 'ComponentStatus'
+      OR (kind like 'Node' and k8s_action = ANY('{"delete","post"}'))
+           ;
+  #+end_src
+
+  #+RESULTS: ineligible endpoints
+  #+begin_SRC example
+                       operation_id                      
+  -------------------------------------------------------
+   createCoreV1Node
+   createStorageV1VolumeAttachment
+   deleteCoreV1CollectionNamespacedPersistentVolumeClaim
+   deleteCoreV1CollectionPersistentVolume
+   deleteCoreV1Node
+   deleteStorageV1CollectionVolumeAttachment
+   deleteStorageV1VolumeAttachment
+   listCoreV1ComponentStatus
+   listCoreV1PersistentVolumeClaimForAllNamespaces
+   listStorageV1VolumeAttachment
+   patchCoreV1NamespacedPersistentVolumeClaim
+   patchCoreV1NamespacedPersistentVolumeClaimStatus
+   patchCoreV1PersistentVolume
+   patchCoreV1PersistentVolumeStatus
+   patchStorageV1VolumeAttachment
+   patchStorageV1VolumeAttachmentStatus
+   readCoreV1ComponentStatus
+   readCoreV1NamespacedPersistentVolumeClaimStatus
+   readCoreV1PersistentVolumeStatus
+   readStorageV1VolumeAttachment
+   readStorageV1VolumeAttachmentStatus
+   replaceCoreV1NamespacedPersistentVolumeClaimStatus
+   replaceCoreV1PersistentVolume
+   replaceCoreV1PersistentVolumeStatus
+   replaceStorageV1VolumeAttachment
+   replaceStorageV1VolumeAttachmentStatus
+  (26 rows)
+
+  #+end_SRC
+  
+  This gives us a nice list of endpoitns we can use as a subquery to our stable_endpoint_stats
+
+** Adjust stable_endpoint_stats to include eligible_conf_hits filter
+   I've brought in the initial view, which we can then iterate over.  I think this may be as simple as adding an inegible endpoints "with clause", then using that to create a column for "total eligible endpoints" and basing our eligible conf percentage on that lowered set of endpoints.
+
+   
+   If it works, then total_eligible_endpoints should be[[*Understand query for catching ineligible endpoints][ 26 points]] less than total endpoints.
+   
+   #+begin_src sql-mode
+  drop view ztable_endpoint_stats;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   DROP VIEW
+   #+end_SRC
+
+    #+NAME: Endpoint Stats View
+    #+BEGIN_SRC sql-mode
+      CREATE OR REPLACE VIEW "public"."ztable_endpoint_stats" AS
+        WITH ineligible_endpoints as (
+          SELECT DISTINCT
+            operation_id
+            FROM untested_stable_endpoints
+           where path LIKE '%volume%'
+              OR kind LIKE 'ComponentStatus'
+              OR (kind LIKE 'Node' AND k8s_action = ANY('{"delete","post"}'))
+          ), stats as (
+      SELECT
+        ec.bucket,
+        ec.job,
+        trim(trailing '-' from substring(bjs.job_version from 2 for 7)) as release, -- from v1.19.0-alphaxxx to 1.19.0
+        ec.date,
+        COUNT(1) as total_endpoints,
+        COUNT(1) filter(WHERE operation_id NOT IN(SELECT * from ineligible_endpoints)) as total_eligible_endpoints,
+        COUNT(1) filter(WHERE tested is true) as test_hits,
+        COUNT(1) filter(WHERE conf_tested is true) as conf_hits,
+        ROUND(((count(*) filter(WHERE tested is true)) * 100 )::numeric / count(*), 2) as percent_tested,
+        ROUND(((count(*) filter(WHERE conf_tested is true)) * 100 )::numeric / count(*), 2) as percent_conf_tested,
+        ROUND(((count(*) filter(WHERE conf_tested is true)) * 100 )::numeric
+              / (count(*) filter(WHERE operation_id NOT IN (select * from ineligible_endpoints)))
+              , 2)
+          as percent_eligible_conf_tested
+        FROM endpoint_coverage ec
+               JOIN bucket_job_swagger bjs on (bjs.bucket = ec.bucket AND bjs.job = ec.job)
+          WHERE ec.level = 'stable'
+       GROUP BY ec.date, ec.job, ec.bucket, bjs.job_version
+        )
+        SELECT
+          ,*,
+          test_hits - lag(test_hits) over (order by date) as test_hits_increase,
+          conf_hits - lag(conf_hits) over (order by date) as conf_hits_increase,
+          percent_tested - lag(percent_tested) over (order by date) as percent_tested_increase,
+          percent_conf_tested - lag(percent_conf_tested) over (order by date) as percent_conf_tested_increase,
+          percent_eligible_conf_tested - lag(percent_eligible_conf_tested) over (order by date) as percent_eligible_conf_tested_increase
+          FROM
+              stats
+              ;
+    #+END_SRC
+
+    #+begin_src sql-mode
+    select release, percent_conf_tested, percent_eligible_conf_tested, total_endpoints, total_eligible_endpoints from ztable_endpoint_stats;
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+     release | percent_conf_tested | percent_eligible_conf_tested | total_endpoints | total_eligible_endpoints 
+    ---------+---------------------+------------------------------+-----------------+--------------------------
+     1.15.13 |               21.39 |                        22.87 |             402 |                      376
+     1.16.10 |               27.44 |                        29.21 |             430 |                      404
+     1.17.6  |               29.91 |                        31.80 |             438 |                      412
+     1.18.1  |               31.46 |                        33.41 |             445 |                      419
+     1.19.0  |               32.13 |                        34.13 |             445 |                      419
+    (5 rows)
+
+    #+end_SRC
+    
+    
+    This gives us the numbers we are looking for.  The query might be a bit verbbose and a good future exercise will be to look into window functions or whether its possible to do these calculated columns in a cleaner way.
+** Update hasura migrations with new view.
+   this will just move replace the stable_endpoint_stats query adn then commit index.org and the new migration file
+** Update webapp query to use new eligible_conf_hits filter
+** Update graph component to have eligible_conf_hits line
+** Add eligible conf hits to legend
+** Explain eligible conf hits in prologue
+* Links and references
+- [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/writing-good-conformance-tests.md][Writing Good Conformance Tests for Kubernetes]]
+- [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/writing-good-e2e-tests.md][Writing good e2e tests for Kubernetes]]
+ 
+** Change stable_endpoint_stats view to include eligible_conf_hits
+    I've copied over the initial stable_endpoint_stats to modify and iterate over.
+    I could just do a "conf_hits + 16" but that assumes no new endpoints would be added to our ineligible 
+    #+NAME: Endpoint Stats View
+    #+BEGIN_SRC sql-mode
+      CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS
+        WITH stats as (
+      SELECT
+        ec.bucket,
+        ec.job,
+        trim(trailing '-' from substring(bjs.job_version from 2 for 7)) as release, -- from v1.19.0-alphaxxx to 1.19.0
+        ec.date,
+        COUNT(1) as total_endpoints,
+        COUNT(1) filter(WHERE tested is true) as test_hits,
+        COUNT(1) filter(WHERE conf_tested is true) as conf_hits,
+        ROUND(((count(*) filter(WHERE tested is true)) * 100 )::numeric / count(*), 2) as percent_tested,
+        ROUND(((count(*) filter(WHERE conf_tested is true)) * 100 )::numeric / count(*), 2) as percent_conf_tested
+        FROM endpoint_coverage ec
+               JOIN bucket_job_swagger bjs on (bjs.bucket = ec.bucket AND bjs.job = ec.job)
+          WHERE ec.level = 'stable'
+       GROUP BY ec.date, ec.job, ec.bucket, bjs.job_version
+        )
+        SELECT
+          *,
+          test_hits - lag(test_hits) over (order by date) as test_hits_increase,
+          conf_hits - lag(conf_hits) over (order by date) as conf_hits_increase,
+          percent_tested - lag(percent_tested) over (order by date) as percent_tested_increase,
+          percent_conf_tested - lag(percent_conf_tested) over (order by date) as percent_conf_tested_increase
+          FROM
+              stats
+              ;
+    #+END_SRC
+   
+** Update webapp query to include eligible conf hits and eligible_conf_hits_increase
+** Adjust graph component to include new line and path
+** Move data points for conformance coverage to this new line
+** Add path to legend
+** Add explainer to prologue
+* Conclusion | Next Steps
