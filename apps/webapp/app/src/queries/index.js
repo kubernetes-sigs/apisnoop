@@ -48,12 +48,15 @@ query STABLE_ENDPOINT_STATS {
     job
     percent_conf_tested
     percent_conf_tested_increase
+    percent_eligible_conf_tested
+    percent_eligible_conf_tested_increase
     percent_tested
     percent_tested_increase
     release
     test_hits
     test_hits_increase
     total_endpoints
+    total_eligible_endpoints
   }
 }
 `;

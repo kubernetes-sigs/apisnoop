@@ -54,6 +54,9 @@
  $: confPath = `M${$coverage.map(c => `${xScale(c.timestamp)},${yScale(c.percent_conf_tested)}`).join('L')}`;
  $: confArea = `${confPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
 
+ $: eligibleConfPath = `M${$coverage.map(c => `${xScale(c.timestamp)},${yScale(c.percent_eligible_conf_tested)}`).join('L')}`;
+ $: eligibleConfArea = `${eligibleConfPath}L${xScale(maxX)}, ${yScale(0)}L${xScale(minX)},${yScale(0)}Z`;
+
  $: releases = uniqBy($coverage
    .map(c => ({
      release: releasePrecision(c.release, 2),
@@ -70,7 +73,7 @@
       {#each yTicks as tick}
       <g class="tick tick-{tick}" transform="translate(0, {yScale(tick) - padding.bottom})">
         <line x2="100%"></line>
-        <text y="-4">{tick} {tick === 100 ? ' percent' : ''}</text>
+        <text y="-4">{tick} {tick === 50 ? ' percent' : ''}</text>
       </g>
       {/each}
     </g>
@@ -93,7 +96,8 @@
     </g>
     <path class='path-area' d={testedArea}></path>
     <path class='path-line' d={testedPath}></path>
-    <path class='path-line conf' d={confPath}></path>
+    <path class='path-line conf eligible' d={eligibleConfPath}></path>
+    <path class='path-area conf eligible' d={eligibleConfArea}></path>
     <path class='path-area conf' d={confArea}></path>
     {#each $coverage as point, index}
     {#if index !== 0}
@@ -134,7 +138,7 @@
     {#if index !== 0}
     <text
       x={xScale(point.timestamp)}
-      y={yScale(point.percent_conf_tested) - 20}
+      y={yScale(point.percent_eligible_conf_tested) - 20}
       text-anchor="middle"
       class="change {point.conf_hits_increase >= 0 ? 'increase' : 'decrease'}"
     >
@@ -145,18 +149,18 @@
     </text>
     <text
       x={xScale(point.timestamp)}
-      y={yScale(point.percent_conf_tested) - 6}
+      y={yScale(point.percent_eligible_conf_tested) - 6}
       text-anchor="middle"
-      class="change {point.percent_conf_tested_increase >= 0 ? 'increase' : 'decrease'}"
+      class="change {point.percent_eligible_conf_tested_increase >= 0 ? 'increase' : 'decrease'}"
     >
       {point.percent_conf_tested_increase > 0
-      ? `+${point.percent_conf_tested_increase}%`
-      : `${point.percent_conf_tested_increase}%`}
+      ? `+${point.percent_eligible_conf_tested_increase}%`
+      : `${point.percent_eligible_conf_tested_increase}%`}
     </text>
     {/if}
     <circle
       cx='{xScale(point.timestamp)}'
-      cy='{yScale(point.percent_conf_tested)}'
+      cy='{yScale(point.percent_eligible_conf_tested)}'
       r='5'
       class='point conf'
       on:mouseover={() => {
@@ -177,14 +181,15 @@
       <tspan x="0" dy=".6em">{dayjs(activeJob.date).format('DD MMM, YY')}</tspan>
       <tspan x= "0" dy="1.2em">{activeJob.total_endpoints} stable endpoints</tspan>
       <tspan x="0" dy="1.2em">{activeJob.percent_tested}% tested</tspan>
-      <tspan x="0" dy="1.2em">{activeJob.percent_conf_tested}% conformance tested</tspan>
+      <tspan x="0" dy="1.2em">{activeJob.percent_eligible_conf_tested}% eligible endpoints conformance tested</tspan>
     </text>
     {/if}
   </svg>
 </div>
 <div id="legend">
-  <p><span class='tests'></span> Coverage by tests</p>
-  <p><span class='conformance'></span>Coverage by conformance tests</p>
+  <p><span class='tests'></span>% of all stable endpoints covered by tests</p>
+  <p><span class='conformance eligible'></span>% of eligible stable endpoints covered by conformance tests</p>
+  <p><span class='conformance'></span>% of all stable endpoints covered by conformance tests</p>
 </div>
 
 <style>
@@ -241,12 +246,19 @@
    stroke: rgb( 0, 100, 100);
  }
 
+ .path-line.conf.eligible {
+   stroke: rgb( 0, 100, 130);
+ }
+
  .path-area {
    fill: rgba(234, 226, 108, 0.2);
  }
 
  .path-area.conf {
    fill: rgba(0, 100, 100, 0.2);
+ }
+ .path-area.conf.eligible {
+   fill: rgba(0, 100, 130, 0.2);
  }
 
  circle.point {
@@ -261,7 +273,7 @@
  }
 
  #legend {
-   width: 25%;
+   width: 45%;
    border: 1px solid black;
    padding: 0.25rem;
    font-size: 0.75rem;
@@ -281,6 +293,9 @@
  }
  #legend span.tests {
    background: rgba(234, 226, 108, 0.5);
+ }
+ #legend span.conformance.eligible {
+   background: rgba(0, 100, 130, 0.3);
  }
 
  #legend span.conformance {
