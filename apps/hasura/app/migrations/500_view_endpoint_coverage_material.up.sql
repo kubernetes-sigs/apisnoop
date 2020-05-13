@@ -6,9 +6,11 @@ CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
    ao.operation_id as operation_id,
    ao.level,
    ao.category,
+   ao.k8s_action as k8s_action,
    ao.k8s_group as group,
    ao.k8s_kind as kind,
    ao.k8s_version as version,
+   ao.path as path,
    (count (*) FILTER (where coverage.operation_id = ao.operation_id AND test_hit is true) > 0) as tested,
    (count (*) FILTER (where coverage.operation_id = ao.operation_id AND conf_test_hit is true) > 0) as conf_tested,
    (count (*) FILTER (where coverage.operation_id = ao.operation_id) > 0) as hit
@@ -25,6 +27,6 @@ CREATE MATERIALIZED VIEW "public"."endpoint_coverage_material" AS
                   audit_event
             ) as coverage ON (coverage.bucket = ao.bucket AND coverage.job = ao.job)
      WHERE ao.deprecated IS False
-   GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version;
+   GROUP BY ao.operation_id, ao.bucket, ao.job, date, ao.level, ao.category, ao.k8s_group, ao.k8s_kind, ao.k8s_version, ao.path, ao.k8s_action;
 
 CREATE INDEX idx_endpoint_coverage_material_job ON endpoint_coverage_material (job);

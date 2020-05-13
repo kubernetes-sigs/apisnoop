@@ -2,7 +2,7 @@ CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS
   WITH ineligible_endpoints as (
     SELECT DISTINCT
       operation_id
-      FROM untested_stable_endpoints
+      FROM endpoint_coverage 
      where path LIKE '%volume%'
         OR kind LIKE 'ComponentStatus'
         OR (kind LIKE 'Node' AND k8s_action = ANY('{"delete","post"}'))
