@@ -1,0 +1,288 @@
+#+TITLE: Ticket 338: Compare coverage before and after kk pr #90615
+
+* Ticket
+ [[https://github.com/cncf/apisnoop/issues/338][ticket link]] 
+  #+begin_quote
+In kubernetes/kubernetes PR 90615, two tests were dropped from the e2e suite since they utilized the kubelet api directly, which goes against the conformance test guidelines.
+
+This change prompted a drop in confornmance coverage, but it is uncertain which endpoints were covered by that test that are now untested.
+
+We can compare two data sets using apisnoop to see the exact endpoints covered before and after this pr.  
+  #+end_quote
+* Approach
+  Each pr goes through a testing job with the help of feja bot, which then gives a link to the full test history in the pro.  We can use this link to isolate a good bucket and job for the audit logs from this test.  However, the link to this bucket and job will be different than the base link currently used in our data fetching functions.  
+  
+ To properly grab the test data we would need to rewrite these underlying functions to have a dynamic url that can be passed as an arg.  This is a useful thing to do, and will be required in the future, but this ticket is meant to scratch a curious itch and should be relatively short.  Becasue of this, I am opting to fix the function as a separate ticket and task.
+
+An alteranntive way to grab data would be to look at audit logs in the e2e suite from before and after this commit.  So we'd find a good testing buckedt and job and not its timestamp, then find a job in our gci-gce bucket that is just before this timestamp.  This is a shortedr process, for one, but also lets us know we are comparing the same testing environments instead of looking at two different buckets _and_ two different jobs. 
+* Process
+** Find timestamp of pr test run
+For grabbing the bucket, and job, this is my strategy:
+    - in the pr, click on the full test history link given by fejta bot
+    - look for a bucket with e2e-gce in its name and click on a green job
+    - this brings me to its prow.k8s.io page
+    - from here i can click on its artifacts
+    - that gives us this link [[https://gcsweb.k8s.io/gcs/kubernetes-jenkins/pr-logs/pull/90615/pull-kubernetes-e2e-gce/1256032119537274880/][to its artifacts]]
+    - from here we see the timestamp is 2020-05-01 02:24:58
+
+    Therefore we will wanna We will want to grab a job from 2020-04-30.
+** Find job from just before this timestamp
+   By running through the available artifacts in our gci-gce bucket, I found a successful job from 2020-04-30: ~1255940069915627520~
+   #+begin_src sql-mode
+   select * from load_audit_events(null, '1255940069915627520');
+   -- select * from load_swagger(null, '1255940069915627520');
+   #+end_src
+   
+   
+** Get results for may 2nd: post merge.
+   Similar process, but now looking for results the day after the pr.
+   #+begin_src sql-mode
+   select * from load_audit_events(null, '1256394846009036803');
+   #+end_src
+** Delete current data set
+   APISnoop is loaded with the most recent data set by default, but I wanted to just compare these two past dates.  So I deleted the most recent set from my snoop instance.
+   #+begin_src sql-mode
+   delete from audit_event where job ='1260385320399015938';
+   -- delete from bucket_job_swagger where job ='1260385320399015938';
+   #+end_src
+** Materialize all the views
+*** api_operation_material
+ #+begin_src sql-mode :results silent
+ refresh materialized view api_operation_material;
+ #+end_src
+
+*** api_operation_parameter_material
+ #+begin_src sql-mode :results silent
+ refresh materialized view api_operation_parameter_material;
+ #+end_src
+*** endpoint_coverage_material
+ #+begin_src sql-mode :results silent
+ refresh materialized view endpoint_coverage_material;
+ #+end_src
+** Check work
+   #+begin_src sql-mode
+     select
+       job,
+       release,
+       date,
+       conf_hits,
+       conf_hits_increase
+       from stable_endpoint_stats
+      where bucket != 'apisnoop'
+            ;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src sql-mode
+            job         | release |    date    | conf_hits | conf_hits_increase 
+   ---------------------+---------+------------+-----------+--------------------
+    1255940069915627520 | 1.19.0  | 2020-04-30 |       145 |                   
+    1256394846009036803 | 1.19.0  | 2020-05-02 |       144 |                 -1
+   (2 rows)
+
+   #+end_src
+** Write a query to compare conformance tests between these two jobs
+   We can do this by isolating all the test useragents in each of these runs disinctly, and then doing a UNION and an Except.  We should expect to see two tests added and two conf tests removed.
+   the descriptions of the added tests will be indentical to the conf tests less the Conformance tag, as they were demoted not removed.
+   
+   #+NAME: Change in Tests
+   #+begin_src sql-mode
+     with last_two_runs as (
+       select
+         job, job_timestamp
+         FROM
+             bucket_job_swagger
+        ORDER BY 
+          job_timestamp DESC
+        LIMIT 2
+     ),
+       new_run as (
+         SELECT 
+           job
+           FROM last_two_runs
+          order by job_timestamp DESC
+          limit 1
+       ),
+       old_run as (
+         SELECT
+           job
+           FROM
+               last_two_runs
+          order by job_timestamp asc
+          limit 1
+       )
+         (
+           SELECT
+             test,
+             'added' as status
+             FROM
+                 (
+                   (
+                     SELECT DISTINCT
+                       split_part(useragent, '--', 2) as test
+                       FROM
+                           audit_event
+                           INNER JOIN new_run on (audit_event.job = new_run.job)
+                   )
+                   EXCEPT
+                   (
+                     SELECT DISTINCT
+                       split_part(useragent, '--', 2) as test
+                       FROM
+                           audit_event
+                           INNER JOIN old_run on (audit_event.job = old_run.job)
+                   )
+                 ) added_tests
+         )
+         UNION
+         (
+           SELECT
+             test,
+             'removed' as status
+             FROM
+                 (
+                   (
+                     SELECT DISTINCT
+                       split_part(useragent, '--', 2) as test
+                       FROM
+                           audit_event
+                           INNER JOIN old_run on (audit_event.job = old_run.job)
+                   )
+                   EXCEPT
+                   (
+                     SELECT DISTINCT
+                       split_part(useragent, '--', 2) as test
+                       FROM
+                           audit_event
+                           INNER JOIN new_run on (audit_event.job = new_run.job)
+                   )
+                 ) removed_tests
+         )
+         ;
+
+   #+end_src
+
+   #+RESULTS: Change in Tests
+   #+begin_src sql-mode
+                                                               test                                                             | status  
+   -----------------------------------------------------------------------------------------------------------------------------+---------
+     [sig-network] Proxy version v1 should proxy logs on node with explicit kubelet port using proxy subresource                | added
+     [sig-network] Proxy version v1 should proxy logs on node using proxy subresource                                           | added
+     [sig-network] Proxy version v1 should proxy logs on node with explicit kubelet port using proxy subresource  [Conformance] | removed
+     [sig-network] Proxy version v1 should proxy logs on node using proxy subresource  [Conformance]                            | removed
+   (4 rows)
+   #+end_src
+   
+   And that is what we see!  These tests, as we expected, match the changed conformance.yaml in the commit in #90615.
+** Write a query to islate added and removed endpoints between these two jobs
+   So then we wanna see how endpoints changed between these two... This is going to be similar, but now looking at operation_id's and using an EXCEPT for those hit by conformance test useragents.
+   For our purposes, we are concerned with stable endpoints, so we will filter out any with alpha/beta in their name.
+   #+NAME: removed endpoints
+   #+begin_src sql-mode
+     with last_two_runs as (
+       select
+         job, job_timestamp
+         FROM
+             bucket_job_swagger
+        ORDER BY 
+          job_timestamp DESC
+        LIMIT 2
+     ),
+       new_run as (
+         SELECT 
+           job
+           FROM last_two_runs
+          order by job_timestamp DESC
+          limit 1
+       ),
+       old_run as (
+         SELECT
+           job
+           FROM
+               last_two_runs
+          order by job_timestamp asc
+          limit 1
+       )
+         (
+           SELECT DISTINCT
+             operation_id
+             FROM
+                 audit_event ae
+                 INNER JOIN old_run on (ae.job = old_run.job)
+            WHERE ae.useragent LIKE 'e2e.test%--%[Conformance]%'
+              AND lower(ae.operation_id) not like '%alpha%'
+              AND lower(ae.operation_id) not like '%beta%'
+         )
+         EXCEPT
+         (
+           SELECT DISTINCT
+             operation_id
+             FROM
+                 audit_event ae
+                 INNER JOIN new_run on (ae.job = new_run.job)
+            WHERE ae.useragent LIKE 'e2e.test%--%[Conformance]%'
+              AND lower(ae.operation_id) not like '%alpha%'
+              AND lower(ae.operation_id) not like '%beta%'
+         )
+         ;
+   #+end_src
+
+   #+RESULTS: removed endpoints
+   #+begin_src sql-mode
+              operation_id            
+   -----------------------------------
+    connectCoreV1GetNodeProxyWithPath
+   (1 row)
+
+   #+end_src
+   
+  This maps to our stable_endpoint_stats showing the total number of endpoints hit by conformance tests went down by 1 after this pr 
+  #+begin_src sql-mode
+  select job, date, test_hits, conf_hits, conf_hits_increase from stable_endpoint_stats;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_src sql-mode
+           job         |    date    | test_hits | conf_hits | conf_hits_increase 
+  ---------------------+------------+-----------+-----------+--------------------
+   1255940069915627520 | 2020-04-30 |       188 |       145 |                   
+   1256394846009036803 | 2020-05-02 |       188 |       144 |                 -1
+  (2 rows)
+
+  #+end_src
+  
+  Interestingly, conf_hits went down but test_hits did not go up, indicating that ~connectCoreV1GetNodeProxyWithPath~ is hit by more than these two tests.  We could take a look at the tests that hit it, to see if any of the others are suitable for promotion.  This would bring our conformance coverage back up without requiring a new test to be written.
+  
+** See what tests hit our endpoint 
+  We wanan see the coverage for  connectCoreV1GetNodeProxyWithPath and the tests that hit it.
+  Luckily, we already have a test view that includes an operation id column which is an array of op_ids hit by that test.
+  We simply need to call it with a where clause that is essentially "operation_ids includes connectCoreV1GetNodeProxyWithPath"
+  
+  
+  #+begin_src sql-mode
+    SELECT test
+      FROM tests
+     WHERE
+       'connectCoreV1GetNodeProxyWithPath' = ANY(operation_ids)
+     AND job =  '1256394846009036803'
+       ;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_src sql-mode
+                                                                 test                                                                
+  -----------------------------------------------------------------------------------------------------------------------------------
+    [k8s.io] [sig-node] kubelet [k8s.io] [sig-node] Clean up pods on node kubelet should be able to delete 10 pods per node in 1m0s.
+    [k8s.io] [sig-node] Pods Extended [k8s.io] Delete Grace Period should be submitted and removed
+    [sig-network] Proxy version v1 should proxy logs on node using proxy subresource 
+    [sig-network] Proxy version v1 should proxy logs on node with explicit kubelet port using proxy subresource 
+  (4 rows)
+  #+end_src
+  
+  We see our two demoted PRoxy tests, but it may be useful to investigate these other two tests to see if they could be made to fit conformance guidelines.
+* Conclusion
+  Two tests were demoted as a result of pr 90615.  This is clear in the commits of that PR and verified in the apisnoop data sets explored above.
+  These tests hit the endpoint ~connectCoreV1GetNodeProxyWithPath~, which was not hit by any other conformance test, and so our conformance coverage dropped by 1 point.
+  This endpoint is hit by two other tests besides the demoted one, so it may prove useful to look into the other two tests to see if they could fit the conformance guidelines.
+
+  
