@@ -1,0 +1,78 @@
+#+TITLE: postgres to json
+#+AUTHOR: Zach Mandeville
+* Purpose
+  I needed json from the results of a postgres table, and didn't want to do a bunch of copy and paste from the query results. I was concerned with accuracy, if i copied the wrong column or mispelled some part of the json table.  I'd rather have the table result output _as_ json whose shape I define.
+
+This is how I did that for our endpoint_stats, to show all the endopints, eligible endpoints, stable endpoints, and test results for each all in one json array
+* The query
+    #+NAME: Endpoint Stats View
+    #+BEGIN_SRC sql-mode :results replace
+        WITH ineligible_endpoints as (
+          SELECT DISTINCT
+            operation_id
+            FROM endpoint_coverage 
+           where path LIKE '%volume%'
+              OR kind LIKE 'ComponentStatus'
+              OR (kind LIKE 'Node' AND k8s_action = ANY('{"delete","post"}'))
+          ), stats as (
+      SELECT
+        trim(trailing '-' from substring(bjs.job_version from 2 for 7)) as release, -- from v1.19.0-alphaxxx to 1.19.0
+        ec.date,
+        COUNT(1) as total_endpoints,
+        COUNT(1) filter (WHERE level = 'stable') as stable_endpoints,
+        COUNT(1) filter(WHERE operation_id NOT IN(SELECT * from ineligible_endpoints)) as total_eligible_endpoints,
+        COUNT(1) filter(WHERE operation_id NOT IN(SELECT * from ineligible_endpoints) and level = 'stable') as total_stable_eligible_endpoints,
+        COUNT(1) filter(WHERE tested is true) as test_hits,
+        COUNT(1) filter(WHERE tested is true AND operation_id NOT IN(select * from ineligible_endpoints)) as eligible_test_hits,
+        COUNT(1) filter(WHERE tested is true AND level = 'stable') as stable_test_hits,
+        COUNT(1) filter(WHERE tested is true AND level = 'stable' AND operation_id NOT IN(select * from ineligible_endpoints)) as eligible_stable_test_hits,
+        COUNT(1) filter(WHERE conf_tested is true) as conf_test_hits,
+        COUNT(1) filter(WHERE conf_tested is true AND operation_id NOT IN(select * from ineligible_endpoints)) as eligible_conf_test_hits,
+        COUNT(1) filter(WHERE conf_tested is true AND level = 'stable') as stable_conf_test_hits,
+        COUNT(1) filter(WHERE conf_tested is true AND level = 'stable' AND operation_id NOT IN(select * from ineligible_endpoints)) as eligible_stable_conf_test_hits
+        FROM endpoint_coverage ec
+               JOIN bucket_job_swagger bjs on (bjs.bucket = ec.bucket AND bjs.job = ec.job)
+       GROUP BY ec.date, ec.job, ec.bucket, bjs.job_version
+        )
+        SELECT
+          json_agg(
+          json_build_object(
+            'release', release,
+            'date', date,
+            'endpoints', json_build_object(
+              'total', total_endpoints,
+              'stable', stable_endpoints,
+              'eligible', total_eligible_endpoints,
+              'eligibleStable', total_stable_eligible_endpoints
+            ),
+            'tested', json_build_object(
+              'total', test_hits,
+              'stable', stable_test_hits,
+              'eligible', eligible_test_hits,
+              'eligibleStable', eligible_stable_test_hits
+              ),
+            'confTested', json_build_object(
+              'total', conf_test_hits,
+              'stable', stable_conf_test_hits,
+              'eligible', eligible_conf_test_hits,
+              'eligibleStable', eligible_stable_conf_test_hits
+              )
+            ))
+          FROM
+              stats
+              ;
+    #+END_SRC
+* The result
+   #+RESULTS: Endpoint Stats View
+   #+begin_SRC example
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            json_agg                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+   --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    [{"release" : "1.15.13", "date" : "2019-06-20", "endpoints" : {"total" : 873, "stable" : 402, "eligible" : 824, "eligibleStable" : 367}, "tested" : {"total" : 214, "stable" : 140, "eligible" : 204, "eligibleStable" : 131}, "confTested" : {"total" : 126, "stable" : 86, "eligible" : 124, "eligibleStable" : 84}}, {"release" : "1.16.10", "date" : "2019-10-22", "endpoints" : {"total" : 910, "stable" : 430, "eligible" : 861, "eligibleStable" : 395}, "tested" : {"total" : 222, "stable" : 172, "eligible" : 212, "eligibleStable" : 163}, "confTested" : {"total" : 146, "stable" : 118, "eligible" : 144, "eligibleStable" : 116}}, {"release" : "1.17.6", "date" : "2019-12-09", "endpoints" : {"total" : 939, "stable" : 438, "eligible" : 890, "eligibleStable" : 403}, "tested" : {"total" : 217, "stable" : 173, "eligible" : 207, "eligibleStable" : 163}, "confTested" : {"total" : 156, "stable" : 131, "eligible" : 154, "eligibleStable" : 129}}, {"release" : "1.18.1", "date" : "2020-03-24", "endpoints" : {"total" : 795, "stable" : 445, "eligible" : 746, "eligibleStable" : 410}, "tested" : {"total" : 229, "stable" : 181, "eligible" : 219, "eligibleStable" : 171}, "confTested" : {"total" : 165, "stable" : 140, "eligible" : 163, "eligibleStable" : 138}}, {"release" : "1.19.0", "date" : "2020-05-19", "endpoints" : {"total" : 795, "stable" : 445, "eligible" : 746, "eligibleStable" : 410}, "tested" : {"total" : 238, "stable" : 190, "eligible" : 228, "eligibleStable" : 180}, "confTested" : {"total" : 168, "stable" : 144, "eligible" : 166, "eligibleStable" : 142}}]
+   (1 row)
+
+   #+end_SRC
+   
+   
+ Not too pretty here, but for a quick grab you can copy the first line into a scratch buffer, then:
+: spc spc json-mode
+: spc = =  (to prettify it)

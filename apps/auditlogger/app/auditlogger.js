@@ -87,7 +87,7 @@ function logEventsToDB (req, res, next) {
 
     // regex for useragent, to determine if a test or conformance test hit
     const STARTS_WITH_E2E = new RegExp('^e2e.test')
-    const HAS_CONF_IN_BRACKETS = new RegExp('\[Conformance\]')
+    const HAS_CONF_IN_BRACKETS = new RegExp('\\[Conformance\\]')
 
     logs('[status] inserting into database')
     let dataToInsert = {
