@@ -1,3 +1,4 @@
+
 #+TITLE: Incorporate tests.yaml
 
 * Purpose
@@ -23,19 +24,15 @@ Same for 1.10-1.18
    We first need to turn yaml into json and then we can do a similar process to our load_swagger function, though this will be simpler as we are only wanting to load one file and we want whatever is latest on master.  In other words, we don't need to check for the right bucket and job.
 *** Create table
     #+begin_src sql-mode
-      CREATE TABLE tests_info(
-        testname text,
-        codename text,
-        description text,
-        release text,
-        file text
+      CREATE TABLE tests_info_import(
+        test_data jsonb
       );
     #+end_src
 
     #+RESULTS:
-    #+begin_src sql-mode
-    CREATE TABLE
-    #+end_src
+    #+begin_SRC example
+    ERROR:  relation "tests_info_import" already exists
+    #+end_SRC
 
 *** Write the Sql Function   
    #+NAME: Import tests
@@ -44,20 +41,177 @@ Same for 1.10-1.18
      DROP FUNCTION IF EXISTS load_tests;
      CREATE OR REPLACE FUNCTION load_tests()
      RETURNS text AS $$
-     <<load_tests.py>>
+     from string import Template
+     from snoopUtils import fetch_tests_info
+     tests = fetch_tests_info()
+     sql = Template("""
+                   WITH jsonb_array AS (
+                   SELECT jsonb_array_elements('${tests}'::jsonb) as test_data)
+                   INSERT INTO tests_info(testname, codename, release, description, file)
+                      SELECT
+                      (test_data->>'testname') as testname,
+                      (test_data->>'codename') as codename,
+                      (test_data->>'release') as release,
+                      (test_data->>'description') as description,
+                      (test_data->>'file') as file
+                      from jsonb_array;
+                   """).substitute(tests = tests.replace("'","''"))
+     plpy.execute(sql)
      $$ LANGUAGE plpython3u ;
      reset role;
       #+END_SRC
+
+      #+RESULTS: Import tests
+      #+begin_SRC example
+      SET
+      #+end_SRC
+
+      
+      #+begin_src sql-mode
+      select * from load_tests();
+      #+end_src
+
+      #+RESULTS:
+      #+begin_SRC example
+       load_tests 
+      ------------
+
+      (1 row)
+
+      #+end_SRC
+
+#+begin_src sql-mode
+select file, release from tests_info limit 20;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                 file                 | release 
+--------------------------------------+---------
+ test/e2e/apps/daemon_set.go          | 
+ test/e2e/common/init_container.go    | v1.12
+ test/e2e/common/lifecycle_hook.go    | v1.9
+ test/e2e/common/container_probe.go   | v1.18
+ test/e2e/common/lifecycle_hook.go    | v1.9
+ test/e2e/common/lifecycle_hook.go    | v1.9
+ test/e2e/common/lifecycle_hook.go    | v1.9
+ test/e2e/common/runtime.go           | v1.15
+ test/e2e/common/runtime.go           | v1.15
+ test/e2e/common/runtime.go           | v1.15
+ test/e2e/common/runtime.go           | v1.15
+ test/e2e/common/runtime.go           | v1.13
+ test/e2e/common/docker_containers.go | v1.9
+ test/e2e/common/docker_containers.go | v1.9
+ test/e2e/common/docker_containers.go | v1.9
+ test/e2e/common/docker_containers.go | v1.9
+ test/e2e/common/init_container.go    | v1.12
+ test/e2e/common/init_container.go    | v1.12
+ test/e2e/common/init_container.go    | v1.12
+ test/e2e/common/kubelet.go           | v1.13
+(20 rows)
+
+#+end_SRC
+
 *** Write the python for the sql function
    We can base it off fetch swagger, but simplified 
    #+TITLE: load_tests.py
    #+begin_src python :results output
      import yaml
      import json
+     from string import Template
      from urllib.request import urlopen, urlretrieve
+
      tests_url="https://raw.githubusercontent.com/kubernetes/kubernetes/master/test/conformance/testdata/conformance.yaml"
 
      tests = json.dumps(yaml.safe_load(urlopen(tests_url).read().decode('utf-8')))
+     sql = Template("""
+     CREATE TEMPORARY TABLE tests_info_import(data jsonb not null);
+     COPY tests_info_import (data)
+     FROM '${tests}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
+
+     INSERT INTO tests_info(testname, codename)
+     SELECT
+     (import.data ->> 'testname'),
+     (import.data ->> 'codename')
+     FROM tests_info_import import;
+     """).substitute(tests = tests)
+     try:
+         plpy.execute(sql)
+         return "it worked"
+     except plpy.SPIError as plpyError:
+         print("something went wrong with plpy: ")
+         return plpyError
    #+end_src
 
 * Conclusion
+
+# Local Variables:
+# ii: enabled
+# End:
+
+* scratch
+#+begin_src sql-mode
+  select 
+  codename
+  FROM tests_info
+  limit 10;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                                                                                                               codename                                                                                                               
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ [sig-apps] Daemon set [Serial] should run and stop simple daemon [Conformance]
+ [k8s.io] InitContainer [NodeConformance] should not start app containers if init containers fail on a RestartAlways pod [Conformance]
+ [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart exec hook properly [NodeConformance] [Conformance]
+ [k8s.io] Probing container should *not* be restarted with a tcp:8080 liveness probe [NodeConformance] [Conformance]
+ [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart http hook properly [NodeConformance] [Conformance]
+ [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop exec hook properly [NodeConformance] [Conformance]
+ [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop http hook properly [NodeConformance] [Conformance]
+ [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] as empty when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+ [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from file when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+ [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from log output if TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
+(10 rows)
+
+#+end_SRC
+
+
+#+begin_src sql-mode
+  select
+  trim(test),
+  release,
+  array_length(operation_ids, 1) as endpoints_hit
+  from
+  tests
+    left join tests_info on (trim(test) = codename)
+    where test like '%[Conformance]%'
+        limit 20
+  ;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                                                                                                                btrim                                                                                                                 | release | endpoints_hit 
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------+---------------
+ [k8s.io] InitContainer [NodeConformance] should not start app containers if init containers fail on a RestartAlways pod [Conformance]                                                                                                | v1.12   |             8
+ [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart exec hook properly [NodeConformance] [Conformance]                                                                                  | v1.9    |            11
+ [k8s.io] Probing container should *not* be restarted with a tcp:8080 liveness probe [NodeConformance] [Conformance]                                                                                                                  | v1.18   |             9
+ [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart http hook properly [NodeConformance] [Conformance]                                                                                  | v1.9    |            11
+ [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop exec hook properly [NodeConformance] [Conformance]                                                                                    | v1.9    |            11
+ [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop http hook properly [NodeConformance] [Conformance]                                                                                    | v1.9    |            11
+ [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] as empty when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]  | v1.15   |             9
+ [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from file when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance] | v1.15   |             9
+ [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from log output if TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]              | v1.15   |             9
+ [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] if TerminationMessagePath is set as non-root user and at a non-default path [NodeConformance] [Conformance]           | v1.15   |             9
+ [k8s.io] Container Runtime blackbox test when starting a container that exits should run with the expected status [NodeConformance] [Conformance]                                                                                    | v1.13   |             9
+ [k8s.io] Docker Containers should be able to override the image's default arguments (docker cmd) [NodeConformance] [Conformance]                                                                                                     | v1.9    |            11
+ [k8s.io] Docker Containers should be able to override the image's default command (docker entrypoint) [NodeConformance] [Conformance]                                                                                                | v1.9    |            11
+ [k8s.io] Docker Containers should be able to override the image's default command and arguments [NodeConformance] [Conformance]                                                                                                      | v1.9    |            11
+ [k8s.io] Docker Containers should use the image defaults if command and args are blank [NodeConformance] [Conformance]                                                                                                               | v1.9    |             9
+ [k8s.io] InitContainer [NodeConformance] should invoke init containers on a RestartAlways pod [Conformance]                                                                                                                          | v1.12   |             8
+ [k8s.io] InitContainer [NodeConformance] should invoke init containers on a RestartNever pod [Conformance]                                                                                                                           | v1.12   |             8
+ [k8s.io] InitContainer [NodeConformance] should not start app containers and fail the pod if init containers fail on a RestartNever pod [Conformance]                                                                                | v1.12   |             8
+ [k8s.io] Kubelet when scheduling a busybox Pod with hostAliases should write entries to /etc/hosts [LinuxOnly] [NodeConformance] [Conformance]                                                                                       | v1.13   |             9
+ [k8s.io] Kubelet when scheduling a busybox command in a pod should print the output to logs [NodeConformance] [Conformance]                                                                                                          | v1.13   |             9
+(20 rows)
+
