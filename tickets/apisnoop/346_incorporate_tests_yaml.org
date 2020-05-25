@@ -303,8 +303,307 @@ delete from  audit_event where bucket = 'apisnoop';
       
 We need latest data to see what endpoints are hit by tests, and we need test_info to know when that test was released.  From this, I think we can have a view that shows endpoint, test, and test_release, and endpoint_release.
 From this view, we can create a window function that shows # of new endpoints and new tests per release.
-** Build view of conformance endpoints and their release date
+** Build view of tests, their release, and the endpoints they hit
+**** Create
+ #+NAME: tests view
+ #+BEGIN_SRC sql-mode
+   CREATE OR REPLACE VIEW "public"."testz" AS
+     WITH raw_tests AS (
+       SELECT audit_event.operation_id,
+              audit_event.bucket,
+              audit_event.job,
+              array_to_string(regexp_matches(audit_event.useragent, '\[[a-zA-Z0-9\.\-:]*\]'::text, 'g'::text), ','::text) AS test_tag,
+              trim(split_part(audit_event.useragent, '--'::text, 2)) AS test
+         FROM audit_event
+        WHERE ((audit_event.useragent ~~ 'e2e.test%'::text) AND (audit_event.job <> 'live'::text))
+     )
+     SELECT DISTINCT raw_tests.bucket,
+                     raw_tests.job,
+                     raw_tests.test,
+                     raw_tests.operation_id,
+                     test_tag
+       FROM raw_tests
+      GROUP BY raw_tests.test, raw_tests.bucket, raw_tests.job, raw_tests.operation_id, raw_tests.test_tag;
+ #+END_SRC
+
+ #+RESULTS: tests view
+ #+begin_SRC example
+ CREATE VIEW
+ #+end_SRC
+ 
+here is an initial pass.  We grab the test and its endpoint and match it to its relase in the test info, then select the endpoint and an array of all the releases for it--in other words, the distinct releases for every test that hit it. 
+ 
+ #+begin_src sql-mode
+   WITH test_and_release AS(
+   SELECT DISTINCT
+     testname,
+     release,
+     operation_id
+     FROM testz
+            LEFT JOIN test_info on (test = codename)
+         WHERE test like '%[Conformance]%'
+         )
+       SELECT DISTINCT
+         ec.operation_id,
+         array_agg(DISTINCT release) as release
+         FROM
+             endpoint_coverage ec
+         JOIN test_and_release tr ON (ec.operation_id = tr.operation_id)
+          WHERE level = 'stable'
+            AND conf_tested is true
+             GROUP BY ec.operation_id
+             LIMIT 20
+                   ;
+ #+end_src
+
+ #+RESULTS:
+ #+begin_SRC example
+                         operation_id                         |                                 release                                 
+ -------------------------------------------------------------+-------------------------------------------------------------------------
+  connectCoreV1GetNamespacedPodExec                           | {v1.13}
+  connectCoreV1GetNamespacedPodProxyWithPath                  | {v1.14,v1.15,v1.17,v1.9}
+  connectCoreV1GetNamespacedServiceProxyWithPath              | {v1.9}
+  connectCoreV1PostNamespacedPodExec                          | {v1.15,v1.17,v1.9,"v1.9, v1.18"}
+  createAdmissionregistrationV1MutatingWebhookConfiguration   | {v1.16}
+  createAdmissionregistrationV1ValidatingWebhookConfiguration | {v1.16}
+  createApiextensionsV1CustomResourceDefinition               | {v1.16,v1.17,v1.9}
+  createApiregistrationV1APIService                           | {""}
+  createAppsV1NamespacedDeployment                            | {"",v1.16,v1.9}
+  createAppsV1NamespacedReplicaSet                            | {"",v1.13,v1.16,v1.9}
+  createAppsV1NamespacedStatefulSet                           | {v1.16,v1.9}
+  createAuthenticationV1TokenReview                           | {v1.9}
+  createAuthorizationV1SelfSubjectAccessReview                | {v1.16}
+  createAuthorizationV1SubjectAccessReview                    | {"",v1.12,v1.13,v1.14,v1.15,v1.16,v1.17,v1.18,v1.19,v1.9,"v1.9, v1.18"}
+  createBatchV1NamespacedJob                                  | {v1.15,v1.16}
+  createCoordinationV1NamespacedLease                         | {v1.17}
+  createCoreV1Namespace                                       | {"",v1.12,v1.13,v1.14,v1.15,v1.16,v1.17,v1.18,v1.19,v1.9,"v1.9, v1.18"}
+  createCoreV1NamespacedConfigMap                             | {"",v1.12,v1.13,v1.14,v1.15,v1.16,v1.9}
+  createCoreV1NamespacedLimitRange                            | {v1.18}
+  createCoreV1NamespacedPod                                   | {v1.12,v1.13,v1.14,v1.15,v1.16,v1.17,v1.18,v1.19,v1.9,"v1.9, v1.18"}
+ (20 rows)
+
+ #+end_SRC
+ 
+ Not fully what I was expecting.  What are the empty strings and what is the "v1.9, v1.19"?  Is this a srewup in how I did the array, or anomalies in our conformance.yaml?
+ 
+ #+begin_src sql-mode
+select distinct release from test_info;
+ #+end_src
+
+ #+RESULTS:
+ #+begin_SRC example
+    release   
+ -------------
+
+  v1.9
+  v1.17
+  v1.18
+  v1.13
+  v1.14
+  v1.19
+  v1.12
+  v1.15
+  v1.16
+  v1.9, v1.18
+ (11 rows)
+
+ #+end_SRC
+ 
+ So some releases are null, and some have two dates.  I can assume the two dates are when there was some change to the test, and in that i'd want to keep the 1.18 (as it represents new work being done during the 1.18 release cycle)
+ But what are the null values?
+ 
+ #+begin_src sql-mode
+ select file, testname, codename from test_info where release not like 'v%';
+ #+end_src
+
+ #+RESULTS:
+ #+begin_SRC example
+                 file                 |                 testname                 |                                                                  codename                                                                   
+ -------------------------------------+------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------
+  test/e2e/apimachinery/aggregator.go | aggregator-supports-the-sample-apiserver | [sig-api-machinery] Aggregator Should be able to support the 1.17 Sample API Server using the current Aggregator [Conformance]
+  test/e2e/apimachinery/namespace.go  | namespace-deletion-removes-pods          | [sig-api-machinery] Namespaces [Serial] should ensure that all pods are removed when a namespace is deleted [Conformance]
+  test/e2e/apimachinery/namespace.go  | namespace-deletion-removes-services      | [sig-api-machinery] Namespaces [Serial] should ensure that all services are removed when a namespace is deleted [Conformance]
+  test/e2e/apimachinery/watch.go      | watch-configmaps-from-resource-version   | [sig-api-machinery] Watchers should be able to start watching from a specific resource version [Conformance]
+  test/e2e/apimachinery/watch.go      | watch-configmaps-closed-and-restarted    | [sig-api-machinery] Watchers should be able to restart watching from the last resource version observed by the previous watch [Conformance]
+  test/e2e/apimachinery/watch.go      | watch-configmaps-with-multiple-watchers  | [sig-api-machinery] Watchers should observe add, update, and delete watch notifications on configmaps [Conformance]
+  test/e2e/apimachinery/watch.go      | watch-configmaps-label-changed           | [sig-api-machinery] Watchers should observe an object deletion if it stops meeting the requirements of the selector [Conformance]
+  test/e2e/apps/daemon_set.go         | DaemonSet-FailedPodCreation              | [sig-apps] Daemon set [Serial] should retry creating failed daemon pods [Conformance]
+  test/e2e/apps/daemon_set.go         | DaemonSet-Rollback                       | [sig-apps] Daemon set [Serial] should rollback without unnecessary restarts [Conformance]
+  test/e2e/apps/daemon_set.go         | DaemonSet-NodeSelection                  | [sig-apps] Daemon set [Serial] should run and stop complex daemon [Conformance]
+  test/e2e/apps/daemon_set.go         | DaemonSet-Creation                       | [sig-apps] Daemon set [Serial] should run and stop simple daemon [Conformance]
+  test/e2e/apps/daemon_set.go         | DaemonSet-RollingUpdate                  | [sig-apps] Daemon set [Serial] should update pod when spec was updated and update strategy is RollingUpdate [Conformance]
+  test/e2e/apps/deployment.go         | Deployment Recreate                      | [sig-apps] Deployment RecreateDeployment should delete old pods and create new ones [Conformance]
+  test/e2e/apps/deployment.go         | Deployment RollingUpdate                 | [sig-apps] Deployment RollingUpdateDeployment should delete old pods and create new ones [Conformance]
+  test/e2e/apps/deployment.go         | Deployment RevisionHistoryLimit          | [sig-apps] Deployment deployment should delete old replica sets [Conformance]
+  test/e2e/apps/deployment.go         | Deployment Proportional Scaling          | [sig-apps] Deployment deployment should support proportional scaling [Conformance]
+  test/e2e/apps/deployment.go         | Deployment Rollover                      | [sig-apps] Deployment deployment should support rollover [Conformance]
+ (17 rows)
+ #+end_SRC
+ 
+ Honestly, I am confused.  If i look at one like the Deployment Rollover, it is in the conformance.yaml with a release of "" and if we look at the git blame of the file the test was written 5 years ago and updated 2 years ago.  So I don't think the "" relates to it not yet being released, rather that it's a test that existed before conformance was a thing.  I am going to check with others about this, but in the meantime do a simple case statment that if it is "" we'll set it to 1.8 and if it is "1.9, 1.18" we'll switch it to 1.18. 
+ 
+ 
+#+NAME: Tests Try 2 
+ #+begin_src sql-mode
+  WITH test_and_release AS(
+  SELECT DISTINCT
+    testname,
+    CASE 
+      WHEN release = '' THEN '1.8'
+      WHEN release LIKE '%,%' then trim(leading 'v' from trim(split_part(release,',',2)))
+      ELSE trim(leading 'v' from release)
+    END as release,
+    operation_id
+    FROM testz
+           LEFT JOIN test_info on (test = codename)
+        WHERE test like '%[Conformance]%'
+        )
+      SELECT DISTINCT
+        ec.operation_id,
+        array_agg(DISTINCT release) as release
+        FROM
+            endpoint_coverage ec
+        JOIN test_and_release tr ON (ec.operation_id = tr.operation_id)
+         WHERE level = 'stable'
+           AND conf_tested is true
+            GROUP BY ec.operation_id
+            LIMIT 20
+                  ;
+ #+end_src
+
+ #+RESULTS: Tests Try 2
+ #+begin_SRC example
+                         operation_id                         |                      release                      
+ -------------------------------------------------------------+---------------------------------------------------
+  connectCoreV1GetNamespacedPodExec                           | {1.13}
+  connectCoreV1GetNamespacedPodProxyWithPath                  | {1.14,1.15,1.17,1.9}
+  connectCoreV1GetNamespacedServiceProxyWithPath              | {1.9}
+  connectCoreV1PostNamespacedPodExec                          | {1.15,1.17,1.18,1.9}
+  createAdmissionregistrationV1MutatingWebhookConfiguration   | {1.16}
+  createAdmissionregistrationV1ValidatingWebhookConfiguration | {1.16}
+  createApiextensionsV1CustomResourceDefinition               | {1.16,1.17,1.9}
+  createApiregistrationV1APIService                           | {1.8}
+  createAppsV1NamespacedDeployment                            | {1.16,1.8,1.9}
+  createAppsV1NamespacedReplicaSet                            | {1.13,1.16,1.8,1.9}
+  createAppsV1NamespacedStatefulSet                           | {1.16,1.9}
+  createAuthenticationV1TokenReview                           | {1.9}
+  createAuthorizationV1SelfSubjectAccessReview                | {1.16}
+  createAuthorizationV1SubjectAccessReview                    | {1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19,1.8,1.9}
+  createBatchV1NamespacedJob                                  | {1.15,1.16}
+  createCoordinationV1NamespacedLease                         | {1.17}
+  createCoreV1Namespace                                       | {1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19,1.8,1.9}
+  createCoreV1NamespacedConfigMap                             | {1.12,1.13,1.14,1.15,1.16,1.8,1.9}
+  createCoreV1NamespacedLimitRange                            | {1.18}
+  createCoreV1NamespacedPod                                   | {1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19,1.9}
+ (20 rows)
+
+ #+end_SRC
+ 
+That works!  Now, we want to sort this array by semver.  It's likely simpler in postgres than I'd think cos postgres is magical. 
+
+#+begin_src sql-mode
+CREATE OR REPLACE FUNCTION array_uniq_stable(anyarray) RETURNS anyarray AS
+$body$
+SELECT
+    array_agg(distinct_value ORDER BY first_index)
+FROM 
+    (SELECT
+        value AS distinct_value, 
+        min(index) AS first_index 
+    FROM 
+        unnest($1) WITH ORDINALITY AS input(value, index)
+    GROUP BY
+        value
+    ) AS unique_input
+;
+$body$
+LANGUAGE 'sql' IMMUTABLE STRICT;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop-# CREATE FUNCTION
+#+end_SRC
+
+#+NAME: Tests Try 3
+ #+begin_src sql-mode
+  WITH test_and_release AS(
+  SELECT DISTINCT
+    testname,
+    CASE 
+      WHEN release = '' THEN '1.8'
+      WHEN release LIKE '%,%' then trim(leading 'v' from trim(split_part(release,',',2)))
+      ELSE trim(leading 'v' from release)
+    END as release,
+    operation_id
+    FROM testz
+           LEFT JOIN test_info on (test = codename)
+        WHERE test like '%[Conformance]%'
+        )
+      SELECT DISTINCT
+        ec.operation_id,
+        array_uniq_stable(array_agg(release order by string_to_array(release, '.')::int[])) as releases,
+        (array_agg(release order by string_to_array(release, '.')::int[]))[1] as first_tested
+        FROM
+            endpoint_coverage ec
+        JOIN test_and_release tr ON (ec.operation_id = tr.operation_id)
+         WHERE level = 'stable'
+           AND conf_tested is true
+            GROUP BY ec.operation_id
+            LIMIT 20
+                  ;
+ #+end_src
+
+ #+RESULTS: Tests Try 3
+ #+begin_SRC example
+                         operation_id                         |                     releases                      | first_tested 
+ -------------------------------------------------------------+---------------------------------------------------+--------------
+  connectCoreV1GetNamespacedPodExec                           | {1.13}                                            | 1.13
+  connectCoreV1GetNamespacedPodProxyWithPath                  | {1.9,1.14,1.15,1.17}                              | 1.9
+  connectCoreV1GetNamespacedServiceProxyWithPath              | {1.9}                                             | 1.9
+  connectCoreV1PostNamespacedPodExec                          | {1.9,1.15,1.17,1.18}                              | 1.9
+  createAdmissionregistrationV1MutatingWebhookConfiguration   | {1.16}                                            | 1.16
+  createAdmissionregistrationV1ValidatingWebhookConfiguration | {1.16}                                            | 1.16
+  createApiextensionsV1CustomResourceDefinition               | {1.9,1.16,1.17}                                   | 1.9
+  createApiregistrationV1APIService                           | {1.8}                                             | 1.8
+  createAppsV1NamespacedDeployment                            | {1.8,1.9,1.16}                                    | 1.8
+  createAppsV1NamespacedReplicaSet                            | {1.8,1.9,1.13,1.16}                               | 1.8
+  createAppsV1NamespacedStatefulSet                           | {1.9,1.16}                                        | 1.9
+  createAuthenticationV1TokenReview                           | {1.9}                                             | 1.9
+  createAuthorizationV1SelfSubjectAccessReview                | {1.16}                                            | 1.16
+  createAuthorizationV1SubjectAccessReview                    | {1.8,1.9,1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19} | 1.8
+  createBatchV1NamespacedJob                                  | {1.15,1.16}                                       | 1.15
+  createCoordinationV1NamespacedLease                         | {1.17}                                            | 1.17
+  createCoreV1Namespace                                       | {1.8,1.9,1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19} | 1.8
+  createCoreV1NamespacedConfigMap                             | {1.8,1.9,1.12,1.13,1.14,1.15,1.16}                | 1.8
+  createCoreV1NamespacedLimitRange                            | {1.18}                                            | 1.18
+  createCoreV1NamespacedPod                                   | {1.9,1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19}     | 1.9
+ (20 rows)
+
+ #+end_SRC
+ 
+ 
+
 ** Build view of stable endoints, release date, first tested date, and first tested by
+   #+NAME: endpoints and first tested
+   #+begin_src sql-mode
+   
+   #+end_src
+** Build view of conformance endpoints and their release date
+   I need to double check this to see if the operation_id changes when the endpoint is promoted.  I have a feeling it does...so then what is the best wya to track when the endpoint was actually introduced?  
+#+begin_src sql-mode
+select count(distinct operation_id) from api_operation where level = 'stable';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ count 
+-------
+   584
+(1 row)
+
+#+end_SRC
+
 ** Build view of release, stable endpoint count, stable conformance tested count, new tests count
 * Conclusion
 
