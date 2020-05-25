@@ -151,7 +151,158 @@ select file, release from test_info limit 20;
 #+end_SRC
    
 ** Import swaggers for releases 1.9 through 1.18
-   We need to get the commit for each tagged release and then load the swagger from that commit
+   We need to get the commit for each tagged release and then load the swagger from that commit.
+   Kubernetes is helpfully consistent with its tagging, which means we can create an easy url template
+   to get the swagger for 1.9 it'd be:
+   : https://raw.githubusercontent.com/kubernetes/kubernetes/v1.9.0/api/openapi-spec/swagger.json
+   and 1.12 would be:
+   : https://raw.githubusercontent.com/kubernetes/kubernetes/v1.12.0/api/openapi-spec/swagger.json
+   
+   Alternatively, we could base it on each versions release branch, which is structued as so:
+   : https://raw.githubusercontent.com/kubernetes/kubernetes/release-1.9/api/openapi-spec/swagger.json
+   in this case, v1.9 is up to like 1.9.4....so it's a question of what we consider "canonical" for our release dates...but the process of adding the swagger would be the same no matter what type of url we decide on.
+   
+   I am realizing, though, that there's a bit of a change to our main keys...we do not have a bucket or job for these releases, which means a l ot of the metadata we don't care about either.  I am unsure if I should just try to update our bucket_job_swagger table, or make a new one whose focus is on the release  and date instead of bucket and job.  
+   
+   None of the fields in our bjs table are required, so I can just insert with most of it null, then build out views from there...but it will be a good thing to ponder in the future.  There is a smell that this could all be redesigned to not be so heavy....we just have the latest run and then the rest is pulled from github.  
+   
+*** Adjust bucket_job_swagger to have a release and date column
+   #+NAME: Create OPENAPI_SPEC Table 
+   #+begin_src sql-mode
+     ALTER TABLE bucket_job_swagger
+       ADD COLUMN release text,
+       ADD COLUMN release_date timestamp
+       ;
+   #+end_src
+
+   #+RESULTS: Create OPENAPI_SPEC Table
+   #+begin_SRC example
+   ALTER TABLE
+   #+end_SRC
+   
+   #+begin_src sql-mode
+   \d+ bucket_job_swagger;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                                                                     Table "public.bucket_job_swagger"
+        Column      |            Type             | Collation | Nullable |      Default      | Storage  | Stats target |                                  Description                                   
+   -----------------+-----------------------------+-----------+----------+-------------------+----------+--------------+--------------------------------------------------------------------------------
+    ingested_at     | timestamp without time zone |           |          | CURRENT_TIMESTAMP | plain    |              | timestamp for when data added to table
+    bucket          | text                        |           | not null |                   | extended |              | storage bucket for audit event test run and swagger
+    job             | text                        |           | not null |                   | extended |              | specific job # of audit event test run
+    commit_hash     | text                        |           |          |                   | extended |              | git commit hash for this particular test run
+    passed          | text                        |           |          |                   | extended |              | whether test run passed
+    job_result      | text                        |           |          |                   | extended |              | whether test run was successful.
+    pod             | text                        |           |          |                   | extended |              | The pod this test was run on
+    infra_commit    | text                        |           |          |                   | extended |              | 
+    job_version     | text                        |           |          |                   | extended |              | version of k8s on which this job was run
+    job_timestamp   | timestamp without time zone |           |          |                   | plain    |              | timestamp when job was run.  Will be different from ingested_at.
+    node_os_image   | text                        |           |          |                   | extended |              | id for which master os image was used for test run
+    master_os_image | text                        |           |          |                   | extended |              | 
+    swagger         | jsonb                       |           |          |                   | extended |              | raw json of the open api spec for k8s as of the commit hash for this test run.
+    release         | text                        |           |          |                   | extended |              | 
+    release_date    | timestamp without time zone |           |          |                   | plain    |              | 
+   Indexes:
+       "bucket_job_swagger_pkey" PRIMARY KEY, btree (bucket, job)
+       "idx_swagger_jsonb_ops" gin (swagger)
+       "idx_swagger_jsonb_path_ops" gin (swagger jsonb_path_ops)
+   Access method: heap
+
+   #+end_SRC
+*** Add Past Swaggers Function
+   #+NAME: Add swagger from url 
+    #+BEGIN_SRC sql-mode
+     set role dba;
+     DROP FUNCTION IF EXISTS load_past_swaggers;
+     CREATE OR REPLACE FUNCTION load_past_swaggers(
+       release text default null,
+       release_date text default null
+     )
+       RETURNS text AS $$
+       from string import Template
+       import json
+       from urllib.request import urlopen, urlretrieve
+
+       K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
+       OPEN_API_PATH = "/api/openapi-spec/swagger.json"
+
+       release_url = K8S_REPO_URL + release + OPEN_API_PATH
+       swagger = json.loads(urlopen(release_url).read().decode('utf-8')) # may change this to ascii
+
+       sql = Template("""
+                        INSERT INTO bucket_job_swagger(bucket, job, release, release_date, swagger)
+                        SELECT
+                        'release-${release}' as bucket,
+                        '${release_date}' as job,
+                        '${release}' as release,
+                        (to_timestamp(${release_date})) as release_date,
+                        '${swagger}' as swagger
+                        """).substitute(release = release.replace('v',''),
+                                        release_date = release_date,
+                                        swagger = json.dumps(swagger).replace("'","''"))
+       plpy.execute(sql)
+       $$ LANGUAGE plpython3u;
+       reset role;
+       #+END_SRC
+       
+       #+begin_src sql-mode
+         select * from load_past_swaggers('v1.9.0', '2017-12-15');
+       #+end_src
+*** Delete Auditlogger data
+       To ease this a bit more, i'm going to turn off audit_logger and delete all the live stuff from our db.
+       #+begin_src sql-mode
+delete from  audit_event where bucket = 'apisnoop';
+       #+end_src
+
+       #+RESULTS:
+       #+begin_SRC example
+       DELETE 224991
+       #+end_SRC
+       
+*** Refresh and check       
+       #+begin_src sql-mode
+       REFRESH MATERIALIZED VIEW api_operation_material;
+       REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+       REFRESH MATERIALIZED VIEW endpoint_coverage_material;
+       #+end_src
+
+       #+RESULTS:
+       #+begin_SRC example
+       REFRESH MATERIALIZED VIEW
+       #+end_SRC
+
+      So we should now have endpoint coverage that shows many endpoints twice, once for 1.9 and once for our most recent bucket, and all 1.9 should show as 'untested'...since we have no audit_event data for them 
+      
+      For example: 
+      #+begin_src sql-mode 
+        SELECT distinct
+          bucket,
+          operation_id,
+          tested
+          FROM
+              endpoint_coverage
+         WHERE operation_id like '%Portforward'
+         ORDER BY
+           operation_id
+               ;
+      #+end_src
+
+      #+RESULTS:
+      #+begin_SRC example
+                bucket           |               operation_id                | tested 
+      ---------------------------+-------------------------------------------+--------
+       ci-kubernetes-e2e-gci-gce | connectCoreV1GetNamespacedPodPortforward  | t
+       past                      | connectCoreV1GetNamespacedPodPortforward  | f
+       ci-kubernetes-e2e-gci-gce | connectCoreV1PostNamespacedPodPortforward | f
+       past                      | connectCoreV1PostNamespacedPodPortforward | f
+      (4 rows)
+
+      #+end_SRC
+      
+We need latest data to see what endpoints are hit by tests, and we need test_info to know when that test was released.  From this, I think we can have a view that shows endpoint, test, and test_release, and endpoint_release.
+From this view, we can create a window function that shows # of new endpoints and new tests per release.
 ** Build view of conformance endpoints and their release date
 ** Build view of stable endoints, release date, first tested date, and first tested by
 ** Build view of release, stable endpoint count, stable conformance tested count, new tests count
@@ -161,69 +312,5 @@ select file, release from test_info limit 20;
 # ii: enabled
 # End:
 
-* scratch
-#+begin_src sql-mode
-  select 
-  codename
-  FROM tests_info
-  limit 10;
-#+end_src
 
-#+RESULTS:
-#+begin_SRC example
-                                                                                                               codename                                                                                                               
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- [sig-apps] Daemon set [Serial] should run and stop simple daemon [Conformance]
- [k8s.io] InitContainer [NodeConformance] should not start app containers if init containers fail on a RestartAlways pod [Conformance]
- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart exec hook properly [NodeConformance] [Conformance]
- [k8s.io] Probing container should *not* be restarted with a tcp:8080 liveness probe [NodeConformance] [Conformance]
- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart http hook properly [NodeConformance] [Conformance]
- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop exec hook properly [NodeConformance] [Conformance]
- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop http hook properly [NodeConformance] [Conformance]
- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] as empty when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from file when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from log output if TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]
-(10 rows)
-
-#+end_SRC
-
-
-#+begin_src sql-mode
-  select
-  trim(test),
-  release,
-  array_length(operation_ids, 1) as endpoints_hit
-  from
-  tests
-    left join tests_info on (trim(test) = codename)
-    where test like '%[Conformance]%'
-        limit 20
-  ;
-#+end_src
-
-#+RESULTS:
-#+begin_SRC example
-                                                                                                                btrim                                                                                                                 | release | endpoints_hit 
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------+---------------
- [k8s.io] InitContainer [NodeConformance] should not start app containers if init containers fail on a RestartAlways pod [Conformance]                                                                                                | v1.12   |             8
- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart exec hook properly [NodeConformance] [Conformance]                                                                                  | v1.9    |            11
- [k8s.io] Probing container should *not* be restarted with a tcp:8080 liveness probe [NodeConformance] [Conformance]                                                                                                                  | v1.18   |             9
- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart http hook properly [NodeConformance] [Conformance]                                                                                  | v1.9    |            11
- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop exec hook properly [NodeConformance] [Conformance]                                                                                    | v1.9    |            11
- [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop http hook properly [NodeConformance] [Conformance]                                                                                    | v1.9    |            11
- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] as empty when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]  | v1.15   |             9
- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from file when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance] | v1.15   |             9
- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from log output if TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]              | v1.15   |             9
- [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] if TerminationMessagePath is set as non-root user and at a non-default path [NodeConformance] [Conformance]           | v1.15   |             9
- [k8s.io] Container Runtime blackbox test when starting a container that exits should run with the expected status [NodeConformance] [Conformance]                                                                                    | v1.13   |             9
- [k8s.io] Docker Containers should be able to override the image's default arguments (docker cmd) [NodeConformance] [Conformance]                                                                                                     | v1.9    |            11
- [k8s.io] Docker Containers should be able to override the image's default command (docker entrypoint) [NodeConformance] [Conformance]                                                                                                | v1.9    |            11
- [k8s.io] Docker Containers should be able to override the image's default command and arguments [NodeConformance] [Conformance]                                                                                                      | v1.9    |            11
- [k8s.io] Docker Containers should use the image defaults if command and args are blank [NodeConformance] [Conformance]                                                                                                               | v1.9    |             9
- [k8s.io] InitContainer [NodeConformance] should invoke init containers on a RestartAlways pod [Conformance]                                                                                                                          | v1.12   |             8
- [k8s.io] InitContainer [NodeConformance] should invoke init containers on a RestartNever pod [Conformance]                                                                                                                           | v1.12   |             8
- [k8s.io] InitContainer [NodeConformance] should not start app containers and fail the pod if init containers fail on a RestartNever pod [Conformance]                                                                                | v1.12   |             8
- [k8s.io] Kubelet when scheduling a busybox Pod with hostAliases should write entries to /etc/hosts [LinuxOnly] [NodeConformance] [Conformance]                                                                                       | v1.13   |             9
- [k8s.io] Kubelet when scheduling a busybox command in a pod should print the output to logs [NodeConformance] [Conformance]                                                                                                          | v1.13   |             9
-(20 rows)
 
