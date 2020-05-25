@@ -8,6 +8,7 @@ FROM postgres:12.0
    python3-psycopg2\
    python3-ipdb\
    python3-requests \
+   python3-yaml \
    wget \
    make \
    gcc \
