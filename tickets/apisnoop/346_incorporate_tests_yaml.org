@@ -1,4 +1,4 @@
-
+# -*- ii: apisnoop; -*-
 #+TITLE: Incorporate tests.yaml
 
 * Purpose
@@ -24,14 +24,18 @@ Same for 1.10-1.18
    We first need to turn yaml into json and then we can do a similar process to our load_swagger function, though this will be simpler as we are only wanting to load one file and we want whatever is latest on master.  In other words, we don't need to check for the right bucket and job.
 *** Create table
     #+begin_src sql-mode
-      CREATE TABLE tests_info_import(
-        test_data jsonb
+      CREATE TABLE test_info(
+        testname text,
+        codename text,
+        release text,
+        description text,
+        file text
       );
     #+end_src
 
     #+RESULTS:
     #+begin_SRC example
-    ERROR:  relation "tests_info_import" already exists
+    CREATE TABLE
     #+end_SRC
 
 *** Write the Sql Function   
@@ -42,12 +46,16 @@ Same for 1.10-1.18
      CREATE OR REPLACE FUNCTION load_tests()
      RETURNS text AS $$
      from string import Template
-     from snoopUtils import fetch_tests_info
-     tests = fetch_tests_info()
+     import json
+     import yaml
+     from urllib.request import urlopen, urlretrieve
+
+     TESTS_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/test/conformance/testdata/conformance.yaml"
+     tests = json.dumps(yaml.safe_load(urlopen(TESTS_URL)))
      sql = Template("""
                    WITH jsonb_array AS (
                    SELECT jsonb_array_elements('${tests}'::jsonb) as test_data)
-                   INSERT INTO tests_info(testname, codename, release, description, file)
+                   INSERT INTO test_info(testname, codename, release, description, file)
                       SELECT
                       (test_data->>'testname') as testname,
                       (test_data->>'codename') as codename,
@@ -81,17 +89,14 @@ Same for 1.10-1.18
       #+end_SRC
 
 #+begin_src sql-mode
-select file, release from tests_info limit 20;
+select file, release from test_info limit 20;
 #+end_src
 
 #+RESULTS:
 #+begin_SRC example
                  file                 | release 
 --------------------------------------+---------
- test/e2e/apps/daemon_set.go          | 
- test/e2e/common/init_container.go    | v1.12
  test/e2e/common/lifecycle_hook.go    | v1.9
- test/e2e/common/container_probe.go   | v1.18
  test/e2e/common/lifecycle_hook.go    | v1.9
  test/e2e/common/lifecycle_hook.go    | v1.9
  test/e2e/common/lifecycle_hook.go    | v1.9
@@ -107,42 +112,49 @@ select file, release from tests_info limit 20;
  test/e2e/common/init_container.go    | v1.12
  test/e2e/common/init_container.go    | v1.12
  test/e2e/common/init_container.go    | v1.12
+ test/e2e/common/init_container.go    | v1.12
+ test/e2e/common/kubelet.go           | v1.13
+ test/e2e/common/kubelet.go           | v1.13
  test/e2e/common/kubelet.go           | v1.13
 (20 rows)
 
 #+end_SRC
+*** Create sample view to combine tests with endpoints
+    the test_info codename matches our useragent test string, though the useragent teststring comes with a bit of extra padding (wich we should santizine in that view as a nice TODO)
+   So we can easily combine the test, its release, and the endpoints it hits like so: 
+#+begin_src sql-mode
+  select 
+    testname,
+    release,
+    array_length(operation_ids, 1) as endpoints_hit
+  FROM test_info
+  LEFT JOIN tests ON(TRIM(test) = codename)
+  limit 10;
+#+end_src   
 
-*** Write the python for the sql function
-   We can base it off fetch swagger, but simplified 
-   #+TITLE: load_tests.py
-   #+begin_src python :results output
-     import yaml
-     import json
-     from string import Template
-     from urllib.request import urlopen, urlretrieve
+#+RESULTS:
+#+begin_SRC example
+                                        testname                                         | release | endpoints_hit 
+-----------------------------------------------------------------------------------------+---------+---------------
+ Pod Lifecycle, post start exec hook                                                     | v1.9    |            14
+ Pod Lifecycle, post start http hook                                                     | v1.9    |            11
+ Pod Lifecycle, prestop exec hook                                                        | v1.9    |            11
+ Pod Lifecycle, prestop http hook                                                        | v1.9    |            11
+ Container Runtime, TerminationMessage, from log output of succeeding container          | v1.15   |             9
+ Container Runtime, TerminationMessage, from file of succeeding container                | v1.15   |             9
+ Container Runtime, TerminationMessage, from container's log output of failing container | v1.15   |             9
+ Container Runtime, TerminationMessagePath, non-root user and non-default path           | v1.15   |             9
+ Container Runtime, Restart Policy, Pod Phases                                           | v1.13   |            12
+ Docker containers, with arguments                                                       | v1.9    |            16
+(10 rows)
 
-     tests_url="https://raw.githubusercontent.com/kubernetes/kubernetes/master/test/conformance/testdata/conformance.yaml"
-
-     tests = json.dumps(yaml.safe_load(urlopen(tests_url).read().decode('utf-8')))
-     sql = Template("""
-     CREATE TEMPORARY TABLE tests_info_import(data jsonb not null);
-     COPY tests_info_import (data)
-     FROM '${tests}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
-
-     INSERT INTO tests_info(testname, codename)
-     SELECT
-     (import.data ->> 'testname'),
-     (import.data ->> 'codename')
-     FROM tests_info_import import;
-     """).substitute(tests = tests)
-     try:
-         plpy.execute(sql)
-         return "it worked"
-     except plpy.SPIError as plpyError:
-         print("something went wrong with plpy: ")
-         return plpyError
-   #+end_src
-
+#+end_SRC
+   
+** Import swaggers for releases 1.9 through 1.18
+   We need to get the commit for each tagged release and then load the swagger from that commit
+** Build view of conformance endpoints and their release date
+** Build view of stable endoints, release date, first tested date, and first tested by
+** Build view of release, stable endpoint count, stable conformance tested count, new tests count
 * Conclusion
 
 # Local Variables:
