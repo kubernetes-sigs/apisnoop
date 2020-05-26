@@ -19,7 +19,7 @@ Same for 1.10-1.18
 - share table of these findings
 - design infographic for best display of this
 - transpose data into sharable infographic
-* Process
+* Process: First iteration
 ** Import yaml as a sql table for postgres
    We first need to turn yaml into json and then we can do a similar process to our load_swagger function, though this will be simpler as we are only wanting to load one file and we want whatever is latest on master.  In other words, we don't need to check for the right bucket and job.
 *** Create table
@@ -584,7 +584,6 @@ apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# api
  
  This works, though I don't know if we need to have that extra function.  If we sort, we can still just grab the first one, as that's the value we really care about here.
  
-
 ** Build view of stable endoints, release date, first tested date, and first tested by
    #+NAME: endpoints and first tested
    #+begin_src sql-mode
@@ -606,6 +605,118 @@ select count(distinct operation_id) from api_operation where level = 'stable';
 #+end_SRC
 
 ** Build view of release, stable endpoint count, stable conformance tested count, new tests count
+* Process 2
+  Realized htis would be simpler and cleaner if we made a minimal schema built specific to this work, and didn't try to adjust the current database relations.  Am going to use what i learned in the first process to build up this new focused schema and tables.
+** Create Conformance Schema
+   #+NAME: Create Conformance Schema
+   #+begin_src sql-mode
+   CREATE SCHEMA "conformance";
+   #+end_src
+
+   #+RESULTS: Create Conformance Schema
+   #+begin_SRC example
+   CREATE SCHEMA
+   #+end_SRC
+   
+** Create open_api table for endpoint information
+   #+NAME: open_api 
+   #+begin_src sql-mode
+     CREATE TABLE "conformance"."open_api"(
+       release text,
+       endpoint text,
+       level text,
+       category text,
+       k8s_group text,
+       k8s_version text,
+       k8s_kind text,
+       deprecated boolean,
+       description text,
+       spec text,
+       PRIMARY KEY (release, endpoint)
+     );
+   #+end_src
+
+   #+RESULTS: open_api
+   #+begin_SRC example
+   CREATE TABLE
+   #+end_SRC
+** Function for loading in the open api spec 
+   We can pass in the swagger link and release date.
+   If neither are passed, we determine latest commit and pull swagger from this.
+   We map over swagger to fill out open_api table with data, and provide link to spec for validation
+   #+NAME: load_open_api.sql
+   #+BEGIN_SRC sql-mode
+     set role dba;
+     DROP FUNCTION IF EXISTS "conformance"."load_open_api";
+     CREATE OR REPLACE FUNCTION "conformance"."load_open_api"(
+       release default null,
+       release_date default null
+       )
+     RETURNS text AS $$
+     <<load_open_api.py>>
+     $$ LANGUAGE plpython3u ;
+     reset role;
+      #+END_SRC
+   #+NAME: load_open_api.py
+   #+BEGIN_SRC python :results output
+     from string import Template
+     import json
+     from urllib.request import urlopen, urlretrieve
+     from snoopUtils import determine_bucket_job, fetch_swagger
+     release = None
+     K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
+     OPEN_API_PATH = "/api/openapi-spec/swagger.json"
+
+     release_dates = {
+       "v1.9.0": "2017-12-15",
+       "v1.10.0": "2018-03-26",
+       "v1.11.0":  "2018-06-27",
+       "v1.12.0": "2018-09-27",
+       "v1.13.0": "2018-12-03" ,
+       "v1.14.0": "2019-03-25",
+       "v1.15.0": "2019-06-19",
+       "v1.16.0": "2019-09-18",
+       "v1.17.0": "2019-12-07",
+       "v1.18.0": "2020-03-25"
+     }
+     if release is not None:
+       open_api_url = K8S_REPO_URL + release + OPEN_API_PATH
+       open_api = json.loads(urlopen(release_url).read().decode('utf-8')) # may change this to ascii
+       release_date = release_dates[release]
+     else:
+       bucket, job = determine_bucket_job()
+       swagger, metadata, commit_hash = fetch_swagger(bucket, job)
+       open_api = swagger
+       open_api_url = K8S_REPO_URL + commit_hash + OPEN_API_PATH
+       release_date = int(metadata['timestamp'])
+       release = metadata["version"].split('-')[0].replace('v','')
+     print(release, release_date)
+     # sql = Template("""
+     #               WITH jsonb_array AS (
+     #               SELECT jsonb_array_elements('${open_api}'::jsonb) as api_data)
+     #               INSERT INTO open_api(release, release_date)
+     #                  SELECT
+     #                  (api_data->>'testname') as release,
+     #                  (test_data->>'codename') as release_date,
+     #                  (test_data->>'release') as release,
+     #                  (test_data->>'description') as description,
+     #                  (test_data->>'file') as file
+     #                  from jsonb_array;
+     #               """).substitute(open_api = open_api.replace("'","''"),
+     #                               release_date = release_date)
+     # plpy.execute((sql))
+     # $$ LANGUAGE plpython3u ;
+     # reset role;
+      #+END_SRC
+
+      #+RESULTS: load_open_api.py
+      #+begin_src python
+      1.19.0 1590458428
+      #+end_src
+
+** Create test_info for info from conformance.yaml
+** Create audit_event for current endpoint test hits
+** Create views for stable endpoints, tests, stable endopint coverage
 * Progress
   I'm starting to get a query that will show the endpoint and when it was first tested, though i have a sense that I maight be making too broad of an assumption.  We are showing endpoints that are currently hit by tests, and then matching that to when the tests were released according to the latest conformance yaml.  The next step will be to try to determine when the endpoint was added (by using the swagger.json per release).  This would let us see new endpoints per reelease.  The thing I am confused by, though, is how the endpoint's operation_id changes as it is promoted, and how that aaffects the tests.  If an endpiont is brought ihnto beta with a t est, and then it is promoted to stable...does its operation_id change?  and does the test need to be updated to match that operation_id?  o ris the way the test written guaranteed to hit the same endpoints no matter whether they are beta  or stable/  it will be good to check in on th is to figure out the next steps.
 
