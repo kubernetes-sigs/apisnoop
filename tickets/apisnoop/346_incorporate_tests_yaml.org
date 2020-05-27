@@ -257,7 +257,12 @@ Same for 1.10-1.18
                       SELECT
                       (test_data->>'testname') as testname,
                       (test_data->>'codename') as codename,
-                      trim(leading 'v' from (test_data->>'release')) as release,
+                      CASE
+                        WHEN ((test_data->>'release') = '') THEN '1.8.0'
+                        WHEN ((test_data->>'release') like '%,%')
+                          THEN trim(leading 'v' from split_part((test_data->>'release'), ', ', 2))||'.0'
+                        ELSE trim(leading 'v' from (test_data->>'release')) ||'.0'
+                      END as release,
                       (test_data->>'description') as description,
                       (test_data->>'file') as file
                       from jsonb_array;
@@ -272,7 +277,8 @@ Same for 1.10-1.18
       #+END_SRC
       
       #+begin_src sql-mode
-      select * from conformance.load_tests();
+        select * from conformance.load_tests();
+        -- delete from conformance.test_info;
       #+end_src
 
       #+RESULTS:
@@ -285,34 +291,24 @@ Same for 1.10-1.18
       #+end_SRC
 
 #+begin_src sql-mode
-select file, release from test_info limit 20;
+select distinct release from conformance.test_info;
 #+end_src
 
 #+RESULTS:
 #+begin_SRC example
-                 file                 | release 
---------------------------------------+---------
- test/e2e/common/lifecycle_hook.go    | v1.9
- test/e2e/common/lifecycle_hook.go    | v1.9
- test/e2e/common/lifecycle_hook.go    | v1.9
- test/e2e/common/lifecycle_hook.go    | v1.9
- test/e2e/common/runtime.go           | v1.15
- test/e2e/common/runtime.go           | v1.15
- test/e2e/common/runtime.go           | v1.15
- test/e2e/common/runtime.go           | v1.15
- test/e2e/common/runtime.go           | v1.13
- test/e2e/common/docker_containers.go | v1.9
- test/e2e/common/docker_containers.go | v1.9
- test/e2e/common/docker_containers.go | v1.9
- test/e2e/common/docker_containers.go | v1.9
- test/e2e/common/init_container.go    | v1.12
- test/e2e/common/init_container.go    | v1.12
- test/e2e/common/init_container.go    | v1.12
- test/e2e/common/init_container.go    | v1.12
- test/e2e/common/kubelet.go           | v1.13
- test/e2e/common/kubelet.go           | v1.13
- test/e2e/common/kubelet.go           | v1.13
-(20 rows)
+ release 
+---------
+ 1.19.0
+ 1.14.0
+ 1.8.0
+ 1.15.0
+ 1.17.0
+ 1.13.0
+ 1.12.0
+ 1.16.0
+ 1.18.0
+ 1.9.0
+(10 rows)
 
 #+end_SRC
 *** Create sample view to combine tests with endpoints
@@ -497,10 +493,394 @@ select distinct endpoint, test from conformance.audit_event limit 30;
 
 #+end_SRC
 
-** Create views for stable endpoints with test and their release info,
-** Create view for tests with their release info
-** Create view for stable endpoints with coverage
+** Create views for stable endpoints with first release, first conformance test, and info on that conformance test
+   #+begin_src sql-mode
+   DROP MATERIALIZED VIEW conformance.stable_endpoint_first;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   DROP MATERIALIZED VIEW
+   #+end_SRC
+
+   #+NAME: Stable Endpoints
+   #+begin_src sql-mode
+     CREATE MATERIALIZED VIEW conformance.stable_endpoint_first AS
+     SELECT DISTINCT
+       oa.endpoint,
+       (array_agg(test.release order by string_to_array(test.release, '.')::int[]))[1] as first_conformance_test,
+       (array_agg(test.testname order by string_to_array(test.release, '.')::int[]))[1] as test,
+       (array_agg(test.codename order by string_to_array(test.release, '.')::int[]))[1] as codename,
+       (array_agg(test.file order by string_to_array(test.release, '.')::int[]))[1] as file,
+       (array_agg(oa.release order by string_to_array(oa.release, '.')::int[]))[1] as first_release
+       FROM
+           conformance.audit_event ae
+           JOIN conformance.open_api oa ON(ae.endpoint = oa.endpoint)
+           LEFT JOIN conformance.test_info test on (ae.test = test.codename)
+        WHERE oa.level = 'stable'
+        GROUP BY 1
+        ; 
+   #+end_src
+
+   
+   #+begin_src sql-mode :results silent
+   REFRESH MATERIALIZED VIEW conformance.stable_endpoint_first;
+   #+end_src
+
+   #+begin_src sql-mode
+     SELECT
+       endpoint,
+       first_conformance_test
+       FROM
+           conformance.stable_endpoint_first
+     ;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                  endpoint                                | first_conformance_test 
+   -----------------------------------------------------------------------+------------------------
+    connectCoreV1GetNamespacedPodExec                                     | 1.13.0
+    connectCoreV1GetNamespacedPodPortforward                              | 
+    connectCoreV1GetNamespacedPodProxyWithPath                            | 1.9.0
+    connectCoreV1GetNamespacedServiceProxyWithPath                        | 1.9.0
+    connectCoreV1GetNodeProxyWithPath                                     | 
+    connectCoreV1PostNamespacedPodAttach                                  | 
+    connectCoreV1PostNamespacedPodExec                                    | 1.9.0
+    connectCoreV1PostNamespacedPodPortforward                             | 
+    createAdmissionregistrationV1MutatingWebhookConfiguration             | 1.16.0
+    createAdmissionregistrationV1ValidatingWebhookConfiguration           | 1.16.0
+    createApiextensionsV1CustomResourceDefinition                         | 1.9.0
+    createApiregistrationV1APIService                                     | 1.8.0
+    createAppsV1NamespacedControllerRevision                              | 
+    createAppsV1NamespacedDaemonSet                                       | 
+    createAppsV1NamespacedDeployment                                      | 1.8.0
+    createAppsV1NamespacedReplicaSet                                      | 1.8.0
+    createAppsV1NamespacedStatefulSet                                     | 1.9.0
+    createAuthenticationV1TokenReview                                     | 1.9.0
+    createAuthorizationV1SelfSubjectAccessReview                          | 1.16.0
+    createAuthorizationV1SubjectAccessReview                              | 1.8.0
+    createBatchV1NamespacedJob                                            | 1.15.0
+    createCoordinationV1NamespacedLease                                   | 1.17.0
+    createCoreV1Namespace                                                 | 1.8.0
+    createCoreV1NamespacedConfigMap                                       | 1.8.0
+    createCoreV1NamespacedEndpoints                                       | 
+    createCoreV1NamespacedLimitRange                                      | 1.18.0
+    createCoreV1NamespacedPersistentVolumeClaim                           | 
+    createCoreV1NamespacedPod                                             | 1.9.0
+    createCoreV1NamespacedPodBinding                                      | 
+    createCoreV1NamespacedPodEviction                                     | 
+    createCoreV1NamespacedPodTemplate                                     | 1.19.0
+    createCoreV1NamespacedReplicationController                           | 1.9.0
+    createCoreV1NamespacedResourceQuota                                   | 1.15.0
+    createCoreV1NamespacedSecret                                          | 1.8.0
+    createCoreV1NamespacedService                                         | 1.8.0
+    createCoreV1NamespacedServiceAccount                                  | 1.8.0
+    createCoreV1NamespacedServiceAccountToken                             | 
+    createCoreV1Node                                                      | 
+    createCoreV1PersistentVolume                                          | 
+    createRbacAuthorizationV1ClusterRole                                  | 1.8.0
+    createRbacAuthorizationV1ClusterRoleBinding                           | 1.8.0
+    createRbacAuthorizationV1NamespacedRole                               | 
+    createRbacAuthorizationV1NamespacedRoleBinding                        | 1.8.0
+    createSchedulingV1PriorityClass                                       | 
+    createStorageV1CSIDriver                                              | 
+    createStorageV1CSINode                                                | 
+    createStorageV1StorageClass                                           | 
+    createStorageV1VolumeAttachment                                       | 
+    deleteAdmissionregistrationV1CollectionMutatingWebhookConfiguration   | 1.16.0
+    deleteAdmissionregistrationV1CollectionValidatingWebhookConfiguration | 1.16.0
+    deleteAdmissionregistrationV1MutatingWebhookConfiguration             | 1.16.0
+    deleteAdmissionregistrationV1ValidatingWebhookConfiguration           | 1.16.0
+    deleteApiextensionsV1CollectionCustomResourceDefinition               | 1.16.0
+    deleteApiextensionsV1CustomResourceDefinition                         | 1.9.0
+    deleteApiregistrationV1APIService                                     | 1.8.0
+    deleteAppsV1CollectionNamespacedControllerRevision                    | 
+    deleteAppsV1CollectionNamespacedDaemonSet                             | 
+    deleteAppsV1CollectionNamespacedDeployment                            | 
+    deleteAppsV1CollectionNamespacedReplicaSet                            | 
+    deleteAppsV1CollectionNamespacedStatefulSet                           | 
+    deleteAppsV1NamespacedControllerRevision                              | 
+    deleteAppsV1NamespacedDeployment                                      | 1.8.0
+    deleteAppsV1NamespacedReplicaSet                                      | 1.16.0
+    deleteAppsV1NamespacedStatefulSet                                     | 1.9.0
+    deleteAutoscalingV1CollectionNamespacedHorizontalPodAutoscaler        | 
+    deleteBatchV1CollectionNamespacedJob                                  | 
+    deleteBatchV1NamespacedJob                                            | 1.15.0
+    deleteCoordinationV1CollectionNamespacedLease                         | 1.17.0
+    deleteCoordinationV1NamespacedLease                                   | 1.17.0
+    deleteCoreV1CollectionNamespacedConfigMap                             | 
+    deleteCoreV1CollectionNamespacedEndpoints                             | 
+    deleteCoreV1CollectionNamespacedLimitRange                            | 
+    deleteCoreV1CollectionNamespacedPersistentVolumeClaim                 | 
+    deleteCoreV1CollectionNamespacedPod                                   | 
+    deleteCoreV1CollectionNamespacedPodTemplate                           | 
+    deleteCoreV1CollectionNamespacedReplicationController                 | 
+    deleteCoreV1CollectionNamespacedResourceQuota                         | 
+    deleteCoreV1CollectionNamespacedSecret                                | 1.18.0
+    deleteCoreV1CollectionNamespacedServiceAccount                        | 1.19.0
+    deleteCoreV1Namespace                                                 | 1.8.0
+    deleteCoreV1NamespacedConfigMap                                       | 1.8.0
+    deleteCoreV1NamespacedEndpoints                                       | 
+    deleteCoreV1NamespacedLimitRange                                      | 1.18.0
+    deleteCoreV1NamespacedPersistentVolumeClaim                           | 
+    deleteCoreV1NamespacedPod                                             | 1.9.0
+    deleteCoreV1NamespacedPodTemplate                                     | 1.19.0
+    deleteCoreV1NamespacedReplicationController                           | 1.9.0
+    deleteCoreV1NamespacedResourceQuota                                   | 1.16.0
+    deleteCoreV1NamespacedSecret                                          | 1.8.0
+    deleteCoreV1NamespacedService                                         | 1.8.0
+    deleteCoreV1NamespacedServiceAccount                                  | 1.8.0
+    deleteCoreV1PersistentVolume                                          | 
+    deleteNetworkingV1CollectionNamespacedNetworkPolicy                   | 
+    deleteRbacAuthorizationV1ClusterRole                                  | 1.8.0
+    deleteRbacAuthorizationV1ClusterRoleBinding                           | 1.8.0
+    deleteRbacAuthorizationV1CollectionNamespacedRole                     | 
+    deleteRbacAuthorizationV1CollectionNamespacedRoleBinding              | 
+    deleteRbacAuthorizationV1NamespacedRole                               | 
+    deleteRbacAuthorizationV1NamespacedRoleBinding                        | 1.8.0
+    deleteStorageV1CSIDriver                                              | 
+    deleteStorageV1StorageClass                                           | 
+    deleteStorageV1VolumeAttachment                                       | 
+    getAdmissionregistrationAPIGroup                                      | 1.16.0
+    getAdmissionregistrationV1APIResources                                | 1.8.0
+    getApiextensionsAPIGroup                                              | 1.16.0
+    getApiextensionsV1APIResources                                        | 1.8.0
+    getApiregistrationV1APIResources                                      | 1.8.0
+    getAPIVersions                                                        | 1.8.0
+    getAppsV1APIResources                                                 | 1.8.0
+    getAuthenticationV1APIResources                                       | 1.8.0
+    getAuthorizationV1APIResources                                        | 1.8.0
+    getAutoscalingV1APIResources                                          | 1.8.0
+    getBatchV1APIResources                                                | 1.8.0
+    getCoordinationV1APIResources                                         | 1.8.0
+    getCoreAPIVersions                                                    | 1.8.0
+    getCoreV1APIResources                                                 | 1.8.0
+    getNetworkingV1APIResources                                           | 1.8.0
+    getRbacAuthorizationV1APIResources                                    | 1.8.0
+    getSchedulingV1APIResources                                           | 1.8.0
+    getStorageV1APIResources                                              | 1.8.0
+    listAdmissionregistrationV1MutatingWebhookConfiguration               | 1.16.0
+    listAdmissionregistrationV1ValidatingWebhookConfiguration             | 1.16.0
+    listApiextensionsV1CustomResourceDefinition                           | 1.16.0
+    listApiregistrationV1APIService                                       | 
+    listAppsV1ControllerRevisionForAllNamespaces                          | 
+    listAppsV1DaemonSetForAllNamespaces                                   | 
+    listAppsV1DeploymentForAllNamespaces                                  | 
+    listAppsV1NamespacedControllerRevision                                | 
+    listAppsV1NamespacedDaemonSet                                         | 
+    listAppsV1NamespacedDeployment                                        | 1.8.0
+    listAppsV1NamespacedReplicaSet                                        | 1.8.0
+    listAppsV1NamespacedStatefulSet                                       | 1.9.0
+    listAppsV1ReplicaSetForAllNamespaces                                  | 
+    listAppsV1StatefulSetForAllNamespaces                                 | 
+    listAutoscalingV1HorizontalPodAutoscalerForAllNamespaces              | 
+    listAutoscalingV1NamespacedHorizontalPodAutoscaler                    | 
+    listBatchV1JobForAllNamespaces                                        | 
+    listBatchV1NamespacedJob                                              | 
+    listCoordinationV1LeaseForAllNamespaces                               | 
+    listCoordinationV1NamespacedLease                                     | 1.17.0
+    listCoreV1ComponentStatus                                             | 
+    listCoreV1ConfigMapForAllNamespaces                                   | 
+    listCoreV1EndpointsForAllNamespaces                                   | 
+    listCoreV1LimitRangeForAllNamespaces                                  | 
+    listCoreV1Namespace                                                   | 
+    listCoreV1NamespacedConfigMap                                         | 1.8.0
+    listCoreV1NamespacedEndpoints                                         | 1.9.0
+    listCoreV1NamespacedLimitRange                                        | 1.18.0
+    listCoreV1NamespacedPersistentVolumeClaim                             | 1.9.0
+    listCoreV1NamespacedPod                                               | 1.8.0
+    listCoreV1NamespacedPodTemplate                                       | 
+    listCoreV1NamespacedReplicationController                             | 1.9.0
+    listCoreV1NamespacedResourceQuota                                     | 1.16.0
+    listCoreV1NamespacedSecret                                            | 1.16.0
+    listCoreV1NamespacedService                                           | 
+    listCoreV1NamespacedServiceAccount                                    | 1.8.0
+    listCoreV1Node                                                        | 1.8.0
+    listCoreV1PersistentVolume                                            | 1.9.0
+    listCoreV1PersistentVolumeClaimForAllNamespaces                       | 
+    listCoreV1PodForAllNamespaces                                         | 
+    listCoreV1PodTemplateForAllNamespaces                                 | 1.19.0
+    listCoreV1ReplicationControllerForAllNamespaces                       | 
+    listCoreV1ResourceQuotaForAllNamespaces                               | 
+    listCoreV1SecretForAllNamespaces                                      | 1.18.0
+    listCoreV1ServiceAccountForAllNamespaces                              | 1.19.0
+    listCoreV1ServiceForAllNamespaces                                     | 1.18.0
+    listNetworkingV1NamespacedNetworkPolicy                               | 
+    listNetworkingV1NetworkPolicyForAllNamespaces                         | 
+    listRbacAuthorizationV1ClusterRole                                    | 1.8.0
+    listRbacAuthorizationV1ClusterRoleBinding                             | 
+    listRbacAuthorizationV1NamespacedRole                                 | 
+    listRbacAuthorizationV1NamespacedRoleBinding                          | 
+    listRbacAuthorizationV1RoleBindingForAllNamespaces                    | 
+    listRbacAuthorizationV1RoleForAllNamespaces                           | 
+    listSchedulingV1PriorityClass                                         | 
+    listStorageV1CSIDriver                                                | 
+    listStorageV1CSINode                                                  | 
+    listStorageV1StorageClass                                             | 
+    listStorageV1VolumeAttachment                                         | 
+    logFileListHandler                                                    | 
+    patchAdmissionregistrationV1MutatingWebhookConfiguration              | 1.16.0
+    patchAdmissionregistrationV1ValidatingWebhookConfiguration            | 1.16.0
+    patchApiextensionsV1CustomResourceDefinition                          | 1.16.0
+    patchApiextensionsV1CustomResourceDefinitionStatus                    | 1.16.0
+    patchAppsV1NamespacedDeployment                                       | 
+    patchAppsV1NamespacedDeploymentScale                                  | 
+    patchAppsV1NamespacedReplicaSet                                       | 
+    patchCoordinationV1NamespacedLease                                    | 1.17.0
+    patchCoreV1NamespacedConfigMap                                        | 1.16.0
+    patchCoreV1NamespacedEndpoints                                        | 
+    patchCoreV1NamespacedPersistentVolumeClaimStatus                      | 
+    patchCoreV1NamespacedPod                                              | 1.9.0
+    patchCoreV1NamespacedPodStatus                                        | 
+    patchCoreV1NamespacedPodTemplate                                      | 1.19.0
+    patchCoreV1NamespacedReplicationController                            | 
+    patchCoreV1NamespacedReplicationControllerScale                       | 
+    patchCoreV1NamespacedSecret                                           | 1.18.0
+    patchCoreV1NamespacedService                                          | 
+    patchCoreV1NamespacedServiceAccount                                   | 1.19.0
+    patchCoreV1NamespacedServiceStatus                                    | 
+    patchCoreV1Node                                                       | 
+    patchCoreV1NodeStatus                                                 | 
+    patchCoreV1PersistentVolume                                           | 
+    patchRbacAuthorizationV1ClusterRoleBinding                            | 
+    patchRbacAuthorizationV1NamespacedRoleBinding                         | 
+    patchStorageV1VolumeAttachment                                        | 
+    patchStorageV1VolumeAttachmentStatus                                  | 
+    readAdmissionregistrationV1MutatingWebhookConfiguration               | 1.16.0
+    readAdmissionregistrationV1ValidatingWebhookConfiguration             | 1.16.0
+    readApiextensionsV1CustomResourceDefinition                           | 1.16.0
+    readApiextensionsV1CustomResourceDefinitionStatus                     | 1.16.0
+    readApiregistrationV1APIService                                       | 1.8.0
+    readAppsV1NamespacedControllerRevision                                | 
+    readAppsV1NamespacedDaemonSet                                         | 
+    readAppsV1NamespacedDeployment                                        | 1.8.0
+    readAppsV1NamespacedDeploymentScale                                   | 
+    readAppsV1NamespacedReplicaSet                                        | 1.8.0
+    readAppsV1NamespacedReplicaSetScale                                   | 
+    readAppsV1NamespacedStatefulSet                                       | 1.9.0
+    readAppsV1NamespacedStatefulSetScale                                  | 1.16.0
+    readBatchV1NamespacedJob                                              | 1.15.0
+    readCoordinationV1NamespacedLease                                     | 1.17.0
+    readCoreV1ComponentStatus                                             | 
+    readCoreV1Namespace                                                   | 1.16.0
+    readCoreV1NamespacedConfigMap                                         | 1.8.0
+    readCoreV1NamespacedEndpoints                                         | 1.9.0
+    readCoreV1NamespacedLimitRange                                        | 1.18.0
+    readCoreV1NamespacedPersistentVolumeClaim                             | 
+    readCoreV1NamespacedPod                                               | 1.8.0
+    readCoreV1NamespacedPodLog                                            | 1.9.0
+    readCoreV1NamespacedPodTemplate                                       | 1.19.0
+    readCoreV1NamespacedReplicationController                             | 1.9.0
+    readCoreV1NamespacedReplicationControllerScale                        | 
+    readCoreV1NamespacedResourceQuota                                     | 1.15.0
+    readCoreV1NamespacedSecret                                            | 1.9.0
+    readCoreV1NamespacedService                                           | 1.9.0
+    readCoreV1NamespacedServiceAccount                                    | 1.9.0
+    readCoreV1Node                                                        | 
+    readCoreV1PersistentVolume                                            | 
+    readRbacAuthorizationV1ClusterRole                                    | 
+    readRbacAuthorizationV1ClusterRoleBinding                             | 
+    readRbacAuthorizationV1NamespacedRole                                 | 
+    readRbacAuthorizationV1NamespacedRoleBinding                          | 
+    readSchedulingV1PriorityClass                                         | 
+    readStorageV1CSIDriver                                                | 
+    readStorageV1CSINode                                                  | 
+    readStorageV1StorageClass                                             | 
+    readStorageV1VolumeAttachment                                         | 
+    replaceAdmissionregistrationV1MutatingWebhookConfiguration            | 1.16.0
+    replaceAdmissionregistrationV1ValidatingWebhookConfiguration          | 1.16.0
+    replaceApiextensionsV1CustomResourceDefinition                        | 1.16.0
+    replaceApiextensionsV1CustomResourceDefinitionStatus                  | 1.16.0
+    replaceApiregistrationV1APIServiceStatus                              | 
+    replaceAppsV1NamespacedControllerRevision                             | 
+    replaceAppsV1NamespacedDaemonSetStatus                                | 
+    replaceAppsV1NamespacedDeployment                                     | 1.8.0
+    replaceAppsV1NamespacedDeploymentScale                                | 
+    replaceAppsV1NamespacedDeploymentStatus                               | 
+    replaceAppsV1NamespacedReplicaSet                                     | 
+    replaceAppsV1NamespacedReplicaSetStatus                               | 
+    replaceAppsV1NamespacedStatefulSet                                    | 1.9.0
+    replaceAppsV1NamespacedStatefulSetScale                               | 1.16.0
+    replaceAppsV1NamespacedStatefulSetStatus                              | 
+    replaceBatchV1NamespacedJobStatus                                     | 
+    replaceCoordinationV1NamespacedLease                                  | 1.17.0
+    replaceCoreV1Namespace                                                | 1.16.0
+    replaceCoreV1NamespacedConfigMap                                      | 1.8.0
+    replaceCoreV1NamespacedEndpoints                                      | 
+    replaceCoreV1NamespacedLimitRange                                     | 1.18.0
+    replaceCoreV1NamespacedPersistentVolumeClaim                          | 
+    replaceCoreV1NamespacedPersistentVolumeClaimStatus                    | 
+    replaceCoreV1NamespacedPod                                            | 1.9.0
+    replaceCoreV1NamespacedReplicationController                          | 1.15.0
+    replaceCoreV1NamespacedReplicationControllerScale                     | 
+    replaceCoreV1NamespacedReplicationControllerStatus                    | 
+    replaceCoreV1NamespacedResourceQuota                                  | 1.16.0
+    replaceCoreV1NamespacedResourceQuotaStatus                            | 
+    replaceCoreV1NamespacedSecret                                         | 1.9.0
+    replaceCoreV1NamespacedService                                        | 1.15.0
+    replaceCoreV1NamespacedServiceAccount                                 | 
+    replaceCoreV1Node                                                     | 
+    replaceCoreV1PersistentVolume                                         | 
+    replaceCoreV1PersistentVolumeStatus                                   | 
+    replaceRbacAuthorizationV1ClusterRole                                 | 
+    replaceStorageV1CSINode                                               | 
+   (285 rows)
+
+   #+end_SRC
+
+** Create view for endpoints per release
+  #+NAME: Endpoints per release 
+  #+begin_src sql-mode
+    WITH ordered_release AS(
+      SELECT
+        release
+        FROM
+            conformance.open_api 
+        GROUP BY 1
+       ORDER BY
+      string_to_array(release, '.')::int[]
+    )
+    SELECT 
+      rel.release,
+      count(*) as endpoints,
+      count(*) FILTER(where first_release = rel.release) as new_endpoints,
+      count(*) FILTER(where first_conformance_test = rel.release) as new_endpoints_conf_tested
+      FROM
+          ordered_release rel
+          left JOIN conformance.open_api oa ON (rel.release = oa.release)
+          left JOIN conformance.stable_endpoint_first f ON (f.endpoint = oa.endpoint)
+      WHERE level = 'stable'
+        AND deprecated is false
+      GROUP BY 1
+           ORDER BY string_to_array(rel.release, '.')::int[]
+          ;
+  #+end_src
+
+  #+RESULTS: Endpoints per release
+  #+begin_SRC example
+   release | endpoints | new_endpoints | new_endpoints_conf_tested 
+  ---------+-----------+---------------+---------------------------
+   1.9.0   |       481 |           225 |                        26
+   1.10.0  |       450 |             6 |                         0
+   1.11.0  |       452 |             0 |                         0
+   1.12.0  |       373 |             0 |                         0
+   1.13.0  |       384 |             6 |                         1
+   1.14.0  |       402 |            13 |                         0
+   1.15.0  |       402 |             0 |                         7
+   1.16.0  |       430 |            27 |                        35
+   1.17.0  |       438 |             4 |                         7
+   1.18.0  |       445 |             4 |                         9
+   1.19.0  |       445 |             0 |                         8
+  (11 rows)
+
+  #+end_SRC
+  
 * Progress
+  I've now got all tables loaded with data and we can start to do cool summaries.  The view 'stable_endpoints_first' feels like an accomplishment, though it def feels like it needs some peer review.
+  With that test, and our ordered releases, we can do a nice summary of release, new endoints, and new conf tests.
+  I'm not quite sure how to distinguish tests that matured along with the endpoint.  You could make the assumption that if an endpoint is added to stable and a test that hits that endpoint is added to conformance, then it's likely that this test was written for the endpoint before promotion.  But there may also be cases where the endpoint was promoted and a new test was written for it in the same cycle, and that should be counted as new work.  I will want to check with the team ofr these edge cases...or start to build out the github connection so we can see the commit history for these tests.
+  ----
   I'm starting to get a query that will show the endpoint and when it was first tested, though i have a sense that I maight be making too broad of an assumption.  We are showing endpoints that are currently hit by tests, and then matching that to when the tests were released according to the latest conformance yaml.  The next step will be to try to determine when the endpoint was added (by using the swagger.json per release).  This would let us see new endpoints per reelease.  The thing I am confused by, though, is how the endpoint's operation_id changes as it is promoted, and how that aaffects the tests.  If an endpiont is brought ihnto beta with a t est, and then it is promoted to stable...does its operation_id change?  and does the test need to be updated to match that operation_id?  o ris the way the test written guaranteed to hit the same endpoints no matter whether they are beta  or stable/  it will be good to check in on th is to figure out the next steps.
 
 # Local Variables:
@@ -1096,3 +1476,5 @@ select distinct endpoint, test from conformance.audit_event limit 30;
  #+end_SRC
 
 *** Build view of release, stable endpoint count, stable conformance tested count, new tests count
+* Scratch
+
