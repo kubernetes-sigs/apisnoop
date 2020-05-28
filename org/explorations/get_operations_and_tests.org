@@ -12,6 +12,7 @@
    #+end_src
    
 ** Create tables
+   will be filled with the swagger.json, in other words these are the endpoints that are part of the current k8s api
    #+NAME: create open_api table
    #+begin_src sql-mode :results silent
      CREATE TABLE "conformance"."open_api"(
@@ -32,7 +33,12 @@
      );
    #+end_src
    
-   #+NAME: create tests_info table
+   This will be filled with entries from conformance.yaml, in
+ other words all the current conformance tests.
+ - testname :: the title as given in the yaml
+ - codename :: how it appears in the useragent hitting the endpoint
+ - file :: where the test is defined in the kubernetes/kubernetees repo
+    #+NAME: create tests_info table
     #+begin_src sql-mode :results silent
       CREATE TABLE conformance.test_info(
         testname text,
@@ -42,9 +48,10 @@
         file text
       );
     #+end_src
-    
+Events from the latest e2e test suite run.     
+- test :: the test pulled out of a useragent.  This maps to test_info codename, and so you can join the two tables based on where these values are the same
  #+NAME: audit_event
- #+BEGIN_SRC sql-mode
+ #+BEGIN_SRC sql-mode :results silent
    CREATE UNLOGGED TABLE conformance.audit_event (
      release text,
      release_date text,
@@ -60,23 +67,14 @@
    );
  #+END_SRC
 
- #+RESULTS: audit_event
- #+begin_src sql-mode
- CREATE TABLE
- #+end_src
-
  #+NAME: index the raw_audit_event
- #+BEGIN_SRC sql-mode
+ #+BEGIN_SRC sql-mode :results silent
  CREATE INDEX idx_conf_audit_event_endpoint  ON conformance.audit_event(endpoint);
  CREATE INDEX idx_conf_audit_event_test_hit ON conformance.audit_event(test_hit);
  CREATE INDEX idx_conf_audit_event_conf_test_hit ON conformance.audit_event(conf_test_hit);
  #+END_SRC
-
- #+RESULTS: index the raw_audit_event
- #+begin_src sql-mode
- CREATE INDEX
- #+end_src
-
+ 
+You can see the logic for how these tables ar epopulated in our loading functions 
 ** Create loading functions
    #+NAME: load_open_api.sql
    #+BEGIN_SRC sql-mode :results silent
@@ -90,103 +88,6 @@
      plpy.execute((sql))
      $$ LANGUAGE plpython3u ;
      reset role;
-      #+END_SRC
-
-   #+NAME: load_open_api.py
-   #+BEGIN_SRC python :results output
-          from string import Template
-          import json
-          import time  
-          import datetime
-          from urllib.request import urlopen, urlretrieve
-          from snoopUtils import determine_bucket_job, fetch_swagger
-          K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
-          OPEN_API_PATH = "/api/openapi-spec/swagger.json"
-
-          release_dates = {
-            "v1.0.0": "2015-07-10",
-            "v1.1.0": "2015-11-09",
-            "v1.2.0": "2016-03-16",
-            "v1.3.0": "2016-07-01",
-            "v1.4.0": "2016-09-26",
-            "v1.5.0": "2016-12-12",
-            "v1.6.0": "2017-03-28",
-            "v1.7.0": "2017-06-30",
-            "v1.8.0": "2017-08-28",
-            "v1.9.0": "2017-12-15",
-            "v1.10.0": "2018-03-26",
-            "v1.11.0":  "2018-06-27",
-            "v1.12.0": "2018-09-27",
-            "v1.13.0": "2018-12-03" ,
-            "v1.14.0": "2019-03-25",
-            "v1.15.0": "2019-06-19",
-            "v1.16.0": "2019-09-18",
-            "v1.17.0": "2019-12-07",
-            "v1.18.0": "2020-03-25"
-          }
-          if custom_release is not None:
-            release = custom_release
-            open_api_url = K8S_REPO_URL + release + OPEN_API_PATH
-            open_api = json.loads(urlopen(open_api_url).read().decode('utf-8')) # may change this to ascii
-            rd = release_dates[release]
-            release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
-          else:
-            bucket, job = determine_bucket_job()
-            swagger, metadata, commit_hash = fetch_swagger(bucket, job)
-            open_api = swagger
-            open_api_url = K8S_REPO_URL + commit_hash + OPEN_API_PATH
-            release_date = int(metadata['timestamp'])
-            release = metadata["version"].split('-')[0].replace('v','')
-
-          sql = Template("""
-             WITH open AS (
-               SELECT '${open_api}'::jsonb as api_data)
-                 INSERT INTO "conformance"."open_api"(
-                   release,
-                   release_date,
-                   endpoint,
-                   level,
-                   category,
-                   path,
-                   k8s_group,
-                   k8s_version,
-                   k8s_kind,
-                   k8s_action,
-                   deprecated,
-                   description,
-                   spec
-                 )
-             SELECT
-               trim(leading 'v' from '${release}') as release,
-               to_timestamp(${release_date}) as release_date,
-               (d.value ->> 'operationId'::text) as endpoint,
-               CASE
-                 WHEN paths.key ~~ '%alpha%' THEN 'alpha'
-                 WHEN paths.key ~~ '%beta%' THEN 'beta'
-                 ELSE 'stable'
-               END AS level,
-               split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
-               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-               paths.key AS path,
-               (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
-               CASE
-                 WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
-                 ELSE false
-               END AS deprecated,
-               (d.value ->> 'description'::text) AS description,
-               '${open_api_url}' as spec
-               FROM
-                   open
-                    , jsonb_each((open.api_data -> 'paths'::text)) paths(key, value)
-                    , jsonb_each(paths.value) d(key, value)
-                    , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
-              ORDER BY paths.key;
-                        """).substitute(release = release,
-                                        release_date = release_date,
-                                        open_api = json.dumps(open_api).replace("'","''"),
-                                        open_api_url = open_api_url)
       #+END_SRC
       
    #+NAME: load_tests
@@ -330,7 +231,6 @@
     select * from conformance.load_audit_events();
     #+end_src
 
-
 ** Create Views
    #+NAME: Stable Endpoints
    #+begin_src sql-mode :results silent
@@ -386,11 +286,262 @@
         ORDER BY string_to_array(release, '.')::int[]
               ;
   #+end_src
-** Explore
-    #+NAME: endpoints and their tests
-    #+begin_src sql-mode
+* Explore
+   #+NAME: endpoints and their tests
+   #+begin_src sql-mode
+     SELECT DISTINCT
+       endpoint,
+       testname
+       FROM
+           conformance.audit_event ae
+           JOIN conformance.test_info test ON (ae.test = test.codename)
+      WHERE
+       endpoint LIKE 'get%'
+     ;
+   #+end_src
+
+   #+RESULTS: endpoints and their tests
+   #+begin_SRC example
+                     endpoint                   |                 testname                 
+   ---------------------------------------------+------------------------------------------
+    getAdmissionregistrationAPIGroup            | Admission webhook, discovery document
+    getAdmissionregistrationV1APIResources      | Admission webhook, discovery document
+    getAdmissionregistrationV1APIResources      | aggregator-supports-the-sample-apiserver
+    getAdmissionregistrationV1beta1APIResources | aggregator-supports-the-sample-apiserver
+    getApiextensionsAPIGroup                    | Custom Resource Definition, discovery
+    getApiextensionsV1APIResources              | aggregator-supports-the-sample-apiserver
+    getApiextensionsV1APIResources              | Custom Resource Definition, discovery
+    getApiextensionsV1beta1APIResources         | aggregator-supports-the-sample-apiserver
+    getApiregistrationV1APIResources            | aggregator-supports-the-sample-apiserver
+    getApiregistrationV1beta1APIResources       | aggregator-supports-the-sample-apiserver
+    getAPIVersions                              | Admission webhook, discovery document
+    getAPIVersions                              | aggregator-supports-the-sample-apiserver
+    getAPIVersions                              | Custom Resource Definition, discovery
+    getAppsV1APIResources                       | aggregator-supports-the-sample-apiserver
+    getAuthenticationV1APIResources             | aggregator-supports-the-sample-apiserver
+    getAuthenticationV1beta1APIResources        | aggregator-supports-the-sample-apiserver
+    getAuthorizationV1APIResources              | aggregator-supports-the-sample-apiserver
+    getAuthorizationV1beta1APIResources         | aggregator-supports-the-sample-apiserver
+    getAutoscalingV1APIResources                | aggregator-supports-the-sample-apiserver
+    getAutoscalingV2beta1APIResources           | aggregator-supports-the-sample-apiserver
+    getAutoscalingV2beta2APIResources           | aggregator-supports-the-sample-apiserver
+    getBatchV1APIResources                      | aggregator-supports-the-sample-apiserver
+    getBatchV1beta1APIResources                 | aggregator-supports-the-sample-apiserver
+    getBatchV2alpha1APIResources                | aggregator-supports-the-sample-apiserver
+    getCertificatesV1beta1APIResources          | aggregator-supports-the-sample-apiserver
+    getCoordinationV1APIResources               | aggregator-supports-the-sample-apiserver
+    getCoordinationV1beta1APIResources          | aggregator-supports-the-sample-apiserver
+    getCoreAPIVersions                          | aggregator-supports-the-sample-apiserver
+    getCoreV1APIResources                       | aggregator-supports-the-sample-apiserver
+    getDiscoveryV1beta1APIResources             | aggregator-supports-the-sample-apiserver
+    getEventsV1beta1APIResources                | aggregator-supports-the-sample-apiserver
+    getExtensionsV1beta1APIResources            | aggregator-supports-the-sample-apiserver
+    getNetworkingV1APIResources                 | aggregator-supports-the-sample-apiserver
+    getNetworkingV1beta1APIResources            | aggregator-supports-the-sample-apiserver
+    getNodeV1beta1APIResources                  | aggregator-supports-the-sample-apiserver
+    getPolicyV1beta1APIResources                | aggregator-supports-the-sample-apiserver
+    getRbacAuthorizationV1APIResources          | aggregator-supports-the-sample-apiserver
+    getRbacAuthorizationV1beta1APIResources     | aggregator-supports-the-sample-apiserver
+    getSchedulingV1alpha1APIResources           | aggregator-supports-the-sample-apiserver
+    getSchedulingV1APIResources                 | aggregator-supports-the-sample-apiserver
+    getSchedulingV1beta1APIResources            | aggregator-supports-the-sample-apiserver
+    getSettingsV1alpha1APIResources             | aggregator-supports-the-sample-apiserver
+    getStorageV1APIResources                    | aggregator-supports-the-sample-apiserver
+    getStorageV1beta1APIResources               | aggregator-supports-the-sample-apiserver
+   (44 rows)
+
+   #+end_SRC
+
+
     
-    #+end_src
-   
-   
-   
+   #+begin_src sql-mode
+     SELECT DISTINCT
+       oa.endpoint,
+       (count(*) FILTER(where test_hit is true) > 0) as tested,
+       (count(*) FILTER(where conf_test_hit is true) > 0) as conf_tested
+       FROM
+           conformance.open_api oa
+           LEFT JOIN conformance.audit_event ae ON(oa.endpoint = ae.endpoint)
+      WHERE
+       oa.endpoint LIKE 'get%'
+      GROUP BY 1
+      ORDER BY tested asc
+     ;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                      endpoint                   | tested | conf_tested 
+   ----------------------------------------------+--------+-------------
+    getAdmissionregistrationV1alpha1APIResources | f      | f
+    getApiregistrationAPIGroup                   | f      | f
+    getAppsAPIGroup                              | f      | f
+    getAppsV1beta1APIResources                   | f      | f
+    getAppsV1beta2APIResources                   | f      | f
+    getAuditregistrationAPIGroup                 | f      | f
+    getAuditregistrationV1alpha1APIResources     | f      | f
+    getAuthenticationAPIGroup                    | f      | f
+    getAuthorizationAPIGroup                     | f      | f
+    getAutoscalingAPIGroup                       | f      | f
+    getBatchAPIGroup                             | f      | f
+    getCertificatesAPIGroup                      | f      | f
+    getCodeVersion                               | f      | f
+    getCoordinationAPIGroup                      | f      | f
+    getDiscoveryAPIGroup                         | f      | f
+    getDiscoveryV1alpha1APIResources             | f      | f
+    getEventsAPIGroup                            | f      | f
+    getExtensionsAPIGroup                        | f      | f
+    getFlowcontrolApiserverAPIGroup              | f      | f
+    getFlowcontrolApiserverV1alpha1APIResources  | f      | f
+    getNetworkingAPIGroup                        | f      | f
+    getNodeAPIGroup                              | f      | f
+    getNodeV1alpha1APIResources                  | f      | f
+    getPolicyAPIGroup                            | f      | f
+    getRbacAuthorizationAPIGroup                 | f      | f
+    getRbacAuthorizationV1alpha1APIResources     | f      | f
+    getSchedulingAPIGroup                        | f      | f
+    getSettingsAPIGroup                          | f      | f
+    getStorageAPIGroup                           | f      | f
+    getStorageV1alpha1APIResources               | f      | f
+    getAdmissionregistrationAPIGroup             | t      | t
+    getAdmissionregistrationV1APIResources       | t      | t
+    getAdmissionregistrationV1beta1APIResources  | t      | t
+    getApiextensionsAPIGroup                     | t      | t
+    getApiextensionsV1APIResources               | t      | t
+    getApiextensionsV1beta1APIResources          | t      | t
+    getApiregistrationV1APIResources             | t      | t
+    getApiregistrationV1beta1APIResources        | t      | t
+    getAPIVersions                               | t      | t
+    getAppsV1APIResources                        | t      | t
+    getAuthenticationV1APIResources              | t      | t
+    getAuthenticationV1beta1APIResources         | t      | t
+    getAuthorizationV1APIResources               | t      | t
+    getAuthorizationV1beta1APIResources          | t      | t
+    getAutoscalingV1APIResources                 | t      | t
+    getAutoscalingV2beta1APIResources            | t      | t
+    getAutoscalingV2beta2APIResources            | t      | t
+    getBatchV1APIResources                       | t      | t
+    getBatchV1beta1APIResources                  | t      | t
+    getBatchV2alpha1APIResources                 | t      | t
+    getCertificatesV1beta1APIResources           | t      | t
+    getCoordinationV1APIResources                | t      | t
+    getCoordinationV1beta1APIResources           | t      | t
+    getCoreAPIVersions                           | t      | t
+    getCoreV1APIResources                        | t      | t
+    getDiscoveryV1beta1APIResources              | t      | t
+    getEventsV1beta1APIResources                 | t      | t
+    getExtensionsV1beta1APIResources             | t      | t
+    getNetworkingV1APIResources                  | t      | t
+    getNetworkingV1beta1APIResources             | t      | t
+    getNodeV1beta1APIResources                   | t      | t
+    getPolicyV1beta1APIResources                 | t      | t
+    getRbacAuthorizationV1APIResources           | t      | t
+    getRbacAuthorizationV1beta1APIResources      | t      | t
+    getSchedulingV1alpha1APIResources            | t      | t
+    getSchedulingV1APIResources                  | t      | t
+    getSchedulingV1beta1APIResources             | t      | t
+    getSettingsV1alpha1APIResources              | t      | t
+    getStorageV1APIResources                     | t      | t
+    getStorageV1beta1APIResources                | t      | t
+   (70 rows)
+
+   #+end_SRC
+* Footnotes
+** Python function for loading open api
+   kept here cos its long, and don't want to accidentally trigger it during setup
+   #+NAME: load_open_api.py
+   #+BEGIN_SRC python :results output
+          from string import Template
+          import json
+          import time  
+          import datetime
+          from urllib.request import urlopen, urlretrieve
+          from snoopUtils import determine_bucket_job, fetch_swagger
+          K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
+          OPEN_API_PATH = "/api/openapi-spec/swagger.json"
+
+          release_dates = {
+            "v1.0.0": "2015-07-10",
+            "v1.1.0": "2015-11-09",
+            "v1.2.0": "2016-03-16",
+            "v1.3.0": "2016-07-01",
+            "v1.4.0": "2016-09-26",
+            "v1.5.0": "2016-12-12",
+            "v1.6.0": "2017-03-28",
+            "v1.7.0": "2017-06-30",
+            "v1.8.0": "2017-08-28",
+            "v1.9.0": "2017-12-15",
+            "v1.10.0": "2018-03-26",
+            "v1.11.0":  "2018-06-27",
+            "v1.12.0": "2018-09-27",
+            "v1.13.0": "2018-12-03" ,
+            "v1.14.0": "2019-03-25",
+            "v1.15.0": "2019-06-19",
+            "v1.16.0": "2019-09-18",
+            "v1.17.0": "2019-12-07",
+            "v1.18.0": "2020-03-25"
+          }
+          if custom_release is not None:
+            release = custom_release
+            open_api_url = K8S_REPO_URL + release + OPEN_API_PATH
+            open_api = json.loads(urlopen(open_api_url).read().decode('utf-8')) # may change this to ascii
+            rd = release_dates[release]
+            release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
+          else:
+            bucket, job = determine_bucket_job()
+            swagger, metadata, commit_hash = fetch_swagger(bucket, job)
+            open_api = swagger
+            open_api_url = K8S_REPO_URL + commit_hash + OPEN_API_PATH
+            release_date = int(metadata['timestamp'])
+            release = metadata["version"].split('-')[0].replace('v','')
+
+          sql = Template("""
+             WITH open AS (
+               SELECT '${open_api}'::jsonb as api_data)
+                 INSERT INTO "conformance"."open_api"(
+                   release,
+                   release_date,
+                   endpoint,
+                   level,
+                   category,
+                   path,
+                   k8s_group,
+                   k8s_version,
+                   k8s_kind,
+                   k8s_action,
+                   deprecated,
+                   description,
+                   spec
+                 )
+             SELECT
+               trim(leading 'v' from '${release}') as release,
+               to_timestamp(${release_date}) as release_date,
+               (d.value ->> 'operationId'::text) as endpoint,
+               CASE
+                 WHEN paths.key ~~ '%alpha%' THEN 'alpha'
+                 WHEN paths.key ~~ '%beta%' THEN 'beta'
+                 ELSE 'stable'
+               END AS level,
+               split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+               paths.key AS path,
+               (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+               CASE
+                 WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
+                 ELSE false
+               END AS deprecated,
+               (d.value ->> 'description'::text) AS description,
+               '${open_api_url}' as spec
+               FROM
+                   open
+                    , jsonb_each((open.api_data -> 'paths'::text)) paths(key, value)
+                    , jsonb_each(paths.value) d(key, value)
+                    , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+              ORDER BY paths.key;
+                        """).substitute(release = release,
+                                        release_date = release_date,
+                                        open_api = json.dumps(open_api).replace("'","''"),
+                                        open_api_url = open_api_url)
+      #+END_SRC
