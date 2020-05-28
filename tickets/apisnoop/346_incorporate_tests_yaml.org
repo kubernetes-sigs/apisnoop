@@ -1,0 +1,1784 @@
+# -*- ii: apisnoop; -*-
+#+TITLE: 351: track conformance progress
+* Ticket
+  #+begin_quote
+  Using a current audit event, the current conformance.yaml, and a set of swagger.jsons for each release going back as far as possible, calculate how many of today's stable endpoints were introduced in each release, and how many of them came with conformance tests. With this, we can get a better gauge on the test-writing progress.
+  #+end_quote
+* Strategy
+- Import yaml as a sql table for postgres
+- Build out view that shows when a test was added and the endpoints it hits.
+- Build out view that shows endpoints per release, low-priority endpoints, new endpoints, new tests, and new coverage.
+- share table of these findings
+- design infographic for best display of this
+- transpose data into sharable infographic
+* Process
+  Went through a first iteration (readable in the footnotes), but realized this would be simpler and cleaner if we made a minimal schema built specific to this work and didn't try to adjust the current database relations.  Am going to use what i learned in the first process to build up this new focused schema and tables.
+** Create Conformance Schema
+   #+NAME: Create Conformance Schema
+   #+begin_src sql-mode
+   CREATE SCHEMA "conformance";
+   #+end_src
+
+   #+RESULTS: Create Conformance Schema
+   #+begin_SRC example
+   CREATE SCHEMA
+   #+end_SRC
+   
+** Create open_api table for endpoint information
+   
+  This is similar to bucket_job_swagger + api_operation, but with only the data we need 
+   #+NAME: open_api 
+   #+begin_src sql-mode
+     CREATE TABLE "conformance"."open_api"(
+       release text,
+       release_date timestamp,
+       endpoint text,
+       level text,
+       category text,
+       path text,
+       k8s_group text,
+       k8s_version text,
+       k8s_kind text,
+       k8s_action text,
+       deprecated boolean,
+       description text,
+       spec text,
+       PRIMARY KEY (release, endpoint)
+     );
+   #+end_src
+
+** Function for loading in the open api spec 
+   We can pass in the version(= "vN.N.N"), and we will generate a swagger url from this and pull in the relevant swagger.json.
+   If no version is passed, we determine latest commit and pull swagger from this.
+   We map over swagger to fill out open_api table with data, and provide link to spec for validation
+   
+   When it's working it should look like:
+      #+begin_example sql-mode
+      select * from conformance.load_open_api('v1.9.0');
+      #+end_example
+
+      We'll create a sql function with a tangled in pl/python function
+   #+NAME: load_open_api.sql
+   #+BEGIN_SRC sql-mode :results silent
+     set role dba;
+     DROP FUNCTION IF EXISTS "conformance"."load_open_api";
+     CREATE OR REPLACE FUNCTION "conformance"."load_open_api"(
+       custom_release text default null
+       )
+     RETURNS text AS $$
+     <<load_open_api.py>>
+     plpy.execute((sql))
+     $$ LANGUAGE plpython3u ;
+     reset role;
+      #+END_SRC
+
+
+   #+NAME: load_open_api.py
+   #+BEGIN_SRC python :results output
+          from string import Template
+          import json
+          import time  
+          import datetime
+          from urllib.request import urlopen, urlretrieve
+          from snoopUtils import determine_bucket_job, fetch_swagger
+          K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
+          OPEN_API_PATH = "/api/openapi-spec/swagger.json"
+
+          release_dates = {
+            "v1.0.0": "2015-07-10",
+            "v1.1.0": "2015-11-09",
+            "v1.2.0": "2016-03-16",
+            "v1.3.0": "2016-07-01",
+            "v1.4.0": "2016-09-26",
+            "v1.5.0": "2016-12-12",
+            "v1.6.0": "2017-03-28",
+            "v1.7.0": "2017-06-30",
+            "v1.8.0": "2017-08-28",
+            "v1.9.0": "2017-12-15",
+            "v1.10.0": "2018-03-26",
+            "v1.11.0":  "2018-06-27",
+            "v1.12.0": "2018-09-27",
+            "v1.13.0": "2018-12-03" ,
+            "v1.14.0": "2019-03-25",
+            "v1.15.0": "2019-06-19",
+            "v1.16.0": "2019-09-18",
+            "v1.17.0": "2019-12-07",
+            "v1.18.0": "2020-03-25"
+          }
+          if custom_release is not None:
+            release = custom_release
+            open_api_url = K8S_REPO_URL + release + OPEN_API_PATH
+            open_api = json.loads(urlopen(open_api_url).read().decode('utf-8')) # may change this to ascii
+            rd = release_dates[release]
+            release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
+          else:
+            bucket, job = determine_bucket_job()
+            swagger, metadata, commit_hash = fetch_swagger(bucket, job)
+            open_api = swagger
+            open_api_url = K8S_REPO_URL + commit_hash + OPEN_API_PATH
+            release_date = int(metadata['timestamp'])
+            release = metadata["version"].split('-')[0].replace('v','')
+
+          sql = Template("""
+             WITH open AS (
+               SELECT '${open_api}'::jsonb as api_data)
+                 INSERT INTO "conformance"."open_api"(
+                   release,
+                   release_date,
+                   endpoint,
+                   level,
+                   category,
+                   path,
+                   k8s_group,
+                   k8s_version,
+                   k8s_kind,
+                   k8s_action,
+                   deprecated,
+                   description,
+                   spec
+                 )
+             SELECT
+               trim(leading 'v' from '${release}') as release,
+               to_timestamp(${release_date}) as release_date,
+               (d.value ->> 'operationId'::text) as endpoint,
+               CASE
+                 WHEN paths.key ~~ '%alpha%' THEN 'alpha'
+                 WHEN paths.key ~~ '%beta%' THEN 'beta'
+                 ELSE 'stable'
+               END AS level,
+               split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+               paths.key AS path,
+               (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+               CASE
+                 WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
+                 ELSE false
+               END AS deprecated,
+               (d.value ->> 'description'::text) AS description,
+               '${open_api_url}' as spec
+               FROM
+                   open
+                    , jsonb_each((open.api_data -> 'paths'::text)) paths(key, value)
+                    , jsonb_each(paths.value) d(key, value)
+                    , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+              ORDER BY paths.key;
+                        """).substitute(release = release,
+                                        release_date = release_date,
+                                        open_api = json.dumps(open_api).replace("'","''"),
+                                        open_api_url = open_api_url)
+      #+END_SRC
+
+*** Loop and add all releases      
+    I started with 1.9 up, as these are the releases we have conformance.yaml info for.
+#+begin_src sql-mode
+      WITH releases AS (
+        SELECT column1 as release
+          FROM (VALUES
+                ('v1.9.0'),
+                ('v1.10.0'),
+                ('v1.11.0'),
+                ('v1.12.0'),
+                ('v1.13.0'),
+                ('v1.14.0'),
+                ('v1.15.0'),
+                ('v1.16.0'),
+                ('v1.17.0'),
+                ('v1.18.0')
+          ) as rlist
+        )
+  SELECT f.*
+    FROM
+        releases r
+      , LATERAL conformance.load_open_api(r.release) f
+        ;
+#+end_src
+
+#+begin_src sql-mode
+  SELECT
+    release,
+    release_date,
+    count(*)
+    FROM
+        conformance.open_api
+   WHERE
+  deprecated IS FALSE
+   GROUP BY 1, 2
+   ORDER BY
+  string_to_array(release, '.')::int[]
+  ;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ release |    release_date     | count 
+---------+---------------------+-------
+ 1.9.0   | 2017-12-15 00:00:00 |   958
+ 1.10.0  | 2018-03-26 00:00:00 |   945
+ 1.11.0  | 2018-06-27 00:00:00 |   963
+ 1.12.0  | 2018-09-27 00:00:00 |   802
+ 1.13.0  | 2018-12-03 00:00:00 |   821
+ 1.14.0  | 2019-03-25 00:00:00 |   873
+ 1.15.0  | 2019-06-19 00:00:00 |   873
+ 1.16.0  | 2019-09-18 00:00:00 |   910
+ 1.17.0  | 2019-12-07 00:00:00 |   939
+ 1.18.0  | 2020-03-25 00:00:00 |   795
+(10 rows)
+
+#+end_SRC
+
+** Create test_info for info from conformance.yaml
+   This function should be unchanged from our previous iteration, and we only need the most recent test info
+*** Create table
+    #+begin_src sql-mode :results silent
+      CREATE TABLE conformance.test_info(
+        testname text,
+        codename text,
+        release text,
+        description text,
+        file text
+      );
+    #+end_src
+
+*** Write the Sql Function   
+   #+NAME: load_tests
+   #+BEGIN_SRC sql-mode :results silent
+     set role dba;
+     DROP FUNCTION IF EXISTS load_tests;
+     CREATE OR REPLACE FUNCTION conformance.load_tests()
+     RETURNS text AS $$
+     from string import Template
+     import json
+     import yaml
+     from urllib.request import urlopen, urlretrieve
+
+     TESTS_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/test/conformance/testdata/conformance.yaml"
+     tests = json.dumps(yaml.safe_load(urlopen(TESTS_URL)))
+     sql = Template("""
+                   WITH jsonb_array AS (
+                   SELECT jsonb_array_elements('${tests}'::jsonb) as test_data)
+                   INSERT INTO conformance.test_info(testname, codename, release, description, file)
+                      SELECT
+                      (test_data->>'testname') as testname,
+                      (test_data->>'codename') as codename,
+                      CASE
+                        WHEN ((test_data->>'release') = '') THEN '1.8.0'
+                        WHEN ((test_data->>'release') like '%,%')
+                          THEN trim(leading 'v' from split_part((test_data->>'release'), ', ', 2))||'.0'
+                        ELSE trim(leading 'v' from (test_data->>'release')) ||'.0'
+                      END as release,
+                      (test_data->>'description') as description,
+                      (test_data->>'file') as file
+                      from jsonb_array;
+                   """).substitute(tests = tests.replace("'","''"))
+     try:
+         plpy.execute(sql)
+         return 'conformance.yaml loaded into conformance.tests_info!'
+     except Exception as e:
+         return 'error occured: ', e
+     $$ LANGUAGE plpython3u ;
+     reset role;
+      #+END_SRC
+      
+      #+begin_src sql-mode
+        select * from conformance.load_tests();
+        -- delete from conformance.test_info;
+      #+end_src
+
+      #+RESULTS:
+      #+begin_SRC example
+                            load_tests                      
+      ------------------------------------------------------
+       conformance.yaml loaded into conformance.tests_info!
+      (1 row)
+
+      #+end_SRC
+
+#+begin_src sql-mode
+select distinct release from conformance.test_info;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ release 
+---------
+ 1.19.0
+ 1.14.0
+ 1.8.0
+ 1.15.0
+ 1.17.0
+ 1.13.0
+ 1.12.0
+ 1.16.0
+ 1.18.0
+ 1.9.0
+(10 rows)
+
+#+end_SRC
+#+begin_src sql-mode
+  select 
+    testname,
+    release
+  FROM conformance.test_info
+  limit 10;
+#+end_src   
+
+#+RESULTS:
+#+begin_SRC example
+                                        testname                                         | release 
+-----------------------------------------------------------------------------------------+---------
+ Pod Lifecycle, post start exec hook                                                     | 1.9
+ Pod Lifecycle, post start http hook                                                     | 1.9
+ Pod Lifecycle, prestop exec hook                                                        | 1.9
+ Pod Lifecycle, prestop http hook                                                        | 1.9
+ Container Runtime, TerminationMessage, from log output of succeeding container          | 1.15
+ Container Runtime, TerminationMessage, from file of succeeding container                | 1.15
+ Container Runtime, TerminationMessage, from container's log output of failing container | 1.15
+ Container Runtime, TerminationMessagePath, non-root user and non-default path           | 1.15
+ Container Runtime, Restart Policy, Pod Phases                                           | 1.13
+ Docker containers, with arguments                                                       | 1.9
+(10 rows)
+
+#+end_SRC
+   
+Excellent.
+** Create audit_event for current endpoint test hits
+   This is the most complex one, and I don't want to redo all valuable work we've done to get to here.  At same time, our existing audit_event table has a bunch of columns unnecessary for this work.  I will reuse some of the hlper functions, but write up a whole new table and loading function.
+
+   Unlike our main schema, there should always only be one set of audit events in the conformance schema.  If you are going to add a new set, the previous should be deleted.  They are essentially always the 'current' events.
+   
+   There is no sense of history outside of what's documented in the github yamls.  So we jcan see the current state of endpoints tested, and when those endpoitns and tests were released.  We  will not compare audit event data sets in this schema.
+   
+ #+NAME: audit_event
+ #+BEGIN_SRC sql-mode
+   CREATE UNLOGGED TABLE conformance.audit_event (
+     release text,
+     release_date text,
+     audit_id text NOT NULL,
+     endpoint text,
+     useragent text,
+     test text,
+     test_hit boolean,
+     conf_test_hit boolean,
+     data jsonb NOT NULL,
+     id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+     ingested_at timestamp DEFAULT CURRENT_TIMESTAMP
+   );
+ #+END_SRC
+
+ #+RESULTS: audit_event
+ #+begin_SRC example
+ CREATE TABLE
+ #+end_SRC
+
+ #+NAME: index the raw_audit_event
+ #+BEGIN_SRC sql-mode
+ CREATE INDEX idx_conf_audit_event_endpoint  ON conformance.audit_event(endpoint);
+ CREATE INDEX idx_conf_audit_event_test_hit ON conformance.audit_event(test_hit);
+ CREATE INDEX idx_conf_audit_event_conf_test_hit ON conformance.audit_event(conf_test_hit);
+ #+END_SRC
+
+ #+RESULTS: index the raw_audit_event
+ #+begin_SRC example
+ CREATE INDEX
+ #+end_SRC
+
+*** load audit_event function
+    #+NAME: load_audit_events.sql
+    #+BEGIN_SRC sql-mode :noweb yes :results silent
+      set role dba;
+      CREATE OR REPLACE FUNCTION conformance.load_audit_events(
+        custom_bucket text default null,
+        custom_job text default null)
+        RETURNS text AS $$
+        from string import Template
+        from snoopUtils import determine_bucket_job, download_and_process_auditlogs, fetch_swagger
+
+        bucket, job = determine_bucket_job(custom_bucket, custom_job)
+        auditlog_file = download_and_process_auditlogs(bucket, job)
+        _, metadata, _ = fetch_swagger(bucket, job)
+        release_date = int(metadata['timestamp'])
+        release = metadata["version"].split('-')[0].replace('v','')
+  
+        sql = Template("""
+          CREATE TEMPORARY TABLE conformance_audit_event_import(data jsonb not null) ;
+          COPY conformance_audit_event_import(data)
+          FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
+
+          INSERT INTO conformance.audit_event(release, release_date,
+                                  audit_id, endpoint,
+                                  useragent, test,
+                                  test_hit, conf_test_hit,
+                                  data)
+
+          SELECT trim(leading 'v' from '${release}') as release,
+                  '${release_date}',
+                  (raw.data ->> 'auditID'),
+                  (raw.data ->> 'operationId') as endpoint,
+                  (raw.data ->> 'userAgent') as useragent,
+                  CASE
+                    WHEN ((raw.data ->> 'userAgent') like 'e2e.test%')
+                      THEN trim(split_part((raw.data->>'userAgent'), '--'::text, 2))
+                    ELSE null
+                  END as test,
+                  ((raw.data ->> 'userAgent') like 'e2e.test%') as test_hit,
+                  ((raw.data ->> 'userAgent') like '%[Conformance]%') as conf_test_hit,
+                  raw.data
+            FROM conformance_audit_event_import raw;
+                  """).substitute(
+                      audit_logfile = auditlog_file,
+                      release = release,
+                      release_date = release_date,
+                  )
+        try:
+            plpy.execute(sql)
+            return "it worked"
+        except plpy.SPIError as plpyError:
+            print("something went wrong with plpy: ") 
+            return plpyError
+        except:
+            return "something unknown went wrong"
+        $$ LANGUAGE plpython3u ;
+        reset role;
+    #+END_SRC
+*** load and check events
+    #+begin_src sql-mode
+    select * from conformance.load_audit_events();
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+     load_audit_events 
+    -------------------
+     it worked
+    (1 row)
+
+    #+end_SRC
+#+begin_src sql-mode
+select distinct endpoint, test from conformance.audit_event limit 30;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                    endpoint                    |                                                               test                                                               
+------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------
+ connectCoreV1GetNamespacedPodExec              | [k8s.io] Pods should support remote command execution over websockets [NodeConformance] [Conformance]
+ connectCoreV1GetNamespacedPodPortforward       | [sig-cli] Kubectl Port forwarding With a server listening on 0.0.0.0 should support forwarding over websockets
+ connectCoreV1GetNamespacedPodPortforward       | [sig-cli] Kubectl Port forwarding With a server listening on localhost should support forwarding over websockets
+ connectCoreV1GetNamespacedPodProxyWithPath     | [k8s.io] [sig-node] PreStop should call prestop when killing a pod  [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-apps] ReplicaSet should serve a basic image on each replica with a private image
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-apps] ReplicaSet should serve a basic image on each replica with a public image  [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-apps] ReplicationController should serve a basic image on each replica with a private image
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-apps] ReplicationController should serve a basic image on each replica with a public image  [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-cli] Kubectl client Update Demo should create and stop a replication controller  [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-cli] Kubectl client Update Demo should scale a replication controller  [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] DNS should provide DNS for ExternalName services [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] DNS should provide DNS for pods for Hostname [LinuxOnly] [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] DNS should provide DNS for pods for Subdomain [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] DNS should provide DNS for services  [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] DNS should provide DNS for the cluster  [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] DNS should provide DNS for the cluster [Provider:GCE]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] DNS should provide /etc/hosts entries for the cluster [LinuxOnly] [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] DNS should resolve DNS of partial qualified names for services [LinuxOnly] [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] DNS should resolve DNS of partial qualified names for the cluster [LinuxOnly]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] Proxy version v1 should proxy through a service and a pod  [Conformance]
+ connectCoreV1GetNamespacedPodProxyWithPath     | [sig-network] Services should create endpoints for unready pods
+ connectCoreV1GetNamespacedServiceProxyWithPath | [sig-cli] Kubectl client Guestbook application should create and stop a working application  [Conformance]
+ connectCoreV1GetNamespacedServiceProxyWithPath | [sig-network] Proxy version v1 should proxy through a service and a pod  [Conformance]
+ connectCoreV1GetNodeProxyWithPath              | [k8s.io] [sig-node] kubelet [k8s.io] [sig-node] Clean up pods on node kubelet should be able to delete 10 pods per node in 1m0s.
+ connectCoreV1GetNodeProxyWithPath              | [k8s.io] [sig-node] Pods Extended [k8s.io] Delete Grace Period should be submitted and removed
+ connectCoreV1GetNodeProxyWithPath              | [sig-network] Proxy version v1 should proxy logs on node using proxy subresource
+ connectCoreV1GetNodeProxyWithPath              | [sig-network] Proxy version v1 should proxy logs on node with explicit kubelet port using proxy subresource
+ connectCoreV1PostNamespacedPodAttach           | 
+ connectCoreV1PostNamespacedPodExec             | [k8s.io] KubeletManagedEtcHosts should test kubelet managed /etc/hosts file [LinuxOnly] [NodeConformance] [Conformance]
+ connectCoreV1PostNamespacedPodExec             | [k8s.io] PrivilegedPod [NodeConformance] should enable privileged commands [LinuxOnly]
+(30 rows)
+
+#+end_SRC
+
+** Create views for stable endpoints with first release, first conformance test, and info on that conformance test
+   This is mostly following our ordering pattern, where we order all test releases for an endpoint by its semver and then grab the first result.  This gives us the first release in which the endpoint or its test appears.
+   
+   #+NAME: Stable Endpoints
+   #+begin_src sql-mode
+     CREATE MATERIALIZED VIEW conformance.stable_endpoint_first AS
+     SELECT DISTINCT
+       oa.endpoint,
+       (array_agg(test.release order by string_to_array(test.release, '.')::int[]))[1] as first_conformance_test,
+       (array_agg(test.testname order by string_to_array(test.release, '.')::int[]))[1] as test,
+       (array_agg(test.codename order by string_to_array(test.release, '.')::int[]))[1] as codename,
+       (array_agg(test.file order by string_to_array(test.release, '.')::int[]))[1] as file,
+       (array_agg(oa.release order by string_to_array(oa.release, '.')::int[]))[1] as first_release
+       FROM
+           conformance.open_api oa 
+           LEFT JOIN conformance.audit_event ae ON (ae.endpoint = oa.endpoint)
+           LEFT JOIN conformance.test_info test ON (ae.test = test.codename)
+        WHERE oa.level = 'stable'
+        AND oa.deprecated is false
+        GROUP BY 1
+        ; 
+   #+end_src
+
+   #+RESULTS: Stable Endpoints
+   #+begin_SRC example
+   SELECT 573
+   #+end_SRC
+
+   Here is a sample of what we'd get
+   #+begin_src sql-mode
+     SELECT
+       endpoint,
+       first_release,
+       first_conformance_test
+       FROM
+           conformance.stable_endpoint_first
+      LIMIT 25
+     ;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                             endpoint                           | first_release | first_conformance_test 
+   -------------------------------------------------------------+---------------+------------------------
+    connectCoreV1GetNamespacedPodExec                           | 1.9.0         | 1.13.0
+    connectCoreV1GetNamespacedPodPortforward                    | 1.9.0         | 
+    connectCoreV1GetNamespacedPodProxyWithPath                  | 1.9.0         | 1.9.0
+    connectCoreV1GetNamespacedServiceProxyWithPath              | 1.9.0         | 1.9.0
+    connectCoreV1GetNodeProxyWithPath                           | 1.9.0         | 
+    connectCoreV1PostNamespacedPodAttach                        | 1.9.0         | 
+    connectCoreV1PostNamespacedPodExec                          | 1.9.0         | 1.9.0
+    connectCoreV1PostNamespacedPodPortforward                   | 1.9.0         | 
+    createAdmissionregistrationV1MutatingWebhookConfiguration   | 1.16.0        | 1.16.0
+    createAdmissionregistrationV1ValidatingWebhookConfiguration | 1.16.0        | 1.16.0
+    createApiextensionsV1CustomResourceDefinition               | 1.16.0        | 1.9.0
+    createApiregistrationV1APIService                           | 1.10.0        | 1.8.0
+    createAppsV1NamespacedControllerRevision                    | 1.9.0         | 
+    createAppsV1NamespacedDaemonSet                             | 1.9.0         | 
+    createAppsV1NamespacedDeployment                            | 1.9.0         | 1.8.0
+    createAppsV1NamespacedReplicaSet                            | 1.9.0         | 1.8.0
+    createAppsV1NamespacedStatefulSet                           | 1.9.0         | 1.9.0
+    createAuthenticationV1TokenReview                           | 1.9.0         | 1.9.0
+    createAuthorizationV1SelfSubjectAccessReview                | 1.9.0         | 1.16.0
+    createAuthorizationV1SubjectAccessReview                    | 1.9.0         | 1.8.0
+    createBatchV1NamespacedJob                                  | 1.9.0         | 1.15.0
+    createCoordinationV1NamespacedLease                         | 1.14.0        | 1.17.0
+    createCoreV1Namespace                                       | 1.9.0         | 1.8.0
+    createCoreV1NamespacedConfigMap                             | 1.9.0         | 1.8.0
+    createCoreV1NamespacedEndpoints                             | 1.9.0         | 
+   (25 rows)
+
+   #+end_SRC
+
+** Create view for endpoints per release
+  #+NAME: Endpoints per release 
+  #+begin_src sql-mode
+    WITH ordered_release AS(
+      SELECT
+        release
+        FROM
+            conformance.open_api 
+        GROUP BY 1
+       ORDER BY
+      string_to_array(release, '.')::int[]
+    )
+    SELECT 
+      rel.release,
+      count(*) as endpoints,
+      count(*) FILTER(where first_release = rel.release) as new_endpoints,
+      count(*) FILTER(where first_conformance_test = rel.release) as new_endpoints_conf_tested
+      FROM
+          ordered_release rel
+          left JOIN conformance.open_api oa ON (rel.release = oa.release)
+          left JOIN conformance.stable_endpoint_first f ON (f.endpoint = oa.endpoint)
+      WHERE level = 'stable'
+        AND deprecated is false
+      GROUP BY 1
+           ORDER BY string_to_array(rel.release, '.')::int[]
+          ;
+  #+end_src
+
+  #+RESULTS: Endpoints per release
+  #+begin_SRC example
+   release | endpoints | new_endpoints | new_endpoints_conf_tested 
+  ---------+-----------+---------------+---------------------------
+   1.9.0   |       481 |           225 |                        26
+   1.10.0  |       450 |             6 |                         0
+   1.11.0  |       452 |             0 |                         0
+   1.12.0  |       373 |             0 |                         0
+   1.13.0  |       384 |             6 |                         1
+   1.14.0  |       402 |            13 |                         0
+   1.15.0  |       402 |             0 |                         7
+   1.16.0  |       430 |            27 |                        35
+   1.17.0  |       438 |             4 |                         7
+   1.18.0  |       445 |             4 |                         9
+   1.19.0  |       445 |             0 |                         8
+  (11 rows)
+
+  #+end_SRC
+** Track current stable endpoints by when they were released and tested
+   The previous query was a good beginning, but we have some refined definitions of what we want to see.
+   The previous view showed a lot of dropped endpoints (from deprecation or some other reason).  We aren't interested in those endpoints.  We only want to see how many of the current endopints are untested and how long they've been a part of stable.
+
+   So we can refine our view with a few new definitions
+   - Release :: an api as defined in an open_api spec(swagger.json) that is explicitly tagged with a release.  This would show
+   - Conformance Tests :: Tests defined in a conformance.yaml, which includes the Release they were introduced.
+   - Endpoints :: 'stable', non-deprecated level endpoints that exist in 1.19.0
+   - Release Endpoints :: #ndpoints that were introduced in a given release
+   - Conf Tested Release Endpoints :: Release Endpoints hit by a Conformance Test that was introduced in that same Release.
+  
+With these definitions, we can get a more focused look at our progress 
+** Define current_stable_endpoints
+   #+NAME: define current_stable_endpoints
+   #+begin_src sql-mode
+     WITH current_stable_endpoints AS (
+       SELECT
+         endpoint
+         FROM
+             conformance.open_api
+        WHERE
+          release = '1.19.0'
+          AND level = 'stable'
+          AND deprecated is false
+     )
+     SELECT count(*) as stable_endpoints
+       from current_stable_endpoints
+              ;
+   #+end_src
+    
+   If we defined this correct, then the count should be 445, based on resutls from previous queries.
+
+   #+RESULTS: define current_stable_endpoints
+   #+begin_SRC example
+    stable_endpoints 
+   ------------------
+                 445
+   (1 row)
+
+   #+end_SRC
+    
+   And it is!
+** Track endpoints by current stable
+   With the definition above, we can do an inner join on our larger open_api table, to only include endpoints that are current.  This should show forward positive progress...there should never be a drop in endpoints from 1.9 to 1.19.
+   We want to order this by semver, and the easiest way I found is to create an ordered table using string_to_array and then using that in our main query.
+    #+NAME: define endpoints_per_release
+    #+begin_src sql-mode
+      WITH current_stable_endpoints AS (
+        SELECT
+          endpoint
+          FROM
+              conformance.open_api
+         WHERE
+           release = '1.19.0'
+           AND level = 'stable'
+           AND deprecated is false
+      ), endpoints_per_release AS (
+        SELECT
+          release,
+          endpoint
+          FROM
+              conformance.open_api
+              NATURAL INNER JOIN current_stable_endpoints
+      )
+      SELECT
+        release,
+        count(*) as stable_endpoints
+        FROM
+            endpoints_per_release
+       GROUP BY 1
+          ORDER BY string_to_array(release, '.')::int[]
+                ;
+    #+end_src
+
+    If this worked as expected, then 1.9 should show first with the least amount of endpoints, and then we see positive progress up to 1.19.
+    #+RESULTS: define endpoints_per_release
+    #+begin_SRC example
+     release | stable_endpoints 
+    ---------+------------------
+     1.9.0   |              361
+     1.10.0  |              370
+     1.11.0  |              372
+     1.12.0  |              373
+     1.13.0  |              384
+     1.14.0  |              402
+     1.15.0  |              402
+     1.16.0  |              430
+     1.17.0  |              438
+     1.18.0  |              445
+     1.19.0  |              445
+    (11 rows)
+
+    #+end_SRC
+Sweet as.  
+
+** Track new endpoints per release
+   Each endpoint will show up multiple times in the open_api record, for each swagger.json it appears in.  We created the stable_endpoints_first table that aggregates and sort these release numbers, returning the first in the list to show when the endpoint first appeared.  We can join to that table to make a filtered count of endpoints whose first_release is that row's release.  
+   
+    #+NAME: define new_endpoints_per_release
+    #+begin_src sql-mode
+      WITH current_stable_endpoints AS (
+        SELECT
+          open_api.endpoint
+          FROM
+              conformance.open_api
+         WHERE
+           release = '1.19.0'
+           AND level = 'stable'
+           AND deprecated is false
+      ), endpoints_per_release AS (
+        SELECT
+          release,
+          endpoint
+          FROM
+              conformance.open_api
+              NATURAL INNER JOIN current_stable_endpoints
+      )
+      SELECT
+        release,
+        count(*) as stable_endpoints,
+        count(*) FILTER (where epr.release = firsts.first_release) as release_endpoints
+        FROM
+            endpoints_per_release epr
+              LEFT JOIN stable_endpoint_first firsts ON (epr.endpoint = firsts.endpoint)
+       GROUP BY 1
+          ORDER BY string_to_array(release, '.')::int[]
+                ;
+    #+end_src
+
+    
+This should roughly follow the new endpoints # from the view in our previous section.
+    #+RESULTS: define new_endpoints_per_release
+    #+begin_SRC example
+     release | stable_endpoints | release_endpoints 
+    ---------+------------------+-------------------
+     1.9.0   |              361 |               225
+     1.10.0  |              370 |                 6
+     1.11.0  |              372 |                 0
+     1.12.0  |              373 |                 0
+     1.13.0  |              384 |                 6
+     1.14.0  |              402 |                13
+     1.15.0  |              402 |                 0
+     1.16.0  |              430 |                27
+     1.17.0  |              438 |                 4
+     1.18.0  |              445 |                 4
+     1.19.0  |              445 |                 0
+    (11 rows)
+
+    #+end_SRC
+And it does!
+** Track rel_endpoints_conf_tested
+   Of the endpoints that were introduced in this release, how many came in with conformance tests?  If this number is lower than the # of release endpoints, it means endpoints are being promoted wihtout conformance tests.
+   
+   We can define a tested release endpoint using our stable_endpoints_first view, defining them as those whose first_release and first_conf_tested columns have matching release numbers.
+This means we can do another nice count filter.
+
+    #+NAME: define rel_endpoints_conf_tested
+    #+begin_src sql-mode
+      WITH current_stable_endpoints AS (
+        SELECT
+          open_api.endpoint
+          FROM
+              conformance.open_api
+         WHERE
+           release = '1.19.0'
+           AND level = 'stable'
+           AND deprecated is false
+      ), endpoints_per_release AS (
+        SELECT
+          release,
+          endpoint
+          FROM
+              conformance.open_api
+              NATURAL INNER JOIN current_stable_endpoints
+      )
+      SELECT
+        release,
+        count(*) as stable_endpoints,
+        count(*) FILTER (where epr.release = firsts.first_release) as rel_endpoints,
+        count(*) FILTER (where epr.release = firsts.first_release AND epr.release = firsts.first_conformance_test) as rel_endpoints_conf_tested
+        FROM
+            endpoints_per_release epr
+              LEFT JOIN stable_endpoint_first firsts ON (epr.endpoint = firsts.endpoint)
+       GROUP BY 1
+          ORDER BY string_to_array(release, '.')::int[]
+                ;
+    #+end_src
+
+   I don't have a solid prediction on what we should see, other than the rel_endpoints_conf_tested # should never be higher than the rel_endpoints #. 
+   
+    #+RESULTS: define rel_endpoints_conf_tested
+    #+begin_SRC example
+     release | stable_endpoints | rel_endpoints | rel_endpoints_conf_tested 
+    ---------+------------------+---------------+---------------------------
+     1.9.0   |              361 |           225 |                        26
+     1.10.0  |              370 |             6 |                         0
+     1.11.0  |              372 |             0 |                         0
+     1.12.0  |              373 |             0 |                         0
+     1.13.0  |              384 |             6 |                         0
+     1.14.0  |              402 |            13 |                         0
+     1.15.0  |              402 |             0 |                         0
+     1.16.0  |              430 |            27 |                        22
+     1.17.0  |              438 |             4 |                         0
+     1.18.0  |              445 |             4 |                         0
+     1.19.0  |              445 |             0 |                         0
+    (11 rows)
+    #+end_SRC
+    
+    These numbers satisfy the rule for conf_tested should never be highter than rel_endpoints...but I wasn't expecting so many 0's.  I know that conformance tests were written for each release...is it true that these are all for previously added endpoints?
+** Sanity Check Conformance Tests and Endpoints per release 
+    One thing I can do is take a look at our endpoint_first result for a release like 1.14, and list the endpoints that were added then, along with when they were first conformance tested and the name and file for that test.  Then we cna verify with github that this is the case.
+***    Validate for 1.14 endpoints
+     #+NAME: coverage of endpoints released in 1.14
+     #+begin_src sql-mode
+             SELECT distinct 
+               endpoint,
+               first_conformance_test,
+               test,
+               file
+               FROM
+                   stable_endpoint_first
+              WHERE
+                first_release = '1.14.0'
+          ORDER BY first_conformance_test
+       ;
+     #+end_src
+
+     #+RESULTS: coverage of endpoints released in 1.14
+     #+begin_SRC example
+                        endpoint                    | first_conformance_test |                   test                   |                file                 
+     -----------------------------------------------+------------------------+------------------------------------------+-------------------------------------
+      createCoordinationV1NamespacedLease           | 1.17.0                 | lease API should be available            | test/e2e/common/lease.go
+      deleteCoordinationV1CollectionNamespacedLease | 1.17.0                 | lease API should be available            | test/e2e/common/lease.go
+      deleteCoordinationV1NamespacedLease           | 1.17.0                 | lease API should be available            | test/e2e/common/lease.go
+      listCoordinationV1NamespacedLease             | 1.17.0                 | lease API should be available            | test/e2e/common/lease.go
+      patchCoordinationV1NamespacedLease            | 1.17.0                 | lease API should be available            | test/e2e/common/lease.go
+      readCoordinationV1NamespacedLease             | 1.17.0                 | lease API should be available            | test/e2e/common/lease.go
+      replaceCoordinationV1NamespacedLease          | 1.17.0                 | lease API should be available            | test/e2e/common/lease.go
+      getCoordinationV1APIResources                 | 1.8.0                  | aggregator-supports-the-sample-apiserver | test/e2e/apimachinery/aggregator.go
+      getSchedulingV1APIResources                   | 1.8.0                  | aggregator-supports-the-sample-apiserver | test/e2e/apimachinery/aggregator.go
+      createSchedulingV1PriorityClass               |                        |                                          | 
+      listCoordinationV1LeaseForAllNamespaces       |                        |                                          | 
+      listSchedulingV1PriorityClass                 |                        |                                          | 
+      readSchedulingV1PriorityClass                 |                        |                                          | 
+     (13 rows)
+
+     #+end_SRC
+    
+    So according to this, two of the endoints came in with tests, the rest either remain untested or did not have tests written until 1.17.  Can that be right? 
+   
+    First, let's check with a couple of endpoints and the tests that hit them, to make sure we are calculating first_conformance_test correctly:
+    #+begin_src sql-mode
+      SELECT distinct
+        endpoint,
+        test,
+        test.release
+        FROM
+            conformance.audit_event ae
+            JOIN conformance.test_info test ON (ae.test = test.codename)
+            WHERE
+            endpoint like '%CoordinationV1%Lease'
+               AND test IS NOT NULL
+      ;
+    #+end_src
+
+    As we see here, the onl conformance test that hit these endpoints is the one for the lease API
+    #+RESULTS:
+    #+begin_SRC example
+                       endpoint                    |                            test                            | release 
+    -----------------------------------------------+------------------------------------------------------------+---------
+     createCoordinationV1NamespacedLease           | [k8s.io] Lease lease API should be available [Conformance] | 1.17.0
+     deleteCoordinationV1CollectionNamespacedLease | [k8s.io] Lease lease API should be available [Conformance] | 1.17.0
+     deleteCoordinationV1NamespacedLease           | [k8s.io] Lease lease API should be available [Conformance] | 1.17.0
+     listCoordinationV1NamespacedLease             | [k8s.io] Lease lease API should be available [Conformance] | 1.17.0
+     patchCoordinationV1NamespacedLease            | [k8s.io] Lease lease API should be available [Conformance] | 1.17.0
+     readCoordinationV1NamespacedLease             | [k8s.io] Lease lease API should be available [Conformance] | 1.17.0
+     replaceCoordinationV1NamespacedLease          | [k8s.io] Lease lease API should be available [Conformance] | 1.17.0
+    (7 rows)
+
+    #+end_SRC
+   
+   
+   So we can sanity-check this by taking a look at the conformance.yaml to look for that test and check the git history on that file.  I will do this in github directly, to verify it matches our sql.
+   
+   Here is the test in the conformance.yaml: https://github.com/kubernetes/kubernetes/blob/5fc4f4d54812405720c2f4b39e4577d6f41a2aab/test/conformance/testdata/conformance.yaml#L209
+   It was released in 1.17 according to this.  
+
+   If we look at the git history for that test, we can see it was added in August of 2019:
+    https://github.com/kubernetes/kubernetes/commit/4be5ebd4dc62096260a2812a7648d1ef2c53f51d
+   
+   The next release would have been 1.16.  So the test definitely didn't come along with the endpoint when it was introduced in 1.14.  The conformance guidelines for flakiness changed recently too, from having to been in testing without flakes for two months down to two weeks...so it'd check out that it woudln't have been part of the 1.16 release.
+*** Validate for 1.17
+    Let's try again, with endpoints in 1.17
+  
+      #+NAME: coverage of endpoints released in 1.17
+      #+begin_src sql-mode
+              SELECT distinct 
+                endpoint,
+                first_conformance_test,
+                test,
+                file
+                FROM
+                    stable_endpoint_first
+               WHERE
+                 first_release = '1.17.0'
+           ORDER BY first_conformance_test
+        ;
+      #+end_src
+
+      #+RESULTS: coverage of endpoints released in 1.17
+      #+begin_SRC example
+              endpoint         | first_conformance_test | test | file 
+      -------------------------+------------------------+------+------
+       createStorageV1CSINode  |                        |      | 
+       listStorageV1CSINode    |                        |      | 
+       readStorageV1CSINode    |                        |      | 
+       replaceStorageV1CSINode |                        |      | 
+      (4 rows)
+
+      #+end_SRC
+   
+      oh no, so these are stable endpoints released two versions ago that still don't have tests?
+    
+      #+begin_src sql-mode
+        SELECT DISTINCT
+          endpoint,
+          test
+          FROM
+              conformance.audit_event ae
+         WHERE
+           endpoint like '%StorageV1CSINode'
+     ;
+      #+end_src
+    
+      Yep.  According to the current set of audit events they are still untested.
+
+      #+RESULTS:
+      #+begin_SRC example
+              endpoint         | test 
+      -------------------------+------
+       createStorageV1CSINode  | 
+       listStorageV1CSINode    | 
+       readStorageV1CSINode    | 
+       replaceStorageV1CSINode | 
+      (4 rows)
+
+      #+end_SRC
+   
+      I feel fairly confident with the numbers in our view.  The majority of new endpoints are coming in without conformance tests.  1.16 is an anomaly here, the most endpoints added and the most with tests.
+   
+** Track endpoints from 1.5 onward.
+   We have swagger starting from 1.9.  Let's start from the v. beginning!  Or at least as far back as we can, which is v.1.5 (that's when the swagger.json appears in the github repo that we draw from)
+#+begin_src sql-mode
+      WITH releases AS (
+        SELECT column1 as release
+          FROM (VALUES
+                ('v1.5.0'),
+                ('v1.6.0'),
+                ('v1.7.0'),
+                ('v1.8.0'),
+          ) as rlist
+        )
+  SELECT f.*
+    FROM
+        releases r
+      , LATERAL conformance.load_open_api(r.release) f
+        ;
+#+end_src
+
+
+#+begin_src sql-mode
+  SELECT
+    release,
+    release_date,
+    count(*)
+    FROM
+        conformance.open_api
+   WHERE
+  deprecated IS FALSE
+   GROUP BY 1, 2
+   ORDER BY
+  string_to_array(release, '.')::int[]
+  ;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ release |    release_date     | count 
+---------+---------------------+-------
+ 1.5.0   | 2016-12-12 00:00:00 |   573
+ 1.6.0   | 2017-03-28 00:00:00 |   649
+ 1.7.0   | 2017-06-30 00:00:00 |   710
+ 1.8.0   | 2017-08-28 00:00:00 |   848
+ 1.9.0   | 2017-12-15 00:00:00 |   958
+ 1.10.0  | 2018-03-26 00:00:00 |   945
+ 1.11.0  | 2018-06-27 00:00:00 |   963
+ 1.12.0  | 2018-09-27 00:00:00 |   802
+ 1.13.0  | 2018-12-03 00:00:00 |   821
+ 1.14.0  | 2019-03-25 00:00:00 |   873
+ 1.15.0  | 2019-06-19 00:00:00 |   873
+ 1.16.0  | 2019-09-18 00:00:00 |   910
+ 1.17.0  | 2019-12-07 00:00:00 |   939
+ 1.18.0  | 2020-03-25 00:00:00 |   795
+ 1.19.0  | 2020-05-27 04:46:26 |   795
+(15 rows)
+
+#+end_SRC
+
+Lastly, let's refresh our materialized view
+#+begin_src sql-mode
+REFRESH MATERIALIZED VIEW conformance.stable_endpoint_first;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+REFRESH MATERIALIZED VIEW
+#+end_SRC
+
+** See conformance progress view with older releases added
+    #+NAME: conformance progress
+    #+begin_src sql-mode
+      WITH current_stable_endpoints AS (
+        SELECT
+          open_api.endpoint
+          FROM
+              conformance.open_api
+         WHERE
+           release = '1.19.0'
+           AND level = 'stable'
+           AND deprecated is false
+      ), endpoints_per_release AS (
+        SELECT
+          release,
+          endpoint
+          FROM
+              conformance.open_api
+              NATURAL INNER JOIN current_stable_endpoints
+      )
+      SELECT
+        release,
+        count(*) as stable_endpoints,
+        count(*) FILTER (where epr.release = firsts.first_release) as rel_endpoints,
+        count(*) FILTER (where epr.release = firsts.first_release AND epr.release = firsts.first_conformance_test) as rel_endpoints_conf_tested
+        FROM
+            endpoints_per_release epr
+              LEFT JOIN stable_endpoint_first firsts ON (epr.endpoint = firsts.endpoint)
+       GROUP BY 1
+          ORDER BY string_to_array(release, '.')::int[]
+                ;
+    #+end_src
+
+    #+RESULTS: conformance progress
+    #+begin_SRC example
+     release | stable_endpoints | rel_endpoints | rel_endpoints_conf_tested | rel_endpoints_still_untested 
+    ---------+------------------+---------------+---------------------------+------------------------------
+     1.5.0   |              226 |           134 |                         0 |                           60
+     1.6.0   |              241 |            10 |                         0 |                            4
+     1.7.0   |              259 |             5 |                         0 |                            3
+     1.8.0   |              298 |            30 |                         8 |                           21
+     1.9.0   |              361 |            46 |                         5 |                           29
+     1.10.0  |              370 |             6 |                         0 |                            2
+     1.11.0  |              372 |             0 |                         0 |                            0
+     1.12.0  |              373 |             0 |                         0 |                            0
+     1.13.0  |              384 |             6 |                         0 |                            6
+     1.14.0  |              402 |            13 |                         0 |                            4
+     1.15.0  |              402 |             0 |                         0 |                            0
+     1.16.0  |              430 |            27 |                        22 |                            1
+     1.17.0  |              438 |             4 |                         0 |                            4
+     1.18.0  |              445 |             4 |                         0 |                            4
+     1.19.0  |              445 |             0 |                         0 |                            0
+    (15 rows)
+
+    #+end_SRC
+    
+I get the strong sense that we've been playing catchup for several years.  The big lesson is we need a gate, for endpoints to not be in stable unless they have tests...which isn't something we've really been following.
+
+The last thing i'm curious on is, per release, how many of these endpoints are still untested?
+** See conformance progress and how many remain untested
+   Our view 'stable_endpoint_first' will grab the first conformance test and its release for every stable endpoint...if there isn't any test it will be null.  Using that, we can calculate how many release endpoints remain untested.
+    #+NAME: conformance progress and still untested
+    #+begin_src sql-mode 
+      WITH current_stable_endpoints AS (
+        SELECT
+          open_api.endpoint
+          FROM
+              conformance.open_api
+         WHERE
+           release = '1.19.0'
+           AND level = 'stable'
+           AND deprecated is false
+      ), endpoints_per_release AS (
+        SELECT
+          release,
+          endpoint
+          FROM
+              conformance.open_api
+              NATURAL INNER JOIN current_stable_endpoints
+      )
+      SELECT
+        release,
+        count(*) as stable_endpoints,
+        count(*) FILTER (WHERE epr.release = firsts.first_release) as rel_endpoints,
+        count(*) FILTER (WHERE epr.release = firsts.first_release AND epr.release = firsts.first_conformance_test) as rel_endpoints_conf_tested,
+        count(*) FILTER (WHERE epr.release = firsts.first_release AND firsts.first_conformance_test IS NULL) as rel_endpoints_still_untested,
+        count(*) FILTER (WHERE firsts.first_conformance_test IS NULL) as total_endpoints_still_untested
+        FROM
+            endpoints_per_release epr
+              LEFT JOIN conformance.stable_endpoint_first firsts ON (epr.endpoint = firsts.endpoint)
+       GROUP BY 1
+          ORDER BY string_to_array(release, '.')::int[]
+                ;
+    #+end_src
+
+    #+RESULTS: conformance progress and still untested
+    #+begin_SRC example
+     release | stable_endpoints | rel_endpoints | rel_endpoints_conf_tested | rel_endpoints_still_untested | total_endpoints_still_untested 
+    ---------+------------------+---------------+---------------------------+------------------------------+--------------------------------
+     1.5.0   |              226 |           226 |                         0 |                          152 |                            152
+     1.6.0   |              241 |            15 |                         0 |                            9 |                            161
+     1.7.0   |              259 |            18 |                         0 |                           16 |                            177
+     1.8.0   |              298 |            39 |                         8 |                           30 |                            207
+     1.9.0   |              361 |            63 |                         5 |                           46 |                            253
+     1.10.0  |              370 |             9 |                         0 |                            5 |                            258
+     1.11.0  |              372 |             2 |                         0 |                            2 |                            260
+     1.12.0  |              373 |             1 |                         0 |                            1 |                            261
+     1.13.0  |              384 |            11 |                         0 |                           11 |                            272
+     1.14.0  |              402 |            18 |                         0 |                            9 |                            281
+     1.15.0  |              402 |             0 |                         0 |                            0 |                            281
+     1.16.0  |              430 |            28 |                        22 |                            2 |                            283
+     1.17.0  |              438 |             8 |                         0 |                            8 |                            291
+     1.18.0  |              445 |             7 |                         0 |                            7 |                            298
+     1.19.0  |              445 |             0 |                         0 |                            0 |                            298
+    (15 rows)
+
+    #+end_SRC
+   
+    Sobering numbers, but it is good to see it.
+
+* Conclusion
+  By building out this conformance schema, we are now able to run the following view to track the conformance coverage of stable endpoints, tracking when endpoints were added, how many of them came in with tests, and how many of them remain untested.
+  
+  #+begin_src sql-mode
+  select * from conformance.conformance_progress;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   release | stable_endpoints | rel_endpoints | rel_endpoints_conf_tested | rel_endpoints_still_untested | total_endpoints_still_untested 
+  ---------+------------------+---------------+---------------------------+------------------------------+--------------------------------
+   1.5.0   |              226 |           226 |                         0 |                          152 |                            152
+   1.6.0   |              241 |            15 |                         0 |                            9 |                            161
+   1.7.0   |              259 |            18 |                         0 |                           16 |                            177
+   1.8.0   |              298 |            39 |                         8 |                           30 |                            207
+   1.9.0   |              361 |            63 |                         5 |                           46 |                            253
+   1.10.0  |              370 |             9 |                         0 |                            5 |                            258
+   1.11.0  |              372 |             2 |                         0 |                            2 |                            260
+   1.12.0  |              373 |             1 |                         0 |                            1 |                            261
+   1.13.0  |              384 |            11 |                         0 |                           11 |                            272
+   1.14.0  |              402 |            18 |                         0 |                            9 |                            281
+   1.15.0  |              402 |             0 |                         0 |                            0 |                            281
+   1.16.0  |              430 |            28 |                        22 |                            2 |                            283
+   1.17.0  |              438 |             8 |                         0 |                            8 |                            291
+   1.18.0  |              445 |             7 |                         0 |                            7 |                            298
+   1.19.0  |              445 |             0 |                         0 |                            0 |                            298
+  (15 rows)
+
+  #+end_SRC
+* Footnotes
+** Process: First iteration
+*** Import yaml as a sql table for postgres
+    We first need to turn yaml into json and then we can do a similar process to our load_swagger function, though this will be simpler as we are only wanting to load one file and we want whatever is latest on master.  In other words, we don't need to check for the right bucket and job.
+**** Create table
+     #+begin_src sql-mode
+       CREATE TABLE test_info(
+         testname text,
+         codename text,
+         release text,
+         description text,
+         file text
+       );
+     #+end_src
+
+     #+RESULTS:
+     #+begin_SRC example
+     CREATE TABLE
+     #+end_SRC
+
+**** Write the Sql Function   
+    #+NAME: Import tests
+    #+BEGIN_SRC sql-mode
+      set role dba;
+      DROP FUNCTION IF EXISTS load_tests;
+      CREATE OR REPLACE FUNCTION load_tests()
+      RETURNS text AS $$
+      from string import Template
+      import json
+      import yaml
+      from urllib.request import urlopen, urlretrieve
+
+      TESTS_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/test/conformance/testdata/conformance.yaml"
+      tests = json.dumps(yaml.safe_load(urlopen(TESTS_URL)))
+      sql = Template("""
+                    WITH jsonb_array AS (
+                    SELECT jsonb_array_elements('${tests}'::jsonb) as test_data)
+                    INSERT INTO test_info(testname, codename, release, description, file)
+                       SELECT
+                       (test_data->>'testname') as testname,
+                       (test_data->>'codename') as codename,
+                       (test_data->>'release') as release,
+                       (test_data->>'description') as description,
+                       (test_data->>'file') as file
+                       from jsonb_array;
+                    """).substitute(tests = tests.replace("'","''"))
+      plpy.execute(sql)
+      $$ LANGUAGE plpython3u ;
+      reset role;
+       #+END_SRC
+
+       #+RESULTS: Import tests
+       #+begin_SRC example
+       SET
+       #+end_SRC
+
+      
+       #+begin_src sql-mode
+       select * from load_tests();
+       #+end_src
+
+       #+RESULTS:
+       #+begin_SRC example
+        load_tests 
+       ------------
+
+       (1 row)
+
+       #+end_SRC
+
+ #+begin_src sql-mode
+ select file, release from test_info limit 20;
+ #+end_src
+
+ #+RESULTS:
+ #+begin_SRC example
+                  file                 | release 
+ --------------------------------------+---------
+  test/e2e/common/lifecycle_hook.go    | v1.9
+  test/e2e/common/lifecycle_hook.go    | v1.9
+  test/e2e/common/lifecycle_hook.go    | v1.9
+  test/e2e/common/lifecycle_hook.go    | v1.9
+  test/e2e/common/runtime.go           | v1.15
+  test/e2e/common/runtime.go           | v1.15
+  test/e2e/common/runtime.go           | v1.15
+  test/e2e/common/runtime.go           | v1.15
+  test/e2e/common/runtime.go           | v1.13
+  test/e2e/common/docker_containers.go | v1.9
+  test/e2e/common/docker_containers.go | v1.9
+  test/e2e/common/docker_containers.go | v1.9
+  test/e2e/common/docker_containers.go | v1.9
+  test/e2e/common/init_container.go    | v1.12
+  test/e2e/common/init_container.go    | v1.12
+  test/e2e/common/init_container.go    | v1.12
+  test/e2e/common/init_container.go    | v1.12
+  test/e2e/common/kubelet.go           | v1.13
+  test/e2e/common/kubelet.go           | v1.13
+  test/e2e/common/kubelet.go           | v1.13
+ (20 rows)
+
+ #+end_SRC
+**** Create sample view to combine tests with endpoints
+     the test_info codename matches our useragent test string, though the useragent teststring comes with a bit of extra padding (wich we should santizine in that view as a nice TODO)
+    So we can easily combine the test, its release, and the endpoints it hits like so: 
+ #+begin_src sql-mode
+   select 
+     testname,
+     release,
+     array_length(operation_ids, 1) as endpoints_hit
+   FROM test_info
+   LEFT JOIN tests ON(TRIM(test) = codename)
+   limit 10;
+ #+end_src   
+
+ #+RESULTS:
+ #+begin_SRC example
+                                         testname                                         | release | endpoints_hit 
+ -----------------------------------------------------------------------------------------+---------+---------------
+  Pod Lifecycle, post start exec hook                                                     | v1.9    |            14
+  Pod Lifecycle, post start http hook                                                     | v1.9    |            11
+  Pod Lifecycle, prestop exec hook                                                        | v1.9    |            11
+  Pod Lifecycle, prestop http hook                                                        | v1.9    |            11
+  Container Runtime, TerminationMessage, from log output of succeeding container          | v1.15   |             9
+  Container Runtime, TerminationMessage, from file of succeeding container                | v1.15   |             9
+  Container Runtime, TerminationMessage, from container's log output of failing container | v1.15   |             9
+  Container Runtime, TerminationMessagePath, non-root user and non-default path           | v1.15   |             9
+  Container Runtime, Restart Policy, Pod Phases                                           | v1.13   |            12
+  Docker containers, with arguments                                                       | v1.9    |            16
+ (10 rows)
+
+ #+end_SRC
+   
+*** Import swaggers for releases 1.9 through 1.18
+    We need to get the commit for each tagged release and then load the swagger from that commit.
+    Kubernetes is helpfully consistent with its tagging, which means we can create an easy url template
+    to get the swagger for 1.9 it'd be:
+    : https://raw.githubusercontent.com/kubernetes/kubernetes/v1.9.0/api/openapi-spec/swagger.json
+    and 1.12 would be:
+    : https://raw.githubusercontent.com/kubernetes/kubernetes/v1.12.0/api/openapi-spec/swagger.json
+   
+    Alternatively, we could base it on each versions release branch, which is structued as so:
+    : https://raw.githubusercontent.com/kubernetes/kubernetes/release-1.9/api/openapi-spec/swagger.json
+    in this case, v1.9 is up to like 1.9.4....so it's a question of what we consider "canonical" for our release dates...but the process of adding the swagger would be the same no matter what type of url we decide on.
+   
+    I am realizing, though, that there's a bit of a change to our main keys...we do not have a bucket or job for these releases, which means a l ot of the metadata we don't care about either.  I am unsure if I should just try to update our bucket_job_swagger table, or make a new one whose focus is on the release  and date instead of bucket and job.  
+   
+    None of the fields in our bjs table are required, so I can just insert with most of it null, then build out views from there...but it will be a good thing to ponder in the future.  There is a smell that this could all be redesigned to not be so heavy....we just have the latest run and then the rest is pulled from github.  
+   
+**** Adjust bucket_job_swagger to have a release and date column
+    #+NAME: Create OPENAPI_SPEC Table 
+    #+begin_src sql-mode
+      ALTER TABLE bucket_job_swagger
+        ADD COLUMN release text,
+        ADD COLUMN release_date timestamp
+        ;
+    #+end_src
+
+    #+RESULTS: Create OPENAPI_SPEC Table
+    #+begin_SRC example
+    ALTER TABLE
+    #+end_SRC
+   
+    #+begin_src sql-mode
+    \d+ bucket_job_swagger;
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+                                                                                      Table "public.bucket_job_swagger"
+         Column      |            Type             | Collation | Nullable |      Default      | Storage  | Stats target |                                  Description                                   
+    -----------------+-----------------------------+-----------+----------+-------------------+----------+--------------+--------------------------------------------------------------------------------
+     ingested_at     | timestamp without time zone |           |          | CURRENT_TIMESTAMP | plain    |              | timestamp for when data added to table
+     bucket          | text                        |           | not null |                   | extended |              | storage bucket for audit event test run and swagger
+     job             | text                        |           | not null |                   | extended |              | specific job # of audit event test run
+     commit_hash     | text                        |           |          |                   | extended |              | git commit hash for this particular test run
+     passed          | text                        |           |          |                   | extended |              | whether test run passed
+     job_result      | text                        |           |          |                   | extended |              | whether test run was successful.
+     pod             | text                        |           |          |                   | extended |              | The pod this test was run on
+     infra_commit    | text                        |           |          |                   | extended |              | 
+     job_version     | text                        |           |          |                   | extended |              | version of k8s on which this job was run
+     job_timestamp   | timestamp without time zone |           |          |                   | plain    |              | timestamp when job was run.  Will be different from ingested_at.
+     node_os_image   | text                        |           |          |                   | extended |              | id for which master os image was used for test run
+     master_os_image | text                        |           |          |                   | extended |              | 
+     swagger         | jsonb                       |           |          |                   | extended |              | raw json of the open api spec for k8s as of the commit hash for this test run.
+     release         | text                        |           |          |                   | extended |              | 
+     release_date    | timestamp without time zone |           |          |                   | plain    |              | 
+    Indexes:
+        "bucket_job_swagger_pkey" PRIMARY KEY, btree (bucket, job)
+        "idx_swagger_jsonb_ops" gin (swagger)
+        "idx_swagger_jsonb_path_ops" gin (swagger jsonb_path_ops)
+    Access method: heap
+
+    #+end_SRC
+**** Add Past Swaggers Function
+    #+NAME: Add swagger from url 
+     #+BEGIN_SRC sql-mode
+      set role dba;
+      DROP FUNCTION IF EXISTS load_past_swaggers;
+      CREATE OR REPLACE FUNCTION load_past_swaggers(
+        release text default null,
+        release_date text default null
+      )
+        RETURNS text AS $$
+        from string import Template
+        import json
+        from urllib.request import urlopen, urlretrieve
+
+        K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
+        OPEN_API_PATH = "/api/openapi-spec/swagger.json"
+
+        release_url = K8S_REPO_URL + release + OPEN_API_PATH
+        swagger = json.loads(urlopen(release_url).read().decode('utf-8')) # may change this to ascii
+
+        sql = Template("""
+                         INSERT INTO bucket_job_swagger(bucket, job, release, release_date, swagger)
+                         SELECT
+                         'release-${release}' as bucket,
+                         '${release_date}' as job,
+                         '${release}' as release,
+                         (to_timestamp(${release_date})) as release_date,
+                         '${swagger}' as swagger
+                         """).substitute(release = release.replace('v',''),
+                                         release_date = release_date,
+                                         swagger = json.dumps(swagger).replace("'","''"))
+        plpy.execute(sql)
+        $$ LANGUAGE plpython3u;
+        reset role;
+        #+END_SRC
+       
+        #+begin_src sql-mode
+          select * from load_past_swaggers('v1.9.0', '2017-12-15');
+        #+end_src
+**** Delete Auditlogger data
+        To ease this a bit more, i'm going to turn off audit_logger and delete all the live stuff from our db.
+        #+begin_src sql-mode
+ delete from  audit_event where bucket = 'apisnoop';
+        #+end_src
+
+        #+RESULTS:
+        #+begin_SRC example
+        DELETE 224991
+        #+end_SRC
+       
+**** Refresh and check       
+        #+begin_src sql-mode
+        REFRESH MATERIALIZED VIEW api_operation_material;
+        REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+        REFRESH MATERIALIZED VIEW endpoint_coverage_material;
+        #+end_src
+
+        #+RESULTS:
+        #+begin_SRC example
+        REFRESH MATERIALIZED VIEW
+        #+end_SRC
+
+       So we should now have endpoint coverage that shows many endpoints twice, once for 1.9 and once for our most recent bucket, and all 1.9 should show as 'untested'...since we have no audit_event data for them 
+      
+       For example: 
+       #+begin_src sql-mode 
+         SELECT distinct
+           bucket,
+           operation_id,
+           tested
+           FROM
+               endpoint_coverage
+          WHERE operation_id like '%Portforward'
+          ORDER BY
+            operation_id
+                ;
+       #+end_src
+
+       #+RESULTS:
+       #+begin_SRC example
+                 bucket           |               operation_id                | tested 
+       ---------------------------+-------------------------------------------+--------
+        ci-kubernetes-e2e-gci-gce | connectCoreV1GetNamespacedPodPortforward  | t
+        past                      | connectCoreV1GetNamespacedPodPortforward  | f
+        ci-kubernetes-e2e-gci-gce | connectCoreV1PostNamespacedPodPortforward | f
+        past                      | connectCoreV1PostNamespacedPodPortforward | f
+       (4 rows)
+
+       #+end_SRC
+      
+ We need latest data to see what endpoints are hit by tests, and we need test_info to know when that test was released.  From this, I think we can have a view that shows endpoint, test, and test_release, and endpoint_release.
+ From this view, we can create a window function that shows # of new endpoints and new tests per release.
+*** Build view of tests, their release, and the endpoints they hit
+***** Create
+  #+NAME: tests view
+  #+BEGIN_SRC sql-mode
+    CREATE OR REPLACE VIEW "public"."testz" AS
+      WITH raw_tests AS (
+        SELECT audit_event.operation_id,
+               audit_event.bucket,
+               audit_event.job,
+               array_to_string(regexp_matches(audit_event.useragent, '\[[a-zA-Z0-9\.\-:]*\]'::text, 'g'::text), ','::text) AS test_tag,
+               trim(split_part(audit_event.useragent, '--'::text, 2)) AS test
+          FROM audit_event
+         WHERE ((audit_event.useragent ~~ 'e2e.test%'::text) AND (audit_event.job <> 'live'::text))
+      )
+      SELECT DISTINCT raw_tests.bucket,
+                      raw_tests.job,
+                      raw_tests.test,
+                      raw_tests.operation_id,
+                      test_tag
+        FROM raw_tests
+       GROUP BY raw_tests.test, raw_tests.bucket, raw_tests.job, raw_tests.operation_id, raw_tests.test_tag;
+  #+END_SRC
+
+  #+RESULTS: tests view
+  #+begin_SRC example
+  CREATE VIEW
+  #+end_SRC
+ 
+ here is an initial pass.  We grab the test and its endpoint and match it to its relase in the test info, then select the endpoint and an array of all the releases for it--in other words, the distinct releases for every test that hit it. 
+ 
+  #+begin_src sql-mode
+    WITH test_and_release AS(
+    SELECT DISTINCT
+      testname,
+      release,
+      operation_id
+      FROM testz
+             LEFT JOIN test_info on (test = codename)
+          WHERE test like '%[Conformance]%'
+          )
+        SELECT DISTINCT
+          ec.operation_id,
+          array_agg(DISTINCT release) as release
+          FROM
+              endpoint_coverage ec
+          JOIN test_and_release tr ON (ec.operation_id = tr.operation_id)
+           WHERE level = 'stable'
+             AND conf_tested is true
+              GROUP BY ec.operation_id
+              LIMIT 20
+                    ;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                          operation_id                         |                                 release                                 
+  -------------------------------------------------------------+-------------------------------------------------------------------------
+   connectCoreV1GetNamespacedPodExec                           | {v1.13}
+   connectCoreV1GetNamespacedPodProxyWithPath                  | {v1.14,v1.15,v1.17,v1.9}
+   connectCoreV1GetNamespacedServiceProxyWithPath              | {v1.9}
+   connectCoreV1PostNamespacedPodExec                          | {v1.15,v1.17,v1.9,"v1.9, v1.18"}
+   createAdmissionregistrationV1MutatingWebhookConfiguration   | {v1.16}
+   createAdmissionregistrationV1ValidatingWebhookConfiguration | {v1.16}
+   createApiextensionsV1CustomResourceDefinition               | {v1.16,v1.17,v1.9}
+   createApiregistrationV1APIService                           | {""}
+   createAppsV1NamespacedDeployment                            | {"",v1.16,v1.9}
+   createAppsV1NamespacedReplicaSet                            | {"",v1.13,v1.16,v1.9}
+   createAppsV1NamespacedStatefulSet                           | {v1.16,v1.9}
+   createAuthenticationV1TokenReview                           | {v1.9}
+   createAuthorizationV1SelfSubjectAccessReview                | {v1.16}
+   createAuthorizationV1SubjectAccessReview                    | {"",v1.12,v1.13,v1.14,v1.15,v1.16,v1.17,v1.18,v1.19,v1.9,"v1.9, v1.18"}
+   createBatchV1NamespacedJob                                  | {v1.15,v1.16}
+   createCoordinationV1NamespacedLease                         | {v1.17}
+   createCoreV1Namespace                                       | {"",v1.12,v1.13,v1.14,v1.15,v1.16,v1.17,v1.18,v1.19,v1.9,"v1.9, v1.18"}
+   createCoreV1NamespacedConfigMap                             | {"",v1.12,v1.13,v1.14,v1.15,v1.16,v1.9}
+   createCoreV1NamespacedLimitRange                            | {v1.18}
+   createCoreV1NamespacedPod                                   | {v1.12,v1.13,v1.14,v1.15,v1.16,v1.17,v1.18,v1.19,v1.9,"v1.9, v1.18"}
+  (20 rows)
+
+  #+end_SRC
+ 
+  Not fully what I was expecting.  What are the empty strings and what is the "v1.9, v1.19"?  Is this a srewup in how I did the array, or anomalies in our conformance.yaml?
+ 
+  #+begin_src sql-mode
+ select distinct release from test_info;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     release   
+  -------------
+
+   v1.9
+   v1.17
+   v1.18
+   v1.13
+   v1.14
+   v1.19
+   v1.12
+   v1.15
+   v1.16
+   v1.9, v1.18
+  (11 rows)
+
+  #+end_SRC
+ 
+  So some releases are null, and some have two dates.  I can assume the two dates are when there was some change to the test, and in that i'd want to keep the 1.18 (as it represents new work being done during the 1.18 release cycle)
+  But what are the null values?
+ 
+  #+begin_src sql-mode
+  select file, testname, codename from test_info where release not like 'v%';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                  file                 |                 testname                 |                                                                  codename                                                                   
+  -------------------------------------+------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------
+   test/e2e/apimachinery/aggregator.go | aggregator-supports-the-sample-apiserver | [sig-api-machinery] Aggregator Should be able to support the 1.17 Sample API Server using the current Aggregator [Conformance]
+   test/e2e/apimachinery/namespace.go  | namespace-deletion-removes-pods          | [sig-api-machinery] Namespaces [Serial] should ensure that all pods are removed when a namespace is deleted [Conformance]
+   test/e2e/apimachinery/namespace.go  | namespace-deletion-removes-services      | [sig-api-machinery] Namespaces [Serial] should ensure that all services are removed when a namespace is deleted [Conformance]
+   test/e2e/apimachinery/watch.go      | watch-configmaps-from-resource-version   | [sig-api-machinery] Watchers should be able to start watching from a specific resource version [Conformance]
+   test/e2e/apimachinery/watch.go      | watch-configmaps-closed-and-restarted    | [sig-api-machinery] Watchers should be able to restart watching from the last resource version observed by the previous watch [Conformance]
+   test/e2e/apimachinery/watch.go      | watch-configmaps-with-multiple-watchers  | [sig-api-machinery] Watchers should observe add, update, and delete watch notifications on configmaps [Conformance]
+   test/e2e/apimachinery/watch.go      | watch-configmaps-label-changed           | [sig-api-machinery] Watchers should observe an object deletion if it stops meeting the requirements of the selector [Conformance]
+   test/e2e/apps/daemon_set.go         | DaemonSet-FailedPodCreation              | [sig-apps] Daemon set [Serial] should retry creating failed daemon pods [Conformance]
+   test/e2e/apps/daemon_set.go         | DaemonSet-Rollback                       | [sig-apps] Daemon set [Serial] should rollback without unnecessary restarts [Conformance]
+   test/e2e/apps/daemon_set.go         | DaemonSet-NodeSelection                  | [sig-apps] Daemon set [Serial] should run and stop complex daemon [Conformance]
+   test/e2e/apps/daemon_set.go         | DaemonSet-Creation                       | [sig-apps] Daemon set [Serial] should run and stop simple daemon [Conformance]
+   test/e2e/apps/daemon_set.go         | DaemonSet-RollingUpdate                  | [sig-apps] Daemon set [Serial] should update pod when spec was updated and update strategy is RollingUpdate [Conformance]
+   test/e2e/apps/deployment.go         | Deployment Recreate                      | [sig-apps] Deployment RecreateDeployment should delete old pods and create new ones [Conformance]
+   test/e2e/apps/deployment.go         | Deployment RollingUpdate                 | [sig-apps] Deployment RollingUpdateDeployment should delete old pods and create new ones [Conformance]
+   test/e2e/apps/deployment.go         | Deployment RevisionHistoryLimit          | [sig-apps] Deployment deployment should delete old replica sets [Conformance]
+   test/e2e/apps/deployment.go         | Deployment Proportional Scaling          | [sig-apps] Deployment deployment should support proportional scaling [Conformance]
+   test/e2e/apps/deployment.go         | Deployment Rollover                      | [sig-apps] Deployment deployment should support rollover [Conformance]
+  (17 rows)
+  #+end_SRC
+ 
+  Honestly, I am confused.  If i look at one like the Deployment Rollover, it is in the conformance.yaml with a release of "" and if we look at the git blame of the file the test was written 5 years ago and updated 2 years ago.  So I don't think the "" relates to it not yet being released, rather that it's a test that existed before conformance was a thing.  I am going to check with others about this, but in the meantime do a simple case statment that if it is "" we'll set it to 1.8 and if it is "1.9, 1.18" we'll switch it to 1.18. 
+ 
+ 
+ #+NAME: Tests Try 2 
+  #+begin_src sql-mode
+   WITH test_and_release AS(
+   SELECT DISTINCT
+     testname,
+     CASE 
+       WHEN release = '' THEN '1.8'
+       WHEN release LIKE '%,%' then trim(leading 'v' from trim(split_part(release,',',2)))
+       ELSE trim(leading 'v' from release)
+     END as release,
+     operation_id
+     FROM testz
+            LEFT JOIN test_info on (test = codename)
+         WHERE test like '%[Conformance]%'
+         )
+       SELECT DISTINCT
+         ec.operation_id,
+         array_agg(DISTINCT release) as release
+         FROM
+             endpoint_coverage ec
+         JOIN test_and_release tr ON (ec.operation_id = tr.operation_id)
+          WHERE level = 'stable'
+            AND conf_tested is true
+             GROUP BY ec.operation_id
+             LIMIT 20
+                   ;
+  #+end_src
+
+  #+RESULTS: Tests Try 2
+  #+begin_SRC example
+                          operation_id                         |                      release                      
+  -------------------------------------------------------------+---------------------------------------------------
+   connectCoreV1GetNamespacedPodExec                           | {1.13}
+   connectCoreV1GetNamespacedPodProxyWithPath                  | {1.14,1.15,1.17,1.9}
+   connectCoreV1GetNamespacedServiceProxyWithPath              | {1.9}
+   connectCoreV1PostNamespacedPodExec                          | {1.15,1.17,1.18,1.9}
+   createAdmissionregistrationV1MutatingWebhookConfiguration   | {1.16}
+   createAdmissionregistrationV1ValidatingWebhookConfiguration | {1.16}
+   createApiextensionsV1CustomResourceDefinition               | {1.16,1.17,1.9}
+   createApiregistrationV1APIService                           | {1.8}
+   createAppsV1NamespacedDeployment                            | {1.16,1.8,1.9}
+   createAppsV1NamespacedReplicaSet                            | {1.13,1.16,1.8,1.9}
+   createAppsV1NamespacedStatefulSet                           | {1.16,1.9}
+   createAuthenticationV1TokenReview                           | {1.9}
+   createAuthorizationV1SelfSubjectAccessReview                | {1.16}
+   createAuthorizationV1SubjectAccessReview                    | {1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19,1.8,1.9}
+   createBatchV1NamespacedJob                                  | {1.15,1.16}
+   createCoordinationV1NamespacedLease                         | {1.17}
+   createCoreV1Namespace                                       | {1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19,1.8,1.9}
+   createCoreV1NamespacedConfigMap                             | {1.12,1.13,1.14,1.15,1.16,1.8,1.9}
+   createCoreV1NamespacedLimitRange                            | {1.18}
+   createCoreV1NamespacedPod                                   | {1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19,1.9}
+  (20 rows)
+
+  #+end_SRC
+ 
+ That works!  Now, we want to sort this array by semver.  It's likely simpler in postgres than I'd think cos postgres is magical. 
+
+ #+begin_src sql-mode
+ CREATE OR REPLACE FUNCTION array_uniq_stable(anyarray) RETURNS anyarray AS
+ $body$
+ SELECT
+     array_agg(distinct_value ORDER BY first_index)
+ FROM 
+     (SELECT
+         value AS distinct_value, 
+         min(index) AS first_index 
+     FROM 
+         unnest($1) WITH ORDINALITY AS input(value, index)
+     GROUP BY
+         value
+     ) AS unique_input
+ ;
+ $body$
+ LANGUAGE 'sql' IMMUTABLE STRICT;
+ #+end_src
+
+ #+RESULTS:
+ #+begin_SRC example
+ apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop$# apisnoop-# CREATE FUNCTION
+ #+end_SRC
+
+ #+NAME: Tests Try 3
+  #+begin_src sql-mode
+   WITH test_and_release AS(
+   SELECT DISTINCT
+     testname,
+     CASE 
+       WHEN release = '' THEN '1.8'
+       WHEN release LIKE '%,%' then trim(leading 'v' from trim(split_part(release,',',2)))
+       ELSE trim(leading 'v' from release)
+     END as release,
+     operation_id
+     FROM testz
+            LEFT JOIN test_info on (test = codename)
+         WHERE test like '%[Conformance]%'
+         )
+       SELECT DISTINCT
+         ec.operation_id,
+         array_uniq_stable(array_agg(release order by string_to_array(release, '.')::int[])) as releases,
+         (array_agg(release order by string_to_array(release, '.')::int[]))[1] as first_tested
+         FROM
+             endpoint_coverage ec
+         JOIN test_and_release tr ON (ec.operation_id = tr.operation_id)
+          WHERE level = 'stable'
+            AND conf_tested is true
+             GROUP BY ec.operation_id
+             LIMIT 20
+                   ;
+  #+end_src
+
+  #+RESULTS: Tests Try 3
+  #+begin_SRC example
+                          operation_id                         |                     releases                      | first_tested 
+  -------------------------------------------------------------+---------------------------------------------------+--------------
+   connectCoreV1GetNamespacedPodExec                           | {1.13}                                            | 1.13
+   connectCoreV1GetNamespacedPodProxyWithPath                  | {1.9,1.14,1.15,1.17}                              | 1.9
+   connectCoreV1GetNamespacedServiceProxyWithPath              | {1.9}                                             | 1.9
+   connectCoreV1PostNamespacedPodExec                          | {1.9,1.15,1.17,1.18}                              | 1.9
+   createAdmissionregistrationV1MutatingWebhookConfiguration   | {1.16}                                            | 1.16
+   createAdmissionregistrationV1ValidatingWebhookConfiguration | {1.16}                                            | 1.16
+   createApiextensionsV1CustomResourceDefinition               | {1.9,1.16,1.17}                                   | 1.9
+   createApiregistrationV1APIService                           | {1.8}                                             | 1.8
+   createAppsV1NamespacedDeployment                            | {1.8,1.9,1.16}                                    | 1.8
+   createAppsV1NamespacedReplicaSet                            | {1.8,1.9,1.13,1.16}                               | 1.8
+   createAppsV1NamespacedStatefulSet                           | {1.9,1.16}                                        | 1.9
+   createAuthenticationV1TokenReview                           | {1.9}                                             | 1.9
+   createAuthorizationV1SelfSubjectAccessReview                | {1.16}                                            | 1.16
+   createAuthorizationV1SubjectAccessReview                    | {1.8,1.9,1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19} | 1.8
+   createBatchV1NamespacedJob                                  | {1.15,1.16}                                       | 1.15
+   createCoordinationV1NamespacedLease                         | {1.17}                                            | 1.17
+   createCoreV1Namespace                                       | {1.8,1.9,1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19} | 1.8
+   createCoreV1NamespacedConfigMap                             | {1.8,1.9,1.12,1.13,1.14,1.15,1.16}                | 1.8
+   createCoreV1NamespacedLimitRange                            | {1.18}                                            | 1.18
+   createCoreV1NamespacedPod                                   | {1.9,1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19}     | 1.9
+  (20 rows)
+
+  #+end_SRC
+ 
+  This works, though I don't know if we need to have that extra function.  If we sort, we can still just grab the first one, as that's the value we really care about here.
+ 
+*** Build view of stable endoints, release date, first tested date, and first tested by
+    #+NAME: endpoints and first tested
+    #+begin_src sql-mode
+   
+    #+end_src
+*** Build view of conformance endpoints and their release date
+    I need to double check this to see if the operation_id changes when the endpoint is promoted.  I have a feeling it does...so then what is the best wya to track when the endpoint was actually introduced?  
+ #+begin_src sql-mode
+ select count(distinct operation_id) from api_operation where level = 'stable';
+ #+end_src
+
+ #+RESULTS:
+ #+begin_SRC example
+  count 
+ -------
+    584
+ (1 row)
+
+ #+end_SRC
+
+*** Build view of release, stable endpoint count, stable conformance tested count, new tests count
+** Progress
+   I've now got all tables loaded with data and we can start to do cool summaries.  The view 'stable_endpoints_first' feels like an accomplishment, though it def feels like it needs some peer review.
+   With that test, and our ordered releases, we can do a nice summary of release, new endoints, and new conf tests.
+   I'm not quite sure how to distinguish tests that matured along with the endpoint.  You could make the assumption that if an endpoint is added to stable and a test that hits that endpoint is added to conformance, then it's likely that this test was written for the endpoint before promotion.  But there may also be cases where the endpoint was promoted and a new test was written for it in the same cycle, and that should be counted as new work.  I will want to check with the team ofr these edge cases...or start to build out the github connection so we can see the commit history for these tests.
+   ----
+   I'm starting to get a query that will show the endpoint and when it was first tested, though i have a sense that I maight be making too broad of an assumption.  We are showing endpoints that are currently hit by tests, and then matching that to when the tests were released according to the latest conformance yaml.  The next step will be to try to determine when the endpoint was added (by using the swagger.json per release).  This would let us see new endpoints per reelease.  The thing I am confused by, though, is how the endpoint's operation_id changes as it is promoted, and how that aaffects the tests.  If an endpiont is brought ihnto beta with a t est, and then it is promoted to stable...does its operation_id change?  and does the test need to be updated to match that operation_id?  o ris the way the test written guaranteed to hit the same endpoints no matter whether they are beta  or stable/  it will be good to check in on th is to figure out the next steps.
+
+ # Local Variables:
+ # ii: enabled
+ # End:
+
+* Scratch
