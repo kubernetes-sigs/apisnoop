@@ -1,7 +1,9 @@
 <script context="module">
- import { join } from 'lodash-es';
+ import { join, tail, first } from 'lodash-es';
  export function preload ({ params, query }) {
-   let path = join(params.params, '/');
+   let path = (params.params[0].toLowerCase() === 'latest')
+            ? join(['latest', ...tail(params.params)],'/')
+            : join(params.params, '/');
    return this
      .fetch(`${path}.json`)
      .then(r => r.json())
@@ -22,7 +24,6 @@
    stableEndpointStats,
    warnings
  } from '../stores';
-
  export let payload;
  let isLoading = false;
  let  {
@@ -62,7 +63,6 @@
                                          : endpointsTestsAndUseragentsPayload);
 
  onMount(() => {
-   console.log('mounted');
    if (bucketParam && bucketParam !== bucket) {
      warnings.update(warnings => ({...warnings, invalidBucket: true}));
    }

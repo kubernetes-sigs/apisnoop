@@ -9,7 +9,7 @@
 <script>
  import CoverageOverTime from '../components/CoverageOverTime/Wrapper.svelte'; 
  import Sunburst from '../components/Sunburst/Wrapper.svelte';
- import { isEqual} from 'lodash-es';
+ import { isEqual, compact, join } from 'lodash-es';
  import { goto } from '@sapper/app';
  import {
    activeFilters,
@@ -44,6 +44,7 @@
    isLoading = false;
  }
  const updatePath = async (event) => {
+   console.log({params: event.detail.params});
    let {bucket, job, level, category, operation_id} = event.detail.params;
    activeFilters.update(af => ({...af, ...event.detail.params}));
    let filterSegments = compact([bucket, job, level, category, operation_id]);

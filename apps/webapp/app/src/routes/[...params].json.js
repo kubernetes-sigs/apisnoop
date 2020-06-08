@@ -6,6 +6,8 @@ import {
   STABLE_ENDPOINT_STATS } from '../queries';
 
 export async function get (req, res, next) {
+  let bucket;
+  let job;
   let bucketAndJobsQuery = await client.query({query: ALL_BUCKETS_AND_JOBS_SANS_LIVE});
   let rawBucketsAndJobsPayload = bucketAndJobsQuery.data.bucket_job_swagger;
 
@@ -13,32 +15,69 @@ export async function get (req, res, next) {
   let stableEndpointStatsPayload = statsQuery.data.stable_endpoint_stats;
 
   let query = req.query;
-  let [bucketParam, jobParam, level, category, operation_id] = req.params.params;
-  let {bucket, job} = determineBucketAndJob(rawBucketsAndJobsPayload, bucketParam, jobParam);
+  let {bucket: latestBucket, job: latestJob} = determineBucketAndJob(rawBucketsAndJobsPayload);
+  let [firstParam] = req.params.params;
 
-  let endpointsTestsAndUseragentsFromQuery = await client.query(
-    {query: ENDPOINTS_TESTS_AND_USERAGENTS,
-     variables: {bucket, job}
+  if (firstParam.toLowerCase() === 'latest') {
+    let [_, level, category, operation_id] = req.params.params;
+    bucket = latestBucket;
+    job = latestJob;
+    let bucketParam = latestBucket;
+    let jobParam = latestJob;
+    let endpointsTestsAndUseragentsFromQuery = await client.query(
+      {query: ENDPOINTS_TESTS_AND_USERAGENTS,
+       variables: {bucket, job}
     });
-  let endpointsTestsAndUseragentsPayload = endpointsTestsAndUseragentsFromQuery.data
+    let endpointsTestsAndUseragentsPayload = endpointsTestsAndUseragentsFromQuery.data
 
-  let allTheThings = {
-    bucket,
-    bucketParam,
-    category,
-    endpointsTestsAndUseragentsPayload,
-    job,
-    jobParam,
-    level,
-    operation_id,
-    query,
-    rawBucketsAndJobsPayload,
-    stableEndpointStatsPayload
-  };
+    let allTheThings = {
+      bucket,
+      bucketParam,
+      category,
+      endpointsTestsAndUseragentsPayload,
+      job,
+      jobParam,
+      level,
+      operation_id,
+      query,
+      rawBucketsAndJobsPayload,
+      stableEndpointStatsPayload
+    };
 
-  let payload = JSON.stringify(allTheThings);
-  res.writeHead(200, {
-    'Content-Type': 'application/json' ,
-  });
-  res.end(payload);
+    let payload = JSON.stringify(allTheThings);
+    res.writeHead(200, {
+      'Content-Type': 'application/json' ,
+    });
+    res.end(payload);
+  } else {
+    let [bucketParam, jobParam, level, category, operation_id] = req.params.params;
+    let bjs = determineBucketAndJob(rawBucketsAndJobsPayload, bucketParam, jobParam);
+    bucket = bjs.bucket;
+    job = bjs.job;
+    let endpointsTestsAndUseragentsFromQuery = await client.query(
+      {query: ENDPOINTS_TESTS_AND_USERAGENTS,
+       variables: {bucket, job}
+    });
+    let endpointsTestsAndUseragentsPayload = endpointsTestsAndUseragentsFromQuery.data
+
+    let allTheThings = {
+      bucket,
+      bucketParam,
+      category,
+      endpointsTestsAndUseragentsPayload,
+      job,
+      jobParam,
+      level,
+      operation_id,
+      query,
+      rawBucketsAndJobsPayload,
+      stableEndpointStatsPayload
+    };
+
+    let payload = JSON.stringify(allTheThings);
+    res.writeHead(200, {
+      'Content-Type': 'application/json' ,
+    });
+    res.end(payload);
+  }
 };
