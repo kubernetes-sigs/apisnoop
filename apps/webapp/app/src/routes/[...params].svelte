@@ -25,7 +25,6 @@
    warnings
  } from '../stores';
  export let payload;
- console.log({payload});
  let isLoading = false;
  let  {
    bucket,
@@ -64,7 +63,6 @@
                                          : endpointsTestsAndUseragentsPayload);
 
  onMount(() => {
-   console.log('mounted');
    if (bucketParam && bucketParam !== bucket) {
      warnings.update(warnings => ({...warnings, invalidBucket: true}));
    }
