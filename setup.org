@@ -2,8 +2,7 @@
 #+PROPERTY: header-args:sql-mode :product postgres :noweb yes
 
 * Purpose
-  This org prepares a view for looking at get operations and the tests that hit them.
-  We do this using the new schema and tables created in [[file:~/apisnoop/tickets/apisnoop/351_conformance_progress.org][351: conformance progress]] , but i'll bring over the main views here to make setting it up in the future quicker (in case this connection dies).
+
 * Setup
 ** Create tables
    will be filled with the swagger.json, in other words these are the endpoints that are part of the current k8s api
@@ -141,10 +140,10 @@ You can see the logic for how these tables ar epopulated in our loading function
             ELSE 'stable'
           END AS level,
           split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
-          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
           paths.key AS path,
+          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+          ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
           (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
           CASE
             WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
@@ -198,7 +197,7 @@ You can see the logic for how these tables ar epopulated in our loading function
                        (test_data->>'testname') as testname,
                        (test_data->>'codename') as codename,
                        CASE
-                         WHEN ((test_data->>'release') = '') THEN '1.8.0'
+                         WHEN ((test_data->>'release') = '') THEN '1.19.0'
                          WHEN ((test_data->>'release') like '%,%')
                            THEN trim(leading 'v' from split_part((test_data->>'release'), ', ', 2))||'.0'
                          ELSE trim(leading 'v' from (test_data->>'release')) ||'.0'
@@ -298,18 +297,10 @@ You can see the logic for how these tables ar epopulated in our loading function
         ;
 #+end_src
 
+
 #+begin_src sql-mode
   select * from load_open_api();
 #+end_src
-
-#+RESULTS:
-#+begin_SRC example
- load_open_api
----------------
-
-(1 row)
-
-#+end_SRC
 
     #+NAME: Load test_info
     #+begin_src sql-mode :results silent
@@ -323,15 +314,6 @@ You can see the logic for how these tables ar epopulated in our loading function
 
 ** Create Views
 *** stable endpoint first
-    #+begin_src sql-mode
-  drop materialized view stable_endpoint_first cascade;
-    #+end_src
-
-    #+RESULTS:
-    #+begin_SRC example
-    NOTICE:  drop cascades to view conformance_progress
-    DROP MATERIALIZED VIEW
-    #+end_SRC
 
    #+NAME: Stable Endpoint first
    #+begin_src sql-mode :results silent
@@ -352,24 +334,6 @@ You can see the logic for how these tables ar epopulated in our loading function
         ;
    #+end_src
 
-*** endpoint and test
-   #+begin_src sql-mode
-     create or replace view endpoint_and_test as
-       select
-         oa.endpoint,
-         test
-         from open_api oa
-         left join audit_event using(endpoint)
-         where deprecated is false
-         and oa.release = '1.19.0'
-         and test is not null
-         ;
-   #+end_src
-
-   #+RESULTS:
-   #+begin_SRC example
-   CREATE VIEW
-   #+end_SRC
 *** conformance progress
     #+begin_src sql-mode
       CREATE VIEW conformance_progress AS
@@ -435,28 +399,111 @@ You can see the logic for how these tables ar epopulated in our loading function
 
 * create json
   #+begin_src sql-mode
-  begin;
-  \t
-  \a
-  \o data.json
-  select json_agg(t) from (select distinct endpoint from endpoint_and_test) t;
-  commit;
+    begin;
+    \t
+    \a
+    \o data.json
+    select json_agg(t) from (
+      select distinct
+      open_api.endpoint,
+      case
+        when array_agg(test) filter (where test is not null) is not null
+        then array_agg(test) filter (where test is not null)
+        else '{}'
+      END as tests
+      from open_api
+      left join endpoint_and_test using(endpoint)
+      group by 1
+      ) t;
+    \o
+    \a
+    \t
+    commit;
   #+end_src
 
   #+RESULTS:
   #+begin_SRC example
+  BEGIN
+  Tuples only is on.
+  Output format is unaligned.
   #+end_SRC
 
+
 #+begin_src sql-mode
-  select endpoint, array_agg(test) filter(where test != 'untested') from endpoint_and_test group by 1 limit 2;
+  begin;
+  \t
+  \a
+  \o progress.json
+  select json_agg(progress) from (
+    select * from conformance_progress
+  ) progress;
+  \o
+  \a
+  \t
+  commit;
+
 #+end_src
 
 #+RESULTS:
 #+begin_SRC example
-                 endpoint                 |                                                                                                                                                                                                                                 array_agg
-------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- connectCoreV1GetNamespacedPodExec        | {"[k8s.io] Pods should support remote command execution over websockets [NodeConformance] [Conformance]","[k8s.io] Pods should support remote command execution over websockets [NodeConformance] [Conformance]"}
- connectCoreV1GetNamespacedPodPortforward | {"[sig-cli] Kubectl Port forwarding With a server listening on 0.0.0.0 should support forwarding over websockets","[sig-cli] Kubectl Port forwarding With a server listening on 0.0.0.0 should support forwarding over websockets","[sig-cli] Kubectl Port forwarding With a server listening on localhost should support forwarding over websockets","[sig-cli] Kubectl Port forwarding With a server listening on localhost should support forwarding over websockets"}
-(2 rows)
+BEGIN
+Tuples only is on.
+Output format is unaligned.
+postgres=# postgres=# Output format is aligned.
+Tuples only is off.
+COMMIT
+#+end_SRC
+
+
+* scratch
+  #+begin_src sql-mode
+  refresh materialized view stable_endpoint_first;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  REFRESH MATERIALIZED VIEW
+  #+end_SRC
+
+  #+begin_src sql-mode
+    with current_eligible_endpoints as
+    (
+      select endpoint
+      from open_api
+        where release = '1.19.0'
+        and level = 'stable'
+        and deprecated is false
+    ), endpoints_per_release as (
+      select release, endpoint
+      from       open_api
+      inner join current_eligible_endpoints using(endpoint)
+    )
+    select
+      release,
+      count(distinct endpoint) as total_endpoints,
+      count(distinct endpoint) FILTER (WHERE epr.release = firsts.first_release) as new_endpoints,
+      count(distinct endpoint) FILTER (WHERE epr.release = firsts.first_conformance_test) as new_endpoints_tested
+      from      endpoints_per_release epr
+      join stable_endpoint_first firsts using(endpoint)
+      group by 1
+      order by string_to_array(release, '.')::int[]
+    ;
+  #+end_src
+
+
+#+begin_src sql-mode
+  select distinct test, file from stable_endpoint_first where first_conformance_test = '1.19.0' order by test;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                   test                   |                file
+------------------------------------------+-------------------------------------
+ aggregator-supports-the-sample-apiserver | test/e2e/apimachinery/aggregator.go
+ CertificateSigningRequest API            | test/e2e/auth/certificates.go
+ Deployment Proportional Scaling          | test/e2e/apps/deployment.go
+ PodTemplate lifecycle                    | test/e2e/common/podtemplates.go
+ ServiceAccount lifecycle test            | test/e2e/auth/service_accounts.go
+(5 rows)
 
 #+end_SRC
