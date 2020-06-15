@@ -1,0 +1,277 @@
+
+# Progress <code>[1/6]</code>
+
+-   [X] APISnoop org-flow: [checkAPIGroupPreferredVersionTest.org](https://github.com/cncf/apisnoop/blob/master/tickets/k8s/checkAPIGroupPreferredVersionTest.org)
+-   [ ] Test approval issue: [kubernetes/kubernetes#](https://github.com/kubernetes/kubernetes/issues/#)
+-   [ ] Test pr: kuberenetes/kubernetes#
+-   [ ] Two weeks soak start date: testgrid-link
+-   [ ] Two weeks soak end date:
+-   [ ] Test promotion pr: kubernetes/kubernetes#?
+
+# Identifying an untested feature Using APISnoop
+
+According to this APIsnoop query, there are still an endpoint which is untested.
+
+```sql-mode
+SELECT
+  operation_id,
+  -- k8s_action,
+  path,
+  description
+  -- kind
+  -- FROM untested_stable_core_endpoints
+  FROM untested_stable_endpoints
+  where path not like '%volume%'
+  -- and kind like ''
+  and operation_id ilike '%APIGroup'
+ ORDER BY operation_id
+ LIMIT 25
+       ;
+```
+
+```example
+          operation_id           |                path                 |        description         
+---------------------------------+-------------------------------------+----------------------------
+ getApiregistrationAPIGroup      | /apis/apiregistration.k8s.io/       | get information of a group
+ getAppsAPIGroup                 | /apis/apps/                         | get information of a group
+ getAuthenticationAPIGroup       | /apis/authentication.k8s.io/        | get information of a group
+ getAuthorizationAPIGroup        | /apis/authorization.k8s.io/         | get information of a group
+ getAutoscalingAPIGroup          | /apis/autoscaling/                  | get information of a group
+ getBatchAPIGroup                | /apis/batch/                        | get information of a group
+ getCoordinationAPIGroup         | /apis/coordination.k8s.io/          | get information of a group
+ getDiscoveryAPIGroup            | /apis/discovery.k8s.io/             | get information of a group
+ getEventsAPIGroup               | /apis/events.k8s.io/                | get information of a group
+ getExtensionsAPIGroup           | /apis/extensions/                   | get information of a group
+ getFlowcontrolApiserverAPIGroup | /apis/flowcontrol.apiserver.k8s.io/ | get information of a group
+ getNodeAPIGroup                 | /apis/node.k8s.io/                  | get information of a group
+ getPolicyAPIGroup               | /apis/policy/                       | get information of a group
+ getRbacAuthorizationAPIGroup    | /apis/rbac.authorization.k8s.io/    | get information of a group
+ getSchedulingAPIGroup           | /apis/scheduling.k8s.io/            | get information of a group
+ getSettingsAPIGroup             | /apis/settings.k8s.io/              | get information of a group
+ getStorageAPIGroup              | /apis/storage.k8s.io/               | get information of a group
+(17 rows)
+
+```
+
+# API Reference and feature documentation
+
+-   [Kubernetes API Reference Docs](https://kubernetes.io/docs/reference/kubernetes-api/)
+-   [Kubernetes API: v1.18](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#)
+-   [client-go](https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/)
+
+# The mock test
+
+## Test outline
+
+1.  Get a list of all group /apis
+
+2.  Iterate through list
+
+3.  Query each endpoint
+
+4.  List the PreferredVersion for the endpoint
+
+## Test the functionality in Go
+
+```go
+package main
+
+import (
+  "context"
+  "flag"
+  "fmt"
+  metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+  "k8s.io/client-go/kubernetes"
+  "k8s.io/client-go/tools/clientcmd"
+  "os"
+)
+
+func main() {
+  // uses the current context in kubeconfig
+  kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+  flag.Parse()
+  config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+  if err != nil {
+    fmt.Println(err)
+    return
+  }
+  // make our work easier to find in the audit_event queries
+  config.UserAgent = "live-test-writing"
+  // creates the clientset
+  ClientSet, _ := kubernetes.NewForConfig(config)
+
+  // TEST BEGINS HERE
+  fmt.Println("[status] begin")
+
+  // get list of APIGroup endpoints
+  list := &metav1.APIGroupList{}
+  err = ClientSet.Discovery().RESTClient().Get().AbsPath("/apis/").Do(context.TODO()).Into(list)
+
+  if err != nil {
+    fmt.Println("Failed to find /apis/", err)
+    os.Exit(1)
+  }
+
+  for _, group := range list.Groups {
+    fmt.Println("Checking APIGroup:", group.Name)
+
+    // hit APIGroup endpoint
+    checkGroup := &metav1.APIGroup{}
+    apiPath := "/apis/" + group.Name + "/"
+    err = ClientSet.Discovery().RESTClient().Get().AbsPath(apiPath).Do(context.TODO()).Into(checkGroup)
+
+    if err != nil {
+      fmt.Printf("Fail to access: %s | Error: %v\n", apiPath, err)
+      os.Exit(1)
+    }
+
+    // get PreferredVersion for endpoint
+    fmt.Println("PreferredVersion:", checkGroup.PreferredVersion, "\n")
+  }
+
+  // TEST ENDS HERE
+  fmt.Println("[status] complete")
+}
+```
+
+```go
+[status] begin
+Checking APIGroup: apiregistration.k8s.io
+PreferredVersion: {apiregistration.k8s.io/v1 v1} 
+
+Checking APIGroup: extensions
+PreferredVersion: {extensions/v1beta1 v1beta1} 
+
+Checking APIGroup: apps
+PreferredVersion: {apps/v1 v1} 
+
+Checking APIGroup: events.k8s.io
+PreferredVersion: {events.k8s.io/v1beta1 v1beta1} 
+
+Checking APIGroup: authentication.k8s.io
+PreferredVersion: {authentication.k8s.io/v1 v1} 
+
+Checking APIGroup: authorization.k8s.io
+PreferredVersion: {authorization.k8s.io/v1 v1} 
+
+Checking APIGroup: autoscaling
+PreferredVersion: {autoscaling/v1 v1} 
+
+Checking APIGroup: batch
+PreferredVersion: {batch/v1 v1} 
+
+Checking APIGroup: certificates.k8s.io
+PreferredVersion: {certificates.k8s.io/v1beta1 v1beta1} 
+
+Checking APIGroup: networking.k8s.io
+PreferredVersion: {networking.k8s.io/v1 v1} 
+
+Checking APIGroup: policy
+PreferredVersion: {policy/v1beta1 v1beta1} 
+
+Checking APIGroup: rbac.authorization.k8s.io
+PreferredVersion: {rbac.authorization.k8s.io/v1 v1} 
+
+Checking APIGroup: storage.k8s.io
+PreferredVersion: {storage.k8s.io/v1 v1} 
+
+Checking APIGroup: admissionregistration.k8s.io
+PreferredVersion: {admissionregistration.k8s.io/v1 v1} 
+
+Checking APIGroup: apiextensions.k8s.io
+PreferredVersion: {apiextensions.k8s.io/v1 v1} 
+
+Checking APIGroup: scheduling.k8s.io
+PreferredVersion: {scheduling.k8s.io/v1 v1} 
+
+Checking APIGroup: coordination.k8s.io
+PreferredVersion: {coordination.k8s.io/v1 v1} 
+
+Checking APIGroup: auditregistration.k8s.io
+PreferredVersion: {auditregistration.k8s.io/v1alpha1 v1alpha1} 
+
+Checking APIGroup: node.k8s.io
+PreferredVersion: {node.k8s.io/v1beta1 v1beta1} 
+
+Checking APIGroup: discovery.k8s.io
+PreferredVersion: {discovery.k8s.io/v1beta1 v1beta1} 
+
+[status] complete
+```
+
+# Verifying increase in coverage with APISnoop
+
+Discover useragents:
+
+```sql-mode
+select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+```
+
+```example
+     useragent     
+-------------------
+ live-test-writing
+(1 row)
+
+```
+
+List endpoints hit by the test:
+
+```sql-mode
+select * from endpoints_hit_by_new_test where useragent like 'live%';
+```
+
+```example
+     useragent     |           operation_id           | hit_by_ete | hit_by_new_test 
+-------------------+----------------------------------+------------+-----------------
+ live-test-writing | getAdmissionregistrationAPIGroup | t          |               1
+ live-test-writing | getApiextensionsAPIGroup         | t          |               1
+ live-test-writing | getApiregistrationAPIGroup       | f          |               1
+ live-test-writing | getAPIVersions                   | t          |               1
+ live-test-writing | getAppsAPIGroup                  | f          |               1
+ live-test-writing | getAuthenticationAPIGroup        | f          |               1
+ live-test-writing | getAuthorizationAPIGroup         | f          |               1
+ live-test-writing | getAutoscalingAPIGroup           | f          |               1
+ live-test-writing | getBatchAPIGroup                 | f          |               1
+ live-test-writing | getCertificatesAPIGroup          | t          |               1
+ live-test-writing | getCoordinationAPIGroup          | f          |               1
+ live-test-writing | getDiscoveryAPIGroup             | f          |               1
+ live-test-writing | getEventsAPIGroup                | f          |               1
+ live-test-writing | getExtensionsAPIGroup            | f          |               1
+ live-test-writing | getNetworkingAPIGroup            | t          |               1
+ live-test-writing | getNodeAPIGroup                  | f          |               1
+ live-test-writing | getPolicyAPIGroup                | f          |               1
+ live-test-writing | getRbacAuthorizationAPIGroup     | f          |               1
+ live-test-writing | getSchedulingAPIGroup            | f          |               1
+ live-test-writing | getStorageAPIGroup               | f          |               1
+(20 rows)
+
+```
+
+Display endpoint coverage change:
+
+```sql-mode
+select * from projected_change_in_coverage;
+```
+
+```example
+   category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+---------------+-----------------+--------------+--------------+------------------
+ test_coverage |             458 |          206 |          222 |               16
+(1 row)
+
+```
+
+# Final notes
+
+If a test with these calls gets merged, ****test coverage will go up by 15 points****
+
+This test is also created with the goal of conformance promotion.
+
+---
+
+/sig testing
+
+/sig architecture
+
+/area conformance
