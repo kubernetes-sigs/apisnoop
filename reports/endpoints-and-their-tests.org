@@ -9,36 +9,71 @@
   - tests
   - audit_event
   - stable_endpoint_first
+* Adjust 1.8 test releases
+  We want to alter our test tables, so any test with 1.8 is replaced with 1.9
+  1.8 is a stopgap based on an issue with a set of conformance tests.  The issue is that the conformance.yaml generates the release for tesets, based on a release comment written above the test.  Some of the tests are missing release comments, and so have an empty string as their release in the conformance.yaml
+  An issue is beign raised for this, but until the we will set them to 1.9 since that was the start of the conformance initiative, and it doesn't make sense for a conformance test to be released before conformance existed.
+
+  #+begin_src sql-mode
+     update test bucket_job_swagger
+        set release = '1.9.0'
+      where release = '1.8.0';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  UPDATE 17
+  #+end_SRC
+
+  Refresh our materialized view and we are good to go
+  #+begin_src sql-mode
+  refresh materialized view stable_endpoint_first;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  REFRESH MATERIALIZED VIEW
+  #+end_SRC
+
 * Get a list of endpoints and tests
   #+TITLE: endpoints and tests
   #+begin_src sql-mode
-  create or replace view endpoint_and_test as
-      with current_stable_endpoints as (
-        select endpoint
-          from open_api
-         where release = '1.19.0'
-           and level = 'stable'
-        except
-          select endpoint
-            from open_api
-           where path like '%volume%'
-              or deprecated is true
-              or k8s_kind = 'ComponentStatus'
-              or (k8s_kind = 'Node' and k8s_action = any('{"delete", "post"}'))
-      )
-      select stable.endpoint,
-             stable.first_release,
-             stable.first_conformance_test as first_tested,
-             test.testname as test,
-             test.release as test_release,
-             test.file as test_location
-        from      stable_endpoint_first stable
-             join current_stable_endpoints using(endpoint)
-        left join audit_event on(audit_event.endpoint = stable.endpoint and audit_event.test is not null)
-        left join test on (audit_event.test = test.codename and audit_event.test is not null)
-    group by stable.endpoint, first_conformance_test, first_release, testname, test_release, test.file
-       ;
+      create or replace view endpoint_and_test as
+          with current_stable_endpoints as (
+            select endpoint
+              from open_api
+             where release = '1.19.0'
+               and level = 'stable'
+            except
+              select endpoint
+                from open_api
+               where path like '%volume%'
+                  or deprecated is true
+                  or k8s_kind = 'ComponentStatus'
+                  or (k8s_kind = 'Node' and k8s_action = any('{"delete", "post"}'))
+          )
+          select stable.endpoint,
+                 stable.first_release,
+                 case
+                   when first_conformance_test::semver < first_release::semver
+                   then first_release
+                   else first_conformance_test
+                 end as first_tested,
+                 test.testname as test,
+                 test.release as test_release,
+                 test.file as test_location
+            from      stable_endpoint_first stable
+                 join current_stable_endpoints using(endpoint)
+            left join audit_event on(audit_event.endpoint = stable.endpoint and audit_event.test is not null)
+            left join test on (audit_event.test = test.codename and audit_event.test is not null)
+        group by stable.endpoint, first_conformance_test, first_release, testname, test_release, test.file
+           ;
   #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  CREATE VIEW
+  #+end_SRC
 
   We'll do some sanity checks with this.
   We know we have 423 stable, eligible endoints due to work we did on conformance_progress.
