@@ -60,7 +60,7 @@
                   :type "quantitative"
                   :title "Total Stable! Endpoints"}
               :color {:field "type" :type "nominal"
-                      :scale {:range [ "#9EEBCF""#FF725C" "#19A974" "#FF4136" ]}}
+                      :scale {:range [ "#9EEBCF""#FBF1A9" "#19A974" "#FF4136" ]}}
               :tooltip [{:field "type" :type "ordinal"}
                         {:field "total" :type "quantitative"}]
               :order {:field "order"}}
