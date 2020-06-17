@@ -612,6 +612,7 @@ So here we can see 1.8 in the front for some, but always with 1.9 after...so eve
         select endpoint
         from open_api
         where path like '%volume%'
+            or path like '%storage%'
             or deprecated is true
             or k8s_kind = 'ComponentStatus'
             or (k8s_kind = 'Node' and k8s_action = any('{"delete", "post"}'))
@@ -659,22 +660,7 @@ So here we can see 1.8 in the front for some, but always with 1.9 after...so eve
 
     #+RESULTS: conformance progress
     #+begin_SRC example
-     release | new_endpoints | new_tests | new_endpoints_promoted_with_tests | new_endpoints_covered_by_new_tests | new_endpoints_covered_by_old_tests | old_endpoints_covered_by_new_tests | total_endpoints | total_tested_endpoints | endpoints_still_untested_today
-    ---------+---------------+-----------+-----------------------------------+------------------------------------+------------------------------------+------------------------------------+-----------------+------------------------+--------------------------------
-     1.8.0   |           273 |        17 |                                36 |                                 36 |                                  0 |                                  0 |             273 |                     36 |                            183
-     1.9.0   |            63 |       149 |                                10 |                                  5 |                                  9 |                                 18 |             336 |                     68 |                             46
-     1.10.0  |             9 |         0 |                                 0 |                                  0 |                                  4 |                                  0 |             345 |                     72 |                              5
-     1.11.0  |             2 |         0 |                                 0 |                                  0 |                                  0 |                                  0 |             347 |                     72 |                              2
-     1.12.0  |             1 |        11 |                                 0 |                                  0 |                                  0 |                                  0 |             348 |                     72 |                              1
-     1.13.0  |             0 |        13 |                                 0 |                                  0 |                                  0 |                                  1 |             348 |                     73 |                              0
-     1.14.0  |            18 |         2 |                                 0 |                                  0 |                                  2 |                                  0 |             366 |                     75 |                              9
-     1.15.0  |             0 |        16 |                                 0 |                                  0 |                                  0 |                                  7 |             366 |                     82 |                              0
-     1.16.0  |            28 |        55 |                                26 |                                 22 |                                  4 |                                 13 |             394 |                    121 |                              2
-     1.17.0  |             8 |         4 |                                 0 |                                  0 |                                  0 |                                  7 |             402 |                    128 |                              8
-     1.18.0  |             7 |         7 |                                 0 |                                  0 |                                  0 |                                  9 |             409 |                    137 |                              7
-     1.19.0  |            14 |        21 |                                14 |                                 13 |                                  1 |                                  9 |             423 |                    160 |                              0
-    (12 rows)
-
+    CREATE VIEW
     #+end_SRC
 
   This is not the most optimized query, most likely, but it works!
@@ -693,57 +679,58 @@ So here we can see 1.8 in the front for some, but always with 1.9 after...so eve
 
   #+NAME: conformance progress
   #+begin_src sql-mode
-  create or replace view stable_conformance_progress as
-    with current_stable_endpoints as (
-      select endpoint
-        from open_api
-       where release = '1.19.0'
-         and level = 'stable'
-      except
+    create or replace view stable_conformance_progress as
+      with current_stable_endpoints as (
         select endpoint
-        from open_api
-        where path like '%volume%'
-            or deprecated is true
-            or k8s_kind = 'ComponentStatus'
-            or (k8s_kind = 'Node' and k8s_action = any('{"delete", "post"}'))
-    ), endpoints_per_release as (-- this filters out endpoints that were dropped after the release
-      select release, endpoint
-        from       open_api
-        inner join current_stable_endpoints using(endpoint)
-    )
-    select distinct
-      epr.release::semver,
-      count(*) filter (where epr.release = firsts.first_release) as new_endpoints,
-      (select count(*) from test where test.release = epr.release) as new_tests,
-      count(*) filter (
-        where epr.release = firsts.first_release
-        and firsts.all_test_releases @> array[epr.release::semver]
-      ) as new_endpoints_promoted_with_tests,
-      count(*) filter (
-        where epr.release = firsts.first_release
-        and firsts.first_conformance_test = firsts.first_release
-      ) as new_endpoints_covered_by_new_tests,
-      count(*) filter (
-      where firsts.first_release = epr.release
-      and firsts.first_conformance_test::semver < epr.release::semver
-      ) new_endpoints_covered_by_old_tests,
-      count(*) filter (
-        where firsts.first_release::semver < epr.release::semver
-          and firsts.first_conformance_test = epr.release
-      ) old_endpoints_covered_by_new_tests,
-      count(*) as total_endpoints,
-      count(*) filter (
-        where firsts.first_release::semver <= epr.release::semver
-        and firsts.first_conformance_test::semver <= epr.release::semver
-      ) as total_tested_endpoints,
-      count(*) filter (
+          from open_api
+         where release = '1.19.0'
+           and level = 'stable'
+        except
+          select endpoint
+          from open_api
+          where path like '%volume%'
+              or path like '%storage%'
+              or deprecated is true
+              or k8s_kind = 'ComponentStatus'
+              or (k8s_kind = 'Node' and k8s_action = any('{"delete", "post"}'))
+      ), endpoints_per_release as (-- this filters out endpoints that were dropped after the release
+        select release, endpoint
+          from       open_api
+          inner join current_stable_endpoints using(endpoint)
+      )
+      select distinct
+        epr.release::semver,
+        count(*) filter (where epr.release = firsts.first_release) as new_endpoints,
+        (select count(*) from test where test.release = epr.release) as new_tests,
+        count(*) filter (
+          where epr.release = firsts.first_release
+          and firsts.all_test_releases @> array[epr.release::semver]
+        ) as new_endpoints_promoted_with_tests,
+        count(*) filter (
+          where epr.release = firsts.first_release
+          and firsts.first_conformance_test = firsts.first_release
+        ) as new_endpoints_covered_by_new_tests,
+        count(*) filter (
         where firsts.first_release = epr.release
-        AND firsts.first_conformance_test is null
-      ) endpoints_still_untested_today
-    from      endpoints_per_release epr
-    left join stable_endpoint_first firsts on (epr.endpoint = firsts.endpoint)
-    group by epr.release
-    order by epr.release::semver;
+        and firsts.first_conformance_test::semver < epr.release::semver
+        ) new_endpoints_covered_by_old_tests,
+        count(*) filter (
+          where firsts.first_release::semver < epr.release::semver
+            and firsts.first_conformance_test = epr.release
+        ) old_endpoints_covered_by_new_tests,
+        count(*) as total_endpoints,
+        count(*) filter (
+          where firsts.first_release::semver <= epr.release::semver
+          and firsts.first_conformance_test::semver <= epr.release::semver
+        ) as total_tested_endpoints,
+        count(*) filter (
+          where firsts.first_release = epr.release
+          AND firsts.first_conformance_test is null
+        ) endpoints_still_untested_today
+      from      endpoints_per_release epr
+      left join stable_endpoint_first firsts on (epr.endpoint = firsts.endpoint)
+      group by epr.release
+      order by epr.release::semver;
     #+end_src
 * Output stable_conformance_progress to json
   We can do this with a psql script.  We turn off alignment and turn on tuples (to remove the header and just have it as pure json) then output it to a file.  easy peasy!
@@ -761,7 +748,7 @@ So here we can see 1.8 in the front for some, but always with 1.9 after...so eve
   begin;
   \t
   \a
-  \o progress2.json
+  \o ../viz/resources/progress.json
     select json_agg(json_build_object(
     'release', release,
     'total', json_build_object(
