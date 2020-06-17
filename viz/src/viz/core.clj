@@ -58,11 +58,12 @@
                   :sort (:release data-set)}
               :y {:field "total"
                   :type "quantitative"
-                  :title "Total Stable! Endpoints"
-                  :sort ['untested' 'tested']}
+                  :title "Total Stable! Endpoints"}
               :color {:field "type" :type "nominal"}
+              :tooltip [{:field "type" :type "ordinal"}
+                        {:field "total" :type "quantitative"}]
               :order {:field "order"}}
-   :mark {:type "bar" :tooltip true}})
+   :mark {:type "bar"}})
 
 (def ratio-chart
   {:data {:values ratio}
@@ -74,6 +75,8 @@
               :y {:field "total"
                   :type "quantitative"
                   :title "Total Stable! Endpoints"}
+              :tooltip [{:field "type" :type "ordinal"}
+                        {:field "total" :type "quantitative"}]
               :color {:field "type" :type "nominal"}}
    :mark {:type "bar" :tooltip true}})
 
