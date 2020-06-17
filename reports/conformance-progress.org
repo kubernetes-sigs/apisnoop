@@ -1,5 +1,5 @@
 #+TITLE: Conformance Progress
-#+PROPERTY: header-args:sql-mode :product postgres :noweb yes
+#+PROPERTY: header-args:sql-mode :product postgres :noweb yes :comments off
 
 * Goal
  Prepare a view of the endpoints per release and how many were hit by conformance tests at the time of that release.  Export this view as json to be used in a graphic visualization.
@@ -25,7 +25,7 @@
 *** Create the table
     The columns are derived from the keys in the open api spec.
    #+NAME: open_api definition
-   #+begin_src sql-mode :results silent
+   #+begin_src sql-mode :results silent :tangle ../sql-files/table-open-api.sql
      create table open_api
      (
        release text,
@@ -149,7 +149,7 @@
       #+END_SRC
 
    #+NAME: load_open_api.sql
-   #+BEGIN_SRC sql-mode :results silent
+   #+BEGIN_SRC sql-mode :results silent :tangle ../sql-files/fn-load_open_api.sql
      set role dba;
      DROP FUNCTION IF EXISTS load_open_api;
      CREATE OR REPLACE FUNCTION load_open_api (
@@ -239,7 +239,7 @@
 *** Create the table
     Same as the spec, the columns are simply the keys available in the conformance.yaml
     #+NAME: create tests_info table
-    #+begin_src sql-mode :results silent
+    #+begin_src sql-mode :results silent :tangle ../sql-files/table-test.sql
       create table test
         (
           testname text,
@@ -256,11 +256,9 @@
 
    I did some git searching for some of these tests to see when they were introduced or added to the yaml.  In may cases the test was written 3 years ago, but had a commit of 'promote to conformance' of 1.5 years ago.  Having a commit or pr is not the same as actually promoting.  The only guideline we are using for when a test was deemed conformance was when it appeared in our conformance.yaml and using the release date given in that yaml.  In other words, we need to understand the meaning behind the empty strings.
 
-   In the meantime, I can assign all of them the release value of "1.8".  There aren't any others that appear with 1.8 and so they'll be easy to isolate later...but it potentially throws the numbers off.
-
-   First, let's describe our function and insert them without change.
+   In the meantime, I can assign all of them the release value of "1.9", representing the start of conformance.
     #+NAME: load_tests
-    #+BEGIN_SRC sql-mode :results silent
+    #+BEGIN_SRC sql-mode :results silent :tangle ../sql-files/fn-load_tests.sql
       set role dba;
       DROP FUNCTION IF EXISTS load_tests;
       CREATE OR REPLACE FUNCTION load_tests()
@@ -280,7 +278,7 @@
                        (test_data->>'testname') as testname,
                        (test_data->>'codename') as codename,
                        CASE
-                         WHEN ((test_data->>'release') = '') THEN ''
+                         WHEN ((test_data->>'release') = '') THEN '1.9.0'
                          WHEN ((test_data->>'release') like '%,%')
                            THEN trim(leading 'v' from split_part((test_data->>'release'), ', ', 2))||'.0'
                          ELSE trim(leading 'v' from (test_data->>'release')) ||'.0'
@@ -376,7 +374,7 @@
 ** audit event
 *** Create the table
  #+NAME: audit_event
- #+BEGIN_SRC sql-mode :results silent
+ #+BEGIN_SRC sql-mode :results silent :tangle ../sql-files/table-audit_event.sql
    CREATE UNLOGGED TABLE audit_event (
      release text,
      release_date text,
@@ -393,7 +391,7 @@
  #+END_SRC
 *** Define its loading function
      #+NAME: load_audit_events.sql
-     #+BEGIN_SRC sql-mode :noweb yes :results silent
+     #+BEGIN_SRC sql-mode :noweb yes :results silent :tangle ../sql-files/fn-load_audit_events.sql
        set role dba;
        CREATE OR REPLACE FUNCTION load_audit_events(
          custom_bucket text default null,
@@ -465,17 +463,8 @@
 * Create stable_endpoint_first materialized view
   This will be the crux of our work.  We can combine our three tables to see every endpoint and the tests that hit it.  If we then make lists of the rleease dates for these tests, sorted by semver, then we can see when an endpoint is first hit by a conformance test.  In the same way, we can make a sorted list of the endpoints apperance in an open api spec to see when it is first released.
 
-  #+begin_src sql-mode
-  drop materialized view stable_endpoint_first;
-  #+end_src
-
-  #+RESULTS:
-  #+begin_SRC example
-  DROP MATERIALIZED VIEW
-  #+end_SRC
-
   #+NAME: define stable_endpoint_first
-  #+begin_src sql-mode :results silent
+  #+begin_src sql-mode :results silent :tangle ../sql-files/matview-stable_endpoint_first.sql
     create materialized view stable_endpoint_first as
     select distinct
       oa.endpoint,
@@ -658,11 +647,6 @@ So here we can see 1.8 in the front for some, but always with 1.9 after...so eve
               ;
     #+end_src
 
-    #+RESULTS: conformance progress
-    #+begin_SRC example
-    CREATE VIEW
-    #+end_SRC
-
   This is not the most optimized query, most likely, but it works!
   What we are looking at is the # of endpoints released per version, how many of them came in with a test that covered them, and how many of them came in covered by an old test.
   if there are endpoints that did not come in with a test, but are covered by an old one, they may be good to revisit as that old test may not meaningfully cover this new endpoint.
@@ -678,8 +662,8 @@ So here we can see 1.8 in the front for some, but always with 1.9 after...so eve
  I then save this view as "stable_conformance_progress" so that it will be easier to output as json
 
   #+NAME: conformance progress
-  #+begin_src sql-mode
-    create or replace view stable_conformance_progress as
+  #+begin_src sql-mode :tangle ../sql-files/view-conformance_progress.sql
+    create view conformance_progress as
       with current_stable_endpoints as (
         select endpoint
           from open_api
@@ -744,7 +728,7 @@ So here we can see 1.8 in the front for some, but always with 1.9 after...so eve
   /home/zz/snoop/reports
   #+end_example
 
-#+begin_src sql-mode :tangle p2g.sql
+#+begin_src sql-mode :tangle progress-to-json.sql
   begin;
   \t
   \a
@@ -1054,6 +1038,18 @@ Next up is visualizing this in a nice set of bar charts.  I'll cover that in a c
 (1 row)
 
 #+end_SRC
+
+*** Load new views!
+   we need a new open_api and a new audit_event details.
+
+   #+begin_src sql-mode
+   create schema public;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   CREATE SCHEMA
+   #+end_SRC
 
 ** tasks
    add semver to docker-compose or docker file
