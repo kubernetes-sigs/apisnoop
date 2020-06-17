@@ -59,7 +59,8 @@
               :y {:field "total"
                   :type "quantitative"
                   :title "Total Stable! Endpoints"}
-              :color {:field "type" :type "nominal"}
+              :color {:field "type" :type "nominal"
+                      :scale {:range [ "#9EEBCF""#FF725C" "#19A974" "#FF4136" ]}}
               :tooltip [{:field "type" :type "ordinal"}
                         {:field "total" :type "quantitative"}]
               :order {:field "order"}}
@@ -77,7 +78,8 @@
                   :title "Total Stable! Endpoints"}
               :tooltip [{:field "type" :type "ordinal"}
                         {:field "total" :type "quantitative"}]
-              :color {:field "type" :type "nominal"}}
+              :color {:field "type" :type "nominal"
+                      :scale {:range ["#FF4136" "#19A974"]}}}
    :mark {:type "bar" :tooltip true}})
 
 (def chart
@@ -98,8 +100,10 @@
    [:p "We start the report at 1.8, so this will have the most new endpoints (since it really starts with all the existing endpoints at that time).  This report highlights the importance of having a gate that ensures any promoted endpoint comes with a test.  This became an initiative in 1.16 and that release has one of the best ratios of introduced to tested.  1.19 is also looking impressive, with currently 100% coverage on all its endpoints."]
    [:vega-lite ratio-chart]])
 
-(oz/start-server!)
 (oz/view! chart)
+
+(oz/start-server!)
+
 
 (oz/export! chart "../docs/index.html")
 
