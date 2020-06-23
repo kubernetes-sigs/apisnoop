@@ -1,0 +1,240 @@
+#+TITLE: Endpoints=>Json
+#+PROPERTY: header-args:sql-mode :product postgres :noweb yes :comments off
+
+* Purpose
+  Export json files of endopints and the tests that hit them in a consistent way, and in a format that works for our webapp
+* Points of Interest
+  Our Web App currently cares about three things:
+  - The release
+  - the endpoints
+  - the tests
+ and then how all these are connected (number of endoints hit by tests, etc.)
+
+ if we wanted a single file, it would have these three keys.  We can create essentially `coverage.json` which has release, endpoints, and tests.
+* Release
+  For release we want version, release date, and data source?
+ I think we can get all of this from open_api
+  #+begin_src sql-mode
+    select release, release_date, spec
+           audit_event
+      from open_api
+     where release = '1.19.0'
+     group by release, release_date, spec;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   release |    release_date     |                                                 spec
+  ---------+---------------------+------------------------------------------------------------------------------------------------------
+   1.19.0  | 2020-06-21 21:01:58 | https://raw.githubusercontent.com/kubernetes/kubernetes/656a01fb044d6d/api/openapi-spec/swagger.json
+  (1 row)
+
+  #+end_SRC
+
+ almost, we will need to update our audit event table to record the bucket and job it took from so we can keep a record of the test run
+
+* Endpoints
+  We can also take this from open_api, easy peasy.
+
+  #+begin_src sql-mode
+    create or replace view coveragezzz as
+        select endpoint, level, category,
+               path,
+               description,
+               k8s_kind,
+               k8s_version,
+               k8s_group,
+               k8s_action,
+               array_agg(distinct test) as tests,
+               (count(test_hit) filter(where test_hit is true)>0) as tested,
+               (count(conf_test_hit) filter(where conf_test_hit is true)>0) as conf_tested
+          from      open_api
+          left join audit_event using(endpoint, release)
+         where release = '1.19.0'
+           and deprecated is false
+         group by endpoint, level, category, path, description, k8s_kind, k8s_version, k8s_group, k8s_action
+              ;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  CREATE VIEW
+  #+end_SRC
+
+  #+begin_src sql-mode
+select count(*) from coveragezzz where tested is true;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   count
+  -------
+     268
+  (1 row)
+
+  #+end_SRC
+
+* Tests
+  We can grab these from audit_event and test info.  Test info will only have conformance data...so we wou7ldn't be able to get files and rleease as easily for standard tests.  Perhaps in future we could calculate a release on tests based on when they first appeared in audit_events...but that'd only go back as far as 1.15...and i am not sure how important that is....though being able to go to the test file would be fantastic.
+
+  #+begin_src sql-mode
+    select test,
+           testname,
+           file,
+           test.release
+      from audit_event
+             left join test on(test = codename)
+     group by test, testname, file, test.release;
+  #+end_src
+
+* combine them all together!
+  #+begin_src sql-mode
+    begin;
+      \t
+      \a
+      \o ../resources/coverage/1.19.json
+      select row_to_json(c) from (
+        select release, release_date, spec,
+               (
+                 select array_to_json(array_agg(row_to_json(e)))
+                   from (
+                     select endpoint, level, category, path, description,
+                            k8s_kind as kind,
+                            k8s_version as version,
+                            k8s_group as group,
+                            k8s_action as action,
+                            (count(test_hit) filter(where test_hit is true)>0) as tested,
+                            (count(conf_test_hit) filter(where conf_test_hit is true)>0) as conf_tested,
+                            array_agg(distinct test)
+                       from open_api
+                              left join audit_event using(endpoint, release)
+                      where release = '1.19.0'
+                        and deprecated is false
+                        group by endpoint, level, category, path, description, kind,
+                                 version, k8s_group, k8s_action
+                      order by level desc, endpoint
+                   ) e
+               ) as endpoints,
+               (
+                 select array_to_json(array_agg(row_to_json(t)))
+                   from (
+                     select test, testname, file,
+                            test.release,
+                            (testname is not null) as conformance_test
+                       from      audit_event
+                       left join test on(test = codename)
+                       where test is not null
+                      group by test, testname, file, test.release
+                   ) t
+                 ) as tests
+          from open_api
+         where release = '1.19.0'
+           group by release, release_date, spec
+      ) c;
+    \o
+      \a
+      \t
+      commit;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  BEGIN
+  Tuples only is on.
+  Output format is unaligned.
+  #+end_SRC
+
+ It's a complex query, but is able to quickly generate json without any external languages or dependency...just postgres.
+ that feels good.
+
+* Results!
+  :PROPERTIES:
+  :header-args: :dir ../resources/coverage
+  :END:
+ Let's sanity check!
+ It is going to be long, and so let's not just print it out and review, but instead use jq and some logic checks.
+** All keys mapped
+   We should have these keys:
+   - release
+   - release_date
+   - spec
+   - endpoints
+   - tests
+
+ #+begin_src shell :dir ../resources/coverage
+ cat 1.19.json | jq '. | keys'
+ #+end_src
+
+ #+RESULTS:
+ #+begin_example
+ [
+   "endpoints",
+   "release",
+   "release_date",
+   "spec",
+   "tests"
+ ]
+ #+end_example
+
+
+** All endpoints, and no extra, mapped correctly
+   In the latest open_api spec there are 820 non-deprecated endpoints
+   Our json grabs all of these and makes an array.  That array should have a length of 820
+
+   #+begin_src shell
+   cat 1.19.json | jq '.endpoints | length'
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   820
+   #+end_example
+
+   Each endpoint includes its level.  Going from current results on apisnoop.cncf.io,
+   there should be
+   - 476 stable endpoints
+   - 247 beta
+   - 97 alpha
+
+   #+begin_src shell
+        echo "stable: "$(cat 1.19.json | jq '.endpoints | map(select(.level | contains("stable"))) | length')
+        echo "beta: "$(cat 1.19.json | jq '.endpoints | map(select(.level | contains("beta"))) | length')
+        echo "alpha: "$(cat 1.19.json | jq '.endpoints | map(select(.level | contains("alpha"))) | length')
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   stable: 476
+   beta: 247
+   alpha: 97
+   #+end_example
+
+** tested
+  For tested endpoints, there should be:
+  - stable: 207 tested, 162 conf_tested
+  - beta: 58 tested, 22 conf_tested
+  - 3 tested, 3 conf_tested
+  -
+   #+begin_src shell
+     echo "stable: "$(cat 1.19.json | jq '.endpoints
+     | map(select(.level | contains("stable")))
+     | map(select(.tested == true))
+     | length')
+     echo "beta: "$(cat 1.19.json | jq '.endpoints
+     | map(select(.level | contains("beta")))
+     | map(select(.tested == true))
+     | length')
+     echo "alpha: "$(cat 1.19.json | jq '.endpoints
+     | map(select(.level | contains("alpha")))
+     | map(select(.tested == true))
+     | length')
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   stable: 207
+   beta: 58
+   alpha: 3
+   #+end_example
+
+   Sweet, this feels good!
