@@ -34,14 +34,14 @@ According to this APIsnoop query, there are still an endpoint which is untested.
            ;
   #+end_src
 
- #+RESULTS: untested_stable_core_endpoints
- #+begin_SRC example
-             operation_id             |       description        | kind 
- -------------------------------------+--------------------------+------
-  deleteCoreV1CollectionNamespacedPod | delete collection of Pod | Pod
- (1 row)
+  #+RESULTS: untested_stable_core_endpoints
+  #+begin_SRC example
+              operation_id             |       description        | kind 
+  -------------------------------------+--------------------------+------
+   deleteCoreV1CollectionNamespacedPod | delete collection of Pod | Pod
+  (1 row)
 
- #+end_SRC
+  #+end_SRC
 
 * API Reference and feature documentation                            :export:
 - [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
@@ -64,18 +64,21 @@ According to this APIsnoop query, there are still an endpoint which is untested.
      package main
 
      import (
-       // "encoding/json"
+       "context"
+       "flag"
        "fmt"
        "time"
-       "flag"
-       "os"
        v1 "k8s.io/api/core/v1"
-       // "k8s.io/client-go/dynamic"
-       // "k8s.io/apimachinery/pkg/runtime/schema"
        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+       "k8s.io/apimachinery/pkg/util/wait"
        "k8s.io/client-go/kubernetes"
-       // "k8s.io/apimachinery/pkg/types"
        "k8s.io/client-go/tools/clientcmd"
+       "os"
+     )
+
+     const (
+       podRetryPeriod  = 1 * time.Second
+       podRetryTimeout = 1 * time.Minute
      )
 
      func main() {
@@ -99,7 +102,7 @@ According to this APIsnoop query, there are still an endpoint which is untested.
 
        // create a set of test pods with a label in the default namespace
        for _, podTestName := range podTestNames {
-         _, err = ClientSet.CoreV1().Pods("default").Create(&v1.Pod{
+         _, err = ClientSet.CoreV1().Pods("default").Create(context.TODO(), &v1.Pod{
            ObjectMeta: metav1.ObjectMeta{
              Name: podTestName,
              Labels: map[string]string{
@@ -108,57 +111,66 @@ According to this APIsnoop query, there are still an endpoint which is untested.
            Spec: v1.PodSpec{
              Containers: []v1.Container{{
                Image: "nginx",
-               Name: "nginx",
+               Name:  "nginx",
              }},
              RestartPolicy: v1.RestartPolicyNever,
-           }})
+           }}, metav1.CreateOptions{})
 
          if err != nil {
            fmt.Println("[error]", err)
            return
          }
          fmt.Println("[status] created", podTestName)
-         time.Sleep(3 * time.Second)
        }
 
-       // get a list of Pods with a label in the default namespace
-       podsList, err := ClientSet.CoreV1().Pods("default").List(metav1.ListOptions{
-         LabelSelector: "type=Testing"})
+       // wait as required for all 3 pods to be found
+       fmt.Println("[status] waiting for all 3 pods to be located")
+       err = wait.PollImmediate(podRetryPeriod, podRetryTimeout, checkPodListQuantity(ClientSet, "type=Testing", 3))
 
-       // check that there are 3 pods found
-       fmt.Println("[status] Found", len(podsList.Items), "pods")
-       if len(podsList.Items) != 3 {
-         fmt.Println("[error] Incorrect number of Pods found")
-         return
+       if err != nil {
+         errMsg := "[error] 3 pods not found" + fmt.Sprintf("%v\n", err)
+         os.Stderr.WriteString(errMsg)
+         os.Exit(1)
        }
 
        // delete Collection of Pods for the label in the default namespace
-       _  = ClientSet.CoreV1().Pods("default").DeleteCollection(&metav1.DeleteOptions{}, metav1.ListOptions{
-              LabelSelector: "type=Testing"})
+       _ = ClientSet.CoreV1().Pods("default").DeleteCollection(context.TODO(), metav1.DeleteOptions{}, metav1.ListOptions{
+         LabelSelector: "type=Testing"})
        fmt.Println("[status] DeleteCollection processed")
 
-       // Give the cluster time to delete all pods
-       time.Sleep(30 * time.Second)
+       // wait for all pods to be deleted
+       fmt.Println("[status] waiting for all pods to be deleted")
+       err = wait.PollImmediate(podRetryPeriod, podRetryTimeout, checkPodListQuantity(ClientSet, "type=Testing", 0))
 
-       // get a list of Pods in the default namespace with the label
-       podsList, err = ClientSet.CoreV1().Pods("default").List(metav1.ListOptions{
-         LabelSelector: "type=Testing"})
        if err != nil {
-         fmt.Println("[error]", err)
-         return
+         errMsg := "[error] found a pod(s) " + fmt.Sprintf("%v\n", err)
+         os.Stderr.WriteString(errMsg)
+         os.Exit(1)
        }
-
-       // check that there are no pods found
-       fmt.Println("[status] Found", len(podsList.Items), "pods")
-       if len(podsList.Items) != 0 {
-         fmt.Println("[error] Still found a Pod(s)")
-         return
-       }
-
        // TEST ENDS HERE
 
        fmt.Println("[status] complete")
 
+     }
+
+     func checkPodListQuantity(ClientSet *kubernetes.Clientset, label string, quantity int) func() (bool, error) {
+       return func() (bool, error) {
+         var err error
+         ns := "default"
+         fmt.Println("requesting list of pods to confirm quantity")
+
+         list, err := ClientSet.CoreV1().Pods(ns).List(context.TODO(), metav1.ListOptions{
+           LabelSelector: label})
+
+         if err != nil {
+           return false, err
+         }
+
+         if len(list.Items) != quantity {
+           return false, err
+         }
+         return true, nil
+       }
      }
    #+end_src
 
@@ -167,9 +179,19 @@ According to this APIsnoop query, there are still an endpoint which is untested.
    [status] created test-pod-nginx-1
    [status] created test-pod-nginx-2
    [status] created test-pod-nginx-3
-   [status] Found 3 pods
+   [status] waiting for all 3 pods to be located
+   requesting list of pods to confirm quantity
    [status] DeleteCollection processed
-   [status] Found 0 pods
+   [status] waiting for all pods to be deleted
+   requesting list of pods to confirm quantity
+   requesting list of pods to confirm quantity
+   requesting list of pods to confirm quantity
+   requesting list of pods to confirm quantity
+   requesting list of pods to confirm quantity
+   requesting list of pods to confirm quantity
+   requesting list of pods to confirm quantity
+   requesting list of pods to confirm quantity
+   requesting list of pods to confirm quantity
    [status] complete
    #+end_src
 
@@ -199,7 +221,7 @@ select * from endpoints_hit_by_new_test where useragent like 'live%';
 -------------------+-------------------------------------+------------+-----------------
  live-test-writing | createCoreV1NamespacedPod           | t          |               3
  live-test-writing | deleteCoreV1CollectionNamespacedPod | f          |               1
- live-test-writing | listCoreV1NamespacedPod             | t          |               2
+ live-test-writing | listCoreV1NamespacedPod             | t          |              10
 (3 rows)
 
 #+end_SRC
@@ -213,12 +235,10 @@ Display endpoint coverage change:
   #+begin_SRC example
      category    | total_endpoints | old_coverage | new_coverage | change_in_number 
   ---------------+-----------------+--------------+--------------+------------------
-   test_coverage |             445 |          188 |          189 |                1
+   test_coverage |             476 |          224 |          225 |                1
   (1 row)
 
   #+end_SRC
-
-Two other endpoints tested here have tests in progress to conformance already.
 
 * Final notes                                                        :export:
 If a test with these calls gets merged, **test coverage will go up by 1 points**
