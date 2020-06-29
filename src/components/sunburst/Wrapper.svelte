@@ -2,13 +2,14 @@
  import Prologue from './Prologue.svelte';
  import Breadcrumb from './Breadcrumb.svelte';
  import Graph from './Graph.svelte';
-// import Stats from './Stats.svelte';
+ import Stats from './Stats.svelte';
 </script>
 
 <section id='sunburst'>
   <Prologue />
   <Breadcrumb />
-  <Graph />
+  <Graph on:newPathRequest />
+  <Stats />
 </section>
 
 <style>

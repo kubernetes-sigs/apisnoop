@@ -12,7 +12,14 @@
 </script>
 <script>
  import { onMount, afterUpdate } from 'svelte';
+ import { goto } from '@sapper/app';
  import {
+   compact,
+   join
+ } from 'lodash-es';
+
+ import {
+   activeFilters,
    endpoints,
    release,
    sunburst
@@ -24,33 +31,20 @@
 
  release.set(releaseData);
 
- afterUpdate(()=>console.log({release: $release,
-                             ep: $endpoints[0],
-                             sunburst: $sunburst
-                             }));
-
-
+ const updatePath = async (event) => {
+   console.log({params: event.detail.params});
+   let {version, level, category, endpoint} = event.detail.params;
+   activeFilters.update(af => ({...af, ...event.detail.params}));
+   let filterSegments = compact([version, level, category, endpoint]);
+   let urlPath = join([...filterSegments], '/');
+   let x = window.pageXOffset;
+   let y = window.pageYOffset;
+   goto(urlPath).then(() => window.scrollTo(x,y));
+ }
 
 </script>
 <svelte:head>
   <title>APISnoop</title>
 </svelte:head>
 
-<Sunburst />
-<style>
- h1 {
-   text-align: center;
-   margin: 0 auto;
-   font-size: 2.8em;
-   text-transform: uppercase;
-   font-weight: 700;
-   margin: 0 0 0.5em 0;
- }
-
- @media (min-width: 480px) {
-   h1 {
-     font-size: 4em;
-   }
- }
-</style>
-
+<Sunburst on:newPathRequest={updatePath} />

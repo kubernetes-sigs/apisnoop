@@ -13,7 +13,13 @@
    activeFilters,
    release
  } from '../../store';
- import { isEqual } from 'lodash-es';
+ import {
+   compact,
+   isEqual,
+   join
+ } from 'lodash-es';
+ import { goto } from '@sapper/app';
+
  import Sunburst from '../../components/sunburst/Wrapper.svelte'
  export let payload;
 
@@ -33,10 +39,20 @@
    category: category || '',
    endpoint: endpoint || ''
  }))
-</script>
 
+ const updatePath = async (event) => {
+   console.log({params: event.detail.params});
+   let {version, level, category, endpoint} = event.detail.params;
+   activeFilters.update(af => ({...af, ...event.detail.params}));
+   let filterSegments = compact([version, level, category, endpoint]);
+   let urlPath = join([...filterSegments], '/');
+   let x = window.pageXOffset;
+   let y = window.pageYOffset;
+   goto(urlPath).then(() => window.scrollTo(x,y));
+ }
+</script>
 <svelte:head>
   <title>APISnoop | {$release.release}</title>
 </svelte:head>
 
-<Sunburst />
+<Sunburst on:newPathRequest={updatePath}/>

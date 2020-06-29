@@ -44,6 +44,9 @@
  function depthUp () {
    // reset the activeFilter for whatever is our current depth.  
    // This will cause the sunburst to expand to the next previous filter, going up a level.
+   let {
+     release: version
+   } = $release;
    $mouseOverPath = [];
    if (activeDepth === 'root') {
      return null
@@ -53,7 +56,7 @@
    } else {
      $activeFilters[activeDepth] = '';
    }
-   dispatch('newPathRequest', { params: $activeFilters })
+   dispatch('newPathRequest', { params: {version, ...$activeFilters }})
  };
 
  function labelVisible(d) {
