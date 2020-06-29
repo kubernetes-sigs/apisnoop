@@ -3,13 +3,23 @@
 
 * Purpose
   This document holds the definitions for tables, views, and functions we find perennially  useful, and so we save them as sql files to be quickly loaded for your db.
+* Create Extensions
+  #+begin_src sql-mode
+  create extension semver;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  CREATE EXTENSION
+  #+end_SRC
+
   #+begin_src sql-mode
   create extension plpython3u;
   #+end_src
 
   #+RESULTS:
   #+begin_SRC example
-  ERROR:  extension "plpython3u" already exists
+  CREATE EXTENSION
   #+end_SRC
 
 * Tables
@@ -63,63 +73,6 @@
      ingested_at timestamp DEFAULT CURRENT_TIMESTAMP
    );
  #+END_SRC
-     #+NAME: load_audit_events.sql
-     #+BEGIN_SRC sql-mode :noweb yes :results silent :tangle ../sql-files/fn-load_audit_events.sql
-       set role dba;
-       CREATE OR REPLACE FUNCTION load_audit_events(
-         custom_bucket text default null,
-         custom_job text default null)
-         RETURNS text AS $$
-         from string import Template
-         from snoopUtils import determine_bucket_job, download_and_process_auditlogs, fetch_swagger
-
-         bucket, job = determine_bucket_job(custom_bucket, custom_job)
-         auditlog_file = download_and_process_auditlogs(bucket, job)
-         _, metadata, _ = fetch_swagger(bucket, job)
-         release_date = int(metadata['timestamp'])
-         release = metadata["version"].split('-')[0].replace('v','')
-
-         sql = Template("""
-           CREATE TEMPORARY TABLE audit_event_import(data jsonb not null) ;
-           COPY audit_event_import(data)
-           FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
-
-           INSERT INTO audit_event(release, release_date,
-                                   audit_id, endpoint,
-                                   useragent, test,
-                                   test_hit, conf_test_hit,
-                                   data)
-
-           SELECT trim(leading 'v' from '${release}') as release,
-                   '${release_date}',
-                   (raw.data ->> 'auditID'),
-                   (raw.data ->> 'operationId') as endpoint,
-                   (raw.data ->> 'userAgent') as useragent,
-                   CASE
-                     WHEN ((raw.data ->> 'userAgent') like 'e2e.test%')
-                       THEN trim(split_part((raw.data->>'userAgent'), '--'::text, 2))
-                     ELSE null
-                   END as test,
-                   ((raw.data ->> 'userAgent') like 'e2e.test%') as test_hit,
-                   ((raw.data ->> 'userAgent') like '%[Conformance]%') as conf_test_hit,
-                   raw.data
-             FROM audit_event_import raw;
-                   """).substitute(
-                       audit_logfile = auditlog_file,
-                       release = release,
-                       release_date = release_date,
-                   )
-         try:
-             plpy.execute(sql)
-             return "it worked"
-         except plpy.SPIError as plpyError:
-             print("something went wrong with plpy: ")
-             return plpyError
-         except:
-             return "something unknown went wrong"
-         $$ LANGUAGE plpython3u ;
-         reset role;
-     #+END_SRC
 * Functions
 ** load open api
    #+NAME: load_open_api.sql
@@ -290,10 +243,11 @@
         _, metadata, _ = fetch_swagger(bucket, job)
         release_date = int(metadata['timestamp'])
         release = metadata["version"].split('-')[0].replace('v','')
+        num = release.replace('.','')
 
         sql = Template("""
-          CREATE TEMPORARY TABLE audit_event_import(data jsonb not null) ;
-          COPY audit_event_import(data)
+          CREATE TEMPORARY TABLE audit_event_import${num}(data jsonb not null) ;
+          COPY audit_event_import${num}(data)
           FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
 
           INSERT INTO audit_event(release, release_date,
@@ -319,6 +273,7 @@
                   """).substitute(
                       audit_logfile = auditlog_file,
                       release = release,
+                      num,
                       release_date = release_date,
                   )
         try:
@@ -424,26 +379,13 @@
      order by epr.release::semver;
     #+end_src
 
-    #+RESULTS: conformance progress
-    #+begin_SRC example
-    CREATE VIEW
-    #+end_SRC
-
 * helper src blocks
-** Set Up DB
 ** Load old open_api
     #+NAME: load past open_api
     #+begin_src sql-mode :results silent
       with releases as (
         select column1 as release
           from (values
-          ('v1.8.0'),
-          ('v1.9.0'),
-          ('v1.10.0'),
-          ('v1.11.0'),
-          ('v1.12.0'),
-          ('v1.13.0'),
-          ('v1.14.0'),
           ('v1.15.0'),
           ('v1.16.0'),
           ('v1.17.0'),
@@ -472,16 +414,19 @@
 
 ** load audit events
    #+begin_src sql-mode
-select * from load_audit_events();
+select * from load_audit_events('ci-kubernetes-e2e-gce-cos-k8sbeta-default', null);
    #+end_src
 
    #+RESULTS:
    #+begin_SRC example
-    load_audit_events
-   -------------------
-    it worked
-   (1 row)
-
+   ERROR:  ValueError: Invalid placeholder in string: line 2, col 48
+   CONTEXT:  Traceback (most recent call last):
+     PL/Python function "load_audit_events", line 39, in <module>
+       release_date = release_date,
+     PL/Python function "load_audit_events", line 131, in substitute
+     PL/Python function "load_audit_events", line 128, in convert
+     PL/Python function "load_audit_events", line 104, in _invalid
+   PL/Python function "load_audit_events"
    #+end_SRC
 
 ** load tests
