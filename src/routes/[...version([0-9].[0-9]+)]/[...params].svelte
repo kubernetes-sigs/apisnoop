@@ -39,7 +39,7 @@
    category: category || '',
    endpoint: endpoint || ''
  }))
-
+ 
  const updatePath = async (event) => {
    console.log({params: event.detail.params});
    let {version, level, category, endpoint} = event.detail.params;

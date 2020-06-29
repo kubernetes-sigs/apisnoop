@@ -27,7 +27,7 @@
 
 <div id='breadcrumb'>
   {#if $mouseOverPath.length > 0}
-  <p>{#if level}<span style='border-color: {lColour}; background-color: {lColour};'>{level}</span>{/if}{#if category}<span style='background-Color: {cColour}; border-color: {cColour};'>{category}</span>{/if}{#if endpoint}<span style='border-color: {eColour}; color: {eTextColour};'> {endpoint}</span>{/if}</p>
+    <p>{#if level}<span style='border-color: {lColour}; background-color: {lColour};'>{level}</span>{/if}{#if category}<span style='background-Color: {cColour}; border-color: {cColour};'>{category}</span>{/if}{#if endpoint}<span style='border-color: {eColour}; color: {eTextColour};'> {endpoint}</span>{/if}</p>
   {/if}
 </div>
 
