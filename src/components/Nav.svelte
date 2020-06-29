@@ -4,6 +4,8 @@
 
 <style>
 	nav {
+    background: #9EEBCF; 
+    color: #5E2CA5; 
 		border-bottom: 1px solid rgba(255,62,0,0.1);
 		font-weight: 300;
 		padding: 0 1em;
@@ -46,15 +48,18 @@
 		padding: 1em 0.5em;
 		display: block;
 	}
+ li img {
+   width: 50px;
+   }
 </style>
 
 <nav>
 	<ul>
+   <li> <img src='logo.png' alt="apisnoop logo, a magnifying glass with a 3 color pie chart inside."/></li>
 		<li><a aria-current="{segment === undefined ? 'page' : undefined}" href=".">home</a></li>
 		<li><a aria-current="{segment === 'about' ? 'page' : undefined}" href="about">about</a></li>
-
 		<!-- for the blog link, we're using rel=prefetch so that Sapper prefetches
 		     the blog data when we hover over the link or tap it on a touchscreen -->
-		<li><a rel=prefetch aria-current="{segment === 'blog' ? 'page' : undefined}" href="blog">blog</a></li>
+		<li><a rel=prefetch aria-current="{segment === 'conformance-progress' ? 'page' : undefined}" href="conformance-progress">conformance progress</a></li>
 	</ul>
 </nav>
