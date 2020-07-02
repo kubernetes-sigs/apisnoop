@@ -5,13 +5,13 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 ## June News
 
-### SIG-Release 1.19 [Timelines](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.19#timeline) due to Covid
+### ****SIG-Release 1.19 [Timelines](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.19#timeline) due to Covid****
 
 -   Dates [may yet again slip](https://groups.google.com/forum/?utm_medium=email&utm_source=footer#!msg/kubernetes-dev/TVXhcNO3SPU/-Uj-xJP2BQAJ), not confirmed
 -   Tests need to be in Week 14 (July 16th)
 -   Test Freeze Week 16 (July 30th)
 
-### prow.cncf.io
+### ****prow.cncf.io****
 
 -   Created [github.com/cncf-infra](https://github.com/cncf-infra) org
 -   [prow-config](https://github.com/cncf-infra/prow-config) has two plugins
@@ -19,7 +19,7 @@ Our goal is to not make radical changes to process or approach, but iterate on o
     -   verify-conformance-tests
 -   Test PRs in fork of [k8s-conformance](https://github.com/cncf-infra/k8s-conformance/pulls)
 
-### 14 + 18 Tested Endpoints released to Stable
+### ****14 + 18 Tested Endpoints released to Stable****
 
 -   Total of 32 Endpoints promoted from beta
 -   With conformance test,by the community
@@ -28,20 +28,20 @@ Our goal is to not make radical changes to process or approach, but iterate on o
     -   ****note links to [APISnoop.cncf.io](https://apisnoop.cncf.io)****
     -   Shouts out to ****[@liggitt](https://github.com/liggitt)****
 
-### 5.12% increase in coverage since April News
+### ****5.69% increase in coverage since April News****
 
 -   All because Beta endpoints to GA
     -   included all conformance tests!
--   Current coverage: 40.82% = 180/450
+-   Current coverage: 41.39% = 197/476
 -   Previous coverage 35.70% = 146/409
 
-### Watch Tooling Refactoring
+### ****Watch Tooling Refactoring****
 
 -   Consensus was to [merge ](https://github.com/kubernetes/kubernetes/pull/91416#issuecomment-645064347)and iterate
 -   [Issue #90957](https://github.com/kubernetes/kubernetes/issues/90957) will continue discussion
 -   [PR #92621](https://github.com/kubernetes/kubernetes/pull/92621/) Simplify ConfigMap lifecycle e2e test by @spiffxp Under review as an alternative to Watch Tooling
 
-### +29 Endpoints Backlogged by Tooling Requests
+### ****+29 Endpoints Backlogged by Tooling Request****
 
 -   [Watch Tooling](https://github.com/kubernetes/kubernetes/issues/90957) Summary
     -   Initial Tooling Approach Merged! [#91416](https://github.com/kubernetes/kubernetes/pull/91416#issuecomment-645064347)
@@ -50,7 +50,7 @@ Our goal is to not make radical changes to process or approach, but iterate on o
         -   In progress #90942, #90988# #92589 (+17)
     -   Triage 1 Issues: +6
 
-### Conformance coverage progress
+### ****Conformance coverage progress****
 
 -   @liggitt merged 2 Conformance Test +32 Endpoints
 -   ii merged 2 Conformance Tests +8 Endpoints
@@ -58,40 +58,45 @@ Our goal is to not make radical changes to process or approach, but iterate on o
     -   dependant on Tooling Watch tooling (Potential + 6.83%)
 -   ii has 5 test indipendant of Watch tooling +20 Endpoints
 
-### Historical Endpoint and Conformance data
+### ****Historical Endpoint and Conformance data****
 
--   Two [graphs](https://www.instantinfrastructure.com/snoop/) have been prepared using the following underling data:
+-   Two graphs have been prepared using the following underling data:
     -   New [Conformance.yaml](https://github.com/kubernetes/kubernetes/blob/master/test/conformance/testdata/conformance.yaml)
     -   1.9-1.18 release tags for OpenAPI json
     -   Latest release-blocking prow job audit.log
 
-### APISnoop updates
+### ****APISnoop updates****
 
 -   Generating yaml and json files for coverage to make it easier for other apps to consume
 
-    -   discussing this in [pr 92631](https://github.com/kubernetes/kubernetes/pull/92631), and last conformance office hours
+    -   discussing this in [PR 92631](https://github.com/kubernetes/kubernetes/pull/92631), and last conformance office hours
     -   will likely keep this out of tree, but usefulness of these files feels clear.
 
--   New snoop site using our output json files
+### ****New snoop site using our output json files****
 
-    -   <https://snoop-app.vercel.app> is preview of new site
-    -   pulls all data from github repo holding coverage info
-        -   can use similar process for prowbots and gates
-    -   improved routing (navigate via release instead of bucket and job)
-    -   conformance progress added as new page
-    -   about page added with more info on our process and update frequency.
+-   <https://snoop-app.vercel.app> is preview of new site
+-   pulls all data from github repo holding coverage info
+    -   can use similar process for prowbots and gates
+-   improved routing (navigate via release instead of bucket and job)
+-   conformance progress added as new page
+-   about page added with more info on our process and update frequency.
 
--   Discovered increase in coverage with Serial and Disruption tests
+### ****Discovered increase in coverage with Serial and Disruption tests****
 
-    -   there are a set of conformance tests that were not included in the buckets we drew our testdata from.
-    -   these tests are being run in a a different e2e test run.
-    -   by combining the data sets, we can see all the conformance tests and which endpoints they hit.
-    -   doing this work uncovered 17 new endpoints hit by conformance tests.
-    -   this number is reflected in our new app and on the landing page of apisnoop.cncf.io
+-   there are a set of conformance tests that were not included in the buckets we drew our testdata from.
+-   these tests are being run in a different e2e test run.
+-   by combining the data sets, we can see all the conformance tests and which endpoints they hit.
 
--   Next Up: automating the updates of our coverage jsons
+### ****Discovery****
 
--   Next Up: listing new, untested endpoints sorted by recency
+-   doing this work uncovered 17 new endpoints hit by conformance tests.
+-   this number is reflected in our new app and on the landing page of apisnoop.cncf.io
+
+### ****Next up****
+
+-   automating the updates of our coverage jsons
+
+-   listing new, untested endpoints sorted by recency
 
 ## Gate cncf/k8s-conformance PRs
 
