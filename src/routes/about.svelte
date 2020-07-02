@@ -49,7 +49,8 @@
 </svelte:head>
 <h1>About APISnoop</h1>
 
-<p>APISnoop tracks the testing and conformance coverage of Kubernetes by analyzing the audit logs created by e2e test runs. It updates thrice-weekly.</p>
+<p>APISnoop tracks the testing and conformance coverage of Kubernetes by analyzing the audit logs created by e2e test runs.</p>
+<p>It updates thrice-weekly.  It was last updated on {lastUpdate}</p>
 
 <h2>How We gather our coverage</h2>
 
@@ -58,7 +59,7 @@
   <li>
     <a href="https://github.com/kubernetes/kubernetes/tree/master/api/openapi-spec">The open api spec for Kubernetes</a>
   </li>
-  <li>Audit logs from an e2e test run that was run fo this release(<a href="https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest/1278470809987321859">example test)</a></li>
+  <li>Audit logs from an e2e test run that was run for this release(<a href="https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest/1278470809987321859">example test)</a></li>
 </ul>
 
 <p>
