@@ -1,50 +1,41 @@
-<script context="module">
- export async function preload({ params, query }) {
-   const res = await this.fetch(`index.json`);
-   const data = await res.json();
-
-   if (res.status === 200) {
-     return {releaseData: data};
-   } else {
-     this.error(res.status, data.message);
-   }
- }
-</script>
 <script>
- import { onMount, afterUpdate } from 'svelte';
- import { goto } from '@sapper/app';
+ import { afterUpdate } from 'svelte';
+ import { RELEASES, releasesURL } from '../lib/constants.js';
+ import {isEmpty} from 'lodash-es';
  import {
-   compact,
-   join
- } from 'lodash-es';
-
- import {
+   releases,
    activeFilters,
-   endpoints,
-   release,
-   sunburst
+   activeRelease
  } from '../store';
-
  import Sunburst from '../components/sunburst/Wrapper.svelte'
+ let version = RELEASES.sort((a,b) => b.split('.')[1] - a.split('.')[1])[0];
 
- export let releaseData;
+ activeFilters.update(af => ({
+   ...af,
+   version
+ }))
 
- release.set(releaseData);
+ afterUpdate(async() => {
+   activeFilters.update(af => ({
+     ...af,
+     version,
+     level: '',
+     category: '',
+     endpoint: ''
+   }))
+   if (isEmpty($activeRelease.endpoints)) {
+     let rel = await fetch(`${releasesURL}/${version}.json`).then(res => res.json());
+     releases.update(rels => {
+       rels[version] = rel;
+       return rels;
+     });
+   }
+ });
 
- const updatePath = async (event) => {
-   console.log({params: event.detail.params});
-   let {version, level, category, endpoint} = event.detail.params;
-   activeFilters.update(af => ({...af, ...event.detail.params}));
-   let filterSegments = compact([version, level, category, endpoint]);
-   let urlPath = join([...filterSegments], '/');
-   let x = window.pageXOffset;
-   let y = window.pageYOffset;
-   goto(urlPath).then(() => window.scrollTo(x,y));
- }
+  </script>
 
-</script>
-<svelte:head>
-  <title>APISnoop</title>
-</svelte:head>
-
-<Sunburst on:newPathRequest={updatePath} />
+  {#if $activeRelease && $activeRelease.endpoints.length > 0}
+  <Sunburst />
+  {:else}
+  <em>loading data...</em>
+  {/if}

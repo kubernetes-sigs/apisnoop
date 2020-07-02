@@ -6,7 +6,7 @@
    join
  } from 'lodash-es';
  import {
-   release,
+   activeRelease,
    activeFilters,
    mouseOverPath,
    zoomedSunburst
@@ -46,7 +46,7 @@
    // This will cause the sunburst to expand to the next previous filter, going up a level.
    let {
      release: version
-   } = $release;
+   } = $activeRelease;
    $mouseOverPath = [];
    if (activeDepth === 'root') {
      return null
@@ -56,7 +56,9 @@
    } else {
      $activeFilters[activeDepth] = '';
    }
-   dispatch('newPathRequest', { params: {version, ...$activeFilters }})
+   let {level, category, endpoint} = $activeFilters;
+   let newPath = compact([version,level,category,endpoint]).join('/');
+   goto(newPath);
  };
 
  function labelVisible(d) {
@@ -81,14 +83,15 @@
    // upon clicking of a node, update the active filters and url.
    let {
      release: version
-   } = $release;
+   } = $activeRelease;
    let {
      level,
      category,
      endpoint
    } = node.data;
-   let params = { version, level, category, endpoint}
-   dispatch('newPathRequest', { params })
+   activeFilters.update(af=> ({...af, version, level, category, endpoint}));
+   let newPath = compact([version,level,category,endpoint]).join('/');
+   goto(newPath);
  };
 
  function setURL () {
@@ -99,7 +102,7 @@
      category,
      endpoint
    } = $activeFilters;
-   let filterSegments = compact([$release.release, level, category, endpoint]);
+   let filterSegments = compact([$activeRelease.release, level, category, endpoint]);
    let urlPath = join([...filterSegments], '/');
    goto(urlPath);
  };
@@ -136,7 +139,7 @@
 </script>
 <div class="chart">
   <svg viewBox="0,0,932,932" style="font: 12px sans-serif;" on:mouseleave={mouseLeave} id='sunburst'>
-    <g transform="translate({width/2},{width/2})" id='big-g'>
+    <g transform="translate({width/2},{width/2})" id='big-g' style="cursor:pointer;">
       <g>
         {#each nodes as node}
         <path

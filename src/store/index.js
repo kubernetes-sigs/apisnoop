@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { readable, writable, derived } from 'svelte/store';
 import {
   compact,
   groupBy,
@@ -10,11 +10,45 @@ import {
   take,
   uniq
 } from 'lodash-es';
+
 import {
   categoryColours,
   endpointColour,
   levelColours
 } from '../lib/colours.js';
+
+import { RELEASES } from '../lib/constants.js';
+
+export const releases = writable(
+  // Our list of RELEASES converted to object, with each release as key to empty object.
+  mapValues(groupBy(RELEASES), () => ({
+    release: '',
+    spec: '',
+    source: '',
+    release_date: new Date(),
+    endpoints: [],
+    tests: []
+  }))
+);
+
+// Based on url query params, any filters being set.
+export const activeFilters = writable({
+  test_tags: [],
+  useragent: '',
+  level: '',
+  category: '',
+  endpoint: '',
+  version: ''
+});
+
+export const activeRelease = derived(
+  // The release whose key is the current version filter,
+  // (which will be set by our url)
+  [releases, activeFilters],
+  ([$r, $a], set) => {
+    set($r[$a.version]);
+  }
+)
 
 export const release = writable({
   release: '',
@@ -24,19 +58,6 @@ export const release = writable({
   tests: []
 });
 
-// Based on url query params, any filters being set.
-export const activeFilters = writable({
-  test_tags: [],
-  hide_tested: "false",
-  hide_conf_tested: "false",
-  hide_untested: "false",
-  useragent: '',
-  tests_match: '',
-  test_tags_match: '',
-  level: '',
-  category: '',
-  endpoint: ''
-});
 
 // holds information on when user mouse is hovering over part of sunburst
 export const mouseOverPath = writable([]);
@@ -58,7 +79,13 @@ export const breadcrumb = derived(
   }
 );
 
-export const endpoints = derived(release, ($rel, set) => set($rel.endpoints));
+export const endpoints = derived(activeRelease, ($rel, set) => {
+  if ($rel) {
+    set($rel.endpoints);
+  } else {
+    set([]);
+  }
+});
 
 export const groupedEndpoints = derived(endpoints, ($eps, set) => {
   if ($eps.length > 0) {
@@ -120,11 +147,11 @@ export const zoomedSunburst = derived(
   [sunburst, activeFilters],
   ([$sunburst, $filters], set) => {
     let { level, category } = $filters;
-    if (category) {
+    if (!isEmpty($sunburst) && category) {
       let sunburstAtLevel = $sunburst.children.find(child => child.name === level);
       let sunburstAtCategory = sunburstAtLevel.children.find(child => child.name === category);
       set(sunburstAtCategory);
-    } else if (!category && level) {
+    } else if (!isEmpty($sunburst) && !category && level) {
       let sunburstAtLevel = $sunburst.children.find(child => child.name === level);
       set(sunburstAtLevel);
     } else {
