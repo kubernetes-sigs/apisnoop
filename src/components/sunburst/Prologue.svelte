@@ -30,6 +30,8 @@
     <em>Data from <a href="{source}" title="spyglass link" target="_blank_" rel="noreferrer noopener">an e2e test suite run</a>, from {date}</em>
     {/if}
     <button on:click={() => releaseSwitch = true}>switch release</button>
+    <p>This sunburst shows the testing coverage for the Kubernetes API, based on auditlog data pulled from e2e test runs.  The endpoints are organized by level (alpha, beta, or stable), then category.  The color of an endpoint indicates its level of coverage.  Gray means no test coverage, faded coloring means its tested but not conformance tested, solid coloring means its tested and conformance tested.
+    <p> You can click on any section of the sunburst to zoom into that region. Click into the center to zoom out one level</p>
   </SectionHeader>
 {/if}
 
