@@ -3,15 +3,15 @@
 
 Our goal is to not make radical changes to process or approach, but iterate on our working methods to increase velocity and output in a stable, consistent way.
 
-## May News
+## June News
 
-### SIG-Release 1.19 [Timelines](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.19#timeline) due to Covid
+### ****SIG-Release 1.19 [Timelines](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.19#timeline) due to Covid****
 
 -   Dates [may yet again slip](https://groups.google.com/forum/?utm_medium=email&utm_source=footer#!msg/kubernetes-dev/TVXhcNO3SPU/-Uj-xJP2BQAJ), not confirmed
 -   Tests need to be in Week 14 (July 16th)
 -   Test Freeze Week 16 (July 30th)
 
-### prow.cncf.io
+### ****prow.cncf.io****
 
 -   Created [github.com/cncf-infra](https://github.com/cncf-infra) org
 -   [prow-config](https://github.com/cncf-infra/prow-config) has two plugins
@@ -19,51 +19,84 @@ Our goal is to not make radical changes to process or approach, but iterate on o
     -   verify-conformance-tests
 -   Test PRs in fork of [k8s-conformance](https://github.com/cncf-infra/k8s-conformance/pulls)
 
-### 14 Tested Endpoints released to Stable
+### ****14 + 18 Tested Endpoints released to Stable****
 
--   Endpoints promoted from beta
--   with conformance test by the community
+-   Total of 32 Endpoints promoted from beta
+-   With conformance test,by the community
 -   [#91685](https://github.com/kubernetes/kubernetes/pull/91685) CertificateSigningRequestV1 API
+-   [#91996](https://github.com/kubernetes/kubernetes/pull/91996) Ingress:CRUD API tests for v1 to conformance
     -   ****note links to [APISnoop.cncf.io](https://apisnoop.cncf.io)****
     -   Shouts out to ****[@liggitt](https://github.com/liggitt)****
 
-### 2.6% increase in coverage since April News
+### ****5.69% increase in coverage since April News****
 
--   All because CertificateSigningRequestV1
+-   All because Beta endpoints to GA
     -   included all conformance tests!
--   Current coverage: 38.3% = 160/423
+-   Current coverage: 41.39% = 197/476
 -   Previous coverage 35.70% = 146/409
 
-### Watch Tooling Refactoring
+### ****Watch Tooling Refactoring****
 
 -   Consensus was to [merge ](https://github.com/kubernetes/kubernetes/pull/91416#issuecomment-645064347)and iterate
 -   [Issue #90957](https://github.com/kubernetes/kubernetes/issues/90957) will continue discussion
+-   [PR #92621](https://github.com/kubernetes/kubernetes/pull/92621/) Simplify ConfigMap lifecycle e2e test by @spiffxp Under review as an alternative to Watch Tooling
 
-> /approve to get us some signal, I'm still not convinced this is the right way to go, will summarize in another comment - @spiffxp
-
-### +31 Endpoints Backlogged by Tooling Requests
+### ****+29 Endpoints Backlogged by Tooling Request****
 
 -   [Watch Tooling](https://github.com/kubernetes/kubernetes/issues/90957) Summary
     -   Initial Tooling Approach Merged! [#91416](https://github.com/kubernetes/kubernetes/pull/91416#issuecomment-645064347)
-    -   Existing Test PRs: +20
-        -   Merged: #90944 (+2)
-        -   Ready to Merge: #90941, #90942, #90880 (+18)
-    -   Triage 2 Issues: +11
-        -   Move to backlog, test to be created
+    -   Existing Test PRs: +23
+        -   Promotion #90941 & #90939 (+6)
+        -   In progress #90942, #90988# #92589 (+17)
+    -   Triage 1 Issues: +6
 
-### Conformance coverage progress
+### ****Conformance coverage progress****
 
--   @liggitt merged 1 Conformance Test +14 Endpoints
+-   @liggitt merged 2 Conformance Test +32 Endpoints
 -   ii merged 2 Conformance Tests +8 Endpoints
--   ii has 5 test open (3 PR's + 2 Issues) +29 Endpoints
+-   ii has 5 test open (4 PR's + 1 Issues) +29 Endpoints
     -   dependant on Tooling Watch tooling (Potential + 6.83%)
+-   ii has 5 test indipendant of Watch tooling +20 Endpoints
 
-### Historical Endpoint and Conformance data
+### ****Historical Endpoint and Conformance data****
 
--   Two [graphs](https://www.instantinfrastructure.com/snoop/) have been prepared using the following underling data:
+-   Two graphs have been prepared using the following underling data:
     -   New [Conformance.yaml](https://github.com/kubernetes/kubernetes/blob/master/test/conformance/testdata/conformance.yaml)
     -   1.9-1.18 release tags for OpenAPI json
     -   Latest release-blocking prow job audit.log
+
+### ****APISnoop updates****
+
+-   Generating yaml and json files for coverage to make it easier for other apps to consume
+
+    -   discussing this in [PR 92631](https://github.com/kubernetes/kubernetes/pull/92631), and last conformance office hours
+    -   will likely keep this out of tree, but usefulness of these files feels clear.
+
+### ****New snoop site using our output json files****
+
+-   <https://snoop-app.vercel.app> is preview of new site
+-   pulls all data from github repo holding coverage info
+    -   can use similar process for prowbots and gates
+-   improved routing (navigate via release instead of bucket and job)
+-   conformance progress added as new page
+-   about page added with more info on our process and update frequency.
+
+### ****Discovered increase in coverage with Serial and Disruption tests****
+
+-   there are a set of conformance tests that were not included in the buckets we drew our testdata from.
+-   these tests are being run in a different e2e test run.
+-   by combining the data sets, we can see all the conformance tests and which endpoints they hit.
+
+### ****Discovery****
+
+-   doing this work uncovered 17 new endpoints hit by conformance tests.
+-   this number is reflected in our new app and on the landing page of apisnoop.cncf.io
+
+### ****Next up****
+
+-   automating the updates of our coverage jsons
+
+-   listing new, untested endpoints sorted by recency
 
 ## Gate cncf/k8s-conformance PRs
 
@@ -74,7 +107,7 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 -   [X] DNS prow.cncf.io pointing to prow.apisnoop.io
 -   [X] Grant cncf-ci bot permissions to cncf github org
 -   [X] Deploy prow onto prow.cncf.io
--   [ ] Researching the isolation / clusters used by test-infra / k8s-infra-wg
+-   [X] Researching the isolation / clusters used by test-infra / k8s-infra-wg
 -   [ ] Look into setting up #wg-cncf-infra if there is interest
 
 ### KR2 Connect cncf/k8s-conformance to prow.cncf.io
@@ -85,9 +118,7 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 ### KR3 gate+comment
 
--   Verify Release
-    -   ****release-X.Y****
-    -   ****needs-release**** w/ Comments
+-   Verify Release -[X] ****release-X.Y**** -[X] ****needs-release**** w/ Comments
 -   Verify Tests
     -   ****tests-run-X.Y****
     -   ****needs-tests**** w/ Comments
@@ -95,15 +126,17 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 ### Verify Release
 
 -   [X] PR Title
--   [ ] Folder
--   [ ] e2e.log and junit.xml
--   [ ] PRODUCT.yaml has all required fields
--   [ ] add ****needs-release**** OR ****release-X.Y****
+-   [X] Folder
+-   [X] e2e.log
+-   [-] junit.xml
+-   [X] PRODUCT.yaml has all required fields
+-   [X] add ****needs-release**** OR ****release-X.Y****
 
 ### Verify Tests
 
--   [ ] List of tests required for release
--   [ ] List of tests from e2e.log + junit.xml
+-   [X] List of tests required for release
+-   [ ] List of tests from junit.xml and compare with requiered test
+-   [ ] List of tests from e2e.log and compare to junit.xml
 -   [ ] Comment list/count of missing tests
 -   [ ] add ****needs-tests**** OR ****tests-run-X.Y****
 
@@ -164,7 +197,7 @@ Tooling will comment directly on PR
 -   [ ] beta : endpoints needing tests
 -   [ ] stable : comment+block via tag
 
-You've added api's without tests it will not be able to reach stable.
+> You've added api's without tests it will not be able to reach stable.
 
 ### KR5 Manual Approval for SIG-Arch (or appropriate owners)
 
@@ -177,7 +210,7 @@ Ensure the API Review process has been followed.
 
 -   [ ] Get feedback if this is desired
 -   [ ] Get as to location of repo under k8s org
--   [ ] Migration maybe in Q3
+-   [ ] Migration maybe in Q4
 
 ## Increase Stable Test Coverage by 40 endpoints
 
@@ -189,7 +222,7 @@ Ensure the API Review process has been followed.
 
 ### KR2 +9% Coverage Increase 36.46%->45.46%
 
-Due to increase in total endpoints, our increase may be hidden. Percentage man not be a clear indicator.
+Due to increase in total endpoints, our increase may be hidden. Percentage many not be a clear indicator.
 
 -   34.15%->38.30% => +3.85%
 -   36.46%->38.30% => +1.84%
