@@ -1,22 +1,23 @@
 <script context="module">
- export function preload({ params, query }) {
-   const [version] = params.version;
-   let [level, category, endpoint] = params.params;
+ export async function preload({params, query}) {
+   let [version] = params.version;
+   let level, category, endpoint;
    let payload = {
      version,
      level,
      category,
      endpoint
-   }
+   };
    return {payload};
  }
 </script>
 
 <script>
- import { onMount, afterUpdate } from 'svelte';
+ import { afterUpdate } from 'svelte';
  import { releasesURL } from '../../lib/constants.js';
  import {
    releases,
+   latestRelease,
    activeFilters,
    activeRelease
  } from '../../store';
@@ -24,7 +25,6 @@
  import Sunburst from '../../components/sunburst/Wrapper.svelte'
 
  export let payload;
-
  $: ({
    version,
    level,
@@ -33,6 +33,9 @@
  } = payload);
 
  afterUpdate(async() => {
+   if (version === 'latest') {
+     version = $latestRelease
+   }
    activeFilters.update(af => ({
      ...af,
      version,
@@ -41,7 +44,8 @@
      endpoint: endpoint || ''
    }))
    if (isEmpty($activeRelease.endpoints)) {
-     let rel = await fetch(`${releasesURL}/${version}.json`).then(res => res.json());
+     let rel = await fetch(`${releasesURL}/${version}.json`)
+       .then(res => res.json());
      releases.update(rels => ({...rels, [version]: rel}));
    }
  });
@@ -52,7 +56,7 @@
 </svelte:head>
 
 {#if $activeRelease && $activeRelease.endpoints.length > 0}
-  <Sunburst />
+<Sunburst />
 {:else}
-  <em>Loading Data...</em>
+<em>Loading Data...</em>
 {/if}

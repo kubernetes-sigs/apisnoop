@@ -31,6 +31,11 @@ export const releases = writable(
   }))
 );
 
+// sort RELEASES by minor release in the semver.
+export const latestRelease = readable(
+  RELEASES.sort((a,b) => b.split('.')[1] - a.split('.')[1])[0]
+);
+
 // Based on url query params, any filters being set.
 export const activeFilters = writable({
   test_tags: [],
