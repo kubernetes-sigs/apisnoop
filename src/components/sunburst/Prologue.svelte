@@ -19,7 +19,7 @@
 </script>
 
 {#if release}
-  <SectionHeader title='{release} In Depth'>
+  <SectionHeader title='{release} Testing Coverage'>
     {#if releaseSwitch}
       <ul class='releases'>
       {#each RELEASES as rel}
