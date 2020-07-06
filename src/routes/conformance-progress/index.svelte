@@ -11,6 +11,10 @@
  });
 </script>
 
+<svelte:head>
+  <title>APISnoop | Conformance Progress</title>
+</svelte:head>
+
 <h1>APISnoop Progress reports</h1>
 
 <div id="prologue">
