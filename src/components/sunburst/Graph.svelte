@@ -58,7 +58,9 @@
    }
    let {level, category, endpoint} = $activeFilters;
    let newPath = compact([version,level,category,endpoint]).join('/');
-   goto(newPath);
+   let x = window.pageXOffset;
+   let y = window.pageYOffset;
+   goto(newPath).then(()=>window.scrollTo(x,y));
  };
 
  function labelVisible(d) {
@@ -91,20 +93,9 @@
    } = node.data;
    activeFilters.update(af=> ({...af, version, level, category, endpoint}));
    let newPath = compact([version,level,category,endpoint]).join('/');
-   goto(newPath);
- };
-
- function setURL () {
-   // push state without triggering a reload, using our active filters in order.
-   // this assumes that activeFilters were set correctly before calling this function.
-   let {
-     level,
-     category,
-     endpoint
-   } = $activeFilters;
-   let filterSegments = compact([$activeRelease.release, level, category, endpoint]);
-   let urlPath = join([...filterSegments], '/');
-   goto(urlPath);
+   let x = window.pageXOffset;
+   let y = window.pageYOffset;
+   goto(newPath).then(()=> window.scrollTo(x,y));
  };
 
  $: partition = data => {
