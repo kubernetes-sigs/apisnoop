@@ -1,6 +1,7 @@
 import { readable, writable, derived } from 'svelte/store';
 import {
   compact,
+  flatten,
   groupBy,
   isEmpty,
   map,
@@ -8,7 +9,8 @@ import {
   orderBy,
   sortBy,
   take,
-  uniq
+  uniq,
+  values
 } from 'lodash-es';
 
 import {
@@ -30,6 +32,7 @@ export const releases = writable(
     tests: []
   }))
 );
+
 
 // sort RELEASES by minor release in the semver.
 export const latestRelease = readable(
@@ -236,3 +239,84 @@ export const endpointCoverage = derived([breadcrumb, currentDepth, endpoints], (
     });
   }
 });
+
+// brings in raw conformance-progress.json to be
+// turned into vega-lite ready data for conformance-progress page
+export const conformanceProgressRaw = writable([]);
+
+export const conformanceProgress = derived(
+  conformanceProgressRaw,
+  ($cpr, set) => {
+    if ($cpr.length === 0) {
+      set([]);
+    } else {
+      set($cpr.map(({total, release}) => {
+        let tested = total.tested - total.new_tested;
+        let new_untested = total.new - total.new_tested;
+        let new_tested = total.new_tested;
+        let untested = total.endpoints - new_untested - tested - new_tested;
+        return {
+          release,
+          total: {
+            tested,
+            untested,
+            new_untested,
+            new_tested
+          }
+        };
+      }));
+    }
+  }
+);
+
+export const formattedProgress = derived(
+  conformanceProgress,
+  ($cp, set) => {
+    if ($cp.length === 0) {
+      set([]) ;
+    } else {
+      let order = {tested: "a", new_tested: "b",  untested: "c",  new_untested: "d"};
+      let progress = $cp
+          .filter(rel => rel.release !== '1.8.0')
+          .map(rel => {
+            const {release, total} = rel;
+            const formattedTotals = values(mapValues(total, (v,k) => ({
+              release: release,
+              type: k,
+              total: v,
+              order: order[k]
+            })));
+            return formattedTotals;
+          });
+      set(flatten(progress));
+    }
+  }
+);
+
+export const stillUntested = derived(
+  conformanceProgressRaw,
+  ($cpr, set) => {
+    if ($cpr.length === 0) {
+      set([]) ;
+    } else {
+      let ratioSet = $cpr
+          .filter(({release}) => release !== '1.8.0')
+          .map(({release, total}) => ({
+            release,
+            total: {
+              tested: total.new_tested,
+              still_untested: (total.still_untested * -1)
+            }
+          }));
+
+      let formattedRatio = ratioSet.map(({release, total}) => {
+        return values(mapValues(total, (v,k) => ({
+          release: release,
+          type: k,
+          total: v
+        })));
+      });
+      set(flatten(formattedRatio));
+    }
+  }
+);
