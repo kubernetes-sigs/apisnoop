@@ -55,3 +55,8 @@
 
 <div id="stable-over-time"></div>
 
+<style>
+ div {
+   margin-top: 2rem;
+ }
+</style>
