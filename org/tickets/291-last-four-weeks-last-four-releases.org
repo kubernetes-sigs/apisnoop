@@ -1,0 +1,827 @@
+#-*-ii: engaged;-*-
+#+TITLE: A Year of Releases
+
+* Purpose
+  Bring in data for last four weeks on sig-release-blocking annd the lasxt four releases, and then update coverage over time report to display this data clearly.
+* Process
+** Bring up apisnoop on cluster using tilt
+   First, we want to make an adjustment to our tilt file, to watch changes on our web app.  This will make the coverage over time work easier later.
+   
+   (what we are doing: our bundler is not noticing channges in the files correctly, so we tell tilt to touch a file so it gets picked up by the web bundler and compiled to the latest code)
+   
+   #+begin_src python :tangle "~/Projects/apisnoop/deployment/k8s/zz/Tiltfile"
+k8s_yaml(kustomize('.'))
+docker_build('gcr.io/k8s-staging-apisnoop/webapp', '../../../apps/webapp',
+  live_update=[
+  fall_back_on(['package.json', 'package-lock.json']),
+  sync('apps/webapp','/src'),
+  run('touch src/client.js')
+  ])
+docker_build('gcr.io/k8s-staging-apisnoop/hasura', '../../../apps/hasura')
+# docker_build('gcr.io/k8s-staging-apisnoop/auditlogger', '../../../apps/auditlogger')
+# docker_build('gcr.io/k8s-staging-apisnoop/postgres', '../../../apps/postgres')
+allow_k8s_contexts('in-cluster')
+   #+end_src
+   
+   #+NAME: Tilt Up
+   #+begin_src tmate :dir "~/Projects/apisnoop/deployment/k8s/zz"
+   tilt up --host 0.0.0.0 
+   #+end_src
+   
+   We can test it worked using stable_endpoint_coverage
+   #+begin_src sql-mode
+   select * from stable_endpoint_stats;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+            job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+    1232046793080967175 | 2020-02-24 |             438 |       190 |       138 |          43.38 |               31.51
+   (1 row)
+
+   #+end_SRC
+   
+   We have results!
+** Load last four weeks of data
+   I'll grab four successful jobs by navigating the artifacts in testgrid.  Not the most elegant, but works for the time limit we have.
+   - 1222998434210910213 :: jan30
+   - 1226229106660610049 :: feb8
+   - 1228539796335366144 :: feb15
+   - 1230878446196887554 :: feb21
+   
+        
+   We need to load the swagger, then the audit events, and then materialize all the views.  The materialized commands need to be run one at a time in org-mode, and the functionsn I'll run with one big src chunk, uncommenting as needed
+   
+   #+NAME: Load the Data
+   #+begin_src sql-mode
+   select * from load_audit_events(null,'1228539796335366144');
+   -- select * from load_audit_events(null,'1230829120468815872');
+   -- select * from load_swagger(null,'1230829120468815872');
+   -- select * from load_swagger(null,'1230878446196887554');
+   -- select * from load_audit_events(null,'1228539796335366144');
+   -- select * from load_swagger(null,'1228539796335366144');
+   -- select * from load_audit_events(null,'1226229106660610049');
+   -- select * from load_swagger(null,'1226229106660610049');
+   -- select * from load_audit_events(null,'1222998434210910213');
+   -- select * from load_swagger(null,'1222998434210910213');
+   #+end_src
+
+   #+RESULTS: Load the Data
+   #+begin_SRC example
+    load_audit_events 
+   -------------------
+
+   (1 row)
+
+   #+end_SRC
+  
+   #+NAME: bucket_job_swagger buckets and jobs
+   #+begin_src sql-mode
+   select bucket, job from bucket_job_swagger;
+   #+end_src
+
+   #+RESULTS: bucket_job_swagger buckets and jobs
+   #+begin_src sql-mode
+                       bucket                    |         job         
+   ----------------------------------------------+---------------------
+    ci-kubernetes-e2e-gci-gce                    | 1232076743536283652
+    apisnoop                                     | live
+    ci-kubernetes-e2e-gci-gce                    | 1228539796335366144
+    ci-kubernetes-e2e-gci-gce                    | 1222916418979237889
+    ci-kubernetes-e2e-gce-cos-k8sstable3-default | 1200130987455942659
+    ci-kubernetes-e2e-gci-gce                    | 1222998434210910213
+    ci-kubernetes-e2e-gci-gce                    | 1226229106660610049
+    ci-kubernetes-e2e-gce-cos-k8sstable2-default | 1230101702657445888
+   (8 rows)
+
+   #+end_src
+
+   #+NAME: raw_audit_event buckets and jobs
+   #+begin_src sql-mode
+\dt+
+     -- select distinct bucket, job from raw_audit_event;
+   #+end_src
+
+   #+RESULTS: raw_audit_event buckets and jobs
+   #+begin_SRC example
+                                                          List of relations
+     Schema   |          Name          | Type  |  Owner   |  Size  |                         Description                          
+   -----------+------------------------+-------+----------+--------+--------------------------------------------------------------
+    pg_temp_5 | raw_audit_event_import | table | apisnoop | 335 MB | 
+    public    | bucket_job_swagger     | table | apisnoop | 11 MB  | metadata for audit events  and their respective swagger.json
+    public    | raw_audit_event        | table | apisnoop | 786 MB | a record for each audit event in an audit log
+   (3 rows)
+
+   #+end_SRC
+   
+   
+   #+begin_src sql-mode
+    REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+    -- REFRESH MATERIALIZED VIEW endpoint_coverage_material;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   REFRESH MATERIALIZED VIEW
+   #+end_SRC
+   
+   #+begin_src sql-mode
+select * from stable_endpoint_stats;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+            job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+    1222916418979237889 | 2020-01-30 |             438 |       191 |       138 |          43.61 |               31.51
+    1222998434210910213 | 2020-01-30 |             438 |       190 |       137 |          43.38 |               31.28
+    1228539796335366144 | 2020-02-15 |             438 |       190 |       138 |          43.38 |               31.51
+    1226229106660610049 | 2020-02-08 |             438 |       190 |       138 |          43.38 |               31.51
+    1232076743536283652 | 2020-02-24 |             438 |       190 |       138 |          43.38 |               31.51
+   (5 rows)
+
+   #+end_SRC
+   
+   #+begin_src sql-mode
+   
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+            job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+    1222916418979237889 | 2020-01-30 |             438 |       191 |       138 |          43.61 |               31.51
+    1222998434210910213 | 2020-01-30 |             438 |       190 |       137 |          43.38 |               31.28
+    1228539796335366144 | 2020-02-15 |             438 |       190 |       138 |          43.38 |               31.51
+    1226229106660610049 | 2020-02-08 |             438 |       190 |       138 |          43.38 |               31.51
+    1232076743536283652 | 2020-02-24 |             438 |       190 |       138 |          43.38 |               31.51
+   (5 rows)
+
+   #+end_SRC
+   
+** Ensure Coverage over Time is working properly
+** Find jobs for last four releases
+*** 1.15
+    #+begin_src sql-mode
+    select * from load_audit_events('ci-kubernetes-e2e-gce-cos-k8sstable3-default', null);
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+    WARNING:  method was:post
+    ERROR:  TypeError: can only concatenate str (not "dict_keys") to str
+    CONTEXT:  Traceback (most recent call last):
+      PL/Python function "load_audit_events", line 307, in <module>
+        load_audit_events(bucket,job)
+      PL/Python function "load_audit_events", line 262, in load_audit_events
+        event['operationId']=find_operation_id(spec,event)
+      PL/Python function "load_audit_events", line 162, in find_operation_id
+        plpy.warning("current_level keys:" + current_level.keys())
+    PL/Python function "load_audit_events"
+    #+end_SRC
+    
+    #+begin_src sql-mode
+select distinct bucket, job from raw_audit_event;
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+                        bucket                    |         job         
+    ----------------------------------------------+---------------------
+     ci-kubernetes-e2e-gci-gce                    | 1222998434210910213
+     ci-kubernetes-e2e-gci-gce                    | 1226229106660610049
+     ci-kubernetes-e2e-gci-gce                    | 1228539796335366144
+     ci-kubernetes-e2e-gce-cos-k8sstable2-default | 1230101702657445888
+     ci-kubernetes-e2e-gci-gce                    | 1222916418979237889
+     ci-kubernetes-e2e-gci-gce                    | 1232076743536283652
+    (6 rows)
+
+    #+end_SRC
+
+*** interlude: debug load_audit_events to see why it didn't work for 1.15
+   When we tried to load 1.15 we got this error:
+   #+NAME: 1.15 error
+   #+begin_example
+    WARNING:  method was:post
+    ERROR:  TypeError: can only concatenate str (not "dict_keys") to str
+    CONTEXT:  Traceback (most recent call last):
+      PL/Python function "load_audit_events", line 307, in <module>
+        load_audit_events(bucket,job)
+      PL/Python function "load_audit_events", line 262, in load_audit_events
+        event['operationId']=find_operation_id(spec,event)
+      PL/Python function "load_audit_events", line 162, in find_operation_id
+        plpy.warning("current_level keys:" + current_level.keys())
+    PL/Python function "load_audit_events"
+   #+end_example
+   
+   It is difficult to see what's going wrong when viewing the python within sql, so we grabbed the whole code (below) and will tangle it to a file, so we can run it as pure python.  This should create a sql file called 'load.sql' in our tmp folder.  If not, there's an issue with our python.  If it does create it successfully, but psql cannot load the sql file, then we have an issue with how the sql was constructed.
+   To get the exact src+line numbers we use pgadmin to view the load_audit_events functions src, which is python3 inside plpy (sql).
+    #+NAME: load_audit_event
+    #+begin_src python :tangle ~/Projects/tmp/load_audit_events.py
+      #!/usr/bin/env python3
+      from urllib.request import urlopen, urlretrieve
+      import os
+      import re
+      from bs4 import BeautifulSoup
+      import subprocess
+      import time
+      import glob
+      from tempfile import mkdtemp
+      from string import Template
+      from urllib.parse import urlparse
+      import requests
+      import hashlib
+      from collections import defaultdict
+      import json
+      import csv
+      import sys
+
+      from copy import deepcopy
+      from functools import reduce
+
+      def deep_merge(*dicts, update=False):
+          """
+          Merges dicts deeply.
+          Parameters
+          ----------
+          dicts : list[dict]
+              List of dicts.
+          update : bool
+              Whether to update the first dict or create a new dict.
+          Returns
+          -------
+          merged : dict
+              Merged dict.
+          """
+          def merge_into(d1, d2):
+              for key in d2:
+                  if key not in d1 or not isinstance(d1[key], dict):
+                      d1[key] = deepcopy(d2[key])
+                  else:
+                      d1[key] = merge_into(d1[key], d2[key])
+              return d1
+
+          if update:
+              return reduce(merge_into, dicts[1:], dicts[0])
+          else:
+              return reduce(merge_into, dicts, {})
+      def load_openapi_spec(url):
+          cache=defaultdict(dict)
+          openapi_spec = {}
+          openapi_spec['hit_cache'] = {}
+
+          swagger = requests.get(url).json()
+          for path in swagger['paths']:
+              path_data = {}
+              path_parts = path.strip("/").split("/")
+              path_len = len(path_parts)
+              path_dict = {}
+              last_part = None
+              last_level = None
+              current_level = path_dict
+              for part in path_parts:
+                  if part not in current_level:
+                      current_level[part] = {}
+                  last_part=part
+                  last_level = current_level
+                  current_level = current_level[part]
+              for method, swagger_method in swagger['paths'][path].items():
+                  if method == 'parameters':
+                      next
+                  else:
+                      current_level[method]=swagger_method.get('operationId', '')
+              cache = deep_merge(cache, {path_len:path_dict})
+          openapi_spec['cache'] = cache
+          return openapi_spec
+      def find_operation_id(openapi_spec, event):
+        verb_to_method={
+          'get': 'get',
+          'list': 'get',
+          'proxy': 'proxy',
+          'create': 'post',
+          'post':'post',
+          'put':'post',
+          'update':'put',
+          'patch':'patch',
+          'connect':'connect',
+          'delete':'delete',
+          'deletecollection':'delete',
+          'watch':'get'
+        }
+        method=verb_to_method[event['verb']]
+        url = urlparse(event['requestURI'])
+        # 1) Cached seen before results
+        if url.path in openapi_spec['hit_cache']:
+          if method in openapi_spec['hit_cache'][url.path].keys():
+            return openapi_spec['hit_cache'][url.path][method]
+        uri_parts = url.path.strip('/').split('/')
+        if 'proxy' in uri_parts:
+            uri_parts = uri_parts[0:uri_parts.index('proxy')]
+        part_count = len(uri_parts)
+        try: # may have more parts... so no match
+            cache = openapi_spec['cache'][part_count]
+        except Exception as e:
+          plpy.warning("part_count was:" + part_count)
+          plpy.warning("spec['cache'] keys was:" + openapi_spec['cache'])
+          raise e
+        last_part = None
+        last_level = None
+        current_level = cache
+        for idx in range(part_count):
+          part = uri_parts[idx]
+          last_level = current_level
+          if part in current_level:
+            current_level = current_level[part] # part in current_level
+          elif idx == part_count-1:
+            if part == 'metrics':
+              return None
+            if part == 'readyz':
+              return None
+            if part == 'livez':
+              return None
+            if part == 'healthz':
+              return None
+            if 'discovery.k8s.io' in uri_parts:
+              return None
+            #   elif part == '': # The last V
+            #     current_level = last_level
+            #       else:
+            variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
+            if len(variable_levels) > 1:
+              raise "If we have more than one variable levels... this should never happen."
+            next_level=variable_levels[0] # the var is the next level
+            current_level = current_level[next_level] # variable part is final part
+          else:
+            next_part = uri_parts[idx+1]
+            variable_levels={next_level:next_part in current_level[next_level].keys() for next_level in [x for x in current_level.keys() if '{' in x]}
+            if not variable_levels: # there is no match
+              if 'example.com' in part:
+                return None
+              elif 'kope.io' in part:
+                return None
+              elif 'snapshot.storage.k8s.io' in part:
+                return None
+              elif 'discovery.k8s.io' in part:
+                return None
+              elif 'metrics.k8s.io' in part:
+                return None
+              elif 'wardle.k8s.io' in part:
+                return None
+              elif ['openapi','v2'] == uri_parts: # not part our our spec
+                return None
+              else:
+                print(url.path)
+                return None
+            next_level={v: k for k, v in variable_levels.items()}[True]
+            current_level = current_level[next_level] #coo
+        try:
+          op_id=current_level[method]
+        except Exception as err:
+          plpy.warning("method was:" + method)
+          plpy.warning("current_level keys:" + current_level.keys())
+          raise err
+        if url.path not in openapi_spec['hit_cache']:
+          openapi_spec['hit_cache'][url.path]={method:op_id}
+        else:
+          openapi_spec['hit_cache'][url.path][method]=op_id
+        return op_id
+      def get_json(url):
+          body = urlopen(url).read()
+          data = json.loads(body)
+          return data
+
+      def get_html(url):
+          html = urlopen(url).read()
+          soup = BeautifulSoup(html, 'html.parser')
+          return soup
+
+
+      def download_url_to_path(url, local_path):
+          local_dir = os.path.dirname(local_path)
+          if not os.path.isdir(local_dir):
+              os.makedirs(local_dir)
+          if not os.path.isfile(local_path):
+              process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
+              downloads[local_path] = process
+
+      # this global dict is used to track our wget subprocesses
+      # wget was used because the files can get to several halfa gig
+      downloads = {}
+
+      #establish bucket we'll draw test results from.
+      gcs_logs="https://storage.googleapis.com/kubernetes-jenkins/logs/"
+      baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
+      bucket =  baseline_bucket if custom_bucket is None else custom_bucket
+
+      #grab the latest successful test run for our chosen bucket.
+      testgrid_history = get_json(gcs_logs + bucket + "/jobResultsCache.json")
+      latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
+
+      #establish job
+      baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
+      job = baseline_job if custom_job is None else custom_job
+
+      def load_audit_events(bucket,job):
+          bucket_url = 'https://storage.googleapis.com/kubernetes-jenkins/logs/' + bucket + '/' + job + '/'
+          artifacts_url = 'https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/' + bucket + '/' +  job + '/' + 'artifacts'
+          job_metadata_files = [
+              'finished.json',
+              'artifacts/metadata.json',
+              'artifacts/junit_01.xml',
+              'build-log.txt'
+          ]
+          download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
+          combined_log_file = download_path + 'audit.log'
+
+          # meta data to download
+          for jobfile in job_metadata_files:
+              download_url_to_path( bucket_url + jobfile,
+                                    download_path + jobfile )
+
+          # Use soup to grab url of each of audit.log.* (some end in .gz)
+          soup = get_html(artifacts_url)
+          master_link = soup.find(href=re.compile("master"))
+          master_soup = get_html(
+              "https://gcsweb.k8s.io" + master_link['href'])
+          log_links = master_soup.find_all(
+              href=re.compile("audit.log"))
+
+          finished_metadata = json.load(open(download_path + 'finished.json'))
+          commit_hash=finished_metadata['job-version'].split('+')[1]
+          # download all logs
+          for link in log_links:
+              log_url = link['href']
+              log_file = download_path + os.path.basename(log_url)
+              download_url_to_path( log_url, log_file)
+
+          # Our Downloader uses subprocess of curl for speed
+          for download in downloads.keys():
+              # Sleep for 5 seconds and check for next download
+              while downloads[download].poll() is None:
+                  time.sleep(5)
+                  # print("Still downloading: " + download)
+              # print("Downloaded: " + download)
+
+          # Loop through the files, (z)cat them into a combined audit.log
+          with open(combined_log_file, 'ab') as log:
+              for logfile in sorted(
+                      glob.glob(download_path + '*kube-apiserver-audit*'), reverse=True):
+                  if logfile.endswith('z'):
+                      subprocess.run(['zcat', logfile], stdout=log, check=True)
+                  else:
+                      subprocess.run(['cat', logfile], stdout=log, check=True)
+          # Process the resulting combined raw audit.log by adding operationId
+          spec = load_openapi_spec('https://raw.githubusercontent.com/kubernetes/kubernetes/' + commit_hash +  '/api/openapi-spec/swagger.json')
+          infilepath=combined_log_file
+          outfilepath=combined_log_file+'+opid'
+          with open(infilepath) as infile:
+              with open(outfilepath,'w') as output:
+                  for line in infile.readlines():
+                      event = json.loads(line)
+                      event['operationId']=find_operation_id(spec,event)
+                      output.write(json.dumps(event)+'\n')
+          #####
+          # Load the resulting updated audit.log directly into raw_audit_event
+          try:
+              # for some reason tangling isn't working to reference this SQL block
+              sql = Template("""
+      CREATE TEMPORARY TABLE raw_audit_event_import_${job} (data jsonb not null) ;
+      COPY raw_audit_event_import_${job} (data)
+      FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
+
+      INSERT INTO raw_audit_event(bucket, job,
+                                   audit_id, stage,
+                                   event_verb, request_uri,
+                                   operation_id,
+                                   data)
+      SELECT '${bucket}', '${job}',
+             (raw.data ->> 'auditID'), (raw.data ->> 'stage'),
+             (raw.data ->> 'verb'), (raw.data ->> 'requestURI'),
+             (raw.data ->> 'operationId'),
+             raw.data
+        FROM raw_audit_event_import_${job} raw;
+              """).substitute(
+                  audit_logfile = outfilepath,
+                  # audit_logfile = combined_log_file,
+                  bucket = bucket,
+                  job = job
+              )
+              with open(download_path + 'load.sql', 'w') as sqlfile:
+                sqlfile.write(sql)
+              # rv = plpy.execute(sql)
+              #plpy.commit()
+              # this calls external binary, not part of transaction 8(
+              #rv = plpy.execute("select * from audit_event_op_update();")
+              #plpy.commit()
+              #rv = plpy.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY podspec_field_coverage_material;")
+              #plpy.commit()
+              return "it worked"
+          except plpy.SPIError:
+              return "something went wrong with plpy"
+          except:
+              return "something unknown went wrong"
+      #if __name__ == "__main__":
+      #    load_audit_events('ci-kubernetes-e2e-gci-gce','1134962072287711234')
+      #else:
+      # load_audit_events(bucket,job)
+      load_audit_events('ci-kubernetes-e2e-gce-cos-k8sstable3-default', null)
+    #+end_src
+    
+   I ran through this code at  [[file:~/Projects/tmp/load_audit_events.py][load_audit_events.py]]  putting in some ipdb traces.  The error seems to come for a particular event whose verb does not match any keys in the current_level.  So the verb is 'post' but the current_level only has keys for 'delete', 'get', 'put' etc.
+
+The method is beding pulled from the event, the current_level is being determioned by the cache which is determined by the open_api_spec.  Is there some discrepancy in the spec versus the logs(e.g. running a verb that the spec of this opId hasn't accounted for?)
+
+I wasn't fully grokking how the cache plays into the method and current_level, or why this drift could occur.  We could skip over an event if the key isn't found, but then it'd be hard to trust the numbers we generate from this. 
+
+I've left my ipdb session and code in pane 3 of this tmate session.
+
+Each event has some data that we process.
+
+#+name: event.keys()
+#+begin_example
+ipdb> event.keys()
+dict_keys(['kind', 'apiVersion', 'level', 'auditID', 'stage', 'requestURI', 'verb', 'user', 'sourceIPs', 'userAgent', 'objectRef', 'responseStatus', 'requestReceivedTimestamp', 'stageTimestamp', 'annotations'])
+#+end_example
+
+The requestURI includes */proxy/* but is targeting a service. Seemigly to create a service.
+
+#+name: event['requestURI']
+#+begin_example
+ipdb> event['requestURI']
+'/api/v1/namespaces/horizontal-pod-autoscaling-113/services/rc-light-ctrl/proxy/ConsumeMem?durationSec=30&megabytes=0&requestSizeMegabytes=100'
+#+end_example
+
+The uri has proxy, so we strip it and focus on the primary parts which is what we iterate over, bailing if we hit known bad urls that won't match.
+
+#+name: uri_parts
+#+begin_example
+ipdb> uri_parts
+['api', 'v1', 'namespaces', 'horizontal-pod-autoscaling-113', 'services', 'rc-light-ctrl']
+ipdb> part_count
+6
+ipdb> part
+'rc-light-ctrl'
+ipdb> idx
+5
+#+end_example
+
+The cache itself is a mapping of api url components to objects, where *{name}* is a placeholder in the url.
+At the end the keys should map to the different methods or verbs or.... it's not really documented anywhere that I can tell.
+
+#+name: cache walk for uri_parts
+#+begin_example
+ipdb> cache.keys()
+dict_keys(['api', 'apis'])
+ipdb> cache['api'].keys()
+dict_keys(['v1'])
+ipdb> cache['api']['v1'].keys()
+dict_keys(['namespaces', 'nodes', 'watch'])
+ipdb> cache['api']['v1']['namespaces'].keys()
+dict_keys(['{namespace}'])
+ipdb> cache['api']['v1']['namespaces']['{namespace}'].keys()
+dict_keys(['configmaps', 'endpoints', 'events', 'limitranges', 'persistentvolumeclaims', 'pods', 'podtemplates', 'replicationcontrollers', 'resourcequotas', 'secrets', 'serviceaccounts', 'services'])
+ipdb> cache['api']['v1']['namespaces']['{namespace}']['services'].keys()
+dict_keys(['{name}'])
+ipdb> cache['api']['v1']['namespaces']['{namespace}']['services']['{name}'].keys()
+dict_keys(['delete', 'get', 'patch', 'put'])
+#+end_example
+
+Without digging into the caching, the current_level contains the possible methods.
+Which when we get to the end has to match to a method.
+ 
+#+name: current_level.keys()
+#+begin_example
+ipdb> current_level.keys()
+dict_keys(['delete', 'get', 'patch', 'put'])
+#+end_example
+
+#+name: our error, asking for the method within current level
+#+begin_src python
+    op_id=current_level[method]
+#+end_src
+
+We have an event with a verb *create*.
+
+#+begin_example
+ipdb> event['verb']
+'create'
+#+end_example
+
+The method is not directly mapped from the verb anywhere I can find, and I still don't know a good way not to create manual static lookup.
+
+#+begin_src python
+  verb_to_method={
+    'get': 'get',
+    'list': 'get',
+    'proxy': 'proxy',
+    'create': 'post',
+    'post':'post',
+    'put':'post',
+    'update':'put',
+    'patch':'patch',
+    'connect':'connect',
+    'delete':'delete',
+    'deletecollection':'delete',
+    'watch':'get'
+  }
+#+end_src
+
+Currently there are no *post* methods for this url.. only delete, get, patch, and put.
+I'm unsure if this is a 1.15 specific thing or what.
+
+#+begin_example
+ipdb> method
+'post'
+#+end_example
+
+It may be related to the proxy endpoints:
+
+
+#+begin_example
+$ wget https://github.com/kubernetes/kubernetes/raw/v1.15.10/api/openapi-spec/swagger.json
+$ cat swagger.json   | jq -c '.paths["/api/v1/namespaces/{namespace}/services/{name}/proxy"]' | jq keys
+[
+  "delete",
+  "get",
+  "head",
+  "options",
+  "parameters",
+  "patch",
+  "post",
+  "put"
+]
+$ cat swagger.json   | jq -c '.paths["/api/v1/namespaces/{namespace}/services/{name}"]' | jq keys
+[
+  "delete",
+  "get",
+  "parameters",
+  "patch",
+  "put"
+]
+
+#+end_example
+
+They map to different endpoints:
+#+begin_src shell :wrap "src json"
+  curl -L https://github.com/kubernetes/kubernetes/raw/v1.15.10/api/openapi-spec/swagger.json \
+    | jq -c '.paths["/api/v1/namespaces/{namespace}/services/{name}"].put' | jq .
+#+end_src
+
+#+RESULTS:
+#+begin_src json
+{
+  "consumes": [
+    "*/*"
+  ],
+  "description": "replace the specified Service",
+  "operationId": "replaceCoreV1NamespacedService",
+  "parameters": [
+    {
+      "in": "body",
+      "name": "body",
+      "required": true,
+      "schema": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.Service"
+      }
+    },
+    {
+      "description": "When present, indicates that modifications should not be persisted. An invalid or unrecognized dryRun directive will result in an error response and no further processing of the request. Valid values are: - All: all dry run stages will be processed",
+      "in": "query",
+      "name": "dryRun",
+      "type": "string",
+      "uniqueItems": true
+    },
+    {
+      "description": "fieldManager is a name associated with the actor or entity that is making these changes. The value must be less than or 128 characters long, and only contain printable characters, as defined by https://golang.org/pkg/unicode/#IsPrint.",
+      "in": "query",
+      "name": "fieldManager",
+      "type": "string",
+      "uniqueItems": true
+    }
+  ],
+  "produces": [
+    "application/json",
+    "application/yaml",
+    "application/vnd.kubernetes.protobuf"
+  ],
+  "responses": {
+    "200": {
+      "description": "OK",
+      "schema": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.Service"
+      }
+    },
+    "201": {
+      "description": "Created",
+      "schema": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.Service"
+      }
+    },
+    "401": {
+      "description": "Unauthorized"
+    }
+  },
+  "schemes": [
+    "https"
+  ],
+  "tags": [
+    "core_v1"
+  ],
+  "x-kubernetes-action": "put",
+  "x-kubernetes-group-version-kind": {
+    "group": "",
+    "kind": "Service",
+    "version": "v1"
+  }
+}
+#+end_src
+$ cat swagger.json   | jq -c '.paths["/api/v1/namespaces/{namespace}/services/{name}/proxy"].post' | jq .
+
+#+begin_src shell :wrap "src json"
+  curl -L https://github.com/kubernetes/kubernetes/raw/v1.15.10/api/openapi-spec/swagger.json \
+    | jq -c '.paths["/api/v1/namespaces/{namespace}/services/{name}/proxy"].post' | jq .
+#+end_src
+
+#+RESULTS:
+#+begin_src json
+{
+  "consumes": [
+    "*/*"
+  ],
+  "description": "connect POST requests to proxy of Service",
+  "operationId": "connectCoreV1PostNamespacedServiceProxy",
+  "produces": [
+    "*/*"
+  ],
+  "responses": {
+    "200": {
+      "description": "OK",
+      "schema": {
+        "type": "string"
+      }
+    },
+    "401": {
+      "description": "Unauthorized"
+    }
+  },
+  "schemes": [
+    "https"
+  ],
+  "tags": [
+    "core_v1"
+  ],
+  "x-kubernetes-action": "connect",
+  "x-kubernetes-group-version-kind": {
+    "group": "",
+    "kind": "ServiceProxyOptions",
+    "version": "v1"
+  }
+}
+#+end_src
+
+
+The cache itself uses the length of the url to speed up lookups for shorter urls.
+
+#+begin_example
+ipdb> openapi_spec['cache'][1]
+{'api': {'get': 'getCoreAPIVersions'}, 'apis': {'get': 'getAPIVersions'}, 'logs': {'get': 'logFileListHandler'}, 'version': {'get': 'getCodeVersion'}}
+ipdb> openapi_spec['cache'][2]
+{'api': {'v1': {'get': 'getCoreV1APIResources'}}, 'apis': {'admissionregistration.k8s.io': {'get': 'getAdmissionregistrationAPIGroup'}, 'apiextensions.k8s.io': {'get': 'getApiextensionsAPIGroup'}, 'apiregistration.k8s.io': {'get': 'getApiregistrationAPIGroup'}, 'apps': {'get': 'getAppsAPIGroup'}, 'auditregistration.k8s.io': {'get': 'getAuditregistrationAPIGroup'}, 'authentication.k8s.io': {'get': 'getAuthenticationAPIGroup'}, 'authorization.k8s.io': {'get': 'getAuthorizationAPIGroup'}, 'autoscaling': {'get': 'getAutoscalingAPIGroup'}, 'batch': {'get': 'getBatchAPIGroup'}, 'certificates.k8s.io': {'get': 'getCertificatesAPIGroup'}, 'coordination.k8s.io': {'get': 'getCoordinationAPIGroup'}, 'events.k8s.io': {'get': 'getEventsAPIGroup'}, 'extensions': {'get': 'getExtensionsAPIGroup'}, 'networking.k8s.io': {'get': 'getNetworkingAPIGroup'}, 'node.k8s.io': {'get': 'getNodeAPIGroup'}, 'policy': {'get': 'getPolicyAPIGroup'}, 'rbac.authorization.k8s.io': {'get': 'getRbacAuthorizationAPIGroup'}, 'scheduling.k8s.io': {'get': 'getSchedulingAPIGroup'}, 'settings.k8s.io': {'get': 'getSettingsAPIGroup'}, 'storage.k8s.io': {'get': 'getStorageAPIGroup'}}, 'logs': {'{logpath}': {'get': 'logFileHandler'}}}
+ipdb> openapi_spec['cache'][3]
+{'api': {'v1': {'componentstatuses': {'get': 'listCoreV1ComponentStatus'}, 'configmaps': {'get': 'listCoreV1ConfigMapForAllNamespaces'}, 'endpoints': {'get': 'listCoreV1EndpointsForAllNamespaces'}, 'events': {'get': 'listCoreV1EventForAllNamespaces'}, 'limitranges': {'get': 'listCoreV1LimitRangeForAllNamespaces'}, 'namespaces': {'get': 'listCoreV1Namespace', 'post': 'createCoreV1Namespace'}, 'nodes': {'delete': 'deleteCoreV1CollectionNode', 'get': 'listCoreV1Node', 'post': 'createCoreV1Node'}, 'persistentvolumeclaims': {'get': 'listCoreV1PersistentVolumeClaimForAllNamespaces'}, 'persistentvolumes': {'delete': 'deleteCoreV1CollectionPersistentVolume', 'get': 'listCoreV1PersistentVolume', 'post': 'createCoreV1PersistentVolume'}, 'pods': {'get': 'listCoreV1PodForAllNamespaces'}, 'podtemplates': {'get': 'listCoreV1PodTemplateForAllNamespaces'}, 'replicationcontrollers': {'get': 'listCoreV1ReplicationControllerForAllNamespaces'}, 'resourcequotas': {'get': 'listCoreV1ResourceQuotaForAllNamespaces'}, 'secrets': {'get': 'listCoreV1SecretForAllNamespaces'}, 'serviceaccounts': {'get': 'listCoreV1ServiceAccountForAllNamespaces'}, 'services': {'get': 'listCoreV1ServiceForAllNamespaces'}}}, 'apis': {'admissionregistration.k8s.io': {'v1beta1': {'get': 'getAdmissionregistrationV1beta1APIResources'}}, 'apiextensions.k8s.io': {'v1beta1': {'get': 'getApiextensionsV1beta1APIResources'}}, 'apiregistration.k8s.io': {'v1': {'get': 'getApiregistrationV1APIResources'}, 'v1beta1': {'get': 'getApiregistrationV1beta1APIResources'}}, 'apps': {'v1': {'get': 'getAppsV1APIResources'}, 'v1beta1': {'get': 'getAppsV1beta1APIResources'}, 'v1beta2': {'get': 'getAppsV1beta2APIResources'}}, 'auditregistration.k8s.io': {'v1alpha1': {'get': 'getAuditregistrationV1alpha1APIResources'}}, 'authentication.k8s.io': {'v1': {'get': 'getAuthenticationV1APIResources'}, 'v1beta1': {'get': 'getAuthenticationV1beta1APIResources'}}, 'authorization.k8s.io': {'v1': {'get': 'getAuthorizationV1APIResources'}, 'v1beta1': {'get': 'getAuthorizationV1beta1APIResources'}}, 'autoscaling': {'v1': {'get': 'getAutoscalingV1APIResources'}, 'v2beta1': {'get': 'getAutoscalingV2beta1APIResources'}, 'v2beta2': {'get': 'getAutoscalingV2beta2APIResources'}}, 'batch': {'v1': {'get': 'getBatchV1APIResources'}, 'v1beta1': {'get': 'getBatchV1beta1APIResources'}, 'v2alpha1': {'get': 'getBatchV2alpha1APIResources'}}, 'certificates.k8s.io': {'v1beta1': {'get': 'getCertificatesV1beta1APIResources'}}, 'coordination.k8s.io': {'v1': {'get': 'getCoordinationV1APIResources'}, 'v1beta1': {'get': 'getCoordinationV1beta1APIResources'}}, 'events.k8s.io': {'v1beta1': {'get': 'getEventsV1beta1APIResources'}}, 'extensions': {'v1beta1': {'get': 'getExtensionsV1beta1APIResources'}}, 'networking.k8s.io': {'v1': {'get': 'getNetworkingV1APIResources'}, 'v1beta1': {'get': 'getNetworkingV1beta1APIResources'}}, 'node.k8s.io': {'v1alpha1': {'get': 'getNodeV1alpha1APIResources'}, 'v1beta1': {'get': 'getNodeV1beta1APIResources'}}, 'policy': {'v1beta1': {'get': 'getPolicyV1beta1APIResources'}}, 'rbac.authorization.k8s.io': {'v1': {'get': 'getRbacAuthorizationV1APIResources'}, 'v1alpha1': {'get': 'getRbacAuthorizationV1alpha1APIResources'}, 'v1beta1': {'get': 'getRbacAuthorizationV1beta1APIResources'}}, 'scheduling.k8s.io': {'v1': {'get': 'getSchedulingV1APIResources'}, 'v1alpha1': {'get': 'getSchedulingV1alpha1APIResources'}, 'v1beta1': {'get': 'getSchedulingV1beta1APIResources'}}, 'settings.k8s.io': {'v1alpha1': {'get': 'getSettingsV1alpha1APIResources'}}, 'storage.k8s.io': {'v1': {'get': 'getStorageV1APIResources'}, 'v1alpha1': {'get': 'getStorageV1alpha1APIResources'}, 'v1beta1': {'get': 'getStorageV1beta1APIResources'}}}}
+#+end_example
+
+The test name is within the userAgent, so we could go look up the code (would be nice to have a line number here)
+
+#+name: event['userAgent']
+#+begin_example
+ipdb> event['userAgent']
+'e2e.test/v1.15.11 (linux/amd64) kubernetes/3b43c80 -- [sig-autoscaling] [HPA] Horizontal pod autoscaling (scale resource: CPU) [sig-autoscaling] ReplicationController light Should scale from 2 pods to 1 pod'
+#+end_example
+
+[[file:~/Projects/kubernetes/test/e2e/autoscaling/horizontal_pod_autoscaling.go::ginkgo.It("Should%20scale%20from%202%20pods%20to%201%20pod%20%5BSlow%5D",%20func()%20{]]
+https://github.com/kubernetes/kubernetes/blob/master/test/e2e/autoscaling/horizontal_pod_autoscaling.go#L82-L132
+All the logic is wrapped up in *scaleTest.run*
+#+name: test/e2e/autoscaling/horizontal_pod_autoscaling.go Line 82
+#+begin_src golang
+		ginkgo.It("Should scale from 2 pods to 1 pod [Slow]", func() {
+			scaleTest := &HPAScaleTest{
+				initPods:                    2,
+				totalInitialCPUUsage:        50,
+				perPodCPURequest:            200,
+				targetCPUUtilizationPercent: 50,
+				minPods:                     1,
+				maxPods:                     2,
+				firstScale:                  1,
+			}
+			scaleTest.run("rc-light", e2eautoscaling.KindRC, rc, f)
+		})
+   // further defined run/HPSCaleTest struct same file
+#+end_src
+** Bring in data for last four releases
+** Adjust timestamp for these jobs to be date of release
+** Ensure Coverage over time displays these releases correctly
+** Celebrate
+* Conclusions | Next Steps
+** 
