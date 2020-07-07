@@ -320,3 +320,31 @@ export const stillUntested = derived(
     }
   }
 );
+
+export const coveragePerReleaseRaw = writable([]);
+
+export const coveragePerRelease = derived(
+  coveragePerReleaseRaw,
+  ($cpr, set) => {
+    if ($cpr.length === 0) {
+      set([]);
+    } else {
+      let ratioSet = $cpr.map(({release, tested, untested}) => ({
+            release,
+            total: {
+              tested,
+              untested: (untested * -1) // this is to make it show as split ratio graph
+            }
+          }));
+
+      let formattedRatio = ratioSet.map(({release, total}) => {
+        return values(mapValues(total, (v,k) => ({
+          release: release,
+          type: k,
+          total: v
+        })));
+      });
+      set(flatten(formattedRatio));
+    }
+  }
+);

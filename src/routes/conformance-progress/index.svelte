@@ -1,14 +1,25 @@
 <script>
- import { conformanceProgressRaw, formattedProgress, stillUntested } from '../../store';
+ import {
+   conformanceProgressRaw,
+   formattedProgress,
+   stillUntested,
+   coveragePerReleaseRaw,
+   coveragePerRelease
+ } from '../../store';
  import { releasesURL } from '../../lib/constants.js';
  import { onMount } from 'svelte';
  import StableOverTime from '../../components/vega-charts/stable-over-time.svelte';
  import StillUntested from '../../components/vega-charts/still-untested.svelte';
+ import CoveragePerRelease from '../../components/vega-charts/coverage-per-release.svelte';
 
  onMount(async() => {
    let progressData = await fetch(`${releasesURL}/conformance-progress.json`).then(res => res.json());
+   let coverageData = await fetch(`${releasesURL}/conformance-coverage-per-release.json`).then(res=>res.json());
    conformanceProgressRaw.set(progressData);
+   coveragePerReleaseRaw.set(coverageData);
+   console.log({coverageData, cpr: $coveragePerRelease});
  });
+ // something
 </script>
 
 <svelte:head>
@@ -41,6 +52,11 @@
   <p>loading chart...</p>
 {:else}
   <StillUntested data={$stillUntested} />
+{/if}
+{#if $coveragePerRelease.length === 0}
+  <p>loading chart...</p>
+{:else}
+  <CoveragePerRelease data={$coveragePerRelease} />
 {/if}
 
 <p>This report highlights the importance of having a gate that ensures any promoted endpoint comes with a test. This became an initiative in 1.16 and that release has one of the best ratios of introduced to tested. 1.19 is also looking impressive, with nearly 100% coverage on all its new endpoints.</p>
