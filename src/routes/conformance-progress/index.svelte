@@ -2,14 +2,12 @@
  import {
    conformanceProgressRaw,
    formattedProgress,
-   stillUntested,
    coveragePerReleaseRaw,
    coveragePerRelease
  } from '../../store';
  import { releasesURL } from '../../lib/constants.js';
  import { onMount } from 'svelte';
  import StableOverTime from '../../components/vega-charts/stable-over-time.svelte';
- import StillUntested from '../../components/vega-charts/still-untested.svelte';
  import CoveragePerRelease from '../../components/vega-charts/coverage-per-release.svelte';
 
  onMount(async() => {
@@ -17,7 +15,6 @@
    let coverageData = await fetch(`${releasesURL}/conformance-coverage-per-release.json`).then(res=>res.json());
    conformanceProgressRaw.set(progressData);
    coveragePerReleaseRaw.set(coverageData);
-   console.log({coverageData, cpr: $coveragePerRelease});
  });
  // something
 </script>
@@ -48,11 +45,6 @@
 
 <p><b>Note:</b>We mark the number of still untested endpoints as a negative number, since they represent technical debt.</p>
 
-{#if $stillUntested.length === 0}
-  <p>loading chart...</p>
-{:else}
-  <StillUntested data={$stillUntested} />
-{/if}
 {#if $coveragePerRelease.length === 0}
   <p>loading chart...</p>
 {:else}

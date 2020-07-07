@@ -23,7 +23,7 @@
      "x": {
        "field": "total",
        "type": "quantitative",
-       "title": "Stable Endpoints Introduced This Release",
+       "title": "Untested & Tested Endoints From this Release",
        "axis":{
          "labelFontSize": 16,
          "titleFontSize": 18,
