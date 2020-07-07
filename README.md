@@ -1,5 +1,4 @@
 # Snoop
-[instantinfrastructure.com/snoop](https://instantinfrastructure.com/snoop)
 
 This is a slimmed down version of [APISnoop](https://apisnoop.cncf.io),  designed to generate one-off reports tracking the progress and details of kubernetes conformance testing coverage.
 
