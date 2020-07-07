@@ -53,3 +53,9 @@
 </script>
 
 <div id="coverage-per-release_chart"></div>
+
+<style>
+ div {
+   margin-top: 2rem;
+ }
+</style>
