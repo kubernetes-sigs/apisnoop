@@ -1,4 +1,4 @@
-export const releasesURL = 'https://raw.githubusercontent.com/ii/snoop/master/resources/coverage';
+export const releasesURL = 'https://raw.githubusercontent.com/apisnoop/snoopDB/master/resources/coverage';
 export const RELEASES = [
   '1.19.0',
   '1.18.0',
