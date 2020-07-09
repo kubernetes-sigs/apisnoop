@@ -392,6 +392,117 @@ The below headings then will capture all that we want to do when postgres is int
     #+end_SRC
 
 *** load_tests
+    #+begin_src sql-mode
+\df+ load_tests
+    #+end_src
+
+    #+RESULTS:
+    #+begin_SRC example
+                                                                                                                                                          List of functions
+     Schema |    Name    | Result data type | Argument data types | Type | Volatility | Parallel |  Owner   | Security | Access privileges |  Language  |                                                       Source code                                                       |                  Description
+    --------+------------+------------------+---------------------+------+------------+----------+----------+----------+-------------------+------------+-------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------
+     public | load_tests | text             |                     | func | volatile   | unsafe   | postgres | invoker  |                   | plpython3u |                                                                                                                        +| loads latest conformance.yaml into test table
+            |            |                  |                     |      |            |          |          |          |                   |            | from string import Template                                                                                            +|
+            |            |                  |                     |      |            |          |          |          |                   |            | import json                                                                                                            +|
+            |            |                  |                     |      |            |          |          |          |                   |            | import yaml                                                                                                            +|
+            |            |                  |                     |      |            |          |          |          |                   |            | from urllib.request import urlopen, urlretrieve                                                                        +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                                                                                                                        +|
+            |            |                  |                     |      |            |          |          |          |                   |            | TESTS_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/test/conformance/testdata/conformance.yaml"+|
+            |            |                  |                     |      |            |          |          |          |                   |            | tests = json.dumps(yaml.safe_load(urlopen(TESTS_URL)))                                                                 +|
+            |            |                  |                     |      |            |          |          |          |                   |            | sql = Template("""                                                                                                     +|
+            |            |                  |                     |      |            |          |          |          |                   |            |               WITH jsonb_array AS (                                                                                    +|
+            |            |                  |                     |      |            |          |          |          |                   |            |               SELECT jsonb_array_elements('${tests}'::jsonb) as test_data)                                             +|
+            |            |                  |                     |      |            |          |          |          |                   |            |               INSERT INTO test(testname, codename, release, description, file)                                         +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                  SELECT                                                                                                +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                  (test_data->>'testname') as testname,                                                                 +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                  (test_data->>'codename') as codename,                                                                 +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                  CASE                                                                                                  +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                    WHEN ((test_data->>'release') = '') THEN '1.9.0'                                                    +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                    WHEN ((test_data->>'release') like '%,%')                                                           +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                      THEN trim(leading 'v' from split_part((test_data->>'release'), ', ', 2))||'.0'                    +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                    ELSE trim(leading 'v' from (test_data->>'release')) ||'.0'                                          +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                  END as release,                                                                                       +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                  (test_data->>'description') as description,                                                           +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                  (test_data->>'file') as file                                                                          +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                  from jsonb_array;                                                                                     +|
+            |            |                  |                     |      |            |          |          |          |                   |            |               """).substitute(tests = tests.replace("'","''"))                                                         +|
+            |            |                  |                     |      |            |          |          |          |                   |            | try:                                                                                                                   +|
+            |            |                  |                     |      |            |          |          |          |                   |            |     plpy.execute(sql)                                                                                                  +|
+            |            |                  |                     |      |            |          |          |          |                   |            |     return 'conformance.yaml loaded into test!'                                                                        +|
+            |            |                  |                     |      |            |          |          |          |                   |            | except Exception as e:                                                                                                 +|
+            |            |                  |                     |      |            |          |          |          |                   |            |     return 'error occured: ', e                                                                                        +|
+            |            |                  |                     |      |            |          |          |          |                   |            |                                                                                                                         |
+    (1 row)
+
+    #+end_SRC
+
+** Create Helper Scripts
+** load all the open_api
+   Created this in tables_views_functions, but if it worked then i should be able to see all releases and their release_date and orde by semver
+   #+begin_src sql-mode
+     select release, release_date
+       from open_api
+      group by release, release_date
+      order by release::semver;
+
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+    release |    release_date
+   ---------+---------------------
+    1.8.0   | 2017-08-28 00:00:00
+    1.9.0   | 2017-12-15 00:00:00
+    1.10.0  | 2018-03-26 00:00:00
+    1.11.0  | 2018-06-27 00:00:00
+    1.12.0  | 2018-09-27 00:00:00
+    1.13.0  | 2018-12-03 00:00:00
+    1.14.0  | 2019-03-25 00:00:00
+    1.19.0  | 2020-07-09 04:33:56
+   (8 rows)
+
+   #+end_SRC
+
+   just gorgeous
+** load test info
+  If this worked, I should be able to see test, codenames, files.  I could do a limit of 20 to check
+  #+begin_src sql-mode
+    select testname, codename, file
+      from test
+     limit 20;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                                          testname                                         |                                                                                                               codename                                                                                                               |                 file
+  -----------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------------------------------------
+   Pod Lifecycle, post start exec hook                                                     | [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart exec hook properly [NodeConformance] [Conformance]                                                                                  | test/e2e/common/lifecycle_hook.go
+   Pod Lifecycle, post start http hook                                                     | [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute poststart http hook properly [NodeConformance] [Conformance]                                                                                  | test/e2e/common/lifecycle_hook.go
+   Pod Lifecycle, prestop exec hook                                                        | [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop exec hook properly [NodeConformance] [Conformance]                                                                                    | test/e2e/common/lifecycle_hook.go
+   Pod Lifecycle, prestop http hook                                                        | [k8s.io] Container Lifecycle Hook when create a pod with lifecycle hook should execute prestop http hook properly [NodeConformance] [Conformance]                                                                                    | test/e2e/common/lifecycle_hook.go
+   Container Runtime, TerminationMessage, from log output of succeeding container          | [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] as empty when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]  | test/e2e/common/runtime.go
+   Container Runtime, TerminationMessage, from file of succeeding container                | [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from file when pod succeeds and TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance] | test/e2e/common/runtime.go
+   Container Runtime, TerminationMessage, from container's log output of failing container | [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] from log output if TerminationMessagePolicy FallbackToLogsOnError is set [NodeConformance] [Conformance]              | test/e2e/common/runtime.go
+   Container Runtime, TerminationMessagePath, non-root user and non-default path           | [k8s.io] Container Runtime blackbox test on terminated container should report termination message [LinuxOnly] if TerminationMessagePath is set as non-root user and at a non-default path [NodeConformance] [Conformance]           | test/e2e/common/runtime.go
+   Container Runtime, Restart Policy, Pod Phases                                           | [k8s.io] Container Runtime blackbox test when starting a container that exits should run with the expected status [NodeConformance] [Conformance]                                                                                    | test/e2e/common/runtime.go
+   Docker containers, with arguments                                                       | [k8s.io] Docker Containers should be able to override the image's default arguments (docker cmd) [NodeConformance] [Conformance]                                                                                                     | test/e2e/common/docker_containers.go
+   Docker containers, with command                                                         | [k8s.io] Docker Containers should be able to override the image's default command (docker entrypoint) [NodeConformance] [Conformance]                                                                                                | test/e2e/common/docker_containers.go
+   Docker containers, with command and arguments                                           | [k8s.io] Docker Containers should be able to override the image's default command and arguments [NodeConformance] [Conformance]                                                                                                      | test/e2e/common/docker_containers.go
+   Docker containers, without command and arguments                                        | [k8s.io] Docker Containers should use the image defaults if command and args are blank [NodeConformance] [Conformance]                                                                                                               | test/e2e/common/docker_containers.go
+   init-container-starts-app-restartalways-pod                                             | [k8s.io] InitContainer [NodeConformance] should invoke init containers on a RestartAlways pod [Conformance]                                                                                                                          | test/e2e/common/init_container.go
+   init-container-starts-app-restartnever-pod                                              | [k8s.io] InitContainer [NodeConformance] should invoke init containers on a RestartNever pod [Conformance]                                                                                                                           | test/e2e/common/init_container.go
+   init-container-fails-stops-app-restartnever-pod                                         | [k8s.io] InitContainer [NodeConformance] should not start app containers and fail the pod if init containers fail on a RestartNever pod [Conformance]                                                                                | test/e2e/common/init_container.go
+   init-container-fails-stops-app-restartalways-pod                                        | [k8s.io] InitContainer [NodeConformance] should not start app containers if init containers fail on a RestartAlways pod [Conformance]                                                                                                | test/e2e/common/init_container.go
+   Kubelet, hostAliases                                                                    | [k8s.io] Kubelet when scheduling a busybox Pod with hostAliases should write entries to /etc/hosts [LinuxOnly] [NodeConformance] [Conformance]                                                                                       | test/e2e/common/kubelet.go
+   Kubelet, log output, default                                                            | [k8s.io] Kubelet when scheduling a busybox command in a pod should print the output to logs [NodeConformance] [Conformance]                                                                                                          | test/e2e/common/kubelet.go
+   Kubelet, failed pod, delete                                                             | [k8s.io] Kubelet when scheduling a busybox command that always fails in a pod should be possible to delete [NodeConformance] [Conformance]                                                                                           | test/e2e/common/kubelet.go
+  (20 rows)
+
+  #+end_SRC
+
+  sweet as!
+
 ** Create our views
+   Same process as our tables and functions
 ** Load our data
 ** Materialize the stable view
