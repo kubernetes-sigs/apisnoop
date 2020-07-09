@@ -10,7 +10,7 @@
 
 # Identifying an untested feature Using APISnoop
 
-According to this APIsnoop query, there are still some remaining RESOURCENAME endpoints which are untested.
+According to this APIsnoop query, there are still some remaining PodProxyOptions endpoints which are untested.
 
 ```sql-mode
 SELECT
@@ -49,6 +49,8 @@ SELECT
 
 ```
 
+Looking for feedback on what direction should be taken with these endpoints and the best method for testing them.
+
 # API Reference and feature documentation
 
 -   [Kubernetes API Reference Docs](https://kubernetes.io/docs/reference/kubernetes-api/)
@@ -59,15 +61,19 @@ SELECT
 
 ## Test outline
 
-1.  Create a RESOURCENAME with a static label
+1.  
 
-2.  Patch the RESOURCENAME with a new label and updated data
 
-3.  Get the RESOURCENAME to ensure it's patched
+2.  
 
-4.  List all RESOURCENAMEs in all Namespaces with a static label find the RESOURCENAME ensure that the RESOURCENAME is found and is patched
 
-5.  Delete Namespaced RESOURCENAME via a Collection with a LabelSelector
+3.  
+
+
+4.  
+
+
+5.  
 
 ## Test the functionality in Go
 
@@ -75,17 +81,13 @@ SELECT
 package main
 
 import (
-  // "encoding/json"
   "fmt"
   "context"
   "flag"
   "os"
   v1 "k8s.io/api/core/v1"
-  // "k8s.io/client-go/dynamic"
-  // "k8s.io/apimachinery/pkg/runtime/schema"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
   "k8s.io/client-go/kubernetes"
-  // "k8s.io/apimachinery/pkg/types"
   "k8s.io/client-go/tools/clientcmd"
 )
 
@@ -102,53 +104,9 @@ func main() {
   config.UserAgent = "live-test-writing"
   // creates the clientset
   ClientSet, _ := kubernetes.NewForConfig(config)
-  // DynamicClientSet, _ := dynamic.NewForConfig(config)
-  // podResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 
   // TEST BEGINS HERE
 
-  testPodName := "test-pod"
-  testPodImage := "nginx"
-  testNamespaceName := "default"
-
-  fmt.Println("creating a Pod")
-  testPod := v1.Pod{
-    ObjectMeta: metav1.ObjectMeta{
-      Name: testPodName,
-      Labels: map[string]string{"test-pod-static": "true"},
-    },
-    Spec: v1.PodSpec{
-      Containers: []v1.Container{{
-        Name: testPodName,
-        Image: testPodImage,
-      }},
-    },
-  }
-  _, err = ClientSet.CoreV1().Pods(testNamespaceName).Create(context.TODO(), &testPod, metav1.CreateOptions{})
-  if err != nil {
-      fmt.Println(err, "failed to create Pod")
-      return
-  }
-
-  fmt.Println("listing Pods")
-  pods, err := ClientSet.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{LabelSelector: "test-pod-static=true"})
-  if err != nil {
-      fmt.Println(err, "failed to list Pods")
-      return
-  }
-  podCount := len(pods.Items)
-  if podCount == 0 {
-      fmt.Println("there are no Pods found")
-      return
-  }
-  fmt.Println(podCount, "Pod(s) found")
-
-  fmt.Println("deleting Pod")
-  err = ClientSet.CoreV1().Pods(testNamespaceName).Delete(context.TODO(), testPodName, metav1.DeleteOptions{})
-  if err != nil {
-      fmt.Println(err, "failed to delete the Pod")
-      return
-  }
 
   // TEST ENDS HERE
 
@@ -156,12 +114,6 @@ func main() {
 
 }
 ```
-
-    creating a Pod
-    listing Pods
-    1 Pod(s) found
-    deleting Pod
-    [status] complete
 
 # Verifying increase in coverage with APISnoop
 
