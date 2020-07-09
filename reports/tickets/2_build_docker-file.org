@@ -1,6 +1,7 @@
 #+TITLE: Ticket 2: Build a Docker File
 #+AUTHOR: Zach Mandeville
 #+DATE: 10 July 2020
+#+PROPERTY: header-args:shell :comments no
 
 * The Ticket
   Create a simple DockerFile that has all necessary programs at startup to be able to initialize all our tables, functions, and views
@@ -18,33 +19,119 @@ the subsequent creation of all sql files will be handled in #1
   I want the minimum of fuss while making sure we can run all our python scripts.
 
 ** First Pass
-   #+begin_src docker
-     FROM postgres:12.0
-      MAINTAINER Zach Mandeville <zz@ii.coop>
-      RUN apt-get update \
-        && apt-get install -y --no-install-recommends \
-        postgresql-plpython3-12 \
-        postgresql-12-plsh \
-        postgresql-server-dev-12 \
-        python3-bs4\
-        python3-psycopg2\
-        python3-ipdb\
-        python3-requests \
-        python3-yaml \
-        libpq-dev \
-        wget \
-        make \
-        gcc \
-        libc6-dev \
-        curl \
-        jq \
-        git \
-        software-properties-common \
-        apt-transport-https
+   #+begin_src docker :tangle ../../postgres/Dockerfile :comments no
+FROM postgres:12.0
+ MAINTAINER Zach Mandeville <zz@ii.coop>
+ RUN apt-get update \
+   && apt-get install -y --no-install-recommends \
+   postgresql-plpython3-12 \
+   postgresql-12-plsh \
+   postgresql-server-dev-12 \
+   python3-bs4\
+   python3-psycopg2\
+   python3-ipdb\
+   python3-requests \
+   python3-yaml \
+   libpq-dev \
+   wget \
+   make \
+   gcc \
+   libc6-dev \
+   curl \
+   jq \
+   git \
+   software-properties-common \
+   apt-transport-https
 
-      COPY ./db ./db
-      COPY initdb /docker-entrypoint-initdb.d
-      COPY ./snoopUtils.py /usr/local/lib/python3.7/dist-packages/snoopUtils.py
-      HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 \
-        CMD ["echo 'ready'"] || exit 1
+ RUN env PG_CONFIG=$(which pg_config) \
+     && git clone https://github.com/theory/pg-semver.git \
+     && cd pg-semver \
+     && make && make install
+
+ COPY ./db ./db
+ COPY initdb /docker-entrypoint-initdb.d
+ COPY ./snoopUtils.py /usr/local/lib/python3.7/dist-packages/snoopUtils.py
+ HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 \
+   CMD ["echo 'ready'"] || exit 1
    #+end_src
+   This will bring in all the necessary dependencies, then copy over our initdb files to the docker-entrypoint-initdb.d which postgres will use upon startup.
+* Our initdb
+  The postgres image knows to look for the docker-entrypoint-initdb.d folder upon startup and run any sql and sh scripts in there in order.   We could just keep all our sql files in there, I do believe, and not have to copy over the .db file
+The below headings then will capture all that we want to do when postgres is intialized.
+** Create Extensions for pg-semver and plpython3u
+   #+begin_src sql-mode :tangle ../../postgres/initdb/01_create-extensions.sql
+     create extension plpython3u;
+     create extension semver;
+   #+end_src
+
+   if this works, then I should be able to connect and see these two extensions
+   #+begin_src sql-mode
+   \dx
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                            List of installed extensions
+       Name    | Version |   Schema   |                Description
+   ------------+---------+------------+-------------------------------------------
+    plpgsql    | 1.0     | pg_catalog | PL/pgSQL procedural language
+    plpython3u | 1.0     | pg_catalog | PL/Python3U untrusted procedural language
+    semver     | 0.30.0  | public     | Semantic version data type
+   (3 rows)
+
+   #+end_SRC
+
+   there they are!  beauty.
+
+** Create our Tables
+   To make this easier to maintain in the future.  I am going to create a tables_functions_views.org file in our postgres dir and tangle all our needed files from there.
+
+   When It works, I should be able to see the details for open_api, audit_event, and test
+*** open_api
+   #+begin_src sql-mode
+  \dt+
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                                        List of relations
+    Schema |   Name   | Type  |  Owner   |    Size    |                              Description
+   --------+----------+-------+----------+------------+-----------------------------------------------------------------------
+    public | open_api | table | postgres | 8192 bytes | Details on k8s endpoints taken from the openapi spec for that release
+   (1 row)
+
+   #+end_SRC
+
+   #+begin_src sql-mode
+\d+ open_api
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                                                                  Table "public.open_api"
+       Column    |            Type             | Collation | Nullable | Default | Storage  | Stats target |                                 Description
+   --------------+-----------------------------+-----------+----------+---------+----------+--------------+-----------------------------------------------------------------------------
+    release      | text                        |           | not null |         | extended |              | kubernetes release this spec is taken from
+    release_date | timestamp without time zone |           |          |         | plain    |              | canonical release dat for this k8s release
+    endpoint     | text                        |           | not null |         | extended |              | a kubernetes endpoint, the operation_id in the spec
+    level        | text                        |           |          |         | extended |              | level of endpoint: alpha, beta, or stable
+    category     | text                        |           |          |         | extended |              | endpoint category, roughly its group, taken from the first tag in the spec.
+    path         | text                        |           |          |         | extended |              | the http path of the endpoint
+    k8s_group    | text                        |           |          |         | extended |              | k8s group for endpoint
+    k8s_version  | text                        |           |          |         | extended |              | k8s version for endpoint
+    k8s_kind     | text                        |           |          |         | extended |              | k8s kind  for endpoint
+    k8s_action   | text                        |           |          |         | extended |              | endpoint action, roughly related to an http method
+    deprecated   | boolean                     |           |          |         | plain    |              | is endpoint marked as deprecated?
+    description  | text                        |           |          |         | extended |              | description of endpoint
+    spec         | text                        |           |          |         | extended |              | the url location for this open api spec. will be from github.
+   Indexes:
+       "open_api_pkey" PRIMARY KEY, btree (release, endpoint)
+   Access method: heap
+
+   #+end_SRC
+
+*** audit_event
+** Create our Functions
+** Create our views
+** Load our data
+** Materialize the stable view
