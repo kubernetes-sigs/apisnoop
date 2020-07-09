@@ -6,5 +6,5 @@
                            '((:results . "replace code")
                              (:product . "postgres")
                              (:noweb . "yes")
-                             (:comments . "off")
+                             (:comments . "no")
                              (:wrap . "SRC example"))))))))
