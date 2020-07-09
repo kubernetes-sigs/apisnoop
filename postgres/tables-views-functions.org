@@ -308,4 +308,144 @@
     #+begin_src sql-mode
       comment on function load_audit_events is 'loads all audit events from given bucket, job.  if neither given, loads latest successful job from sig-release blocking. if just bucket given, loads latest successful job for that bucket.';
     #+end_src
+** load_tests
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/07_fn_load_tests.sql
+   :END:
+   #+NAME: load_tests definition
+   #+begin_src sql-mode
+     CREATE OR REPLACE FUNCTION load_tests()
+     RETURNS text AS $$
+     from string import Template
+     import json
+     import yaml
+     from urllib.request import urlopen, urlretrieve
+
+     TESTS_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/test/conformance/testdata/conformance.yaml"
+     tests = json.dumps(yaml.safe_load(urlopen(TESTS_URL)))
+     sql = Template("""
+                   WITH jsonb_array AS (
+                   SELECT jsonb_array_elements('${tests}'::jsonb) as test_data)
+                   INSERT INTO test(testname, codename, release, description, file)
+                      SELECT
+                      (test_data->>'testname') as testname,
+                      (test_data->>'codename') as codename,
+                      CASE
+                        WHEN ((test_data->>'release') = '') THEN '1.9.0'
+                        WHEN ((test_data->>'release') like '%,%')
+                          THEN trim(leading 'v' from split_part((test_data->>'release'), ', ', 2))||'.0'
+                        ELSE trim(leading 'v' from (test_data->>'release')) ||'.0'
+                      END as release,
+                      (test_data->>'description') as description,
+                      (test_data->>'file') as file
+                      from jsonb_array;
+                   """).substitute(tests = tests.replace("'","''"))
+     try:
+         plpy.execute(sql)
+         return 'conformance.yaml loaded into test!'
+     except Exception as e:
+         return 'error occured: ', e
+     $$ LANGUAGE plpython3u;
+   #+end_src
+
+   #+NAME: load_tests comment
+   #+begin_src sql-mode
+
+     comment on function load_tests is 'loads latest conformance.yaml into test table';
+   #+end_src
 * Views
+** Release Coverage
+   #+begin_src sql-mode
+     begin;
+       \t
+       \a
+       \o ../resources/coverage/1.19.0.json
+       select row_to_json(c) from (
+         select release, open_api.release_date, spec,
+            (select source from (select source from audit_event where release = '1.19.0' limit 1) s) as source,
+                (
+                  select array_to_json(array_agg(row_to_json(e)))
+                    from (
+                      select endpoint, level, category, path, description,
+                             k8s_kind as kind,
+                             k8s_version as version,
+                             k8s_group as group,
+                             k8s_action as action,
+                             (count(test_hit) filter(where test_hit is true)>0) as tested,
+                             (count(conf_test_hit) filter(where conf_test_hit is true)>0) as conf_tested,
+                             array_agg(distinct test) as tests
+                        from open_api
+                               left join audit_event using(endpoint, release)
+                       where release = '1.19.0'
+                         and deprecated is false
+                         group by endpoint, level, category, path, description, kind,
+                                  version, k8s_group, k8s_action
+                       order by level desc, endpoint
+                    ) e
+                ) as endpoints,
+                (
+                  select array_to_json(array_agg(row_to_json(t)))
+                    from (
+                      select test, testname, file,
+                             test.release,
+                             (testname is not null) as conformance_test
+                        from      audit_event
+                        left join test on(test = codename)
+                        where test is not null
+                       group by test, testname, file, test.release
+                    ) t
+                  ) as tests
+           from open_api
+          where release = '1.19.0'
+            group by release, open_api.release_date, spec
+       ) c;
+       \o
+       \a
+       \t
+       commit;
+   #+end_src
+
+* Select Scripts
+  These aren't static relations in the db, but scripts we run as part of the db's initialization
+** Load all our open_api
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/08_load_all_open_api.sql
+   :END:
+   #+NAME: Load all open api
+   #+begin_src sql-mode
+     begin;
+     with releases as (
+       select column1 as release
+         from (values
+         ('v1.8.0'),
+         ('v1.9.0'),
+         ('v1.10.0'),
+         ('v1.11.0'),
+         ('v1.12.0'),
+         ('v1.13.0'),
+         ('v1.14.0')
+         ) as rlist
+     )
+     select f.*
+       from
+       releases r
+       , lateral load_open_api(r.release) f(loading_results);
+     select * from load_open_api() f(loading_results);
+     commit;
+
+   #+end_src
+
+
+** Load tests
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/09_load_all_open_api.sql
+   :END:
+   #+NAME: load tests
+   #+begin_src sql-mode
+     begin;
+     select * from load_tests();
+     commit;
+   #+end_src
+
+** Load latest audit_events
+** Load latest tests
