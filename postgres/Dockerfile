@@ -21,6 +21,11 @@ FROM postgres:12.0
    software-properties-common \
    apt-transport-https
 
+ RUN env PG_CONFIG=$(which pg_config) \
+     && git clone https://github.com/theory/pg-semver.git \
+     && cd pg-semver \
+     && make && make install
+
  COPY ./db ./db
  COPY initdb /docker-entrypoint-initdb.d
  COPY ./snoopUtils.py /usr/local/lib/python3.7/dist-packages/snoopUtils.py
