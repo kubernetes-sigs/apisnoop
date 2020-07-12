@@ -354,35 +354,94 @@
      comment on function load_tests is 'loads latest conformance.yaml into test table';
    #+end_src
 * Views
+** Endpoint Coverage
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/11_view_endpoint_coverage.sql
+   :END:
+   #+NAME: endpoint_coverage definition
+   #+begin_src sql-mode
+     create or replace view endpoint_coverage as
+     select release, endpoint, level, category, path, description,
+            k8s_kind as kind,
+            k8s_version as version,
+            k8s_group as group,
+            k8s_action as action,
+            (count(test_hit) filter(where test_hit is true)>0) as tested,
+            (count(conf_test_hit) filter(where conf_test_hit is true)>0) as conf_tested,
+            array_agg(distinct test) as tests
+       from      open_api
+       left join audit_event using (endpoint, release)
+      where deprecated is false
+      group by release, endpoint, level, category, path, description, kind, version, k8s_group, k8s_action
+      order by level desc, endpoint;
+
+   #+end_src
+
+   #+NAME: endpoint_coverage comments
+   #+begin_src sql-mode
+     comment on view endpoint_coverage is 'All endpoints from a release and their coverage, per audit events for that release';
+
+     comment on column endpoint_coverage.release is 'Release endpoint details come from';
+     comment on column endpoint_coverage.endpoint is 'a kubernetes endpoint, the operation_id in the spec';
+     comment on column endpoint_coverage.level is 'alpha, beta, or stable';
+     comment on column endpoint_coverage.level is 'level of endpoint: alpha, beta, or stable';
+     comment on column endpoint_coverage.category is 'endpoint category, roughly its group, taken from the first tag in the spec.';
+     comment on column endpoint_coverage.path is 'the http path of the endpoint';
+     comment on column endpoint_coverage.group is 'k8s group for endpoint';
+     comment on column endpoint_coverage.version is 'k8s version for endpoint';
+     comment on column endpoint_coverage.kind  is 'k8s kind  for endpoint';
+     comment on column endpoint_coverage.action is 'endpoint action, roughly related to an http method';
+     comment on column endpoint_coverage.tested is 'was endpoint hit at least once by a test useragent in the audit logs of this release?';
+     comment on column endpoint_coverage.conf_tested is 'was endpoint hit at least once by a conformance test useragent in the audit logs of this release?';
+     comment on column endpoint_coverage.tests is 'array of codenames of all tests that hit this endpoint in audit log of this release';
+
+   #+end_src
+** Audit Event Test
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/12_view_audit_event_test.sql
+   :END:
+   #+NAME: audit_event_test definition
+   #+begin_src sql-mode :results silent
+     create or replace view audit_event_test as
+       select audit_event.release,
+              test,
+              (testname is not null) as conformance_test,
+                test.testname,
+              test.file,
+              test.release as promotion_release
+         from      audit_event
+         left join test on(test = codename)
+        where test is not null
+        group by test, testname, file, test.release, audit_event.release;
+   #+end_src
+
+   #+NAME: audit_event_test comments
+   #+begin_src sql-mode
+
+     comment on view audit_event_test is 'every test in the audit_log of a release';
+     comment on column audit_event_test.release is 'audit log relesae this test is pulled from';
+     comment on column audit_event_test.test is 'test as it appears in audit event, would be codename in conformance.yaml';
+     comment on column audit_event_test.conformance_test is 'is this a conformance test?';
+     comment on column audit_event_test.testname is 'if conformance, testname as it appears in conformance.yaml, else null.';
+     comment on column audit_event_test.file is 'if conformance, file in which test is defined, else null';
+     comment on column audit_event_test.promotion_release is 'if conformance, release in which it was promoted, else null.';
+   #+end_src
+
+   #+begin_src sql-mode
+     select 'audit_event_test defined and commented' as "build log";
+   #+end_src
+
+
 ** Release Coverage
    #+begin_src sql-mode
      begin;
        \t
        \a
-       \o ../resources/coverage/1.19.0.json
+       \o ../resources/coverage/1.19.1.json
        select row_to_json(c) from (
          select release, open_api.release_date, spec,
             (select source from (select source from audit_event where release = '1.19.0' limit 1) s) as source,
-                (
-                  select array_to_json(array_agg(row_to_json(e)))
-                    from (
-                      select endpoint, level, category, path, description,
-                             k8s_kind as kind,
-                             k8s_version as version,
-                             k8s_group as group,
-                             k8s_action as action,
-                             (count(test_hit) filter(where test_hit is true)>0) as tested,
-                             (count(conf_test_hit) filter(where conf_test_hit is true)>0) as conf_tested,
-                             array_agg(distinct test) as tests
-                        from open_api
-                               left join audit_event using(endpoint, release)
-                       where release = '1.19.0'
-                         and deprecated is false
-                         group by endpoint, level, category, path, description, kind,
-                                  version, k8s_group, k8s_action
-                       order by level desc, endpoint
-                    ) e
-                ) as endpoints,
+             (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = '1.19.0') as endpoints,
                 (
                   select array_to_json(array_agg(row_to_json(t)))
                     from (
@@ -404,6 +463,13 @@
        \t
        commit;
    #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   BEGIN
+   Tuples only is on.
+   Output format is unaligned.
+   #+end_SRC
 
 * Select Scripts
   These aren't static relations in the db, but scripts we run as part of the db's initialization
@@ -459,3 +525,35 @@
      commit;
   #+end_src
 ** Load latest tests
+
+
+* Scratch
+   #+begin_src sql-mode
+     select row_to_json(endpoint_coverage) from endpoint_coverage limit 5;
+
+
+          -- select array_to_json(array_agg(row_to_json(t)))
+          --   from (
+          --     select test, testname, file,
+          --            test.release,
+          --            (testname is not null) as conformance_test
+          --       from      audit_event
+          --                   left join test on(test = codename)
+          --      where test is not null
+          --      group by test, testname, file, test.release
+          --      limit 10
+          --   ) t;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                                                                                                                                                        row_to_json
+   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    {"release":"1.12.0","endpoint":"connectCoreV1DeleteNamespacedPodProxy","level":"stable","category":"core","path":"/api/v1/namespaces/{namespace}/pods/{name}/proxy","description":"connect DELETE requests to proxy of Pod","kind":"PodProxyOptions","version":"v1","group":"","action":"connect","tested":false,"conf_tested":false,"tests":[null]}
+    {"release":"1.13.0","endpoint":"connectCoreV1DeleteNamespacedPodProxy","level":"stable","category":"core","path":"/api/v1/namespaces/{namespace}/pods/{name}/proxy","description":"connect DELETE requests to proxy of Pod","kind":"PodProxyOptions","version":"v1","group":"","action":"connect","tested":false,"conf_tested":false,"tests":[null]}
+    {"release":"1.10.0","endpoint":"connectCoreV1DeleteNamespacedPodProxy","level":"stable","category":"core","path":"/api/v1/namespaces/{namespace}/pods/{name}/proxy","description":"connect DELETE requests to proxy of Pod","kind":"Pod","version":"v1","group":"","action":"connect","tested":false,"conf_tested":false,"tests":[null]}
+    {"release":"1.11.0","endpoint":"connectCoreV1DeleteNamespacedPodProxy","level":"stable","category":"core","path":"/api/v1/namespaces/{namespace}/pods/{name}/proxy","description":"connect DELETE requests to proxy of Pod","kind":"Pod","version":"v1","group":"","action":"connect","tested":false,"conf_tested":false,"tests":[null]}
+    {"release":"1.14.0","endpoint":"connectCoreV1DeleteNamespacedPodProxy","level":"stable","category":"core","path":"/api/v1/namespaces/{namespace}/pods/{name}/proxy","description":"connect DELETE requests to proxy of Pod","kind":"PodProxyOptions","version":"v1","group":"","action":"connect","tested":false,"conf_tested":false,"tests":[null]}
+   (5 rows)
+
+   #+end_SRC
