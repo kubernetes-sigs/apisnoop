@@ -241,7 +241,7 @@ def find_operation_id(openapi_spec, event):
           return None
         else:
           # TODO this is NOT valid, AND we didn't plan for it
-          print(url.path)
+          # print(url.path)
           return None
       next_level=variable_levels[0]
       # except Exception as e: # TODO better to not use try/except (WE DON"T HAVE ANY CURRENT DATA")
