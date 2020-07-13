@@ -22,5 +22,5 @@ npm install
 npm run dev
 ```
 
-The site will abe visitable at localhost:3000
+The site will be visitable at localhost:3000
 

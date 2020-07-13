@@ -269,6 +269,7 @@ export const conformanceProgress = derived(
   }
 );
 
+
 export const formattedProgress = derived(
   conformanceProgress,
   ($cp, set) => {
@@ -292,6 +293,7 @@ export const formattedProgress = derived(
     }
   }
 );
+
 
 export const coveragePerReleaseRaw = writable([]);
 
@@ -320,3 +322,31 @@ export const coveragePerRelease = derived(
     }
   }
 );
+
+export const conformanceProgressPercentage = derived(
+  conformanceProgressRaw,
+  ($cp, set) => {
+    if ($cp.length === 0) {
+      set([]);
+    } else {
+      let percentageSet = $cp.map((c) => {
+        return {
+          release: c.release === "1.5.0" ? "1.5.0 and Earlier" : c.release,
+          total: {
+            tested: c.total.tested,
+            untested: c.total.endpoints - c.total.tested
+          }
+        };
+      });
+      let formattedRatio = percentageSet.map(({release, total}) => {
+        return values(mapValues(total, (v,k) => ({
+          release: release,
+          type: k,
+          total: v,
+          order: k === "total tested" ? "a" : "b"
+        })));
+      });
+      set(flatten(formattedRatio));
+    }
+  }
+)
