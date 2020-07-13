@@ -353,6 +353,30 @@
 
      comment on function load_tests is 'loads latest conformance.yaml into test table';
    #+end_src
+** Generate latest coverage json
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/13_fn_generate_latest_coverage_json.sql
+   :END:
+   #+begin_src sql-mode
+     create function generate_latest_coverage_json()
+       returns json as $$
+     declare latest_release varchar;
+     begin
+     select release into latest_release from audit_event order by release::semver limit 1;
+     return(
+       select row_to_json(c) from (
+         select release, release_date, spec,
+                (select source from (select source from audit_event where release = latest_release limit 1) s) as source,
+                (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = latest_release) as endpoints,
+                (select array_agg(row_to_json(audit_event_test)) from audit_event_test where release = latest_release) as tests
+           from open_api
+          where release = latest_release
+          group by release, release_date, spec) c);
+     end;
+     $$ language plpgsql;
+   #+end_src
+
+
 * Views
 ** Endpoint Coverage
    :PROPERTIES:
@@ -432,44 +456,6 @@
    #+end_src
 
 
-** Release Coverage
-   #+begin_src sql-mode
-     begin;
-       \t
-       \a
-       \o ../resources/coverage/1.19.1.json
-       select row_to_json(c) from (
-         select release, open_api.release_date, spec,
-            (select source from (select source from audit_event where release = '1.19.0' limit 1) s) as source,
-             (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = '1.19.0') as endpoints,
-                (
-                  select array_to_json(array_agg(row_to_json(t)))
-                    from (
-                      select test, testname, file,
-                             test.release,
-                             (testname is not null) as conformance_test
-                        from      audit_event
-                        left join test on(test = codename)
-                        where test is not null
-                       group by test, testname, file, test.release
-                    ) t
-                  ) as tests
-           from open_api
-          where release = '1.19.0'
-            group by release, open_api.release_date, spec
-       ) c;
-       \o
-       \a
-       \t
-       commit;
-   #+end_src
-
-   #+RESULTS:
-   #+begin_SRC example
-   BEGIN
-   Tuples only is on.
-   Output format is unaligned.
-   #+end_SRC
 
 * Select Scripts
   These aren't static relations in the db, but scripts we run as part of the db's initialization
@@ -526,6 +512,24 @@
   #+end_src
 ** Load latest tests
 
+   #+begin_src sql-mode
+     begin;
+     select (select release from audit_event order by release limit 1) as latest_release
+     \gset
+     \set output_file '../resources/coverage/':latest_release'.json'
+     \t
+     \a
+     \o :output_file
+       select * from generate_latest_coverage_json();
+     \o
+     \a
+     \t
+     commit;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   #+end_SRC
 
 * Scratch
    #+begin_src sql-mode
