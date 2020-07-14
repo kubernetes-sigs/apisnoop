@@ -1,4 +1,4 @@
-create view conformance.progress as
+create or replace view conformance.progress as
     with endpoints_per_release as (-- this filters out endpoints that were dropped after the release
       select release, endpoint
         from      open_api
@@ -35,6 +35,7 @@ create view conformance.progress as
       ) endpoints_still_untested_today
     from      endpoints_per_release epr
     left join conformance.eligible_endpoint_coverage coverage using (endpoint)
+    where release::semver >= '1.8.0'::semver
     group by epr.release
     order by epr.release::semver;
 
