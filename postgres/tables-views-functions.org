@@ -601,6 +601,53 @@ create or replace view conformance.eligible_endpoint as
       comment on column conformance.progress.total_tested_endpoints is 'total # of eligible endopints hit by tests';
       comment on column conformance.progress.endpoints_still_untested_today is '# of new endopints from this release that are unhit as of the present day';
     #+end_src
+** coverage per release
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/17_view_conformance_coverage_per_release.sql
+   :END:
+
+  #+NAME: coverage_per_release definition
+  #+begin_src sql-mode :results silent
+create or replace view conformance.coverage_per_release as
+          with endpoints_per_release as (
+            select release, endpoint
+              from       open_api
+              inner join conformance.eligible_endpoint using(endpoint)
+          ), counts as (
+          select distinct epr.release::semver,
+                 count(*) filter (where epr.release = firsts.first_release) as new_endpoints,
+                 count(*) filter (where epr.release = firsts.first_release and first_conformance_test is not null) as tested,
+                 count(*) filter (where epr.release = firsts.first_release and first_conformance_test is null) as untested
+          from      endpoints_per_release epr
+          left join conformance.eligible_endpoint_coverage firsts on (epr.endpoint = firsts.endpoint)
+         group by epr.release
+         order by epr.release::semver
+       )
+          select release,
+                 new_endpoints as "new endpoints",
+                 tested,
+                 untested,
+                 sum(tested) over (order by release::semver) as "total tested",
+                 sum(untested) over (order by release::semver) as "total untested",
+                 sum(new_endpoints) over (order by release::semver) as "total endpoints"
+            from counts;
+    ;
+    #+end_src
+
+    #+NAME: coverage per release definition
+    #+begin_src sql-mode
+      comment on view conformance.coverage_per_release is 'Per release, # of eligible endpoints from that release that are tested today along with useful running tallies.';
+
+      comment on column conformance.coverage_per_release.release is 'the given kubernetes release';
+      comment on column conformance.coverage_per_release.tested is '# of endpoints from this release that are tested today';
+      comment on column conformance.coverage_per_release.untested is '# of endpoints from this release that are untested today.';
+      comment on column conformance.coverage_per_release."new endpoints" is '# of endpoints introduced in this release';
+      comment on column conformance.coverage_per_release."total tested" is '# of total tested endpoints from this release and earlier. will be higher than conformance.progress as it includes endpoints hit by tests introduced in a later release.';
+      comment on column conformance.coverage_per_release."total untested" is '# of total untested endpoints from this release and earlier';
+      comment on column conformance.coverage_per_release."total endpoints" is '# of total endpoints at time of release';
+
+
+    #+end_src
 * Select Scripts
   These aren't static relations in the db, but scripts we run as part of the db's initialization
 ** Load all our open_api
@@ -701,4 +748,19 @@ create or replace view conformance.eligible_endpoint as
  #+end_src
 *** output conformance progress to file
 *** output conformance coverage per release to file
+** output conformance coverage per release to json
+ #+begin_src sql-mode
+   begin;
+   \t
+   \a
+   \o '../resources/coverage/conformance-coverage-per-release.json'
+   select json_agg(cp) as output_json
+     from (
+       select * from conformance.coverage_per_release
+     )cp;
+   \o
+     \a
+   \t
+   commit;
+ #+end_src
 * Scratch
