@@ -5,6 +5,23 @@
   Define all the default tables, views, and functions for the snoop database.
   All definitions here will be tangled into our initdb.
   Every table, view, and function should be commented before tangled
+* Setup
+** Create Schemas
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/00_create_schemas.sql
+   :END:
+   #+begin_src sql-mode
+     create schema conformance;
+     comment on schema conformance is 'views and functions related specifically to conformance coverage';
+   #+end_src
+** Create Extensions
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/01_create_extensions.sql
+   :END:
+   #+begin_src sql-mode
+     create extension plpython3u;
+     create extension semver;
+   #+end_src
 * Tables
 ** open_api
    :PROPERTIES:
@@ -128,111 +145,112 @@
    :END:
     #+NAME: load_open_api definition
     #+begin_src sql-mode
-      CREATE OR REPLACE FUNCTION load_open_api (
-        custom_release text default null
-        )
-      RETURNS text AS $$
-      from string import Template
-      import json
-      import time
-      import datetime
-      from urllib.request import urlopen, urlretrieve
-      from snoopUtils import determine_bucket_job, fetch_swagger
-      K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
-      OPEN_API_PATH = "/api/openapi-spec/swagger.json"
+          CREATE OR REPLACE FUNCTION load_open_api (
+            custom_release text default null
+            )
+          RETURNS text AS $$
+          from string import Template
+          import json
+          import time
+          import datetime
+          from urllib.request import urlopen, urlretrieve
+          from snoopUtils import determine_bucket_job, fetch_swagger
+          K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
+          OPEN_API_PATH = "/api/openapi-spec/swagger.json"
 
-      release_dates = {
-        "v1.0.0": "2015-07-10",
-        "v1.1.0": "2015-11-09",
-        "v1.2.0": "2016-03-16",
-        "v1.3.0": "2016-07-01",
-        "v1.4.0": "2016-09-26",
-        "v1.5.0": "2016-12-12",
-        "v1.6.0": "2017-03-28",
-        "v1.7.0": "2017-06-30",
-        "v1.8.0": "2017-08-28",
-        "v1.9.0": "2017-12-15",
-        "v1.10.0": "2018-03-26",
-        "v1.11.0":  "2018-06-27",
-        "v1.12.0": "2018-09-27",
-        "v1.13.0": "2018-12-03" ,
-        "v1.14.0": "2019-03-25",
-        "v1.15.0": "2019-06-19",
-        "v1.16.0": "2019-09-18",
-        "v1.17.0": "2019-12-07",
-        "v1.18.0": "2020-03-25"
-      }
-      if custom_release is not None:
-        release = custom_release
-        open_api_url = K8S_REPO_URL + release + OPEN_API_PATH
-        open_api = json.loads(urlopen(open_api_url).read().decode('utf-8')) # may change this to ascii
-        rd = release_dates[release]
-        release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
-      else:
-        bucket, job = determine_bucket_job()
-        swagger, metadata, commit_hash = fetch_swagger(bucket, job)
-        open_api = swagger
-        open_api_url = K8S_REPO_URL + commit_hash + OPEN_API_PATH
-        release_date = int(metadata['timestamp'])
-        release = metadata["version"].split('-')[0].replace('v','')
+          release_dates = {
+            "v1.0.0": "2015-07-10",
+            "v1.1.0": "2015-11-09",
+            "v1.2.0": "2016-03-16",
+            "v1.3.0": "2016-07-01",
+            "v1.4.0": "2016-09-26",
+            "v1.5.0": "2016-12-12",
+            "v1.6.0": "2017-03-28",
+            "v1.7.0": "2017-06-30",
+            "v1.8.0": "2017-08-28",
+            "v1.9.0": "2017-12-15",
+            "v1.10.0": "2018-03-26",
+            "v1.11.0":  "2018-06-27",
+            "v1.12.0": "2018-09-27",
+            "v1.13.0": "2018-12-03" ,
+            "v1.14.0": "2019-03-25",
+            "v1.15.0": "2019-06-19",
+            "v1.16.0": "2019-09-18",
+            "v1.17.0": "2019-12-07",
+            "v1.18.0": "2020-03-25"
+          }
+          if custom_release is not None:
+            release = custom_release
+            open_api_url = K8S_REPO_URL + release + OPEN_API_PATH
+            open_api = json.loads(urlopen(open_api_url).read().decode('utf-8')) # this should work for all releases
+            rd = release_dates[release]
+            release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
+          else:
+            bucket, job = determine_bucket_job()
+            swagger, metadata, commit_hash = fetch_swagger(bucket, job)
+            open_api = swagger
+            open_api_url = K8S_REPO_URL + commit_hash + OPEN_API_PATH
+            release_date = int(metadata['timestamp'])
+            release = metadata["version"].split('-')[0].replace('v','')
 
-      sql = Template("""
-         WITH open AS (
-           SELECT '${open_api}'::jsonb as api_data)
-             INSERT INTO open_api(
-               release,
-               release_date,
-               endpoint,
-               level,
-               category,
-               path,
-               k8s_group,
-               k8s_version,
-               k8s_kind,
-               k8s_action,
-               deprecated,
-               description,
-               spec
-             )
-         SELECT
-           trim(leading 'v' from '${release}') as release,
-           to_timestamp(${release_date}) as release_date,
-           (d.value ->> 'operationId'::text) as endpoint,
-           CASE
-             WHEN paths.key ~~ '%alpha%' THEN 'alpha'
-             WHEN paths.key ~~ '%beta%' THEN 'beta'
-             ELSE 'stable'
-           END AS level,
-           split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
-           paths.key AS path,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-           (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
-           CASE
-             WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
-             ELSE false
-           END AS deprecated,
-           (d.value ->> 'description'::text) AS description,
-           '${open_api_url}' as spec
-           FROM
-               open
-                , jsonb_each((open.api_data -> 'paths'::text)) paths(key, value)
-                , jsonb_each(paths.value) d(key, value)
-                , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
-          ORDER BY paths.key;
-                    """).substitute(release = release,
-                                    release_date = release_date,
-                                    open_api = json.dumps(open_api).replace("'","''"),
-                                    open_api_url = open_api_url)
-      try:
-        plpy.execute((sql))
-        return "{} open api is loaded".format(custom_release if custom_release else "current")
-      except:
-        return "an error occurred"
-      $$ LANGUAGE plpython3u ;
-      reset role;
+          sql = Template("""
+             WITH open AS (
+               SELECT '${open_api}'::jsonb as api_data)
+                 INSERT INTO open_api(
+                   release,
+                   release_date,
+                   endpoint,
+                   level,
+                   category,
+                   path,
+                   k8s_group,
+                   k8s_version,
+                   k8s_kind,
+                   k8s_action,
+                   deprecated,
+                   description,
+                   spec
+                 )
+             SELECT
+               trim(leading 'v' from '${release}') as release,
+               to_timestamp(${release_date}) as release_date,
+               (d.value ->> 'operationId'::text) as endpoint,
+               CASE
+                 WHEN paths.key ~~ '%alpha%' THEN 'alpha'
+                 WHEN paths.key ~~ '%beta%' THEN 'beta'
+                 ELSE 'stable'
+               END AS level,
+               split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+               paths.key AS path,
+               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+               ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+               (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+               CASE
+                 WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
+                 ELSE false
+               END AS deprecated,
+               (d.value ->> 'description'::text) AS description,
+               '${open_api_url}' as spec
+               FROM
+                   open
+                    , jsonb_each((open.api_data -> 'paths'::text)) paths(key, value)
+                    , jsonb_each(paths.value) d(key, value)
+                    , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+              ORDER BY paths.key;
+                        """).substitute(release = release,
+                                        release_date = release_date,
+                                        open_api = json.dumps(open_api).replace("'","''"),
+                                        open_api_url = open_api_url)
+          try:
+            plpy.execute((sql))
+            return "{} open api is loaded".format(custom_release if custom_release else "current")
+          except:
+            return "an error occurred"
+          $$ LANGUAGE plpython3u ;
+          reset role;
     #+end_src
+
 
     #+NAME: load_open_api comments
     #+begin_src sql-mode
@@ -375,8 +393,6 @@
      end;
      $$ language plpgsql;
    #+end_src
-
-
 * Views
 ** Endpoint Coverage
    :PROPERTIES:
@@ -455,8 +471,145 @@
      select 'audit_event_test defined and commented' as "build log";
    #+end_src
 
+* Conformance Views
+** eligible endpoints
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/14_view_conformance_eligible_endpoint.sql
+   :END:
+   #+begin_src sql-mode
+create or replace view conformance.eligible_endpoint as
+     select endpoint
+       from open_api
+              join (
+                select release
+                  from open_api
+                 order by release::semver desc
+                 limit 1) latest using(release)
+      where level = 'stable'
+     except
+     select endpoint
+       from open_api
+      where path ~~ any('{"%volume%", "%storage%"}')
+         or deprecated is true
+         or k8s_kind = 'ComponentStatus'
+         or (k8s_kind = 'Node' and k8s_action = any('{"delete", "post"}'));
+    #+end_src
+
+    #+begin_src sql-mode
+      comment on view conformance.eligible_endpoint is 'all current stable endpoints for which conformant tests could be written, following conformance guidelines';
+
+      comment on column conformance.eligible_endpoint.endpoint is 'the endpoint, as its defined in the open_api table';
+    #+end_src
 
 
+** eligible endpoint coverage
+   #+begin_src sql-mode
+          create materialized view conformance.eligible_endpoint_coverage as
+            select
+            oa.endpoint,
+            (array_agg(test.release order by test.release::semver))[1] as first_conformance_test,
+            (array_agg(test.testname order by test.release::semver))[1] as test,
+            (array_agg(test.codename order by test.release::semver))[1] as codename,
+            (array_agg(test.file order by test.release::semver))[1] as file,
+            (array_agg(oa.release order by oa.release::semver))[1] as first_release,
+            array_remove((array_agg(distinct test.release::semver order by test.release::semver)), null) as all_test_releases
+            from
+                      open_api oa
+           inner join conformance.eligible_endpoints using(endpoint)
+            left join audit_event ae using(endpoint)
+            left join test on (ae.test = test.codename)
+     group by endpoint;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   SELECT 427
+   #+end_SRC
+
+   #+begin_src sql-mode
+     select first_release from conformance.eligible_endpoint_coverage group by first_release;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+    first_release
+   ---------------
+    1.14.0
+    1.8.0
+    1.11.0
+    1.12.0
+    1.9.0
+    1.10.0
+    1.19.0
+   (7 rows)
+
+   #+end_SRC
+
+** conformance progress
+
+  #+NAME: conformance progress
+  #+begin_src sql-mode
+      with endpoints_per_release as (-- this filters out endpoints that were dropped after the release
+        select release, endpoint
+          from      open_api
+         inner join conformance.eligible_endpoints using(endpoint)
+      )
+      select distinct
+        epr.release::semver,
+        count(*) filter (where epr.release = coverage.first_release) as new_endpoints,
+        (select count(*) from test where test.release = epr.release) as new_tests,
+        count(*) filter (
+          where epr.release = coverage.first_release
+          and coverage.all_test_releases @> array[epr.release::semver]
+        ) as new_endpoints_promoted_with_tests,
+        count(*) filter (
+          where epr.release = coverage.first_release
+          and coverage.first_conformance_test = coverage.first_release
+        ) as new_endpoints_covered_by_new_tests,
+        count(*) filter (
+        where coverage.first_release = epr.release
+        and coverage.first_conformance_test::semver < epr.release::semver
+        ) new_endpoints_covered_by_old_tests,
+        count(*) filter (
+          where coverage.first_release::semver < epr.release::semver
+            and coverage.first_conformance_test = epr.release
+        ) old_endpoints_covered_by_new_tests,
+        count(*) as total_endpoints,
+        count(*) filter (
+          where coverage.first_release::semver <= epr.release::semver
+          and coverage.first_conformance_test::semver <= epr.release::semver
+        ) as total_tested_endpoints,
+        count(*) filter (
+          where coverage.first_release = epr.release
+          AND coverage.first_conformance_test is null
+        ) endpoints_still_untested_today
+      from      endpoints_per_release epr
+      left join conformance.eligible_endpoint_coverage coverage using (endpoint)
+      group by epr.release
+      order by epr.release::semver;
+    #+end_src
+
+#+begin_src sql-mode
+  begin;
+  \t
+  \a
+  \o ../resources/coverage/conformance-progress.json
+    select json_agg(json_build_object(
+    'release', release,
+    'total', json_build_object(
+      'endpoints', total_endpoints,
+      'tested', total_tested_endpoints,
+      'new', new_endpoints,
+      'new_with_tests', new_endpoints_promoted_with_tests,
+      'new_tested', new_endpoints_covered_by_new_tests + new_endpoints_covered_by_old_tests,
+      'still_untested', endpoints_still_untested_today
+    )
+   ))from stable_conformance_progress;
+  \o
+  \a
+  \t
+  commit;
+#+end_src
 * Select Scripts
   These aren't static relations in the db, but scripts we run as part of the db's initialization
 ** Load all our open_api
@@ -475,7 +628,11 @@
          ('v1.11.0'),
          ('v1.12.0'),
          ('v1.13.0'),
-         ('v1.14.0')
+         ('v1.14.0'),
+         ('v1.15.0'),
+         ('v1.16.0'),
+         ('v1.17.0'),
+         ('v1.18.0')
          ) as rlist
      )
      select f.*
@@ -487,10 +644,9 @@
 
    #+end_src
 
-
 ** Load tests
    :PROPERTIES:
-   :header-args: :tangle ./initdb/09_load_all_open_api.sql
+   :header-args: :tangle ./initdb/09_load_all_tests.sql
    :END:
    #+NAME: load tests
    #+begin_src sql-mode
@@ -511,7 +667,7 @@
      commit;
   #+end_src
 ** Load latest tests
-
+** output latest coverage to file
    #+begin_src sql-mode
      begin;
      select (select release from audit_event order by release limit 1) as latest_release
@@ -527,37 +683,102 @@
      commit;
    #+end_src
 
-   #+RESULTS:
-   #+begin_SRC example
-   #+end_SRC
-
+** output conformance progress to file
+** output conformance coverage per release to file
 * Scratch
+
    #+begin_src sql-mode
-     select row_to_json(endpoint_coverage) from endpoint_coverage limit 5;
+     with releases as (
+       select column1 as release
+         from (values
+         ('v1.16.0'),
+         ('v1.17.0'),
+         ('v1.18.0')
+         ) as rlist
+     )
+     select f.*
+       from
+       releases r
+       , lateral load_open_api(r.release) f(loading_results);
+     select * from load_open_api() f(loading_results);
 
-
-          -- select array_to_json(array_agg(row_to_json(t)))
-          --   from (
-          --     select test, testname, file,
-          --            test.release,
-          --            (testname is not null) as conformance_test
-          --       from      audit_event
-          --                   left join test on(test = codename)
-          --      where test is not null
-          --      group by test, testname, file, test.release
-          --      limit 10
-          --   ) t;
    #+end_src
 
    #+RESULTS:
    #+begin_SRC example
-                                                                                                                                                                        row_to_json
-   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    {"release":"1.12.0","endpoint":"connectCoreV1DeleteNamespacedPodProxy","level":"stable","category":"core","path":"/api/v1/namespaces/{namespace}/pods/{name}/proxy","description":"connect DELETE requests to proxy of Pod","kind":"PodProxyOptions","version":"v1","group":"","action":"connect","tested":false,"conf_tested":false,"tests":[null]}
-    {"release":"1.13.0","endpoint":"connectCoreV1DeleteNamespacedPodProxy","level":"stable","category":"core","path":"/api/v1/namespaces/{namespace}/pods/{name}/proxy","description":"connect DELETE requests to proxy of Pod","kind":"PodProxyOptions","version":"v1","group":"","action":"connect","tested":false,"conf_tested":false,"tests":[null]}
-    {"release":"1.10.0","endpoint":"connectCoreV1DeleteNamespacedPodProxy","level":"stable","category":"core","path":"/api/v1/namespaces/{namespace}/pods/{name}/proxy","description":"connect DELETE requests to proxy of Pod","kind":"Pod","version":"v1","group":"","action":"connect","tested":false,"conf_tested":false,"tests":[null]}
-    {"release":"1.11.0","endpoint":"connectCoreV1DeleteNamespacedPodProxy","level":"stable","category":"core","path":"/api/v1/namespaces/{namespace}/pods/{name}/proxy","description":"connect DELETE requests to proxy of Pod","kind":"Pod","version":"v1","group":"","action":"connect","tested":false,"conf_tested":false,"tests":[null]}
-    {"release":"1.14.0","endpoint":"connectCoreV1DeleteNamespacedPodProxy","level":"stable","category":"core","path":"/api/v1/namespaces/{namespace}/pods/{name}/proxy","description":"connect DELETE requests to proxy of Pod","kind":"PodProxyOptions","version":"v1","group":"","action":"connect","tested":false,"conf_tested":false,"tests":[null]}
-   (5 rows)
+   ERROR:  urllib.error.HTTPError: HTTP Error 500: Internal Server Error
+   CONTEXT:  Traceback (most recent call last):
+     PL/Python function "load_open_api", line 35, in <module>
+       open_api = json.loads(urlopen(open_api_url).read().decode('utf-8')) # may change this to ascii
+     PL/Python function "load_open_api", line 221, in urlopen
+     PL/Python function "load_open_api", line 530, in open
+     PL/Python function "load_open_api", line 640, in http_response
+     PL/Python function "load_open_api", line 568, in error
+     PL/Python function "load_open_api", line 502, in _call_chain
+     PL/Python function "load_open_api", line 648, in http_error_default
+   PL/Python function "load_open_api"
+   #+end_SRC
+
+   #+begin_src sql-mode
+select * from load_open_api('v1.6.0');
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+          load_open_api
+   ---------------------------
+    v1.6.0 open api is loaded
+   (1 row)
+
+   #+end_SRC
+
+
+   #+begin_src sql-mode
+select release from open_api group by release order by release::semver;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+    release
+   ---------
+    1.5.0
+    1.6.0
+    1.7.0
+    1.8.0
+    1.9.0
+    1.10.0
+    1.11.0
+    1.12.0
+    1.13.0
+    1.14.0
+    1.15.0
+    1.16.0
+    1.17.0
+    1.18.0
+    1.19.0
+    1.20.0
+   (16 rows)
+
+   #+end_SRC
+
+   #+begin_src sql-mode
+refresh materialized view conformance.eligible_endpoint_coverage;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   REFRESH MATERIALIZED VIEW
+   #+end_SRC
+
+   #+begin_src sql-mode
+select count(*) from conformance.eligible_endpoint_coverage where first_conformance_test::semver <= '1.18.0'::semver and first_release::semver <= '1.18.0'::semver;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+    count
+   -------
+      150
+   (1 row)
 
    #+end_SRC
