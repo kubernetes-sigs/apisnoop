@@ -98,8 +98,8 @@ sql = Template("""
 try:
   plpy.execute((sql))
   return "{} open api is loaded".format(custom_release if custom_release else "current")
-except:
-  return "an error occurred"
+except Exception as e:
+  return "an error occurred: " + e
 $$ LANGUAGE plpython3u ;
 reset role;
 
