@@ -7,7 +7,9 @@ import json
 import time
 import datetime
 from urllib.request import urlopen, urlretrieve
+import urllib
 from snoopUtils import determine_bucket_job, fetch_swagger
+
 K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
 OPEN_API_PATH = "/api/openapi-spec/swagger.json"
 
@@ -32,19 +34,37 @@ release_dates = {
   "v1.17.0": "2019-12-07",
   "v1.18.0": "2020-03-25"
 }
+
+# Get info about latest release from our latest test run.
+bucket, job = determine_bucket_job()
+swagger, metadata, commit_hash = fetch_swagger(bucket, job)
+open_api = swagger
+open_api_url = K8S_REPO_URL + commit_hash + OPEN_API_PATH
+release_date = int(metadata['timestamp'])
+release = metadata["version"].split('-')[0].replace('v','')
+
+# Set values for sql template  based on if custom_release argument was passed
 if custom_release is not None:
-  release = custom_release
-  open_api_url = K8S_REPO_URL + release + OPEN_API_PATH
-  open_api = json.loads(urlopen(open_api_url).read().decode('utf-8'))
-  rd = release_dates[release]
-  release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
-else:
-  bucket, job = determine_bucket_job()
-  swagger, metadata, commit_hash = fetch_swagger(bucket, job)
-  open_api = swagger
-  open_api_url = K8S_REPO_URL + commit_hash + OPEN_API_PATH
-  release_date = int(metadata['timestamp'])
-  release = metadata["version"].split('-')[0].replace('v','')
+  rel_open_api_url = K8S_REPO_URL + custom_release + OPEN_API_PATH
+# check to see if we can load this custom_release url
+  try:
+    open_api = json.loads(urlopen(rel_open_api_url).read().decode('utf-8'))
+    release = custom_release
+    rd = release_dates[release]
+    release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
+# If we cannot, we are likely on cusp between releases
+  except urllib.error.HTTPError as e:
+    if e.code == 404:
+# check to see if custom_release is one less than the current release...signifying this cusp
+# if so, we keep everything the same, but set the release to whatever is custom release
+      rel_minor = int(release.split(".")[1])
+      custom_minor = int(custom_release.split(".")[1])
+      if rel_minor == custom_minor + 1:
+          release = custom_release
+      else:
+          raise ValueError("this release cannot be found or used")
+    else:
+      raise ValueError('http error with', e)
 
 sql = Template("""
    WITH open AS (
