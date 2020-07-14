@@ -1,5 +1,5 @@
 #+TITLE: Tables, Views, Functions
-#+PROPERTY: header-args:sql-mode :product postgres :noweb yes :comments no
+#+PROPERTY: header-args:sql-mode :product postgres :noweb yes :comments no :results silent
 
 * Purpose
   Define all the default tables, views, and functions for the snoop database.
@@ -182,7 +182,7 @@
           if custom_release is not None:
             release = custom_release
             open_api_url = K8S_REPO_URL + release + OPEN_API_PATH
-            open_api = json.loads(urlopen(open_api_url).read().decode('utf-8')) # this should work for all releases
+            open_api = json.loads(urlopen(open_api_url).read().decode('utf-8'))
             rd = release_dates[release]
             release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
           else:
@@ -472,7 +472,7 @@
    #+end_src
 
 * Conformance Views
-** eligible endpoints
+** eligible endpoint
    :PROPERTIES:
    :header-args: :tangle ./initdb/14_view_conformance_eligible_endpoint.sql
    :END:
@@ -501,9 +501,12 @@ create or replace view conformance.eligible_endpoint as
       comment on column conformance.eligible_endpoint.endpoint is 'the endpoint, as its defined in the open_api table';
     #+end_src
 
-
 ** eligible endpoint coverage
-   #+begin_src sql-mode
+   :PROPERTIES:
+   :header-args: :tangle ./initdb/15_view_conformance_eligible_endpoint_coverage.sql
+   :END:
+   #+NAME: eligible endpoint coverage definition
+   #+begin_src sql-mode :results silent
           create materialized view conformance.eligible_endpoint_coverage as
             select
             oa.endpoint,
@@ -515,36 +518,28 @@ create or replace view conformance.eligible_endpoint as
             array_remove((array_agg(distinct test.release::semver order by test.release::semver)), null) as all_test_releases
             from
                       open_api oa
-           inner join conformance.eligible_endpoints using(endpoint)
+           inner join conformance.eligible_endpoint using(endpoint)
             left join audit_event ae using(endpoint)
             left join test on (ae.test = test.codename)
      group by endpoint;
    #+end_src
 
-   #+RESULTS:
-   #+begin_SRC example
-   SELECT 427
-   #+end_SRC
-
+   #+NAME: eligible endopint coverage comments
    #+begin_src sql-mode
-     select first_release from conformance.eligible_endpoint_coverage group by first_release;
+     comment on materialized view conformance.eligible_endpoint_coverage is 'conformance-eligible endpoints-- when they were first released and conformance tested';
+
+     comment on column conformance.eligible_endpoint_coverage.endpoint is 'endpoint as defined in table open_api';
+     comment on column conformance.eligible_endpoint_coverage.first_conformance_test is 'release of earliest conformance test that hits endpoint. May be earlier than release of endpoint.';
+     comment on column conformance.eligible_endpoint_coverage.test is 'Name of first test that hits endopint, as given in conformance.yaml';
+     comment on column conformance.eligible_endpoint_coverage.codename is 'first test as it appears in useragent of auditlog';
+     comment on column conformance.eligible_endpoint_coverage.file is 'file where this first test is defined';
+     comment on column conformance.eligible_endpoint_coverage.first_release is 'release in which this endpoint first appears in the open_api spec as a stable,eligible endpoint.';
+     comment on column conformance.eligible_endpoint_coverage.all_test_releases is 'set of releases for tests that hit this endpoint';
    #+end_src
 
-   #+RESULTS:
-   #+begin_SRC example
-    first_release
-   ---------------
-    1.14.0
-    1.8.0
-    1.11.0
-    1.12.0
-    1.9.0
-    1.10.0
-    1.19.0
-   (7 rows)
-
-   #+end_SRC
-
+   #+begin_src sql-mode
+\dmv+ conformance.eligible_endpoint_coverage;
+   #+end_src
 ** conformance progress
 
   #+NAME: conformance progress
