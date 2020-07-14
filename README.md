@@ -7,7 +7,9 @@ You can also run the whole thing as a docker container, to set up your own ad-ho
 
 # Getting Started
 Clone down and enter the directory
-```
+
+```shell
+git clone https://github.com/apisnoop/snoopDB.git && cd snoopDB
 ```
 
 You can then build the database with docker.
