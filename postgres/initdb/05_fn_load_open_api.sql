@@ -35,7 +35,7 @@ release_dates = {
 if custom_release is not None:
   release = custom_release
   open_api_url = K8S_REPO_URL + release + OPEN_API_PATH
-  open_api = json.loads(urlopen(open_api_url).read().decode('utf-8')) # may change this to ascii
+  open_api = json.loads(urlopen(open_api_url).read().decode('utf-8'))
   rd = release_dates[release]
   release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
 else:
