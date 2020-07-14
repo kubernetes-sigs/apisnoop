@@ -2,6 +2,9 @@ begin;
 with releases as (
   select column1 as release
     from (values
+    ('v1.5.0'),
+    ('v1.6.0'),
+    ('v1.7.0'),
     ('v1.8.0'),
     ('v1.9.0'),
     ('v1.10.0'),
