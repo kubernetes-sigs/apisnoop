@@ -19,51 +19,61 @@ Our goal is to not make radical changes to process or approach, but iterate on o
     -   verify-conformance-tests
 -   Test PRs in fork of [k8s-conformance](https://github.com/cncf-infra/k8s-conformance/pulls)
 
-### ****14 + 18 Tested Endpoints released to Stable****
+### ****Increase in coverage for 1.19 over 1.18 Stable****
 
--   Total of 32 Endpoints promoted from beta
--   With conformance test,by the community
--   [#91685](https://github.com/kubernetes/kubernetes/pull/91685) CertificateSigningRequestV1 API
--   [#91996](https://github.com/kubernetes/kubernetes/pull/91996) Ingress:CRUD API tests for v1 to conformance
-    -   ****note links to [APISnoop.cncf.io](https://apisnoop.cncf.io)****
-    -   Shouts out to ****[@liggitt](https://github.com/liggitt)****
+-   Total of 33 Endpoints promoted from beta
+-   32 Endpoints promoted with test
+-   15 / 9 Endpoint hit by ii
 
-### ****5.69% increase in coverage since April News****
+### ****7% increase in coverage since 1.18****
 
--   All because Beta endpoints to GA
-    -   included all conformance tests!
--   Current coverage: 41.39% = 197/476
--   Previous coverage 35.70% = 146/409
+-   Current 1.19 coverage: 45.88% = 195/425
+-   1.18 coverage 38.86% = 150/386
 
 ### ****Watch Tooling Refactoring****
 
--   Consensus was to [merge ](https://github.com/kubernetes/kubernetes/pull/91416#issuecomment-645064347)and iterate
--   [Issue #90957](https://github.com/kubernetes/kubernetes/issues/90957) will continue discussion
--   [PR #92621](https://github.com/kubernetes/kubernetes/pull/92621/) Simplify ConfigMap lifecycle e2e test by @spiffxp Under review as an alternative to Watch Tooling
+-   [PR #92621](https://github.com/kubernetes/kubernetes/pull/92621/) Simplify ConfigMap lifecycle e2e test by @spiffxp
+-   In Conformance Office Hours Meeting of 14 July it was agreed to follow the approach proposed by Aaron. The results will be evaluated as we go forward
 
 ### ****+29 Endpoints Backlogged by Tooling Request****
 
--   [Watch Tooling](https://github.com/kubernetes/kubernetes/issues/90957) Summary
-    -   Initial Tooling Approach Merged! [#91416](https://github.com/kubernetes/kubernetes/pull/91416#issuecomment-645064347)
-    -   Existing Test PRs: +23
-        -   Promotion #90941 & #90939 (+6)
-        -   In progress #90942, #90988# #92589 (+17)
-    -   Triage 1 Issues: +6
+-   Existing Test PRs: +21
+    -   Promotion #90939 (+4)
+    -   In progress #90942,#90988,#92589 (+17)
+-   Triage 1 Issues: +8
 
 ### ****Conformance coverage progress****
 
 -   @liggitt merged 2 Conformance Test +32 Endpoints
--   ii merged 2 Conformance Tests +8 Endpoints
--   ii has 5 test open (4 PR's + 1 Issues) +29 Endpoints
-    -   dependant on Tooling Watch tooling (Potential + 6.83%)
--   ii has 5 test indipendant of Watch tooling +20 Endpoints
+-   ii merged 3 Conformance Tests +9 Endpoints
+-   5 Promotions +9 Endpoints
+    -   1 of 4 Endpoints for Watch Tooling
+-   5 Test +34 Endpoints
+    -   3 of 17 Endpoints for Watch Tooling
+-   2 Issues of 8 Endpoints in Backlog for Watch Tooling
 
-### ****Historical Endpoint and Conformance data****
+### ****Summery****
 
--   Two graphs have been prepared using the following underling data:
-    -   New [Conformance.yaml](https://github.com/kubernetes/kubernetes/blob/master/test/conformance/testdata/conformance.yaml)
-    -   1.9-1.18 release tags for OpenAPI json
-    -   Latest release-blocking prow job audit.log
+| Status:             | Endpoints  | Blocked-Watch tooling |
+|------------------- |---------- |--------------------- |
+| Promotion:          | 9          | 4                     |
+| Tests:              | 34         | 19                    |
+| Backlog:            | 8          | 8                     |
+| ****Total Open:**** | ****51**** | ****31****            |
+| Merge:              | 9          |                       |
+| ****Total:****      | ****60**** |                       |
+
+### Conformance and Historical Endpoint data\*\*
+
+-   [apisnoop.cncf.io](https://apisnoop.cncf.io) been updated
+    -   First page show the sunburst graph at the top of the page
+        -   With data from 1.15 on wards
+    -   Confromance progress is shown in 3 graphs
+        -   Stable Endpoint Coverage At Time of Release
+        -   Stable Endpoint Coverage At Time of Release (%)
+        -   Conformance Coverage By Release
+    -   Historical Endpoint [GET THE CORRECT URL][graphs]]
+        -   PR [#1806](https://github.com/kubernetes/community/pull/1806) API's promoted to GA must come with conformance tests
 
 ### ****APISnoop updates****
 
