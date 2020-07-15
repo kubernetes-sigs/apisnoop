@@ -26,7 +26,6 @@ FROM postgres:12.0
      && cd pg-semver \
      && make && make install
 
- COPY ./db ./db
  COPY initdb /docker-entrypoint-initdb.d
  COPY ./snoopUtils.py /usr/local/lib/python3.7/dist-packages/snoopUtils.py
  HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 \
