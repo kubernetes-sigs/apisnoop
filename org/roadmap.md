@@ -23,12 +23,12 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 -   Total of 33 Endpoints promoted from beta
 -   32 Endpoints promoted with test
--   15 / 9 Endpoint hit by ii
+-   11 Endpoint hit by ii
 
-### ****7% increase in coverage since 1.18****
+### ****7.74% increase in coverage since 1.18****
 
--   Current 1.19 coverage: 45.88% = 195/425
 -   1.18 coverage 38.86% = 150/386
+-   Current 1.19 coverage: 46.60% = 199/427
 
 ### ****Watch Tooling Refactoring****
 
@@ -45,8 +45,8 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 ### ****Conformance coverage progress****
 
 -   @liggitt merged 2 Conformance Test +32 Endpoints
--   ii merged 3 Conformance Tests +9 Endpoints
--   5 Promotions +9 Endpoints
+-   ii merged 4 Conformance Tests +11 Endpoints
+-   4 Promotions +7 Endpoints
     -   1 of 4 Endpoints for Watch Tooling
 -   5 Test +34 Endpoints
     -   3 of 17 Endpoints for Watch Tooling
@@ -56,11 +56,11 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 | Status:             | Endpoints  | Blocked-Watch tooling |
 |------------------- |---------- |--------------------- |
-| Promotion:          | 9          | 4                     |
+| Promotion:          | 7          | 4                     |
 | Tests:              | 34         | 19                    |
 | Backlog:            | 8          | 8                     |
-| ****Total Open:**** | ****51**** | ****31****            |
-| Merge:              | 9          |                       |
+| ****Total Open:**** | ****49**** | ****31****            |
+| Merge:              | 11         |                       |
 | ****Total:****      | ****60**** |                       |
 
 ### Conformance and Historical Endpoint data\*\*
@@ -145,10 +145,10 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 ### Verify Tests
 
 -   [X] List of tests required for release
--   [ ] List of tests from junit.xml and compare with requiered test
--   [ ] List of tests from e2e.log and compare to junit.xml
--   [ ] Comment list/count of missing tests
--   [ ] add ****needs-tests**** OR ****tests-run-X.Y****
+-   [X] List of tests from junit.xml and compare with requiered test
+-   [X] Comfirm that e2e Log have no failed tests
+-   [X] Comment list/count of missing tests
+-   [X] add ****needs-tests**** OR ****tests-run-X.Y****
 
 ### definition Informed by [user stories for KEP-960](https://github.com/kubernetes/enhancements/blob/2c19ec7627e326d1c75306dcaa3d2f14002301fa/keps/sig-architecture/960-conformance-behaviors/README.md#role-cncf-conformance-program)
 
@@ -224,18 +224,16 @@ Ensure the API Review process has been followed.
 
 ## Increase Stable Test Coverage by 40 endpoints
 
-### KR1 (8/40) new conformant stable endpoints
+### KR1 (11/40) new conformant stable endpoints
 
 -   \#89753 + 5 points
 -   \#90390 + 3 points
--   \#91416 Add watch event tooling
+-   \#90812 + 1 point
+-   \#92813 + 2 points
 
-### KR2 +9% Coverage Increase 36.46%->45.46%
+### KR2 (7.74% / +9%) Coverage Increase 38.86%->46.60%
 
 Due to increase in total endpoints, our increase may be hidden. Percentage many not be a clear indicator.
-
--   34.15%->38.30% => +3.85%
--   36.46%->38.30% => +1.84%
 
 ### KR3 (stretch +49) 50% stable endpoints hit by conformance tests
 
