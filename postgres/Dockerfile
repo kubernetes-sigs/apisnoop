@@ -28,5 +28,3 @@ FROM postgres:12.0
 
  COPY initdb /docker-entrypoint-initdb.d
  COPY ./snoopUtils.py /usr/local/lib/python3.7/dist-packages/snoopUtils.py
- HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 \
-   CMD ["echo 'ready'"] || exit 1
