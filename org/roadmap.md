@@ -23,12 +23,12 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 -   Total of 33 Endpoints promoted from beta
 -   32 Endpoints promoted with test
--   11 Endpoint hit by ii
+-   12 Endpoints hit by ii e2e tests
 
-### ****7.74% increase in coverage since 1.18****
+### ****7.98% increase in coverage since 1.18****
 
 -   1.18 coverage 38.86% = 150/386
--   Current 1.19 coverage: 46.60% = 199/427
+-   Current 1.19 coverage: 46.84% = 200/427
 
 ### ****Watch Tooling Refactoring****
 
@@ -45,8 +45,8 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 ### ****Conformance coverage progress****
 
 -   @liggitt merged 2 Conformance Test +32 Endpoints
--   ii merged 4 Conformance Tests +11 Endpoints
--   4 Promotions +7 Endpoints
+-   ii merged 5 Conformance Tests +12 Endpoints
+-   3 Promotions +6 Endpoints
     -   1 of 4 Endpoints for Watch Tooling
 -   5 Test +34 Endpoints
     -   3 of 17 Endpoints for Watch Tooling
@@ -56,11 +56,11 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 | Status:             | Endpoints  | Blocked-Watch tooling |
 |------------------- |---------- |--------------------- |
-| Promotion:          | 7          | 4                     |
+| Promotion:          | 6          | 4                     |
 | Tests:              | 34         | 19                    |
 | Backlog:            | 8          | 8                     |
-| ****Total Open:**** | ****49**** | ****31****            |
-| Merge:              | 11         |                       |
+| ****Total Open:**** | ****48**** | ****31****            |
+| Merge:              | 12         |                       |
 | ****Total:****      | ****60**** |                       |
 
 ### Conformance and Historical Endpoint data\*\*
@@ -224,14 +224,15 @@ Ensure the API Review process has been followed.
 
 ## Increase Stable Test Coverage by 40 endpoints
 
-### KR1 (11/40) new conformant stable endpoints
+### KR1 (12/40) new conformant stable endpoints
 
 -   \#89753 + 5 points
 -   \#90390 + 3 points
 -   \#90812 + 1 point
--   \#92813 + 2 points
+-   \#90941 + 2 points
+-   \#92813 + 1 points
 
-### KR2 (7.74% / +9%) Coverage Increase 38.86%->46.60%
+### KR2 (7.98% / +9%) Coverage Increase 38.86%->46.84%
 
 Due to increase in total endpoints, our increase may be hidden. Percentage many not be a clear indicator.
 
