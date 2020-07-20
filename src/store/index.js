@@ -21,22 +21,28 @@ import {
 
 import { RELEASES } from '../lib/constants.js';
 
+export const versions = readable(
+  // sort RELEASES by minor release in the semver.
+  RELEASES.sort((a, b) => b.split('.')[1] - a.split('.')[1])
+);
+
+export const latestVersion = derived(
+  versions,
+  ($ver, set) => {
+    set($ver[0]);
+  }
+);
+
 export const releases = writable(
   // Our list of RELEASES converted to object, with each release as key to empty object.
-  mapValues(groupBy(RELEASES), () => ({
-    release: '',
+  mapValues(groupBy(RELEASES), ([release]) => ({
+    release,
     spec: '',
     source: '',
     release_date: new Date(),
     endpoints: [],
     tests: []
   }))
-);
-
-
-// sort RELEASES by minor release in the semver.
-export const latestRelease = readable(
-  RELEASES.sort((a,b) => b.split('.')[1] - a.split('.')[1])[0]
 );
 
 // Based on url query params, any filters being set.
@@ -52,20 +58,28 @@ export const activeFilters = writable({
 export const activeRelease = derived(
   // The release whose key is the current version filter,
   // (which will be set by our url)
-  [releases, activeFilters],
-  ([$r, $a], set) => {
-    set($r[$a.version]);
+  [releases, latestVersion, activeFilters],
+  ([$r, $v, $a], set) => {
+    if (!$a.version || $a.version === '') {
+      set($r[$v]);
+    } else {
+      set($r[$a.version]);
+    }
   }
-)
+);
 
-export const release = writable({
-  release: '',
-  spec: '',
-  release_date: new Date(),
-  endpoints: [],
-  tests: []
-});
-
+export const previousRelease = derived(
+  [releases, versions, activeRelease],
+  ([$rels, $versions, $active], set) => {
+    const activeIdx = $versions.indexOf($active.release);
+    const prevVersion = $versions[activeIdx + 1];
+    if (prevVersion) {
+      set($rels[prevVersion]);
+    } else {
+      set({});
+    }
+  }
+);
 
 // holds information on when user mouse is hovering over part of sunburst
 export const mouseOverPath = writable([]);
@@ -73,8 +87,8 @@ export const mouseOverPath = writable([]);
 export const breadcrumb = derived(
   [activeFilters, mouseOverPath],
   ([$active, $mouse], set) => {
-    let mouseCrumbs = $mouse.map(m => m.data.name);
-    let activeAndMouseCrumbs = compact(uniq([$active.level, $active.category, $active.endpo8, ...mouseCrumbs]));
+    const mouseCrumbs = $mouse.map(m => m.data.name);
+    const activeAndMouseCrumbs = compact(uniq([$active.level, $active.category, $active.endpo8, ...mouseCrumbs]));
     let crumbs = [];
     // if length is 4, it means we are zoomed into an endpoint, and hovering over a different endpoint.
     if (activeAndMouseCrumbs.length === 4) {

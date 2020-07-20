@@ -17,9 +17,10 @@
  import { releasesURL } from '../../lib/constants.js';
  import {
    releases,
-   latestRelease,
+   latestVersion,
    activeFilters,
-   activeRelease
+   activeRelease,
+   previousRelease
  } from '../../store';
  import { isEmpty } from 'lodash-es';
  import Sunburst from '../../components/sunburst/Wrapper.svelte'
@@ -34,7 +35,7 @@
 
  afterUpdate(async() => {
    if (version === 'latest') {
-     version = $latestRelease
+     version = $latestVersion;
    }
    activeFilters.update(af => ({
      ...af,
@@ -44,9 +45,14 @@
      endpoint: endpoint || ''
    }))
    if (isEmpty($activeRelease.endpoints)) {
-     let rel = await fetch(`${releasesURL}/${version}.json`)
+     let rel = await fetch(`${releasesURL}/${$activeRelease.release}.json`)
        .then(res => res.json());
-     releases.update(rels => ({...rels, [version]: rel}));
+     releases.update(rels => ({...rels, [$activeRelease.release]: rel}));
+   }
+   if (!isEmpty($previousRelease) && isEmpty($previousRelease.endpoints)) {
+     let rel = await fetch(`${releasesURL}/${$previousRelease.release}.json`)
+       .then(res => res.json());
+     releases.update(rels => ({...rels, [$previousRelease.release]: rel}));
    }
  });
 </script>
@@ -57,6 +63,10 @@
 
 {#if $activeRelease && $activeRelease.endpoints.length > 0}
 <Sunburst />
+  {#if !isEmpty($previousRelease)}
+  <h2>{$previousRelease.release}</h2>
+  <p>previous endpoints: {$previousRelease.endpoints.length}</p>
+  {/if}
 {:else}
 <em>Loading Data...</em>
 {/if}
