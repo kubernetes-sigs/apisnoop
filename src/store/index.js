@@ -125,18 +125,18 @@ export const newEndpoints = derived(
         newEndpoints = newEndpoints.filter(ep => ep.category === $filters.category);
       }
       set(orderBy(newEndpoints, ['level', 'category'], ['desc', 'asc']));
-    } else { 
+    } else {
       set([]);
     }
   });
 
 export const groupedEndpoints = derived(endpoints, ($eps, set) => {
   if ($eps.length > 0) {
-    let epsByLevel = groupBy($eps, 'level');
+    const epsByLevel = groupBy($eps, 'level');
     set(mapValues(epsByLevel, epsInLevel => {
-      let epsByCategory = groupBy(epsInLevel, 'category');
+      const epsByCategory = groupBy(epsInLevel, 'category');
       return mapValues(epsByCategory, epsInCategory => {
-        return epsInCategory.map (ep => {
+        return epsInCategory.map(ep => {
           return {
             ...ep,
             name: ep.endpoint,
