@@ -18,21 +18,108 @@
   #+end_SRC
 
   #+begin_src sql-mode
-
-begin
-  select row_to_json(c) from (
-    select release, release_date, spec,
-           (select source from (select source from audit_event where release = latest_release limit 1) s) as source,
-           (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = latest_release) as endpoints,
-           (select array_agg(row_to_json(audit_event_test)) from audit_event_test where release = latest_release) as tests
-      from open_api
-     where release = latest_release
-     group by release, release_date, spec) c);
-end;
-$$ language plpgsql;
+    begin;
+    \t
+    \a
+    \o ../../resources/coverage/1.19.0.json
+      select row_to_json(c) from (
+        select release, release_date, spec,
+               (select source from (select source from audit_event where release = '1.19.0' limit 1) s) as source,
+               (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = '1.19.0') as endpoints,
+               (select array_agg(row_to_json(audit_event_test)) from audit_event_test where release = '1.19.0') as tests
+          from open_api
+         where release = '1.19.0'
+         group by release, release_date, spec) c;
+    \o
+    \a
+    \t
+    commit;
   #+end_src
 
   #+RESULTS:
   #+begin_SRC example
-  REFRESH MATERIALIZED VIEW
+  BEGIN
+  Tuples only is on.
+  Output format is unaligned.
   #+end_SRC
+
+  I also want to add in a conformance specific test run, that is intended to run all conformance tests.
+  I can use this bucket for that:
+  ci-kubernetes-gce-conformance-latest-1-19/1284970302572335110
+
+  NOTE: this means we will need to update our frontend to say that 1.20 and 1.19 are a combination of runs.
+
+  #+begin_src sql-mode
+  select * from load_audit_events('ci-kubernetes-gce-conformance-latest-1-19','1284970302572335110');
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   load_audit_events
+  -------------------
+   it worked
+  (1 row)
+
+  #+end_SRC
+
+  If this worked, the number of tested and conf_tested endpoints for 1.19 should match 1.20
+
+  #+begin_src sql-mode
+    select release, level,
+           count(*) filter(where tested is true)  as tested,
+           count(*) filter(where conf_tested is true)  as "conformance tested"
+      from endpoint_coverage
+     where release::semver >= '1.19.0'::semver
+       and level = 'stable'
+     group by release, level;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   release | level  | tested | conformance tested
+  ---------+--------+--------+--------------------
+   1.19.0  | stable |    261 |                203
+   1.20.0  | stable |    261 |                203
+  (2 rows)
+
+  #+end_SRC
+
+  It does!  This logically feels good to me, and now makes our conformance progress page and sunburst match for the most recent releases.
+
+  And so, I will write and commit this full set to json
+
+  #+begin_src sql-mode
+    begin;
+    \t
+    \a
+    \o ../../resources/coverage/1.19.0.json
+      select row_to_json(c) from (
+        select release, release_date, spec,
+               (select source from (select source from audit_event where release = '1.19.0' limit 1) s) as source,
+               (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = '1.19.0') as endpoints,
+               (select array_agg(row_to_json(audit_event_test)) from audit_event_test where release = '1.19.0') as tests
+          from open_api
+         where release = '1.19.0'
+         group by release, release_date, spec) c;
+    \o
+    \a
+    \t
+    commit;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  BEGIN
+  Tuples only is on.
+  Output format is unaligned.
+  #+end_SRC
+
+* conclusion | next steps
+  The bucket 'ci-kubernetes-gce-conformance-latest-1-19' is great for grabbing all conformance tests, which include the serial and disruptive tests.  By including that in our 1.19 pull, we get a more accurate look at testing coverage.
+
+  There are some changes we should do to more transparently show the dual releases.  Our json should have sources be an array, and our frontend should handle showing multiple sources.
+  I should also try this same technique for 1.18 and previous.  I won't need  to update them continually, but if i can get a more accurate json, that includes disruptive tests for these past releases, I will be happy.
+
+  I've opened tickets for both these next steps.
+  [[https://github.com/apisnoop/snoopDB/issues/11][sources should be an array]]
+  [[https://github.com/apisnoop/snoopDB/issues/12][exploration: can we get more data sources for 1.18 and previous?]]
