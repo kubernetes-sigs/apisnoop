@@ -20,10 +20,12 @@
    latestVersion,
    activeFilters,
    activeRelease,
-   previousRelease
+   previousRelease,
+   newEndpoints
  } from '../../store';
  import { isEmpty } from 'lodash-es';
  import Sunburst from '../../components/sunburst/Wrapper.svelte'
+ import NewEndpoints from '../../components/new-endpoints.svelte';
 
  export let payload;
  $: ({
@@ -64,8 +66,7 @@
 {#if $activeRelease && $activeRelease.endpoints.length > 0}
 <Sunburst />
   {#if !isEmpty($previousRelease)}
-  <h2>{$previousRelease.release}</h2>
-  <p>previous endpoints: {$previousRelease.endpoints.length}</p>
+    <NewEndpoints />
   {/if}
 {:else}
 <em>Loading Data...</em>

@@ -1,6 +1,7 @@
 import { readable, writable, derived } from 'svelte/store';
 import {
   compact,
+  differenceBy,
   flatten,
   groupBy,
   isEmpty,
@@ -108,6 +109,26 @@ export const endpoints = derived(activeRelease, ($rel, set) => {
     set([]);
   }
 });
+
+export const newEndpoints = derived(
+  // endpoints that are in active release, but not previous release, filtered to current level and or category.
+  [activeRelease, previousRelease, activeFilters],
+  ([$eps, $peps, $filters], set) => {
+    if ($peps.endpoints) {
+      const eps = $eps.endpoints;
+      const peps = $peps.endpoints;
+      let newEndpoints = differenceBy(eps, peps, 'endpoint');
+      if ($filters.level !== '') {
+        newEndpoints = newEndpoints.filter(ep => ep.level === $filters.level);
+      }
+      if ($filters.category !== '') {
+        newEndpoints = newEndpoints.filter(ep => ep.category === $filters.category);
+      }
+      set(orderBy(newEndpoints, ['level', 'category'], ['desc', 'asc']));
+    } else { 
+      set([]);
+    }
+  });
 
 export const groupedEndpoints = derived(endpoints, ($eps, set) => {
   if ($eps.length > 0) {
