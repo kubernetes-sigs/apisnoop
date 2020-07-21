@@ -11,6 +11,7 @@
    latestVersion
  } from '../store';
  import Sunburst from '../components/sunburst/Wrapper.svelte'
+ import NewEndpoints from '../components/new-endpoints.svelte';
 
  activeFilters.update(af => ({
    ...af,
@@ -45,8 +46,7 @@
 
   {#if $activeRelease && $activeRelease.endpoints.length > 0}
   <Sunburst />
-  <h2>{$previousRelease.release}</h2>
-  <p>new endpoints: {$newEndpoints.length}</p>
+  <NewEndpoints />
   {:else}
   <em>loading data...</em>
   {/if}
