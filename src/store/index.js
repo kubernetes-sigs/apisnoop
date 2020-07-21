@@ -124,7 +124,7 @@ export const newEndpoints = derived(
       if ($filters.category !== '') {
         newEndpoints = newEndpoints.filter(ep => ep.category === $filters.category);
       }
-      set(orderBy(newEndpoints, ['level', 'category'], ['desc', 'asc']));
+      set(orderBy(newEndpoints, ['level', 'conf_tested', 'tested', 'category', 'endpoint'], ['desc', 'asc', 'asc', 'asc', 'asc']));
     } else {
       set([]);
     }
