@@ -17,6 +17,8 @@ CREATE OR REPLACE FUNCTION load_audit_events(
   release_date = int(metadata['timestamp'])
   release = metadata["version"].split('-')[0].replace('v','')
   num = release.replace('.','')
+  if int(release.split('.')[1]) > int(latest_release.split('.')[1]):
+    release = latest_release
   # if we are grabbing latest release, and its on cusp of new release,
   # then test runs will show their version as the next release...which is confusing,
   # as the testing changes affect the about-to-be-released one.
