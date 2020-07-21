@@ -18,7 +18,8 @@
 
 
 </script>
-
+<section id="new-endpoints">
+<h2>New Endpoints</h2>
 <table>
   <thead>
     <tr>
@@ -62,14 +63,24 @@
     {/each}
   </tbody>
 </table>
-
+</section>
 <style>
+ section {
+   margin-top: 2rem;
+ }
+ th {
+   cursor: pointer;
+   padding-right: 1rem;
+ }
+ th:hover {
+   background: aliceblue;
+ }
  td {
    padding-right: 1.25rem;
  }
  td :global(.check) {
    font-size: 1.3em;
-   padding-right: 0.25em;
+   padding-right: 1rem;
    margin-top: 0.1em;
  }
  td :global(.success) {
