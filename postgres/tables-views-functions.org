@@ -157,9 +157,16 @@
       from urllib.request import urlopen, urlretrieve
       import urllib
       from snoopUtils import determine_bucket_job, fetch_swagger
+      import yaml
 
       K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
       OPEN_API_PATH = "/api/openapi-spec/swagger.json"
+      RELEASES_URL = "https://raw.githubusercontent.com/apisnoop/snoopDB/master/resources/coverage/releases.yaml"
+
+      # Get info about latest release from our releases.yaml
+      releases = yaml.safe_load(urlopen(RELEASES_URL))
+      latest_release = releases[0]
+      latest_release_date = datetime.datetime.now()
 
       release_dates = {
         "v1.0.0": "2015-07-10",
@@ -182,38 +189,24 @@
         "v1.17.0": "2019-12-07",
         "v1.18.0": "2020-03-25"
       }
-
-      # Get info about latest release from our latest test run.
-      bucket, job = determine_bucket_job()
-      swagger, metadata, commit_hash = fetch_swagger(bucket, job)
-      open_api = swagger
-      open_api_url = K8S_REPO_URL + commit_hash + OPEN_API_PATH
-      release_date = int(metadata['timestamp'])
-      release = metadata["version"].split('-')[0].replace('v','')
+      print(latest_release)
 
       # Set values for sql template  based on if custom_release argument was passed
       if custom_release is not None:
-        rel_open_api_url = K8S_REPO_URL + custom_release + OPEN_API_PATH
+        open_api_url = K8S_REPO_URL + custom_release + OPEN_API_PATH
       # check to see if we can load this custom_release url
         try:
-          open_api = json.loads(urlopen(rel_open_api_url).read().decode('utf-8'))
+          open_api = json.loads(urlopen(open_api_url).read().decode('utf-8'))
           release = custom_release
           rd = release_dates[release]
           release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
-      # If we cannot, we are likely on cusp between releases
         except urllib.error.HTTPError as e:
-          if e.code == 404:
-      # check to see if custom_release is one less than the current release...signifying this cusp
-      # if so, we keep everything the same, but set the release to whatever is custom release
-            rel_minor = int(release.split(".")[1])
-            custom_minor = int(custom_release.split(".")[1])
-            if rel_minor == custom_minor + 1:
-                release = custom_release
-            else:
-                raise ValueError("this release cannot be found or used")
-          else:
-            raise ValueError('http error with', e)
-
+          raise ValueError('http error with', e)
+      else:
+        open_api_url = K8S_REPO_URL + 'master' + OPEN_API_PATH
+        open_api = json.loads(urlopen(open_api_url).read().decode('utf-8'))
+        release = latest_release
+        release_date = time.mktime(datetime.datetime.now().timetuple())
       sql = Template("""
          WITH open AS (
            SELECT '${open_api}'::jsonb as api_data)
@@ -251,8 +244,8 @@
              WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
              ELSE false
            END AS deprecated,
-           (d.value ->> 'description'::text) AS description,
-           '${open_api_url}' as spec
+                       (d.value ->> 'description'::text) AS description,
+                       '${open_api_url}' as spec
            FROM
                open
                 , jsonb_each((open.api_data -> 'paths'::text)) paths(key, value)
@@ -289,7 +282,13 @@
         custom_job text default null)
         RETURNS text AS $$
         from string import Template
+        from urllib.request import urlopen
+        import yaml
         from snoopUtils import determine_bucket_job, download_and_process_auditlogs, fetch_swagger
+
+        RELEASES_URL = "https://raw.githubusercontent.com/apisnoop/snoopDB/master/resources/coverage/releases.yaml"
+        releases = yaml.safe_load(urlopen(RELEASES_URL))
+        latest_release = releases[0]
 
         bucket, job = determine_bucket_job(custom_bucket, custom_job)
         auditlog_file = download_and_process_auditlogs(bucket, job)
@@ -297,6 +296,12 @@
         release_date = int(metadata['timestamp'])
         release = metadata["version"].split('-')[0].replace('v','')
         num = release.replace('.','')
+        # if we are grabbing latest release, and its on cusp of new release,
+        # then test runs will show their version as the next release...which is confusing,
+        # as the testing changes affect the about-to-be-released one.
+        # so if that happens, we set release to what is the canonical latest.
+        if custom_bucket is None and custom_job is None:
+          release = latest_release
 
         sql = Template("""
           CREATE TEMPORARY TABLE audit_event_import${job}(data jsonb not null) ;
@@ -333,7 +338,7 @@
                   )
         try:
             plpy.execute(sql)
-            return "it worked"
+            return "events for {} loaded, from {}/{}".format(release, bucket, job)
         except plpy.SPIError as plpyError:
             print("something went wrong with plpy: ")
             return plpyError
@@ -342,6 +347,7 @@
         $$ LANGUAGE plpython3u ;
         reset role;
     #+end_src
+
 
     #+NAME: load_open_api comments
     #+begin_src sql-mode
@@ -719,15 +725,14 @@ create or replace view conformance.coverage_per_release as
          ('v1.15.0'),
          ('v1.16.0'),
          ('v1.17.0'),
-         ('v1.18.0'),
-         ('v1.19.0')
+         ('v1.18.0')
          ) as rlist
      )
      select f.*
        from
        releases r
-       , lateral load_open_api(r.release) f(loading_results);
-     select * from load_open_api() f(loading_results);
+       , lateral load_open_api(r.release) f("build log");
+     select * from load_open_api() f("build log");
      commit;
 
    #+end_src
@@ -739,7 +744,7 @@ create or replace view conformance.coverage_per_release as
    #+NAME: load tests
    #+begin_src sql-mode
      begin;
-     select * from load_tests();
+     select * from load_tests() f("build log");
      commit;
    #+end_src
 
@@ -750,8 +755,8 @@ create or replace view conformance.coverage_per_release as
    #+NAME: load latest audit events
   #+begin_src sql-mode
      begin;
-     select * from load_audit_events();
-     select * from load_audit_events('ci-kubernetes-gce-conformance-latest');
+     select * from load_audit_events() f("build log");
+     select * from load_audit_events('ci-kubernetes-gce-conformance-latest') f("build log");
      commit;
   #+end_src
 ** Load latest tests

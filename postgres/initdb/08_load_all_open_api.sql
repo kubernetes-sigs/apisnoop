@@ -15,13 +15,12 @@ with releases as (
     ('v1.15.0'),
     ('v1.16.0'),
     ('v1.17.0'),
-    ('v1.18.0'),
-    ('v1.19.0')
+    ('v1.18.0')
     ) as rlist
 )
 select f.*
   from
   releases r
-  , lateral load_open_api(r.release) f(loading_results);
-select * from load_open_api() f(loading_results);
+  , lateral load_open_api(r.release) f("build log");
+select * from load_open_api() f("build log");
 commit;

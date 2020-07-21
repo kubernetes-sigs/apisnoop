@@ -3,7 +3,13 @@ CREATE OR REPLACE FUNCTION load_audit_events(
   custom_job text default null)
   RETURNS text AS $$
   from string import Template
+  from urllib.request import urlopen
+  import yaml
   from snoopUtils import determine_bucket_job, download_and_process_auditlogs, fetch_swagger
+
+  RELEASES_URL = "https://raw.githubusercontent.com/apisnoop/snoopDB/master/resources/coverage/releases.yaml"
+  releases = yaml.safe_load(urlopen(RELEASES_URL))
+  latest_release = releases[0]
 
   bucket, job = determine_bucket_job(custom_bucket, custom_job)
   auditlog_file = download_and_process_auditlogs(bucket, job)
@@ -11,6 +17,12 @@ CREATE OR REPLACE FUNCTION load_audit_events(
   release_date = int(metadata['timestamp'])
   release = metadata["version"].split('-')[0].replace('v','')
   num = release.replace('.','')
+  # if we are grabbing latest release, and its on cusp of new release,
+  # then test runs will show their version as the next release...which is confusing,
+  # as the testing changes affect the about-to-be-released one.
+  # so if that happens, we set release to what is the canonical latest.
+  if custom_bucket is None and custom_job is None:
+    release = latest_release
 
   sql = Template("""
     CREATE TEMPORARY TABLE audit_event_import${job}(data jsonb not null) ;
@@ -47,7 +59,7 @@ CREATE OR REPLACE FUNCTION load_audit_events(
             )
   try:
       plpy.execute(sql)
-      return "it worked"
+      return "events for {} loaded, from {}/{}".format(release, bucket, job)
   except plpy.SPIError as plpyError:
       print("something went wrong with plpy: ")
       return plpyError
