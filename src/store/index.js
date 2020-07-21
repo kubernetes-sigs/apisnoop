@@ -1,6 +1,7 @@
 import { readable, writable, derived } from 'svelte/store';
 import {
   compact,
+  differenceBy,
   flatten,
   groupBy,
   isEmpty,
@@ -21,22 +22,28 @@ import {
 
 import { RELEASES } from '../lib/constants.js';
 
+export const versions = readable(
+  // sort RELEASES by minor release in the semver.
+  RELEASES.sort((a, b) => b.split('.')[1] - a.split('.')[1])
+);
+
+export const latestVersion = derived(
+  versions,
+  ($ver, set) => {
+    set($ver[0]);
+  }
+);
+
 export const releases = writable(
   // Our list of RELEASES converted to object, with each release as key to empty object.
-  mapValues(groupBy(RELEASES), () => ({
-    release: '',
+  mapValues(groupBy(RELEASES), ([release]) => ({
+    release,
     spec: '',
     source: '',
     release_date: new Date(),
     endpoints: [],
     tests: []
   }))
-);
-
-
-// sort RELEASES by minor release in the semver.
-export const latestRelease = readable(
-  RELEASES.sort((a,b) => b.split('.')[1] - a.split('.')[1])[0]
 );
 
 // Based on url query params, any filters being set.
@@ -52,20 +59,28 @@ export const activeFilters = writable({
 export const activeRelease = derived(
   // The release whose key is the current version filter,
   // (which will be set by our url)
-  [releases, activeFilters],
-  ([$r, $a], set) => {
-    set($r[$a.version]);
+  [releases, latestVersion, activeFilters],
+  ([$r, $v, $a], set) => {
+    if (!$a.version || $a.version === '') {
+      set($r[$v]);
+    } else {
+      set($r[$a.version]);
+    }
   }
-)
+);
 
-export const release = writable({
-  release: '',
-  spec: '',
-  release_date: new Date(),
-  endpoints: [],
-  tests: []
-});
-
+export const previousRelease = derived(
+  [releases, versions, activeRelease],
+  ([$rels, $versions, $active], set) => {
+    const activeIdx = $versions.indexOf($active.release);
+    const prevVersion = $versions[activeIdx + 1];
+    if (prevVersion) {
+      set($rels[prevVersion]);
+    } else {
+      set({});
+    }
+  }
+);
 
 // holds information on when user mouse is hovering over part of sunburst
 export const mouseOverPath = writable([]);
@@ -73,8 +88,8 @@ export const mouseOverPath = writable([]);
 export const breadcrumb = derived(
   [activeFilters, mouseOverPath],
   ([$active, $mouse], set) => {
-    let mouseCrumbs = $mouse.map(m => m.data.name);
-    let activeAndMouseCrumbs = compact(uniq([$active.level, $active.category, $active.endpo8, ...mouseCrumbs]));
+    const mouseCrumbs = $mouse.map(m => m.data.name);
+    const activeAndMouseCrumbs = compact(uniq([$active.level, $active.category, $active.endpo8, ...mouseCrumbs]));
     let crumbs = [];
     // if length is 4, it means we are zoomed into an endpoint, and hovering over a different endpoint.
     if (activeAndMouseCrumbs.length === 4) {
@@ -95,13 +110,78 @@ export const endpoints = derived(activeRelease, ($rel, set) => {
   }
 });
 
+export const newEndpoints = derived(
+  // endpoints that are in active release, but not previous release, filtered to current level and or category.
+  [activeRelease, previousRelease, activeFilters],
+  ([$eps, $peps, $filters], set) => {
+    if ($peps.endpoints) {
+      const eps = $eps.endpoints;
+      const peps = $peps.endpoints;
+      let newEndpoints = differenceBy(eps, peps, 'endpoint');
+      if ($filters.level !== '') {
+        newEndpoints = newEndpoints.filter(ep => ep.level === $filters.level);
+      }
+      if ($filters.category !== '') {
+        newEndpoints = newEndpoints.filter(ep => ep.category === $filters.category);
+      }
+      set(orderBy(newEndpoints, ['level', 'conf_tested', 'tested', 'category', 'endpoint'], ['desc', 'asc', 'asc', 'asc', 'asc']));
+    } else {
+      set([]);
+    }
+  });
+
+export const newCoverage = derived(
+  // from active release, tested endpoints that exist in previous release
+  // but were untested in that release.
+  [activeRelease, previousRelease, activeFilters],
+  ([$eps, $peps, $filters], set) => {
+    if ($peps.endpoints) {
+      const eps = $eps.endpoints;
+      const peps = $peps.endpoints;
+      let newCoverage = eps
+        .filter(ep => {
+          const pep = peps.find(p => p.endpoint === ep.endpoint);
+          return pep &&
+            ep.tested === true &&
+            pep.tested === false;
+        })
+        .map(ep => {
+          const {
+            release,
+            endpoint,
+            level,
+            category
+          } = ep;
+          const test = ep.tests[0];
+          return {
+            release,
+            endpoint,
+            level,
+            category,
+            test
+          };
+        });
+
+      if ($filters.level !== '') {
+        newCoverage = newCoverage.filter(ep => ep.level === $filters.level);
+      }
+      if ($filters.category !== '') {
+        newCoverage = newCoverage.filter(ep => ep.category === $filters.category);
+      }
+      set(orderBy(newCoverage, ['level', 'conf_tested', 'tested', 'category', 'endpoint'], ['desc', 'asc', 'asc', 'asc', 'asc']));
+    } else {
+      set([]);
+    }
+  }
+);
+
 export const groupedEndpoints = derived(endpoints, ($eps, set) => {
   if ($eps.length > 0) {
-    let epsByLevel = groupBy($eps, 'level');
+    const epsByLevel = groupBy($eps, 'level');
     set(mapValues(epsByLevel, epsInLevel => {
-      let epsByCategory = groupBy(epsInLevel, 'category');
+      const epsByCategory = groupBy(epsInLevel, 'category');
       return mapValues(epsByCategory, epsInCategory => {
-        return epsInCategory.map (ep => {
+        return epsInCategory.map(ep => {
           return {
             ...ep,
             name: ep.endpoint,

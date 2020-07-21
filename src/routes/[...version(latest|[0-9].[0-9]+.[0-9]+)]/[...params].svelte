@@ -17,12 +17,14 @@
  import { releasesURL } from '../../lib/constants.js';
  import {
    releases,
-   latestRelease,
+   latestVersion,
    activeFilters,
-   activeRelease
+   activeRelease,
+   previousRelease
  } from '../../store';
  import { isEmpty } from 'lodash-es';
  import Sunburst from '../../components/sunburst/Wrapper.svelte'
+ import NewEndpoints from '../../components/new-endpoints.svelte';
 
  export let payload;
 
@@ -35,7 +37,7 @@
 
  afterUpdate(async() => {
    if (version === 'latest') {
-     version = $latestRelease;
+     version = $latestVersion;
    }
    activeFilters.update(af => ({
      ...af,
@@ -48,6 +50,11 @@
      let rel = await fetch(`${releasesURL}/${version}.json`).then(res => res.json());
      releases.update(rels => ({...rels, [version]: rel}));
    }
+   if (!isEmpty($previousRelease) && isEmpty($previousRelease.endpoints)) {
+     let rel = await fetch(`${releasesURL}/${$previousRelease.release}.json`)
+       .then(res => res.json());
+     releases.update(rels => ({...rels, [$previousRelease.release]: rel}));
+   }
  });
 </script>
 
@@ -57,6 +64,9 @@
 
 {#if $activeRelease && $activeRelease.endpoints.length > 0}
   <Sunburst />
+  {#if !isEmpty($previousRelease) && $activeFilters.endpoint === ''}
+    <NewEndpoints />
+  {/if}
 {:else}
   <em>Loading Data...</em>
 {/if}
