@@ -88,6 +88,6 @@
  }
 
  td :global(.fail) {
-   color: rgba(233, 233, 233, 1);
+   color: rgba(233, 203, 233, 1);
  }
 </style>

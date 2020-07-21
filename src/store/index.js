@@ -130,6 +130,51 @@ export const newEndpoints = derived(
     }
   });
 
+export const newCoverage = derived(
+  // from active release, tested endpoints that exist in previous release
+  // but were untested in that release.
+  [activeRelease, previousRelease, activeFilters],
+  ([$eps, $peps, $filters], set) => {
+    if ($peps.endpoints) {
+      const eps = $eps.endpoints;
+      const peps = $peps.endpoints;
+      let newCoverage = eps
+        .filter(ep => {
+          const pep = peps.find(p => p.endpoint === ep.endpoint);
+          return pep &&
+            ep.tested === true &&
+            pep.tested === false;
+        })
+        .map(ep => {
+          const {
+            release,
+            endpoint,
+            level,
+            category
+          } = ep;
+          const test = ep.tests[0];
+          return {
+            release,
+            endpoint,
+            level,
+            category,
+            test
+          };
+        });
+
+      if ($filters.level !== '') {
+        newCoverage = newCoverage.filter(ep => ep.level === $filters.level);
+      }
+      if ($filters.category !== '') {
+        newCoverage = newCoverage.filter(ep => ep.category === $filters.category);
+      }
+      set(orderBy(newCoverage, ['level', 'conf_tested', 'tested', 'category', 'endpoint'], ['desc', 'asc', 'asc', 'asc', 'asc']));
+    } else {
+      set([]);
+    }
+  }
+);
+
 export const groupedEndpoints = derived(endpoints, ($eps, set) => {
   if ($eps.length > 0) {
     const epsByLevel = groupBy($eps, 'level');
