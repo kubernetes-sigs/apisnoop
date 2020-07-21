@@ -73,15 +73,6 @@ def determine_bucket_job(custom_bucket=None, custom_job=None):
     job = baseline_job if custom_job is None else custom_job
     return (bucket, job)
 
-def fetch_swagger(bucket, job):
-    """fetches swagger for given bucket and job and returns it, and its appropariate metadata, in a dict"""
-    metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
-    metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-    commit_hash = metadata["version"].split("+")[1]
-    swagger_url =  ''.join([K8S_GITHUB_RAW, commit_hash, '/api/openapi-spec/swagger.json'])
-    swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
-    return (swagger, metadata, commit_hash);
-
 def merge_into(d1, d2):
     for key in d2:
         if key not in d1 or not isinstance(d1[key], dict):
@@ -95,8 +86,6 @@ def deep_merge(*dicts, update=False):
         return reduce(merge_into, dicts[1:], dicts[0])
     else:
         return reduce(merge_into, dicts, {})
-
-
 
 def get_html(url):
     """return html content of given url"""
@@ -272,18 +261,9 @@ def download_and_process_auditlogs(bucket,job):
     artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
     download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
     combined_log_file = download_path + 'audit.log'
-    swagger, metadata, commit_hash = fetch_swagger(bucket, job)
-
-    # download all metadata
-    # job_metadata_files = [
-    #     'finished.json',
-    #     'artifacts/metadata.json',
-    #     'artifacts/junit_01.xml',
-    #     'build-log.txt'
-    # ]
-    # for jobfile in job_metadata_files:
-    #     download_url_to_path( bucket_url + jobfile,
-    #                           download_path + jobfile, downloads )
+    metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
+    metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+    commit_hash = metadata["version"].split("+")[1]
 
     # download all logs
     log_links = get_all_auditlog_links(artifacts_url)
@@ -319,64 +299,3 @@ def download_and_process_auditlogs(bucket,job):
                 event['operationId']=find_operation_id(openapi_spec,event)
                 output.write(json.dumps(event)+'\n')
     return outfilepath
-
-def json_to_sql(bucket,job,auditlog_path):
-    """
-      Turns json+audits into load.sql
-    """
-    import_number = job[-7:]
-    try:
-        sql = Template("""
-CREATE TEMPORARY TABLE raw_audit_event_import${import_number}(data jsonb not null) ;
-COPY raw_audit_event_import${import_number} (data)
-FROM '${audit_logfile}' (DELIMITER e'\x02', FORMAT 'csv', QUOTE e'\x01');
-
-INSERT INTO audit_event(bucket, job,
-                        audit_id, stage,
-                        event_verb, request_uri,
-                        operation_id, event_level,
-                        api_version, useragent,
-                        test_hit, conf_test_hit,
-                        event_user, object_namespace,
-                        object_type, object_group,
-                        object_ver, source_ips,
-                        annotations, request_object,
-                        response_object, response_status,
-                        stage_timestamp, request_received_timestamp,
-                        data)
-
-SELECT '${bucket}',
-        '${job}',
-        (raw.data ->> 'auditID'),
-        (raw.data ->> 'stage'),
-        (raw.data ->> 'verb'),
-        (raw.data ->> 'requestURI'),
-        (raw.data ->> 'operationId'),
-        (raw.data ->> 'level') as event_level,
-        (raw.data ->> 'apiVersion') as api_version,
-        (raw.data ->> 'userAgent') as useragent,
-        ((raw.data ->> 'userAgent') like 'e2e.test%') as test_hit,
-        ((raw.data ->> 'userAgent') like '%[Conformance]%') as conf_test_hit,
-        (raw.data -> 'user') as event_user,
-        (raw.data #>> '{objectRef,namespace}') as object_namespace,
-        (raw.data #>> '{objectRef,resource}') as object_type,
-        (raw.data #>> '{objectRef,apiGroup}') as object_group,
-        (raw.data #>> '{objectRef,apiVersion}') as object_ver,
-        (raw.data -> 'sourceIPs') as source_ips,
-        (raw.data -> 'annotations') as annotations,
-        (raw.data -> 'requestObject') as request_object,
-        (raw.data -> 'responseObject') as response_object,
-        (raw.data -> 'responseStatus') as response_status,
-        (raw.data ->> 'stageTimestamp') as stage_timestamp,
-        (raw.data ->> 'requestReceivedTimestamp') as request_received_timestamp,
-        raw.data
-  FROM raw_audit_event_import${import_number} raw;
-        """).substitute(
-             import_number=import_number,
-            audit_logfile = auditlog_path,
-            bucket = bucket,
-            job = job
-        )
-        return sql
-    except:
-        return "something unknown went wrong"

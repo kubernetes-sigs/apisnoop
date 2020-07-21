@@ -4,19 +4,27 @@ CREATE OR REPLACE FUNCTION load_audit_events(
   RETURNS text AS $$
   from string import Template
   from urllib.request import urlopen
+  import json
   import yaml
-  from snoopUtils import determine_bucket_job, download_and_process_auditlogs, fetch_swagger
+  from snoopUtils import determine_bucket_job, download_and_process_auditlogs
 
+  GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
   RELEASES_URL = "https://raw.githubusercontent.com/apisnoop/snoopDB/master/resources/coverage/releases.yaml"
+
   releases = yaml.safe_load(urlopen(RELEASES_URL))
   latest_release = releases[0]
 
   bucket, job = determine_bucket_job(custom_bucket, custom_job)
   auditlog_file = download_and_process_auditlogs(bucket, job)
-  _, metadata, _ = fetch_swagger(bucket, job)
+
+  metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
+  metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+
   release_date = int(metadata['timestamp'])
   release = metadata["version"].split('-')[0].replace('v','')
+
   num = release.replace('.','')
+
   if int(release.split('.')[1]) > int(latest_release.split('.')[1]):
     release = latest_release
   # if we are grabbing latest release, and its on cusp of new release,

@@ -8,7 +8,6 @@ import time
 import datetime
 from urllib.request import urlopen, urlretrieve
 import urllib
-from snoopUtils import determine_bucket_job, fetch_swagger
 import yaml
 
 K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
