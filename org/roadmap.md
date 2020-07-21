@@ -21,14 +21,15 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 ### ****Increase in coverage for 1.19 over 1.18 Stable****
 
--   Total of 33 Endpoints promoted from beta
--   32 Endpoints promoted with test
--   12 Endpoints hit by ii e2e tests
+-   Total of 41 Endpoints promoted from Beta
+-   39 Endpoints promoted with test
+-   2 Endpoints that came in without conformance test picked up by ii
+-   14 Endpoints hit by ii Confromance tests
 
-### ****7.98% increase in coverage since 1.18****
+### ****9.61% increase in coverage since 1.18****
 
 -   1.18 coverage 38.86% = 150/386
--   Current 1.19 coverage: 46.84% = 200/427
+-   Current 1.19 coverage: 48.47% = 207/427
 
 ### ****Watch Tooling Refactoring****
 
@@ -39,31 +40,32 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 -   Existing Test PRs: +21
     -   Promotion #90939 (+4)
-    -   In progress #90942,#90988,#92589 (+17)
--   Triage 1 Issues: +8
+    -   Tests #90942,90988,92589 (+17)
+-   Triage 2 Issues: +8
+-   ****Pushing**** #90939,90942 & 92589 for 1.19 (+14)
 
 ### ****Conformance coverage progress****
 
--   @liggitt merged 2 Conformance Test +32 Endpoints
--   ii merged 5 Conformance Tests +12 Endpoints
--   3 Promotions +6 Endpoints
+-   @liggitt's team merged 2 Conformance Test +32 Endpoints
+-   @Wojtek-t's team merged 1 conformance Test +7 Endpoints
+-   ii merged 7 Conformance Tests +14 Endpoints
+-   3 Promotions +21 Endpoints
     -   1 of 4 Endpoints for Watch Tooling
--   5 Test +34 Endpoints
-    -   3 of 17 Endpoints for Watch Tooling
+-   3 Test +17 Endpoints all for Watch Tooling
 -   2 Issues of 8 Endpoints in Backlog for Watch Tooling
 
 ### ****Summery****
 
 | Status:             | Endpoints  | Blocked-Watch tooling |
 |------------------- |---------- |--------------------- |
-| Promotion:          | 6          | 4                     |
-| Tests:              | 34         | 19                    |
+| Promotion:          | 21         | 4                     |
+| Tests:              | 17         | 17                    |
 | Backlog:            | 8          | 8                     |
-| ****Total Open:**** | ****48**** | ****31****            |
-| Merge:              | 12         |                       |
+| ****Total Open:**** | ****47**** | ****31****            |
+| Merge:              | 14         |                       |
 | ****Total:****      | ****60**** |                       |
 
-### Conformance and Historical Endpoint data\*\*
+### ****Conformance and Historical Endpoint data****
 
 -   [apisnoop.cncf.io](https://apisnoop.cncf.io) been updated
     -   First page show the sunburst graph at the top of the page
@@ -224,18 +226,38 @@ Ensure the API Review process has been followed.
 
 ## Increase Stable Test Coverage by 40 endpoints
 
-### KR1 (12/40) new conformant stable endpoints
+### ****KR1 (14/40) new conformant stable endpoints****
 
 -   \#89753 + 5 points
 -   \#90390 + 3 points
 -   \#90812 + 1 point
 -   \#90941 + 2 points
--   \#92813 + 1 points
+-   \#92813 + 1 point
+-   \#93084 + 1 point
+-   \#93038 + 1 point Ingress Endpoint
 
-### KR2 (7.98% / +9%) Coverage Increase 38.86%->46.84%
+### ****What is in the numbers****
 
-Due to increase in total endpoints, our increase may be hidden. Percentage many not be a clear indicator.
+-   14 Endpoints by ii
+-   39 Endpoints by the community
 
-### KR3 (stretch +49) 50% stable endpoints hit by conformance tests
+Total: 53
 
--   Possibly, but it will be a stretch
+-   21 Promotion Endpoints by ii
+-   17 Watch tooling test Endpoints by ii
+
+Total: 38 ****Grand total possible: 91****
+
+### ****KR2 (9.61% / +9%) Coverage Increase****
+
+****38.86%->48.47%****
+
+-   Target have been exceeded with ii and the community's effort
+-   Further increase expected before 1.19 test freeze
+-   Due to increase in total endpoints, our increase may be hidden.
+
+Percentage many not be a clear indicator.
+
+### ****KR3 (stretch +49) 50% stable endpoints hit by conformance tests****
+
+-   Possibly, only need Conformance tests for 7 more Endpoints to Merge
