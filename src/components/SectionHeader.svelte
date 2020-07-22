@@ -3,7 +3,7 @@
 </script>
 
 <header>
-  <h2>{title}</h2>
+  {#if title}<h2>{title}</h2>{/if}
   <slot></slot>
 </header>
 
