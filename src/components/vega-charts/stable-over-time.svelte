@@ -35,8 +35,14 @@
        "color": {
          "field": "type",
          "type": "nominal",
-         "scale": {"range": ["#9EEBCF", "#FBF1A9", "#19A974", "#FF4136"]},
-         "legend": {"labelFontSize": 16}
+         "scale": {"range": [
+                  "hsl(158, 74.2%, 48.0%)",
+                  "hsl(53, 91.1%, 82.4%)",
+                  "hsl(158, 74.2%, 38.0%)",
+                  "hsl(158, 74.2%, 28.0%)",
+                  "hsl(3, 100%, 60.6%)"
+                  ]},
+         "legend": {"labelFontSize": 14, "orient": "right", "direction": "vertical", "labelLimit": 300}
        },
        "tooltip": [
          {"field": "type", "type": "ordinal"},
