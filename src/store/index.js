@@ -415,18 +415,21 @@ export const conformanceProgressPercentage = derived(
     if ($cp.length === 0) {
       set([]);
     } else {
-      let percentageSet = $cp.map((c) => {
+      let percentageSet = $cp.map(({release, total}) => {
+        const tested = total.tested - total.new_tested - total.old_tested;
+        const newTested = total.new_tested + total.old_tested;
+        const untested = total.endpoints - newTested - tested;
         return {
-          release: c.release === "1.5.0" ? "1.5.0 and Earlier" : c.release,
+          release: release === "1.5.0" ? "1.5.0 and Earlier" : release,
           total: {
-            tested: c.total.tested - c.total.old_tested,
-            'Old Endpoints Covered by New Tests': c.total.old_tested,
-            untested: c.total.endpoints - c.total.tested - c.total.old_tested
+            'Current Coverage': tested,
+            'New Coverage': newTested,
+            'Uncovered': untested
           }
         };
       });
       let formattedRatio = percentageSet.map(({release, total}) => {
-        const order = {'tested': 'a', 'Old Endpoints Covered by New Tests': 'b', untested: 'c'};
+        const order = {'Current Coverage': 'a', 'New Coverage': 'b', 'Uncovered': 'c'};
         return values(mapValues(total, (v,k) => ({
           release: release,
           type: k,
