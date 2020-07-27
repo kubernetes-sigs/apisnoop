@@ -8,7 +8,7 @@ begin;
    select * from generate_latest_coverage_json();
  \o
  \o './resources/coverage/conformance-progress.json'
- select json_agg(json_build_object(
+ select jsonb_pretty(json_agg(json_build_object(
  'release', release,
  'total', json_build_object(
    'endpoints', total_endpoints,
@@ -18,7 +18,7 @@ begin;
    'new_tested', new_endpoints_covered_by_new_tests + new_endpoints_covered_by_old_tests,
    'still_untested', endpoints_still_untested_today
  )
-))from conformance.progress;
+))::jsonb) from conformance.progress;
  \o
  \o './resources/coverage/conformance-coverage-per-release.json'
  select json_agg(cp) as output_json
