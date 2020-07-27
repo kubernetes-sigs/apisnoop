@@ -1,6 +1,7 @@
 <script>
  import dayjs from 'dayjs';
  import { goto } from '@sapper/app';
+ import { takeRight } from 'lodash-es';
  import SectionHeader from '../SectionHeader.svelte';
  import { activeRelease } from '../../store';
  import { RELEASES } from '../../lib/constants.js';
@@ -11,15 +12,23 @@
  $: ({
    release,
    release_date,
-   source
+   sources
  } = $activeRelease);
 
  $: date = dayjs(release_date).format('DD MMMM, YYYY');
 
+ const prettyPrintNumber = (num) => {
+   let numbers = ['zero', 'one', 'two', 'three', 'four', 'five'];
+   return numbers[Number(num)];
+ }
+
 </script>
 
 {#if release}
-  <SectionHeader title='{release} Testing Coverage'>
+  <SectionHeader>
+    <h2>{release} Testing Coverage
+      <button on:click={() => releaseSwitch = true}>switch release</button>
+    </h2>
     {#if releaseSwitch}
       <ul class='releases'>
       {#each RELEASES as rel}
@@ -27,9 +36,17 @@
       {/each}
       </ul>
     {:else}
-    <em>Data from <a href="{source}" title="spyglass link" target="_blank_" rel="noreferrer noopener">an e2e test suite run</a>, from {date}</em>
+      <em>Data comes from {prettyPrintNumber(sources.length)} e2e test suite {#if sources.length > 1}runs{:else}run{/if} from {date}:</em>
+        <ul class='sources'>
+          {#each sources as source}
+            <li>
+            <a href="{source}" title="spyglass link" target="_blank" rel="noreferrer noopener">
+              {takeRight(source.split('/'), 2).join('/')}
+            </a>
+            </li>
+          {/each}
+        </ul>
     {/if}
-    <button on:click={() => releaseSwitch = true}>switch release</button>
     <p>This sunburst shows the testing coverage for the Kubernetes API, based on auditlog data pulled from e2e test runs.  The endpoints are organized by level (alpha, beta, or stable), then category.  The color of an endpoint indicates its level of coverage.  Gray means no test coverage, faded coloring means its tested but not conformance tested, solid coloring means its tested and conformance tested.
     <p> You can click on any section of the sunburst to zoom into that region. Click into the center to zoom out one level</p>
   </SectionHeader>
@@ -37,7 +54,7 @@
 
 
 <style>
- ul , li {
+ ul.releases , ul.releases li {
    display: inline;
    margin-right: 1rem;
    padding-left: 0;
@@ -45,5 +62,10 @@
  }
  a:hover {
    background: aliceblue;
+ }
+ ul.sources {
+   margin: 0;
+   padding: 0;
+   list-style-type: none;
  }
 </style>
