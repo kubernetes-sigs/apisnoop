@@ -416,8 +416,8 @@ export const conformanceProgressPercentage = derived(
       set([]);
     } else {
       let percentageSet = $cp.map(({release, total}) => {
-        const tested = total.tested - total.new_tested - total.old_tested;
-        const newTested = total.new_tested + total.old_tested;
+        const tested = total.tested - total.old_tested;
+        const newTested = total.old_tested;
         const untested = total.endpoints - newTested - tested;
         return {
           release: release === "1.5.0" ? "1.5.0 and Earlier" : release,
