@@ -330,18 +330,19 @@ export const conformanceProgress = derived(
     if ($cpr.length === 0) {
       set([]);
     } else {
-      set($cpr.map(({total, release}) => {
-        let tested = total.tested - total.new_tested;
-        let new_untested = total.new - total.new_tested;
-        let new_tested = total.new_tested;
-        let untested = total.endpoints - new_untested - tested - new_tested;
+      set($cpr.map(({ total, release }) => {
+        const tested = total.tested - total.new_tested - total.old_tested;
+        const newUntested = total.new - total.new_tested;
+        const newTested = total.new_tested;
+        const untested = total.endpoints - newUntested - tested - newTested - total.old_tested;
         return {
           release,
           total: {
-            tested,
-            untested,
-            new_untested,
-            new_tested
+            Tested: tested,
+            Untested: untested,
+            'Old Endpoints Covered By New Tests': total.old_tested,
+            'New Endpoints Promoted Without Tests': newUntested,
+            'New Endpoints Promoted With Tests': newTested
           }
         };
       }));
@@ -349,26 +350,31 @@ export const conformanceProgress = derived(
   }
 );
 
-
 export const formattedProgress = derived(
   conformanceProgress,
   ($cp, set) => {
     if ($cp.length === 0) {
-      set([]) ;
+      set([]);
     } else {
-      let order = {tested: "a", new_tested: "b",  untested: "c",  new_untested: "d"};
-      let progress = $cp
-          .filter(rel => rel.release !== '1.8.0')
-          .map(rel => {
-            const {release, total} = rel;
-            const formattedTotals = values(mapValues(total, (v,k) => ({
-              release: release,
-              type: k,
-              total: v,
-              order: order[k]
-            })));
-            return formattedTotals;
-          });
+      const order = {
+        Tested: 'a',
+        'Old Endpoints Covered By New Tests': 'b',
+        'New Endpoints Promoted With Tests': 'c',
+        Untested: 'd',
+        'New Endpoints Promoted Without Tests': 'e'
+      };
+      const progress = $cp
+        .filter(rel => rel.release !== '1.8.0')
+        .map(rel => {
+          const { release, total } = rel;
+          const formattedTotals = values(mapValues(total, (v, k) => ({
+            release: release,
+            type: k,
+            total: v,
+            order: order[k]
+          })));
+          return formattedTotals;
+        });
       set(flatten(progress));
     }
   }

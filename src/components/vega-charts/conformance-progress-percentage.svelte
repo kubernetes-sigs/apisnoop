@@ -40,7 +40,7 @@
        "field": "type",
        "type": "nominal",
        "scale": {"range": ["#19A974", "#FF4136"]},
-       "legend": {"labelFontSize": 16}
+       "legend": {"labelFontSize": 14, "labelLimit": 300}
      },
      "order": {"field": "order"},
    },
