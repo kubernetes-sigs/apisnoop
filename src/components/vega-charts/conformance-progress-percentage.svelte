@@ -39,7 +39,11 @@
      "color": {
        "field": "type",
        "type": "nominal",
-       "scale": {"range": ["#19A974", "#FF4136"]},
+       "scale": {"range": [
+                "hsl(158, 74.2%, 48.0%)",
+                "hsl(158, 74.2%, 38.0%)",
+                "hsl(3, 100%, 60.6%)"
+                ]},
        "legend": {"labelFontSize": 14, "labelLimit": 300}
      },
      "order": {"field": "order"},

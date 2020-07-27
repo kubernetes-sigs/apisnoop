@@ -419,17 +419,19 @@ export const conformanceProgressPercentage = derived(
         return {
           release: c.release === "1.5.0" ? "1.5.0 and Earlier" : c.release,
           total: {
-            tested: c.total.tested,
-            untested: c.total.endpoints - c.total.tested
+            tested: c.total.tested - c.total.old_tested,
+            'Old Endpoints Covered by New Tests': c.total.old_tested,
+            untested: c.total.endpoints - c.total.tested - c.total.old_tested
           }
         };
       });
       let formattedRatio = percentageSet.map(({release, total}) => {
+        const order = {'tested': 'a', 'Old Endpoints Covered by New Tests': 'b', untested: 'c'};
         return values(mapValues(total, (v,k) => ({
           release: release,
           type: k,
           total: v,
-          order: k === "total tested" ? "a" : "b"
+          order: order[k]
         })));
       });
       set(flatten(formattedRatio));
