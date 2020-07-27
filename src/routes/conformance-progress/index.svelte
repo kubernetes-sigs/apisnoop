@@ -39,7 +39,7 @@
 
 <section id="coverage-at-time-of-release">
   <h2><a href="conformance-progress#coverage-at-time-of-release">Stable Endpoint Coverage At Time of Release <Link width="1.25rem" /> </a></h2>
-<em>In this, we look at endpoints introduced in a release, and how many came in with tests.  We also look at the overall conformance coverage at the time of that release</em>
+  <em>How many endpoints were introduced in a release, and how many came in with tests?  What was the confomrance coverage at the time of this release?</em>
 
 {#if $formattedProgress.length === 0}
   <p>loading chart...</p>
@@ -50,7 +50,7 @@
 
 <section id="conformance-progress-percentage">
   <h2><a href="conformance-progress#conformance-progress-percentage">Stable Endpoint Coverage at Time Of Release(Percentage)<Link width="1.25rem" /> </a></h2>
-  <em>The percentage of the total endpoints hit by conformance tests at the time of release.</em>
+  <em>What was the percentage of total endpoints hit by conformance tests at the time of release?</em>
   {#if $conformanceProgressPercentage.length === 0}
     <p>loading chart...</p>
   {:else}
@@ -61,7 +61,7 @@
 
 <section id="coverage-by-release">
   <h2><a href="conformance-progress#coverage-by-release">Conformance Coverage By Release <Link width="1.25rem"/></a></h2>
-<em>In this chart we look at the promoted endpoints in a release, and how many of them are tested or untested today.</em>
+  <p>For the endpoints promoted in a release, how many of them are tested as of today?</p>
 <p><b>Note:</b>We mark the number of still untested endpoints as a negative number, since they represent technical debt.</p>
 
 {#if $coveragePerRelease.length === 0}
@@ -69,9 +69,6 @@
 {:else}
   <CoveragePerRelease data={$coveragePerRelease} />
 {/if}
-
-
-<p>This report highlights the importance of having a gate that ensures any promoted endpoint comes with a test. This became an initiative in 1.16 and that release has one of the best ratios of introduced to tested. 1.19 is also looking impressive, with nearly 100% coverage on all its new endpoints.</p>
 </section>
 
 <style>
