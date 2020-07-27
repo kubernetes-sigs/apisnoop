@@ -15,6 +15,7 @@ begin;
    'tested', total_tested_endpoints,
    'new', new_endpoints,
    'new_with_tests', new_endpoints_promoted_with_tests,
+   'old_tested', old_endpoints_covered_by_new_tests,
    'new_tested', new_endpoints_covered_by_new_tests + new_endpoints_covered_by_old_tests,
    'still_untested', endpoints_still_untested_today
  )
