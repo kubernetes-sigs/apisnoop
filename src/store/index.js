@@ -4,6 +4,7 @@ import {
   differenceBy,
   flatten,
   groupBy,
+  keyBy,
   isEmpty,
   map,
   mapValues,
@@ -63,6 +64,8 @@ export const activeRelease = derived(
   ([$r, $v, $a], set) => {
     if (!$a.version || $a.version === '') {
       set($r[$v]);
+    } else if (!RELEASES.includes($a.version)){
+      set('older');
     } else {
       set($r[$a.version]);
     }
@@ -72,12 +75,15 @@ export const activeRelease = derived(
 export const previousRelease = derived(
   [releases, versions, activeRelease],
   ([$rels, $versions, $active], set) => {
-    const activeIdx = $versions.indexOf($active.release);
-    const prevVersion = $versions[activeIdx + 1];
-    if (prevVersion) {
-      set($rels[prevVersion]);
+    if ($active) {
+      const activeIdx = $versions.indexOf($active.release);
+      const prevVersion = $versions[activeIdx + 1];
+      const prevRelease = prevVersion
+            ? $rels[prevVersion]
+            : {};
+      set(prevRelease);
     } else {
-      set({});
+      set('older');
     }
   }
 );
@@ -441,3 +447,18 @@ export const conformanceProgressPercentage = derived(
     }
   }
 )
+
+export const olderNewEndpointsRaw = writable([]);
+
+export const olderNewEndpoints = derived(
+  olderNewEndpointsRaw,
+  ($raw, set) => {
+    if (isEmpty($raw)) {
+      set({});
+    } else {
+      set(keyBy($raw, 'release'));
+    }
+  }
+);
+
+
