@@ -12,8 +12,6 @@
       <li>{endpoint} </li>
     {/each}
   </ul>
-</table>
-</section>
 <style>
  h2 {
    margin-top: 1.5rem;
