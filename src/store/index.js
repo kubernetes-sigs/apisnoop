@@ -398,10 +398,9 @@ export const coveragePerRelease = derived(
     } else {
       let ratioSet = $cpr.map(({release, tested, untested}) => ({
             release: release === "1.5.0" ? "1.5.0 and Earlier" : release,
-            href: `/${release}`,
             total: {
-              tested,
-              untested: (untested * -1) // this is to make it show as split ratio graph
+              Tested: tested,
+              Untested: (untested * -1) // this is to make it show as split ratio graph
             }
           }));
 
