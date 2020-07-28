@@ -10,7 +10,6 @@
    "width": "900",
    "height": "600",
    "encoding": {
-     "href": {"field": "href"},
      "y": {
        "field": "release",
        "type": "nominal",
