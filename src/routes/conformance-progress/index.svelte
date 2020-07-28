@@ -54,7 +54,7 @@
   {#if $conformanceProgressPercentage.length === 0}
     <p>loading chart...</p>
   {:else}
-    <ConformanceProgressPercentage data={$conformanceProgressPercentage} />
+    <ConformanceProgressPercentage data={$formattedProgress} />
   {/if}
 
 </section>
