@@ -375,6 +375,7 @@ export const formattedProgress = derived(
           const { release, total } = rel;
           const formattedTotals = values(mapValues(total, (v, k) => ({
             release: release,
+            href: `/${release}`,
             type: k,
             total: v,
             order: order[k]
@@ -397,6 +398,7 @@ export const coveragePerRelease = derived(
     } else {
       let ratioSet = $cpr.map(({release, tested, untested}) => ({
             release: release === "1.5.0" ? "1.5.0 and Earlier" : release,
+            href: `/${release}`,
             total: {
               tested,
               untested: (untested * -1) // this is to make it show as split ratio graph
@@ -438,6 +440,7 @@ export const conformanceProgressPercentage = derived(
         const order = {'Current Coverage': 'a', 'New Coverage': 'b', 'Uncovered': 'c'};
         return values(mapValues(total, (v,k) => ({
           release: release,
+          href: `/${release}`,
           type: k,
           total: v,
           order: order[k]
