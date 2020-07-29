@@ -366,7 +366,7 @@ export const stableCoverageAtRelease = derived(
           const { release, total } = rel;
           const formattedTotals = values(mapValues(total, (v, k) => ({
             release: release,
-            href: `/${release}`,
+            href: `conformance-progress/${release}?type=${k.toLowerCase().replace(/ /g, '-')}`,
             type: k,
             total: v,
             order: order[k]
