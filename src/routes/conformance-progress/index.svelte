@@ -12,6 +12,7 @@
  import { releasesURL } from '../../lib/constants.js';
  import { onMount } from 'svelte';
  import StableOverTime from '../../components/vega-charts/stable-over-time.svelte';
+ import StableCoverageAtRelease from '../../components/vega-charts/stable-coverage-at-release.svelte';
  import CoveragePerRelease from '../../components/vega-charts/coverage-per-release.svelte';
  import ConformanceProgressPercentage  from '../../components/vega-charts/conformance-progress-percentage.svelte'
 
@@ -22,7 +23,8 @@
    coveragePerReleaseRaw.set(coverageData);
    console.log({percent: $conformanceProgressPercentage});
  });
- // something
+
+ $: chartType = 'number';
 </script>
 
 <svelte:head>
@@ -37,27 +39,7 @@
   <p>We also limit the set to endpoints still around today, excluding historically stable endpoints that have since been deprecrated.</p>
 </section>
 
-<section id="coverage-at-time-of-release">
-  <h2><a href="conformance-progress#coverage-at-time-of-release">Stable Endpoint Coverage At Time of Release <Link width="1.25rem" /> </a></h2>
-  <em>How many endpoints were introduced in a release, and how many came in with tests?  What was the confomrance coverage at the time of this release?</em>
-
-{#if $formattedProgress.length === 0}
-  <p>loading chart...</p>
-{:else}
-  <StableOverTime data={$formattedProgress} />
-{/if}
-</section>
-
-<section id="conformance-progress-percentage">
-  <h2><a href="conformance-progress#conformance-progress-percentage">Stable Endpoint Coverage at Time Of Release(Percentage)<Link width="1.25rem" /> </a></h2>
-  <em>What was the percentage of total endpoints hit by conformance tests at the time of release?</em>
-  {#if $conformanceProgressPercentage.length === 0}
-    <p>loading chart...</p>
-  {:else}
-    <ConformanceProgressPercentage data={$formattedProgress} />
-  {/if}
-
-</section>
+<StableCoverageAtRelease />
 
 <section id="coverage-by-release">
   <h2><a href="conformance-progress#coverage-by-release">Conformance Coverage By Release <Link width="1.25rem"/></a></h2>
