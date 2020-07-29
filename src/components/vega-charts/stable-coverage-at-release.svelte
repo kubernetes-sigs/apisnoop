@@ -1,6 +1,6 @@
 <script>
  import { afterUpdate } from 'svelte';
- import { formattedProgress } from '../../store';
+ import { stableCoverageAtRelease } from '../../store';
  import { default as embed } from 'vega-embed';
  import Link from '../icons/link-solid.svelte';
 
@@ -31,7 +31,7 @@
  afterUpdate(async() => {
    let spec = {
      "data": {
-       "values": $formattedProgress,
+       "values": $stableCoverageAtRelease,
      },
      "width": "900",
      "height": "600",
@@ -79,7 +79,7 @@
   <h2><a href="conformance-progress#coverage-at-time-of-release">Stable Endpoint Coverage At Time of Release <Link width="1.25rem" /> </a></h2>
   <em>How many endpoints were introduced in a release, and how many came in with tests?  What was the conformance coverage at the time of this release?</em>
 
-  {#if $formattedProgress.length === 0}
+  {#if $stableCoverageAtRelease.length === 0}
     <p>loading chart...</p>
   {:else}
     <div class="'chart-type" >

@@ -1,30 +1,23 @@
 <script>
- import {
-   conformanceProgressRaw,
-   formattedProgress,
-   coveragePerReleaseRaw,
-   coveragePerRelease,
-   conformanceProgressPercentage
- } from '../../store';
-
- import Link from '../../components/icons/link-solid.svelte';
-
- import { releasesURL } from '../../lib/constants.js';
  import { onMount } from 'svelte';
- import StableOverTime from '../../components/vega-charts/stable-over-time.svelte';
+
+ import {
+   stableCoverageAtReleaseRaw,
+   coveragePerReleaseRaw,
+   coveragePerRelease
+ } from '../../store';
+ import Link from '../../components/icons/link-solid.svelte';
+ import { releasesURL } from '../../lib/constants.js';
+
  import StableCoverageAtRelease from '../../components/vega-charts/stable-coverage-at-release.svelte';
  import CoveragePerRelease from '../../components/vega-charts/coverage-per-release.svelte';
- import ConformanceProgressPercentage  from '../../components/vega-charts/conformance-progress-percentage.svelte'
 
  onMount(async() => {
    let progressData = await fetch(`${releasesURL}/conformance-progress.json`).then(res => res.json());
    let coverageData = await fetch(`${releasesURL}/conformance-coverage-per-release.json`).then(res=>res.json());
-   conformanceProgressRaw.set(progressData);
+   stableCoverageAtReleaseRaw.set(progressData);
    coveragePerReleaseRaw.set(coverageData);
-   console.log({percent: $conformanceProgressPercentage});
  });
-
- $: chartType = 'number';
 </script>
 
 <svelte:head>

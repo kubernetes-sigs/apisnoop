@@ -328,15 +328,16 @@ export const endpointCoverage = derived([breadcrumb, currentDepth, endpoints], (
 
 // brings in raw conformance-progress.json to be
 // turned into vega-lite ready data for conformance-progress page
-export const conformanceProgressRaw = writable([]);
 
-export const conformanceProgress = derived(
-  conformanceProgressRaw,
-  ($cpr, set) => {
-    if ($cpr.length === 0) {
+export const stableCoverageAtReleaseRaw = writable([]);
+
+export const stableCoverageAtRelease = derived(
+  stableCoverageAtReleaseRaw,
+  ($raw, set) => {
+    if ($raw.length === 0) {
       set([]);
     } else {
-      set($cpr.map(({ total, release }) => {
+      const stableCoverage = $raw.map(({ total, release }) => {
         const tested = total.tested - total.new_tested - total.old_tested;
         const newUntested = total.new - total.new_tested;
         const newTested = total.new_tested;
@@ -351,17 +352,7 @@ export const conformanceProgress = derived(
             'New Endpoints Promoted With Tests': newTested
           }
         };
-      }));
-    }
-  }
-);
-
-export const formattedProgress = derived(
-  conformanceProgress,
-  ($cp, set) => {
-    if ($cp.length === 0) {
-      set([]);
-    } else {
+      });
       const order = {
         Tested: 'a',
         'Old Endpoints Covered By New Tests': 'b',
@@ -369,7 +360,7 @@ export const formattedProgress = derived(
         Untested: 'd',
         'New Endpoints Promoted Without Tests': 'e'
       };
-      const progress = $cp
+      const formattedStableCoverage = stableCoverage
         .filter(rel => rel.release !== '1.8.0')
         .map(rel => {
           const { release, total } = rel;
@@ -382,11 +373,10 @@ export const formattedProgress = derived(
           })));
           return formattedTotals;
         });
-      set(flatten(progress));
+      set(flatten(formattedStableCoverage));
     }
   }
 );
-
 
 export const coveragePerReleaseRaw = writable([]);
 
@@ -415,40 +405,6 @@ export const coveragePerRelease = derived(
     }
   }
 );
-
-export const conformanceProgressPercentage = derived(
-  conformanceProgressRaw,
-  ($cp, set) => {
-    if ($cp.length === 0) {
-      set([]);
-    } else {
-      let percentageSet = $cp.map(({release, total}) => {
-        const tested = total.tested - total.old_tested;
-        const newTested = total.old_tested;
-        const untested = total.endpoints - newTested - tested;
-        return {
-          release: release === "1.5.0" ? "1.5.0 and Earlier" : release,
-          total: {
-            'Current Coverage': tested,
-            'New Coverage': newTested,
-            'Uncovered': untested
-          }
-        };
-      });
-      let formattedRatio = percentageSet.map(({release, total}) => {
-        const order = {'Current Coverage': 'a', 'New Coverage': 'b', 'Uncovered': 'c'};
-        return values(mapValues(total, (v,k) => ({
-          release: release,
-          href: `/${release}`,
-          type: k,
-          total: v,
-          order: order[k]
-        })));
-      });
-      set(flatten(formattedRatio));
-    }
-  }
-)
 
 export const olderNewEndpointsRaw = writable([]);
 
