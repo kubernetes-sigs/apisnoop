@@ -27,6 +27,27 @@ begin;
      select * from conformance.coverage_per_release
    )cp;
  \o
+ \o './resources/coverage/conformance-endpoints.json'
+   select endpoint,
+   first_release as promotion_release,
+   case
+   when first_conformance_test is not null
+   and first_conformance_test::semver < first_release::semver
+   then first_release
+   else first_conformance_test
+   end as tested_release,
+   array_agg(distinct jsonb_build_object(
+     'testname', testname,
+     'codename', test.codename,
+     'file', test.file,
+     'release', test.release
+   )) filter (where testname is not null) as tests
+   from           conformance.eligible_endpoint_coverage ec
+   left join audit_event using(endpoint)
+   left join test on (test.codename = audit_event.test)
+   group by endpoint, first_release, first_conformance_test
+   order by first_release::semver desc;
+\o
  \a
  \t
  commit;

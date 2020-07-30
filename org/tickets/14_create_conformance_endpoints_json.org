@@ -1,0 +1,285 @@
+#+TITLE: 14: Create Conformance Endpoints Json
+
+* The Ticket
+This is work to assist apisnoop/snoopApp#15,
+
+it is a json listing endpoints, with each list including:
+
+    endpoints name
+    promotion release
+    release in which it was first tested (or null if untested)
+    a list of tests that hit it
+        this list includes for each test its name, codename, file, and promotion release.
+* Process
+** Attempt to create view using existing eligible endpoint coverage
+  I think this is all sorted with an existing view, and we'd just wanna rename some of the columns
+  #+begin_src sql-mode
+\d+ conformance.eligible_endpoint_coverage;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                                                                      Materialized view "conformance.eligible_endpoint_coverage"
+           Column         |   Type   | Collation | Nullable | Default | Storage  | Stats target |                                            Description
+  ------------------------+----------+-----------+----------+---------+----------+--------------+---------------------------------------------------------------------------------------------------
+   endpoint               | text     |           |          |         | extended |              | endpoint as defined in table open_api
+   first_conformance_test | text     |           |          |         | extended |              | release of earliest conformance test that hits endpoint. May be earlier than release of endpoint.
+   test                   | text     |           |          |         | extended |              | Name of first test that hits endopint, as given in conformance.yaml
+   codename               | text     |           |          |         | extended |              | first test as it appears in useragent of auditlog
+   file                   | text     |           |          |         | extended |              | file where this first test is defined
+   first_release          | text     |           |          |         | extended |              | release in which this endpoint first appears in the open_api spec as a stable,eligible endpoint.
+   all_test_releases      | semver[] |           |          |         | extended |              | set of releases for tests that hit this endpoint
+  View definition:
+   SELECT oa.endpoint,
+      (array_agg(test.release ORDER BY (test.release::semver)))[1] AS first_conformance_test,
+      (array_agg(test.testname ORDER BY (test.release::semver)))[1] AS test,
+      (array_agg(test.codename ORDER BY (test.release::semver)))[1] AS codename,
+      (array_agg(test.file ORDER BY (test.release::semver)))[1] AS file,
+      (array_agg(oa.release ORDER BY (oa.release::semver)))[1] AS first_release,
+      array_remove(array_agg(DISTINCT test.release::semver ORDER BY (test.release::semver)), NULL::semver) AS all_test_releases
+     FROM open_api oa
+       JOIN conformance.eligible_endpoint USING (endpoint)
+       LEFT JOIN audit_event ae USING (endpoint)
+       LEFT JOIN test ON ae.test = test.codename
+    GROUP BY oa.endpoint;
+  Access method: heap
+
+  #+end_SRC
+
+  Inddeed, so:
+
+  #+begin_src sql-mode
+    select endpoint,
+           first_release as promoted,
+           first_conformance_test as tested
+      from conformance.eligible_endpoint_coverage
+     order by first_release::semver desc
+     limit 5;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                     endpoint                    | promoted | tested
+  -----------------------------------------------+----------+--------
+   createNetworkingV1NamespacedIngress           | 1.19.0   | 1.19.0
+   createCertificatesV1CertificateSigningRequest | 1.19.0   | 1.19.0
+   createEventsV1NamespacedEvent                 | 1.19.0   | 1.19.0
+   createNetworkingV1IngressClass                | 1.19.0   | 1.19.0
+   deleteCertificatesV1CertificateSigningRequest | 1.19.0   | 1.19.0
+  (5 rows)
+
+  #+end_SRC
+
+ This will get us all our endpoint information, but it won't give us the good test info, we'll need to join some tables.
+
+
+ I will also start building out the test json object.  What we want is for each endpoint ot have an array of tests that includes all their info.
+ #+begin_src sql-mode :results silent
+drop view conformance.endpoint;
+ #+end_src
+
+  #+begin_src sql-mode
+    create or replace view conformance.endpoint as
+        select endpoint,
+               first_release as promoted,
+               first_conformance_test as tested,
+               array_agg(json_build_object(
+                 'testname', testname,
+                 'codename', test.codename,
+                 'file', test.file,
+                 'release', test.release
+                 )) filter (where testname is not null) as tests
+          from           conformance.eligible_endpoint_coverage ec
+               left join audit_event using(endpoint)
+               left join test on (test.codename = audit_event.test)
+         group by endpoint, first_release, first_conformance_test, testname,useragent
+         order by first_release::semver desc;
+
+  #+end_src
+
+ #+RESULTS:
+ #+begin_SRC example
+ CREATE VIEW
+ #+end_SRC
+
+ I'm going to iterate on this to add a bit of clarity.  The first_conformance_test column can show a release that is earlier than an endpoints release, based on how we calculate this column (in short: it's a list of all tests that it it, sorted by their release semver, then we grab the first one.  So the endpoint could come in being hit incidentally by a conformance test that's been around a while).
+
+ For this view, we don't really care the release date of the test, rather if the endopint came in tested.  In other words, the first release in which the endpoint was stable and it was tested.  If it came in at 1.19.0, and it is hit by a test promoted in 1.15.0, then the first release in which it is tested is still 1.19.0.
+
+ And so I am going ot add a case statement adjusting the value if first_conformance_test is < first_release, to make this more clear.  I am happy with this adjustment since the release dates of each test that hit it will still show in our tests array.
+
+ I will also adjust some column names for clarity.
+  #+begin_src sql-mode
+        create or replace view conformance.endpoint as
+            select endpoint,
+                   first_release as promotion_release,
+                   case
+                     when first_conformance_test is not null
+                          and first_conformance_test::semver < first_release::semver
+                     then first_release
+                     else first_conformance_test
+                   end as tested_release,
+                   array_agg(distinct jsonb_build_object(
+                     'testname', testname,
+                     'codename', test.codename,
+                     'file', test.file,
+                     'release', test.release
+                     )) filter (where testname is not null) as tests
+              from           conformance.eligible_endpoint_coverage ec
+                   left join audit_event using(endpoint)
+                   left join test on (test.codename = audit_event.test)
+             group by endpoint, first_release, first_conformance_test
+             order by first_release::semver desc;
+
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  CREATE VIEW
+  #+end_SRC
+
+** Check Work
+ We should expect empty tests here
+
+ So this should work where we have endpoints that do have conformance tests and those that don't, and if they do, the array of tests hsould not be empty.
+ #+begin_src sql-mode
+   select endpoint, promotion_release, tests
+     from conformance.endpoint
+    where tested_release is null
+    limit 2;
+ #+end_src
+
+ #+RESULTS:
+ #+begin_SRC example
+                  endpoint                  | promotion_release | tests
+ -------------------------------------------+-------------------+-------
+  getFlowcontrolApiserverAPIGroup           | 1.17.0            |
+  createCoreV1NamespacedServiceAccountToken | 1.16.0            |
+ (2 rows)
+
+ #+end_SRC
+
+This should be null
+#+begin_src sql-mode
+  select endpoint
+    from conformance.endpoint
+   where promotion_release = '1.19.0'
+     and tested_release is null;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ endpoint
+----------
+(0 rows)
+
+#+end_SRC
+
+Conversely, This should be a single value, 1.19.0
+#+begin_src sql-mode
+  select tested_release
+    from conformance.endpoint
+   where promotion_release = '1.19.0'
+   group by tested_release;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ tested_release
+----------------
+ 1.19.0
+(1 row)
+
+#+end_SRC
+
+This should be  10 endpoints
+#+begin_src sql-mode
+  select count(endpoint)
+    from conformance.endpoint
+   where promotion_release::semver < '1.18.0'::semver
+     and tested_release = '1.18.0';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ count
+-------
+    10
+(1 row)
+
+#+end_SRC
+
+This should be 2 endpoints
+
+#+begin_src sql-mode
+  select endpoint
+    from conformance.endpoint
+   where promotion_release = '1.16.0'
+     and tested_release is null;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                 endpoint
+-------------------------------------------
+ createCoreV1NamespacedServiceAccountToken
+ getDiscoveryAPIGroup
+(2 rows)
+
+#+end_SRC
+
+Sweet as, I like it!
+** Output view as json
+   #+begin_src sql-mode
+     begin;
+     \t
+     \a
+     \o ../../resources/coverage/conformance-endpoints.json
+       select json_agg(ce) as output_json
+       from (
+         select * from conformance.endpoint
+         ) ce;
+     \o
+     \a
+     \t
+     commit;
+
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   BEGIN
+   Tuples only is on.
+   Output format is unaligned.
+   #+end_SRC
+We can check this with jq
+#+begin_src shell
+ cat ../../resources/coverage/conformance-endpoints.json | jq '.[0]'
+#+end_src
+
+#+RESULTS:
+#+begin_example
+{
+  "endpoint": "listEventsV1EventForAllNamespaces",
+  "promotion_release": "1.19.0",
+  "tested_release": "1.19.0",
+  "tests": [
+    {
+      "file": "test/e2e/instrumentation/events.go",
+      "release": "1.19.0",
+      "codename": "[sig-instrumentation] Events API should ensure that an event can be fetched, patched, deleted, and listed [Conformance]",
+      "testname": "New Event resource lifecycle, testing a single event"
+    }
+  ]
+}
+#+end_example
+
+just beautiful, a nice object with an array of unique tests that hit it.
+
+** Add output script to our generate-json.sql
+   One thing to check on later is whether we should save this as its own view, or even replace our `conformance.eligible_endpoint_coverage` view.  My gut is we should, but I want to save this refactor for later.
+   For now, i'm just includuing the full select statement into our generate-json file
+** Celebrate
+   This feels nice, a simple select script that gets us the exact json we need.
+* Conclusion | Next Steps
+  The json has been builtand i learned some cool stuff with distinct jsonb objects.  Now to build a webpage!
