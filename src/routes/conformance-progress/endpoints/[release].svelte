@@ -12,7 +12,9 @@
  import {
    confEndpointsRaw,
    confFilters,
+   oldCoveredByNew,
    promotedWithTests,
+   tested,
    untested
  } from '../../../store/conformance.js';
 
@@ -23,12 +25,10 @@
 
  onMount(async() => {
    const endpoints = await fetch(endpointsURL).then(res => res.json())
-   console.log({endpoints});
    confEndpointsRaw.set(endpoints);
  })
 
  afterUpdate(() => {
-   console.log({promoted: $promotedWithTests})
    if (release && $confFilters.release !== release) {
      confFilters.update(f => ({...f, release}));
    }
@@ -42,10 +42,21 @@
     <li>{endpoint}/{promotion_release}/{tested_release}</li>
   {/each}
 </ul>
+<h3>Old Endpoints Covered by New Tests({$oldCoveredByNew.length})</h3>
+<ul>
+  {#each $oldCoveredByNew as { endpoint, promotion_release, tested_release}}
+    <li>{endpoint}/{promotion_release}/{tested_release}</li>
+  {/each}
+</ul>
 <h3>Untested({$untested.length})</h3>
 <ul>
   {#each $untested as { endpoint, promotion_release, tested_release}}
     <li>{endpoint}/{promotion_release}</li>
   {/each}
 </ul>
-
+<h3>Tested({$tested.length})</h3>
+<ul>
+  {#each $tested as { endpoint, promotion_release, tested_release}}
+    <li>{endpoint}/{promotion_release}</li>
+  {/each}
+</ul>

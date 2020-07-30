@@ -33,6 +33,21 @@ export const promotedWithTests = derived(
   }
 );
 
+export const oldCoveredByNew = derived(
+  [confEndpoints, confFilters],
+  ([$endpoints, $filters], set) => {
+    if ($endpoints.length === 0 || $filters.release === '') {
+      set([]);
+    } else {
+      set($endpoints.filter(ep => {
+        return semver.lt(ep.promotion_release, $filters.release) &&
+          ep.tested_release !== null &&
+          ep.tested_release === $filters.release;
+      }));
+    }
+  }
+);
+
 export const untested = derived(
   [confEndpoints, confFilters],
   ([$endpoints, $filters], set) => {
@@ -42,6 +57,21 @@ export const untested = derived(
       set($endpoints.filter(ep => {
         return semver.lt(ep.promotion_release, $filters.release) &&
                ep.tested_release == null;
+      }));
+    }
+  }
+);
+
+export const tested = derived(
+  [confEndpoints, confFilters],
+  ([$endpoints, $filters], set) => {
+    if ($endpoints.length === 0 || $filters.release === '') {
+      set([]);
+    } else {
+      set($endpoints.filter(ep => {
+        return semver.lt(ep.promotion_release, $filters.release) &&
+               ep.tested_release !== null &&
+               semver.lt(ep.tested_release, $filters.release);
       }));
     }
   }
