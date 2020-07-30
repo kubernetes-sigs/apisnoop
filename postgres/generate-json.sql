@@ -28,6 +28,7 @@ begin;
    )cp;
  \o
  \o './resources/coverage/conformance-endpoints.json'
+   select json_agg(ce) as output_json from (
    select endpoint,
    first_release as promotion_release,
    case
@@ -46,7 +47,7 @@ begin;
    left join audit_event using(endpoint)
    left join test on (test.codename = audit_event.test)
    group by endpoint, first_release, first_conformance_test
-   order by first_release::semver desc;
+   order by first_release::semver desc) ce;
 \o
  \a
  \t
