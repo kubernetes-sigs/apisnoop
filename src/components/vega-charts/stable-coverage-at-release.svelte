@@ -80,7 +80,9 @@
   <em>How many endpoints were introduced in a release, and how many came in with tests?  What was the conformance coverage at the time of this release?</em>
 
   {#if $stableCoverageAtRelease.length === 0}
-    <p>loading chart...</p>
+    <div id='stable-coverage-at-release'>
+      <p>loading chart...</p>
+    </div>
   {:else}
     <div class="'chart-type" >
     <strong>View As:</strong>

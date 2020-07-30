@@ -378,10 +378,10 @@ export const stableCoverageAtRelease = derived(
   }
 );
 
-export const coveragePerReleaseRaw = writable([]);
+export const coverageByReleaseRaw = writable([]);
 
-export const coveragePerRelease = derived(
-  coveragePerReleaseRaw,
+export const coverageByRelease = derived(
+  coverageByReleaseRaw,
   ($cpr, set) => {
     if ($cpr.length === 0) {
       set([]);
