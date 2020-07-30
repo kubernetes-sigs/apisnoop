@@ -1,5 +1,6 @@
 <script context="module">
  export function preload({ params, query }) {
+   console.log({query})
    const {release} = params;
    let payload = {
      release
@@ -12,21 +13,20 @@
  import {
    confEndpointsRaw,
    confFilters,
-   oldCoveredByNew,
-   promotedWithTests,
-   tested,
-   untested
+   confFilteredEndpoints
  } from '../../../store/conformance.js';
 
  export let payload;
  const endpointsURL = 'https://raw.githubusercontent.com/apisnoop/snoopDB/master/resources/coverage/conformance-endpoints.json'
 
  let { release } = payload;
+ $: filters = Object.keys($confFilters).filter(key => key !== 'release');
 
  onMount(async() => {
    const endpoints = await fetch(endpointsURL).then(res => res.json())
    confEndpointsRaw.set(endpoints);
  })
+
 
  afterUpdate(() => {
    if (release && $confFilters.release !== release) {
@@ -35,28 +35,47 @@
   })
 
 </script>
-<h2>you got to the release page for {release} </h2>
-<h3>Promoted With Tests({$promotedWithTests.length})</h3>
-<ul>
-  {#each $promotedWithTests as { endpoint, promotion_release, tested_release}}
-    <li>{endpoint}/{promotion_release}/{tested_release}</li>
-  {/each}
-</ul>
-<h3>Old Endpoints Covered by New Tests({$oldCoveredByNew.length})</h3>
-<ul>
-  {#each $oldCoveredByNew as { endpoint, promotion_release, tested_release}}
-    <li>{endpoint}/{promotion_release}/{tested_release}</li>
-  {/each}
-</ul>
-<h3>Untested({$untested.length})</h3>
-<ul>
-  {#each $untested as { endpoint, promotion_release, tested_release}}
-    <li>{endpoint}/{promotion_release}</li>
-  {/each}
-</ul>
-<h3>Tested({$tested.length})</h3>
-<ul>
-  {#each $tested as { endpoint, promotion_release, tested_release}}
-    <li>{endpoint}/{promotion_release}</li>
-  {/each}
-</ul>
+<h2>Conformance Endpoints for {release} </h2>
+<p>{$confFilteredEndpoints.length}</p>
+<table>
+  <thead>
+    <tr>
+      <th>Endpoint</th>
+      <th>Promotion Release</th>
+      <th>Tested Release</th>
+    </tr>
+  </thead>
+  <tbody>
+    {#each $confFilteredEndpoints as {endpoint, colour, promotion_release, tested_release}}
+      <tr>
+        <td style="border-left: 2px solid {colour};">{endpoint}</td>
+        <td class="release">{promotion_release}</td>
+        <td class="release">
+          {#if tested_release}
+            {tested_release}
+            {:else}
+            not tested
+          {/if}
+        </td>
+      </tr>
+    {/each}
+  </tbody>
+</table>
+<style>
+ thead th {
+   padding: 0.25rem;
+   border-right: 1px solid gray;
+   border-bottom: 1px solid gray;
+ }
+ tr {
+   margin: 0;
+ }
+ td {
+   padding: 0.25rem;
+   margin-bottom: none;
+   margin-right: 0.5rem;
+ }
+ td.release {
+   text-align: right;
+ }
+</style>
