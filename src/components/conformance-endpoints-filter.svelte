@@ -72,6 +72,9 @@
   font-size: 1.1rem;
    display: inline;
    list-style-type: none;
-   color: moonwhite;
+   cursor: pointer;
+ }
+ li:hover {
+   background: aliceblue;
  }
 </style>

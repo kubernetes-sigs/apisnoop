@@ -61,7 +61,8 @@
   })
 
 </script>
+<a href="conformance-progress">← Back to Conformance Progress</a>
 <h2>Conformance Endpoints for {release} </h2>
-<p>{$confFilteredEndpoints.length}</p>
 <ConformanceEndpointsFilters />
+<em>Total Endpoints: {$confFilteredEndpoints.length}</em>
 <ConformanceEndpointsTable endpoints="{$confFilteredEndpoints}" />

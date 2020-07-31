@@ -354,11 +354,11 @@ export const stableCoverageAtRelease = derived(
         };
       });
       const order = {
-        Tested: 'a',
-        'Old Endpoints Covered By New Tests': 'b',
-        'New Endpoints Promoted With Tests': 'c',
-        Untested: 'd',
-        'New Endpoints Promoted Without Tests': 'e'
+        Tested: {filter: 'tested', order: 'a'},
+        'Old Endpoints Covered By New Tests': {filter: 'old-covered-by-new', order: 'b'},
+        'New Endpoints Promoted With Tests': {filter: 'promoted-with-tests', order: 'c'},
+        Untested: {filter: 'untested', order: 'd'},
+        'New Endpoints Promoted Without Tests': {filter: 'promoted-without-tests', order: 'e'}
       };
       const formattedStableCoverage = stableCoverage
         .filter(rel => rel.release !== '1.8.0')
@@ -366,10 +366,10 @@ export const stableCoverageAtRelease = derived(
           const { release, total } = rel;
           const formattedTotals = values(mapValues(total, (v, k) => ({
             release: release,
-            href: `conformance-progress/${release}?type=${k.toLowerCase().replace(/ /g, '-')}`,
+            href: `conformance-progress/endpoints/${release}?filter=${order[k]['filter']}`,
             type: k,
             total: v,
-            order: order[k]
+            order: order[k]['order']
           })));
           return formattedTotals;
         });
