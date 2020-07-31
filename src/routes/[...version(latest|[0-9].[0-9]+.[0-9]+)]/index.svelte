@@ -21,11 +21,13 @@
    activeFilters,
    activeRelease,
    previousRelease,
-   newEndpoints
+   newEndpoints,
+   olderNewEndpointsRaw
  } from '../../store';
  import { isEmpty } from 'lodash-es';
  import Sunburst from '../../components/sunburst/Wrapper.svelte'
  import NewEndpoints from '../../components/new-endpoints.svelte';
+ import OlderNewEndpoints from '../../components/older-new-endpoints.svelte';
 
  export let payload;
  $: ({
@@ -46,15 +48,20 @@
      category: category || '',
      endpoint: endpoint || ''
    }))
-   if (isEmpty($activeRelease.endpoints)) {
+   if ($activeRelease !== 'older' && isEmpty($activeRelease.endpoints)) {
      let rel = await fetch(`${releasesURL}/${$activeRelease.release}.json`)
        .then(res => res.json());
      releases.update(rels => ({...rels, [$activeRelease.release]: rel}));
    }
-   if (!isEmpty($previousRelease) && isEmpty($previousRelease.endpoints)) {
+   if ($previousRelease !== 'older' && !isEmpty($previousRelease) && isEmpty($previousRelease.endpoints)) {
      let rel = await fetch(`${releasesURL}/${$previousRelease.release}.json`)
        .then(res => res.json());
      releases.update(rels => ({...rels, [$previousRelease.release]: rel}));
+   }
+   if ($olderNewEndpointsRaw.length === 0) {
+     let older = await fetch(`${releasesURL}/new-endpoints.json`)
+     .then(res=>res.json());
+     olderNewEndpointsRaw.set(older);
    }
  });
 </script>
@@ -63,11 +70,17 @@
   <title>APISnoop | {version}</title>
 </svelte:head>
 
-{#if $activeRelease && $activeRelease.endpoints.length > 0}
+{#if $activeRelease && $activeRelease !== 'older'}
+  {#if $activeRelease.endpoints.length > 0}
 <Sunburst />
   {#if !isEmpty($previousRelease)}
     <NewEndpoints />
   {/if}
 {:else}
 <em>Loading Data...</em>
+{/if}
+{:else}
+<h2>{$activeFilters.version}</h2>
+<em>This is an older release that we do not have test data for.</em>
+<OlderNewEndpoints version={$activeFilters.version} />
 {/if}

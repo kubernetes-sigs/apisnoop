@@ -73,3 +73,11 @@ export function fadeColour (colour, desiredOpacity) {
     return `rgba(${c.red}, ${c.green}, ${c.blue}, ${desiredOpacity})`;
   };
 };
+
+export const conformanceColours = {
+  promotedWithTests: "hsl(158, 74.2%, 48.0%)",
+  oldCoveredByNew: "hsl(158, 74.2%, 38.0%)",
+  tested: "hsl(158, 74.2%, 28.0%)",
+  promotedWithoutTests: "hsl(30, 100%, 70.6%)",
+  untested: "hsl(30, 100%, 60.6%)"
+};

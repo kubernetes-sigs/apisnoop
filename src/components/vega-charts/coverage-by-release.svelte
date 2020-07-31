@@ -1,11 +1,12 @@
 <script>
- import { onMount} from 'svelte';
+ import { afterUpdate } from 'svelte';
  import { default as embed } from 'vega-embed';
+ import { coverageByRelease } from '../../store';
+ import Link from '../icons/link-solid.svelte';
 
- export let data;
  $: spec = {
    "data": {
-     "values": data,
+     "values": $coverageByRelease,
    },
    "width": "900",
    "height": "600",
@@ -37,22 +38,37 @@
      "color": {
        "field": "type",
        "type": "nominal",
-       "scale": {"range": ["#19A974","#FF4136"]},
+       "scale": {"range": [
+                "hsl(158, 74.2%, 38.0%)",
+                "hsl(30, 100%, 60.6%)"
+                ]},
        "legend": {"labelFontSize": 16}
      }
    },
    "mark": {"type": "bar", "tooltip": true}
  };
 
- onMount(() => {
-   embed("#coverage-per-release_chart", spec, {actions: true})
+ afterUpdate(() => {
+   embed("#coverage-by-release_chart", spec, {actions: true})
      .catch(err => console.log('error in still untested chart', err));
  })
  {
  }
 </script>
 
-<div id="coverage-per-release_chart"></div>
+<section id="coverage-by-release">
+  <h2><a href="conformance-progress#coverage-by-release">Conformance Coverage By Release <Link width="1.25rem"/></a></h2>
+  <p>For the endpoints promoted in a release, how many of them are tested as of today?</p>
+  <p><b>Note:</b>We mark the number of still untested endpoints as a negative number, since they represent technical debt.</p>
+
+  {#if $coverageByRelease.length === 0}
+    <div id="coverage-by-release_chart">
+      <p>loading chart...</p>
+    </div>
+  {:else}
+    <div id="coverage-by-release_chart"></div>
+  {/if}
+</section>
 
 <style>
  div {
