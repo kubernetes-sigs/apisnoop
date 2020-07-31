@@ -1,6 +1,8 @@
 <script>
  import { confFilters } from '../store/conformance.js';
  import { conformanceColours } from '../lib/colours.js';
+ import { trimEnd } from 'lodash-es';
+ import { goto } from '@sapper/app';
 
  $: filters = [
    {
@@ -37,9 +39,17 @@
 
  const updateFilters = (filter) => {
    confFilters.update(cf => ({...cf, [filter]: !cf[filter]}));
+   const activeFilters = Object.keys($confFilters).filter(k => k !== 'release' && $confFilters[k] === true);
+   const filterPath= trimEnd(activeFilters.map(f => `filter=${f}&`).join(''), '&');
+   console.log({filterPath});
+   if (filterPath !== '') {
+   goto(`conformance-progress/endpoints/${$confFilters.release}?${filterPath}`);
+   } else {
+     goto(`conformance-progress/endpoints/${$confFilters.release}`);
+   }
  }
 </script>
-<strong>Filter By:</strong>
+<strong>Filtered By:</strong>
 <ul>
 {#each filters as filter}
   {#if filter.value}
@@ -49,3 +59,19 @@
   {/if}
 {/each}
 </ul>
+
+<style>
+  ul {
+  padding-left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  }
+ li {
+  padding: 0.5rem;
+  font-size: 1.1rem;
+   display: inline;
+   list-style-type: none;
+   color: moonwhite;
+ }
+</style>
