@@ -228,7 +228,7 @@ def find_operation_id(openapi_spec, event):
       if not variable_levels:
         print("NOTICE: uri part found that is not in apis spec.")
         print("URI: " + "/".join(uri_parts))
-        return none
+        return None
       variable_level=variable_levels[0] # the var is the next level
       # TODO inspect that variable level is a key for current_level
       current_level = current_level[variable_level] # variable part is final part
