@@ -1,12 +1,29 @@
 ((
   org-mode
   .
-  ((
+  (
+   (
     eval
     .
     (progn
       ;; define our funs!
       (message "START: ii/sql-org-hacks")
+      ;; ensure tmpdir is in home dir so noexec / tmp doesn't fail
+      (set (make-local-variable 'temporary-file-directory)
+           (concat user-home-directory "tmp/"))
+      (mkdir temporary-file-directory t)
+      (set (make-local-variable 'org-babel-temporary-directory)
+           (concat temporary-file-directory "babel"))
+      (mkdir org-babel-temporary-directory t)
+      (setenv "GOTMPDIR" org-babel-temporary-directory)
+      (set (make-local-variable 'org-babel-default-header-args:sql-mode)
+            ;; Set up all sql-mode blocks to be postgres and literate
+            '((:results . "replace code")
+              (:product . "postgres")
+              (:session . "none")
+              (:noweb . "yes")
+              (:comments . "no")
+              (:wrap . "SRC example")))
       (set (make-local-variable 'sql-sqlite-program)
            (executable-find "sqlite3"))
       (set (make-local-variable 'sql-server)
@@ -153,8 +170,9 @@ This function assumes you have the appropriately named code block and heading, w
         "Copies the go.mod and go.sum files to the ob-go babel tmp"
         (interactive)
         (let ((babel-dir (concat org-babel-temporary-directory "/")))
-          (copy-file "go.mod" babel-dir)
-          (copy-file "go.sum" babel-dir)
+          (copy-file "go.mod" babel-dir t)
+          (copy-file "go.sum" babel-dir t)
           (message "Copied go.{mod,sum} to: %s" babel-dir))
         )
+      (apisnoop/go-mod-to-babel-dir)
       ))))) ;; end org-mode eval progn
