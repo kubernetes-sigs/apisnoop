@@ -6,6 +6,41 @@
     .
     (progn
       ;; define our funs!
+      (message "START: ii/sql-org-hacks")
+      (set (make-local-variable 'sql-sqlite-program)
+           (executable-find "sqlite3"))
+      (set (make-local-variable 'sql-server)
+           (if (getenv "PGHOST")
+               (getenv "PGHOST")
+             (if (file-exists-p "/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+                 "postgres"
+               "localhost"
+               )))
+      (set (make-local-variable 'sql-port)
+           (if (getenv "PGPORT")
+               (string-to-number (getenv "PGPORT"))
+             5432))
+      (set (make-local-variable 'sql-user)
+           (if (getenv "PGUSER")
+               (getenv "PGUSER")
+             "apisnoop"))
+      (set (make-local-variable 'sql-database)
+           (if (getenv "PGDATABASE")
+               (getenv "PGDATABASE")
+             "apisnoop"))
+      (set (make-local-variable 'sql-product)
+           '(quote postgres))
+      (set (make-local-variable 'sql-connection-alist)
+           (list
+            ;; setting these allows for the connection to be
+            ;; created on the fly
+            (list 'none
+                  (list 'sql-product '(quote postgres))
+                  (list 'sql-user sql-user)
+                  (list 'sql-database sql-database)
+                  (list 'sql-port sql-port)
+                  (list 'sql-server sql-server))))
+      (message "END: ii/sql-org-hacks")
       (setq-local RESOURCENAME "RESOURCENAME")
       (defun apisnoop/insert-mock-template ()
         "Inserts contents of current directory's mock-template.org file into current buffer."
