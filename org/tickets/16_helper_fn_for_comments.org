@@ -1,0 +1,367 @@
+#+TITLE: Helper Function for Table/View/Column comments
+
+* The Ticket
+  Idea: When someone is using snoopDB, they can call upon a function, passing along a table and optional column. It returns the comment for that table or that column.
+
+This would essentially be a wrapper on the d+ command, removing alot of the extra columns that can make that command hard to read...and letting you focus on specific columns.
+* The Strategy
+ - research best way to get comment on specific column
+ - wrap this method in a function
+ - add function to our migrations
+ - test and share
+ - celebrate
+* The Process
+** research best way to get comment on specific column
+   There's a straightforward blog post on this here: https://www.developerfiles.com/adding-and-retrieving-comments-on-postgresql-tables/
+   I like the comment within it as it feels it'll be easier to wrap this in a function.
+
+   #+begin_src sql-mode
+     select cols.column_name as item,
+            pg_catalog.col_description(c.oid, cols.ordinal_position::int) as description
+       from pg_catalog.pg_class c, information_schema.columns cols
+      where cols.table_schema = 'public'
+        and cols.table_name = 'endpoint_coverage'
+        and cols.column_name = 'conf_tested'
+        and cols.table_name = c.relname
+       union
+     select 'table: '||cols.table_name as item,
+            obj_description(cols.table_name::regclass) as description
+     from information_schema.columns cols
+      where cols.table_name = 'endpoint_coverage';
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+              item           |                                            description
+   --------------------------+---------------------------------------------------------------------------------------------------
+    table: endpoint_coverage | All endpoints from a release and their coverage, per audit events for that release
+    conf_tested              | was endpoint hit at least once by a conformance test useragent in the audit logs of this release?
+   (2 rows)
+
+   #+end_SRC
+
+   #+begin_src sql-mode
+     select cols.table_name
+       from information_schema.columns cols
+      where cols.table_schema = 'public'
+            group by cols.table_name;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+       table_name
+   -------------------
+    open_api
+    test
+    audit_event
+    endpoint_coverage
+    audit_event_test
+   (5 rows)
+
+   #+end_SRC
+
+** wrap this method in a function
+   I think I want to do a couple functions actually, to make them easier to call and since postgres is powerful.
+   The functions
+   - [X] describe_relations :: describe all tables and views
+   - [X] describe_relation :: describe a given relation plus all its columns.
+   - [X] describe_columns :: describe all columns for given relation
+   - [X] describe_column :: describe given column for given relation
+That feels simple to implement nad simple to use, a winning combination.
+** Create function describe_relations
+   This should be for both schemas: public and conformance. and should show both views and tables.
+   Here is the sql statement
+   #+begin_src sql-mode
+     select table_name as name,
+            obj_description(table_name::regclass) as description
+       from information_schema.tables
+      where table_schema = 'public'
+      union
+     select table_name as name,
+            obj_description(table_name::regclass) as description
+       from information_schema.views
+      where table_schema = 'public'
+      union
+     select 'conformance.'||table_name as name,
+            obj_description(('conformance.'||table_name)::regclass) as description
+       from information_schema.views
+      where table_schema = 'conformance'
+       group by name
+       order by name;
+   #+end_src
+
+
+   The statement works, but shows that I need to work on the table and view comments!  Too verbose!
+
+   Now as a function
+
+   #+begin_src sql-mode
+   drop function describe_relations;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   DROP FUNCTION
+   #+end_SRC
+
+   #+begin_src sql-mode
+     create or replace function describe_relations(out schema text, out name name, out description text)
+       returns setof record
+     as $$
+       select table_schema::text as schema,
+              table_name as name,
+              obj_description(table_name::regclass) as description
+       from information_schema.tables
+       where table_schema = 'public'
+         union
+       select table_schema as schema,
+              table_name as name,
+              obj_description(table_name::regclass) as description
+       from information_schema.views
+       where table_schema = 'public'
+         union
+       select  table_schema as schema,
+               table_name as name,
+               obj_description(('conformance.'||table_name)::regclass) as description
+       from information_schema.views
+       where table_schema = 'conformance'
+       group by name, table_schema
+       order by schema desc, name;
+      $$ language SQL;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# CREATE FUNCTION
+   #+end_SRC
+
+   This lets us call the function like so...
+   #+begin_src sql-mode
+   select * from describe_relations();
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+      schema    |         name         |                                                   description
+   -------------+----------------------+-----------------------------------------------------------------------------------------------------------------
+    public      | audit_event          | each audit event taken from the logs of an e2e test suite run
+    public      | audit_event_test     | every test in the audit_log of a release
+    public      | endpoint_coverage    | All endpoints from a release and their coverage, per audit events for that release
+    public      | open_api             | Details on k8s endpoints taken from the openapi spec for that release
+    public      | test                 | info for each conformance test as taken from latest conformance.yaml
+    conformance | coverage_per_release | Per release, # of eligible endpoints from that release that are tested today along with useful running tallies.
+    conformance | eligible_endpoint    | all current stable endpoints for which conformant tests could be written, following conformance guidelines
+    conformance | new_endpoint         | list of eligible endpoints, their release, and whether they are tested
+    conformance | progress             | per release, the # of new, eligible endpoints and the ratios of tested eligible endpoints
+   (9 rows)
+
+   #+end_SRC
+
+** Create function describe_relation
+   Same as before, but now passing an argument...and because we're being specific, we don't need to do this union.
+
+   #+begin_src sql-mode
+   select obj_description('conformance.new_endpoint'::regclass);
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                               obj_description
+   ------------------------------------------------------------------------
+    list of eligible endpoints, their release, and whether they are tested
+   (1 row)
+
+   #+end_SRC
+
+   Now as a function
+   #+begin_src sql-mode
+     create or replace function describe_relation(schema text, relation text)
+       returns text
+     as $$
+       select obj_description((schema||'.'||relation)::regclass)
+      $$ language SQL;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   postgres$# postgres$# CREATE FUNCTION
+   #+end_SRC
+
+   #+begin_src sql-mode
+   select describe_relation('public','endpoint_coverage');
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                    describe_relation
+   ------------------------------------------------------------------------------------
+    All endpoints from a release and their coverage, per audit events for that release
+   (1 row)
+
+   #+end_SRC
+
+   I think that works well enough!
+
+** Create function describe_columns
+
+   first let's set up our sql statement
+   #+begin_src sql-mode
+     select cols.column_name as item,
+            pg_catalog.col_description(c.oid, cols.ordinal_position::int) as description
+       from pg_catalog.pg_class c, information_schema.columns cols
+      where cols.table_name = 'progress'
+        and cols.table_name = c.relname;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                   item                |                                                 description
+   ------------------------------------+--------------------------------------------------------------------------------------------------------------
+    release                            | the kubernetes release
+    new_endpoints                      | # of eligible endpoints promoted to stable in this release
+    new_tests                          | # of tests promoted to conformance this release
+    new_endpoints_promoted_with_tests  | # of new endpoints hit by a new test, meaning the test and endpoint were promoted in tandem
+    new_endpoints_covered_by_new_tests | # of new endpoints whose first test is one that was promoted this release
+    new_endpoints_covered_by_old_tests | # of new endpoints that were hit by an existing test
+    old_endpoints_covered_by_new_tests | # old endoints hit for the first time by a test from this release.  This shows the payment of technical debt
+    total_endpoints                    |
+    total_tested_endpoints             | total # of eligible endopints hit by tests
+    endpoints_still_untested_today     | # of new endopints from this release that are unhit as of the present day
+   (10 rows)
+
+   #+end_SRC
+
+   Nice little aspect of this: we don't need to define the schema!  However, this will be a problem if we have two views of the same name in diff. schemas which i can anticipate with something like 'endpoint_coverage'.
+
+   So I will pass the schema along as the second argument.  It has a default value of 'public'.  If you want a conformance endpoint...it'd be something like ~describe_columns('conformance','new_endpoint')~.  I retroactively changed the signature for describe relation to require a schema too, so there's a specific practice to calling these.
+
+   Now as a function
+
+   #+begin_src sql-mode
+   drop function describe_columns;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   DROP FUNCTION
+   #+end_SRC
+
+     #+begin_src sql-mode
+       create or replace function describe_columns(in schema text, in relation text, out "column" text, out description text)
+         returns setof record
+       as $$
+       select cols.column_name::text as "column",
+              pg_catalog.col_description(c.oid, cols.ordinal_position::int)::text as description
+         from pg_catalog.pg_class c, information_schema.columns cols
+        where cols.table_schema = schema
+          and cols.table_name = relation
+          and cols.table_name = c.relname;
+        $$ language SQL;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# CREATE FUNCTION
+   #+end_SRC
+
+   #+begin_src sql-mode
+   select *  from describe_columns('conformance','new_endpoint');
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+     column  |                            description
+   ----------+--------------------------------------------------------------------
+    endpoint | is this endpoint hit by a conformance test, as of latest test run?
+    release  | release in which this endpoint was promoted
+    tested   |
+   (3 rows)
+
+   #+end_SRC
+
+   I think that works well enough!
+
+** Create function describe_column
+
+   first let's set up our sql statement
+   #+begin_src sql-mode
+     select cols.column_name as item,
+            pg_catalog.col_description(c.oid, cols.ordinal_position::int) as description
+       from pg_catalog.pg_class c, information_schema.columns cols
+      where cols.table_name = 'progress'
+        and cols.table_schema = 'conformance'
+        and cols.column_name = 'release'
+        and cols.table_name = c.relname;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+     item   |      description
+   ---------+------------------------
+    release | the kubernetes release
+   (1 row)
+
+   #+end_SRC
+   Then our function, taking schema, then relation, then column
+
+
+
+   Nice little aspect of this: we don't need to define the schema!  However, this will be a problem if we have two views of the same name in diff. schemas which i can anticipate with something like 'endpoint_coverage'.
+
+   So I will pass the schema along as the second argument.  It has a default value of 'public'.  If you want a conformance endpoint...it'd be something like ~describe_columns('conformance','new_endpoint')~.  I retroactively changed the signature for describe relation to require a schema too, so there's a specific practice to calling these.
+
+   Now as a function
+
+   #+begin_src sql-mode
+   drop function describe_column;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   DROP FUNCTION
+   #+end_SRC
+
+     #+begin_src sql-mode
+              create or replace function describe_column(
+                in schema text,
+                in relation text,
+                in col text,
+                out "column" text,
+                out "description" text
+              )
+              returns setof record
+                   as $$
+              select cols.column_name::text as "column",
+                     pg_catalog.col_description(c.oid, cols.ordinal_position::int)::text as description
+                from pg_catalog.pg_class c, information_schema.columns cols
+               where cols.table_schema = schema
+                 and cols.table_name = relation
+                 and cols.column_name = col
+                 and cols.table_name = c.relname;
+               $$ language SQL;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# postgres$# CREATE FUNCTION
+   #+end_SRC
+
+   #+begin_src sql-mode
+   select *  from describe_column('conformance','new_endpoint', 'endpoint');
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+     column  |                            description
+   ----------+--------------------------------------------------------------------
+    endpoint | is this endpoint hit by a conformance test, as of latest test run?
+   (1 row)
+
+   #+end_SRC
+
+   I think that works well enough!
+
+** add function to our migrations
+** test and share
+** celebrate
+* Conclusions
