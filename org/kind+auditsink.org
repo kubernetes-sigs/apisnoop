@@ -1,0 +1,797 @@
+* Docker Desktop
+** Under The Hood
+
+From https://collabnix.com/how-docker-for-mac-works-under-the-hood/
+
+#+begin_center
+One of the most amazing feature about Docker for Mac is “drag & Drop” the
+Mac application to /Applications to run Docker CLI and it just works flawlessly.
+#+end_center
+
+Docker Desktop for OSX uses a [[https://github.com/linuxkit/linuxkit][LinuxKit]] VM on [[https://github.com/moby/hyperkit][HyperKit]]
+
+** Peeking under the hood
+
+#+NAME: docker-osx-helpers
+#+begin_src shell
+ps ax | grep docker | awk '{print $5}' | sort | grep -v grep
+#+end_src
+
+#+RESULTS: docker-osx-helpers
+#+begin_example
+/Applications/Docker.app/Contents/MacOS/com.docker.backend
+/Applications/Docker.app/Contents/MacOS/com.docker.supervisor
+/Library/PrivilegedHelperTools/com.docker.vmnetd
+com.docker.driver.amd64-linux
+com.docker.hyperkit
+com.docker.osxfs
+com.docker.vpnkit
+docker-mutagen
+#+end_example
+
+*** named sockets
+#+begin_src bash :wrap "SRC json"
+ls -la Library/Containers/com.docker.docker/Data/ \
+ | grep sock
+#+end_src
+
+#+RESULTS:
+#+begin_SRC json
+srwxr-xr-x   1 hh  staff        0  7 Aug 20:51 backend-for-guest.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:23 backend.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:24 diagnosticd.sock
+srwxr-xr-x   1 hh  staff        0  7 Aug 20:51 docker-api.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:24 docker.raw.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:23 docker.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:24 filesystem-event.sock
+srwxr-xr-x   1 hh  staff        0  7 Aug 20:51 filesystem-export.sock
+srwxr-xr-x   1 hh  staff        0  7 Aug 20:51 filesystem-volume.sock
+srwxr-xr-x   1 hh  staff        0  7 Aug 20:51 gui-api.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:24 lifecycle-server.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:24 memlogdq.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:24 mutagen.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:23 osxfs.sock
+srwxr-xr-x   1 hh  staff        0  7 Aug 20:51 vpnkit.data.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:23 vpnkit.diag.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:23 vpnkit.eth.sock
+srwxr-xr-x   1 hh  staff        0 11 Aug 12:23 vpnkit.pcap.sock
+srwxr-xr-x   1 hh  staff        0  7 Aug 20:51 vpnkit.port.sock
+#+end_SRC
+
+*** vms/0/data/hyperkit.json
+#+begin_src bash :wrap "SRC json"
+cat ~/Library/Containers/com.docker.docker/Data/vms/0/hyperkit.json \
+ | jq .
+#+end_src
+
+#+RESULTS:
+#+begin_SRC json
+{
+  "hyperkit": "/Applications/Docker.app/Contents/Resources/bin/com.docker.hyperkit",
+  "argv0": "com.docker.hyperkit",
+  "state_dir": "vms/0",
+  "vpnkit_sock": "vpnkit.eth.sock",
+  "vpnkit_uuid": "24d0dc3f-f991-4505-9cc5-2ad42f28eac6",
+  "vpnkit_preferred_ipv4": "",
+  "uuid": "1054fd1e-ed24-45fa-8aaf-c762b26fc884",
+  "disks": [
+    {
+      "path": "/Users/hh/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw",
+      "size": 524288,
+      "format": "",
+      "trim": true
+    }
+  ],
+  "iso": [
+    "/Applications/Docker.app/Contents/Resources/linuxkit/docker-desktop.iso",
+    "vms/0/config.iso",
+    "/Applications/Docker.app/Contents/Resources/linuxkit/docker.iso"
+  ],
+  "vsock": true,
+  "vsock_dir": "vms/0",
+  "vsock_ports": [
+    2376,
+    1525
+  ],
+  "vsock_guest_cid": 3,
+  "vmnet": false,
+  "9p_sockets": null,
+  "kernel": "",
+  "initrd": "",
+  "bootrom": "/Applications/Docker.app/Contents/Resources/uefi/UEFI.fd",
+  "cpus": 8,
+  "memory": 24576,
+  "console": 2,
+  "pid": 80114,
+  "arguments": [
+    "-A",
+    "-u",
+    "-F",
+    "vms/0/hyperkit.pid",
+    "-c",
+    "8",
+    "-m",
+    "24576M",
+    "-s",
+    "0:0,hostbridge",
+    "-s",
+    "31,lpc",
+    "-s",
+    "1:0,virtio-vpnkit,path=vpnkit.eth.sock,uuid=24d0dc3f-f991-4505-9cc5-2ad42f28eac6",
+    "-U",
+    "1054fd1e-ed24-45fa-8aaf-c762b26fc884",
+    "-s",
+    "2:0,virtio-blk,/Users/hh/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw",
+    "-s",
+    "3,virtio-sock,guest_cid=3,path=vms/0,guest_forwards=2376;1525",
+    "-s",
+    "4,ahci-cd,/Applications/Docker.app/Contents/Resources/linuxkit/docker-desktop.iso",
+    "-s",
+    "5,ahci-cd,vms/0/config.iso",
+    "-s",
+    "6,ahci-cd,/Applications/Docker.app/Contents/Resources/linuxkit/docker.iso",
+    "-s",
+    "7,virtio-rnd",
+    "-l",
+    "com1,autopty=vms/0/tty,asl",
+    "-f",
+    "bootrom,/Applications/Docker.app/Contents/Resources/uefi/UEFI.fd,,"
+  ],
+  "cmdline": "/Applications/Docker.app/Contents/Resources/bin/com.docker.hyperkit -A -u -F vms/0/hyperkit.pid -c 8 -m 24576M -s 0:0,hostbridge -s 31,lpc -s 1:0,virtio-vpnkit,path=vpnkit.eth.sock,uuid=24d0dc3f-f991-4505-9cc5-2ad42f28eac6 -U 1054fd1e-ed24-45fa-8aaf-c762b26fc884 -s 2:0,virtio-blk,/Users/hh/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw -s 3,virtio-sock,guest_cid=3,path=vms/0,guest_forwards=2376;1525 -s 4,ahci-cd,/Applications/Docker.app/Contents/Resources/linuxkit/docker-desktop.iso -s 5,ahci-cd,vms/0/config.iso -s 6,ahci-cd,/Applications/Docker.app/Contents/Resources/linuxkit/docker.iso -s 7,virtio-rnd -l com1,autopty=vms/0/tty,asl -f bootrom,/Applications/Docker.app/Contents/Resources/uefi/UEFI.fd,,"
+}
+#+end_SRC
+
+*** hyperkit args
+With over 30 arguments, this underlying process/daemon is the docker VM itself.
+
+#+NAME: com.docker.dockerkit args
+#+begin_src shell
+ps ax | grep com.docker.hyperkit | grep -v grep \
+ | awk '{print $5,"\n",$6,$7,"\n",$8,$9,"\n",$10,$11,"\n",$12,$13,"\n",$14,$15,"\
+",$16,$17,"\n",$18,$19,"\n",$20,$21,"\n",$22,$23,"\n",$24,$25,"\n",$26,$27,"\
+",$28,$29,"\n",$30,$31,"\n",$32,$33,"\n",$34,$35,"\n",$36,$37}'
+#+end_src
+
+#+RESULTS: com.docker.dockerkit args
+#+begin_example
+com.docker.hyperkit
+ -A -u
+ -F vms/0/hyperkit.pid
+ -c 8
+ -m 24576M
+ -s 0:0,hostbridge
+ -s 31,lpc
+ -s 1:0,virtio-vpnkit,path=vpnkit.eth.sock,uuid=24d0dc3f-f991-4505-9cc5-2ad42f28eac6
+ -U 1054fd1e-ed24-45fa-8aaf-c762b26fc884
+ -s 2:0,virtio-blk,/Users/hh/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw
+ -s 3,virtio-sock,guest_cid=3,path=vms/0,guest_forwards=2376;1525
+ -s 4,ahci-cd,/Applications/Docker.app/Contents/Resources/linuxkit/docker-desktop.iso
+ -s 5,ahci-cd,vms/0/config.iso
+ -s 6,ahci-cd,/Applications/Docker.app/Contents/Resources/linuxkit/docker.iso
+ -s 7,virtio-rnd
+ -l com1,autopty=vms/0/tty,asl
+ -f bootrom,/Applications/Docker.app/Contents/Resources/uefi/UEFI.fd,,
+#+end_example
+
+*** vpnkit args
+
+With over 40 arguments, this underlying process/daemon connects the VM to the outside world.
+
+#+NAME: com.docker.vpnkit args
+#+begin_src shell
+ps ax | grep com.docker.vpnkit | grep -v grep \
+ | awk '{print $5,"\n",$6,$7,"\n",$8,$9,"\n",$10,$11,"\n",$12,$13,"\n",$14,$15,$16,"\
+",$17,$18,"\n",$19,$20,"\n",$21,$22,"\n",$23,$24,"\n",$25,$26,$27,"\n",$28,$29,$30,"\
+",$31,$32,"\n",$33,$34,"\n",$35,$36,"\n",$37,$38,"\n",$39,$40,"\n",$41,$42,"\
+",$43,$44,"\n",$45,$46,"\n",$47,$48}'
+#+end_src
+
+#+RESULTS: com.docker.vpnkit args
+#+begin_example
+com.docker.vpnkit
+ --ethernet fd:3
+ --diagnostics fd:4
+ --pcap fd:5
+ --vsock-path vms/0/connect
+ --gateway-forwards /Users/hh/Library/Group Containers/group.com.docker/gateway_forwards.json
+ --host-names host.docker.internal,docker.for.mac.host.internal,docker.for.mac.localhost
+ --listen-backlog 32
+ --mtu 1500
+ --allowed-bind-addresses 0.0.0.0
+ --http /Users/hh/Library/Group Containers/group.com.docker/http_proxy.json
+ --dhcp /Users/hh/Library/Group Containers/group.com.docker/dhcp.json
+ --port-max-idle-time 300
+ --max-connections 2000
+ --gateway-ip 192.168.65.1
+ --host-ip 192.168.65.2
+ --lowest-ip 192.168.65.3
+ --highest-ip 192.168.65.254
+ --log-destination asl
+ --udpv4-forwards 123:127.0.0.1:49405
+ --gc-compact-interval 1800
+#+end_example
+** NameSpace Enter (pid 1)
+
+*** start nsenter
+https://github.com/justincormack/nsenter1
+
+#+name: nsenter1
+#+begin_src shell
+  docker rm -f nsenter1
+  docker run -d --name nsenter1 --privileged --pid=host justincormack/nsenter1 /bin/sleep 9999
+#+end_src
+
+#+RESULTS: nsenter1
+#+begin_example
+nsenter1
+d4a4618ab4591a03e8caed9244a28bc53d30e63189f291076f2e30f3d13b098e
+#+end_example
+*** explore VM
+
+#+begin_src bash :dir /docker:nsenter1:/
+(
+ps ax | grep docker
+) 2>&1
+:
+#+end_src
+
+#+RESULTS:
+#+begin_src bash
+PID   USER     TIME  COMMAND
+    1 root      0:01 /sbin/init text
+    2 root      0:00 [kthreadd]
+    3 root      0:00 [rcu_gp]
+    4 root      0:00 [rcu_par_gp]
+    6 root      0:00 [kworker/0:0H-kb]
+    8 root      0:00 [mm_percpu_wq]
+    9 root      0:04 [ksoftirqd/0]
+   10 root      3:09 [rcu_sched]
+   11 root      0:00 [rcu_bh]
+   12 root      0:00 [migration/0]
+   14 root      0:00 [cpuhp/0]
+   15 root      0:00 [cpuhp/1]
+   16 root      0:01 [migration/1]
+   17 root      0:04 [ksoftirqd/1]
+   19 root      0:00 [kworker/1:0H-ev]
+   20 root      0:00 [cpuhp/2]
+   21 root      0:00 [migration/2]
+   22 root      0:03 [ksoftirqd/2]
+   24 root      0:00 [kworker/2:0H-ev]
+   25 root      0:00 [cpuhp/3]
+   26 root      0:00 [migration/3]
+   27 root      0:05 [ksoftirqd/3]
+   29 root      0:00 [kworker/3:0H-ev]
+   30 root      0:00 [cpuhp/4]
+   31 root      0:00 [migration/4]
+   32 root      0:04 [ksoftirqd/4]
+   34 root      0:00 [kworker/4:0H-ev]
+   35 root      0:00 [cpuhp/5]
+   36 root      0:01 [migration/5]
+   37 root      0:04 [ksoftirqd/5]
+   39 root      0:00 [kworker/5:0H-ev]
+   40 root      0:00 [cpuhp/6]
+   41 root      0:00 [migration/6]
+   42 root      0:03 [ksoftirqd/6]
+   44 root      0:00 [kworker/6:0H-ev]
+   45 root      0:00 [cpuhp/7]
+   46 root      0:00 [migration/7]
+   47 root      0:03 [ksoftirqd/7]
+   49 root      0:00 [kworker/7:0H-ev]
+   50 root      0:00 [kdevtmpfs]
+   51 root      0:00 [netns]
+   52 root      0:00 [kauditd]
+   53 root      0:00 [khungtaskd]
+   54 root      0:00 [oom_reaper]
+   55 root      0:00 [writeback]
+   56 root      0:00 [kcompactd0]
+   57 root      0:00 [ksmd]
+   58 root      0:01 [khugepaged]
+   59 root      0:00 [crypto]
+   60 root      0:00 [kintegrityd]
+   61 root      0:00 [kblockd]
+   62 root      0:00 [ata_sff]
+   64 root      0:00 [devfreq_wq]
+  164 root      0:00 [kswapd0]
+  165 root      0:00 [kworker/u17:0]
+  166 root      0:00 [cifsiod]
+  167 root      0:00 [cifsoplockd]
+  241 root      0:00 [kthrotld]
+  242 root      0:00 [acpi_thermal_pm]
+  243 root      0:00 [nfit]
+  244 root      0:00 [hwrng]
+  246 root      0:00 [knbd-recv]
+  247 root      0:01 [kworker/0:1H-kb]
+  248 root      0:00 [nvme-wq]
+  249 root      0:00 [nvme-reset-wq]
+  250 root      0:00 [nvme-delete-wq]
+  251 root      0:00 [scsi_eh_0]
+  252 root      0:00 [scsi_tmf_0]
+  253 root      0:00 [scsi_eh_1]
+  254 root      0:00 [scsi_tmf_1]
+  255 root      0:00 [scsi_eh_2]
+  256 root      0:00 [scsi_tmf_2]
+  257 root      0:00 [scsi_eh_3]
+  258 root      0:00 [scsi_tmf_3]
+  259 root      0:00 [scsi_eh_4]
+  260 root      0:00 [scsi_tmf_4]
+  261 root      0:00 [scsi_eh_5]
+  262 root      0:00 [scsi_tmf_5]
+  268 root      0:00 [scsi_eh_6]
+  269 root      0:00 [scsi_tmf_6]
+  270 root      0:00 [scsi_eh_7]
+  271 root      0:00 [scsi_tmf_7]
+  272 root      0:00 [scsi_eh_8]
+  273 root      0:00 [scsi_tmf_8]
+  274 root      0:00 [scsi_eh_9]
+  275 root      0:00 [scsi_tmf_9]
+  276 root      0:00 [scsi_eh_10]
+  277 root      0:00 [scsi_tmf_10]
+  278 root      0:00 [scsi_eh_11]
+  279 root      0:00 [scsi_tmf_11]
+  286 root      0:00 [scsi_eh_12]
+  287 root      0:00 [scsi_tmf_12]
+  288 root      0:00 [scsi_eh_13]
+  289 root      0:00 [scsi_tmf_13]
+  290 root      0:00 [scsi_eh_14]
+  291 root      0:00 [scsi_tmf_14]
+  292 root      0:00 [scsi_eh_15]
+  293 root      0:00 [scsi_tmf_15]
+  294 root      0:00 [scsi_eh_16]
+  295 root      0:00 [scsi_tmf_16]
+  296 root      0:00 [scsi_eh_17]
+  297 root      0:00 [scsi_tmf_17]
+  306 root      0:00 [ipv6_addrconf]
+  416 root      0:00 {rungetty.sh} /bin/sh /usr/bin/rungetty.sh
+  418 root      0:00 /bin/login -f root
+  419 root      0:00 {rungetty.sh} /bin/sh /usr/bin/rungetty.sh
+  420 root      0:00 /bin/login -f root
+  424 root      0:00 -sh
+  425 root      0:00 -sh
+  430 root      0:25 /usr/bin/memlogd -fd-log 3 -fd-query 4 -max-lines 5000 -ma
+  439 root      3:18 /usr/bin/vpnkit-bridge --addr connect://2/1999 guest
+  513 root      0:01 [kworker/2:1H-kb]
+  514 root      0:01 [kworker/3:1H-kb]
+  515 root      0:01 [kworker/4:1H-kb]
+  517 root      0:01 [kworker/1:1H-kb]
+  518 root      0:01 [kworker/5:1H-kb]
+  520 root      0:01 [kworker/7:1H-kb]
+  522 root      0:01 [kworker/6:1H-kb]
+  720 root      0:05 [jbd2/vda1-8]
+  721 root      0:00 [ext4-rsv-conver]
+  982 root      4:41 /usr/bin/containerd
+ 1015 root      0:03 /usr/bin/containerd-shim-runc-v2 -namespace services.linux
+ 1036 root      0:00 /sbin/acpid -f -d
+ 1058 root      0:02 /usr/bin/containerd-shim-runc-v2 -namespace services.linux
+ 1079 root      0:00 /usr/local/bin/diagnosticsd
+ 1103 root      0:03 /usr/bin/containerd-shim-runc-v2 -namespace services.linux
+ 1129 root      0:01 /usr/local/bin/docker-init /usr/bin/entrypoint.sh
+ 1145 root      0:00 {entrypoint.sh} /bin/sh /usr/bin/entrypoint.sh
+ 1151 root      0:00 /usr/bin/logwrite -n lifecycle-server /usr/bin/lifecycle-s
+ 1155 root      0:03 /usr/bin/containerd-shim-runc-v2 -namespace services.linux
+ 1181 root      0:03 /usr/bin/lifecycle-server
+ 1184 root      0:00 /usr/bin/host-timesync-daemon -port 0xf3a4
+ 1226 root      0:02 /usr/bin/containerd-shim-runc-v2 -namespace services.linux
+ 1228 root      0:00 [rpcbind]
+ 1229 root      0:00 [rpc.statd]
+ 1234 root      0:00 /usr/bin/logwrite -n mutagen /usr/local/bin/mutagen-agent
+ 1235 root      0:00 [transfused.sh]
+ 1246 root      0:02 /usr/local/bin/mutagen-agent endpoint
+ 1270 root      0:00 {transfused.sh} /bin/sh /usr/bin/transfused.sh
+ 1271 root      0:00 /usr/bin/transfused
+ 1274 100       0:00 rpcbind
+ 1305 root      0:00 /usr/bin/kmsg
+ 1317 root      0:00 rpc.statd
+ 1336 root      0:03 /usr/bin/containerd-shim-runc-v2 -namespace services.linux
+ 1359 root      0:02 /usr/sbin/sntpc -v -i 30 gateway.docker.internal
+ 1383 root      0:03 /usr/bin/containerd-shim-runc-v2 -namespace services.linux
+ 1429 root      0:03 /usr/bin/containerd-shim-runc-v2 -namespace services.linux
+ 1450 root      0:00 /usr/bin/trim-after-delete -- /sbin/fstrim /var/lib/docker
+ 1483 root      0:02 /usr/bin/containerd-shim-runc-v2 -namespace services.linux
+ 1503 root      0:00 /vpnkit-forwarder -data-connect /run/host-services/vpnkit-
+ 1532 root      0:00 {start-docker.sh} /bin/sh -x /usr/bin/start-docker.sh /run
+ 1539 root      0:03 /usr/bin/logwrite -n dockerd /usr/local/bin/dockerd -H uni
+ 1544 root      2:55 /usr/local/bin/dockerd -H unix:///var/run/docker.sock -H u
+ 1559 root      1:53 containerd --config /var/run/docker/containerd/containerd.
+ 1589 root      0:06 [none]
+ 1985 root      0:00 /usr/local/bin/docker-proxy -proto tcp -host-ip 127.0.0.1
+ 1997 root      0:00 /usr/local/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -h
+ 2010 root      0:00 /usr/local/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -h
+ 2024 root      0:00 /usr/local/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -h
+ 2038 root      0:00 /usr/local/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -h
+ 2052 root      0:00 /usr/local/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -h
+ 2066 root      0:00 /usr/local/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -h
+ 2075 root      0:02 containerd-shim -namespace moby -workdir /var/lib/docker/c
+ 2076 root      0:02 containerd-shim -namespace moby -workdir /var/lib/docker/c
+ 2077 root      0:02 containerd-shim -namespace moby -workdir /var/lib/docker/c
+ 2124 root      0:00 {systemd} /sbin/init
+ 2131 root      0:05 registry serve /etc/docker/registry/config.yml
+ 2149 root      0:11 {systemd} /sbin/init
+ 2668 root      0:14 /lib/systemd/systemd-journald
+ 2669 root      0:01 /lib/systemd/systemd-journald
+ 2686 root     22:00 /usr/bin/kubelet --bootstrap-kubeconfig=/etc/kubernetes/bo
+ 2688 root     26:05 /usr/bin/kubelet --bootstrap-kubeconfig=/etc/kubernetes/bo
+ 2690 root     29:11 /usr/local/bin/containerd
+ 2692 root     12:51 /usr/local/bin/containerd
+ 3324 root      3:35 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 3325 root      0:25 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 3326 root      0:24 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 3380 root      0:24 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 3413 root      0:00 /pause
+ 3416 root      0:00 /pause
+ 3418 root      0:00 /pause
+ 3433 root      0:00 /pause
+ 3603 root     29:43 kube-controller-manager --allocate-node-cidrs=true --authe
+ 3613 root     22:28 etcd --advertise-client-urls=https://172.18.0.2:2379 --cer
+ 3625 root      1h38 kube-apiserver --advertise-address=172.18.0.2 --allow-priv
+ 3626 root      3:54 kube-scheduler --authentication-kubeconfig=/etc/kubernetes
+ 3942 root      0:19 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 4001 root      0:23 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 4008 root      0:00 /pause
+ 4069 root      0:00 /pause
+ 4214 root      0:25 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 4237 root      0:25 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 4293 root      0:00 /pause
+ 4321 root      0:00 /pause
+ 4322 root      0:28 /bin/kindnetd
+ 4356 root      0:39 /usr/local/bin/kube-proxy --config=/var/lib/kube-proxy/con
+ 4441 root      3:03 /coredns -conf /etc/coredns/Corefile
+ 4469 root      3:10 /coredns -conf /etc/coredns/Corefile
+ 4485 root      0:26 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 4514 root      0:00 /pause
+ 4606 101       0:00 /usr/bin/dumb-init -- /nginx-ingress-controller --configma
+ 4677 101       2:42 /nginx-ingress-controller --configmap=ingress-nginx/nginx-
+ 4935 root      0:20 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 4975 root      0:23 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 5191 root      0:00 /pause
+ 5209 root      0:00 /pause
+ 5304 root      0:28 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 5306 root      1:21 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 5364 root      0:24 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 5397 root      0:00 /pause
+ 5406 root      0:00 /pause
+ 5428 root      0:00 /pause
+ 5446 root      0:08 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 5453 root      0:24 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 5486 root      0:09 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 5516 root      0:28 /usr/local/bin/containerd-shim-runc-v2 -namespace k8s.io -
+ 5553 root      0:00 /pause
+ 5593 root      0:00 /pause
+ 5610 root      0:00 /pause
+ 5617 5050      0:00 /pause
+ 5702 root      0:42 /usr/local/bin/kube-proxy --config=/var/lib/kube-proxy/con
+ 5753 1000      0:00 {simple-init.sh} /bin/bash /usr/local/bin/simple-init.sh /
+ 5876 root      0:30 /bin/kindnetd
+ 5906 999       0:03 postgres
+ 5912 1001      0:00 {node} npm
+ 6246 1001      0:00 sh -c sapper dev
+ 6248 1001      0:16 node /webapp/node_modules/.bin/sapper dev
+ 6386 999       0:00 postgres: checkpointer
+ 6387 999       0:00 postgres: background writer
+ 6388 999       0:00 postgres: walwriter
+ 6389 999       0:00 postgres: autovacuum launcher
+ 6390 999       0:01 postgres: stats collector
+ 6391 999       0:00 postgres: logical replication launcher
+ 6412 5050      0:07 {gunicorn} /usr/local/bin/python /usr/local/bin/gunicorn -
+ 6564 1001      0:00 /usr/local/bin/node /webapp/__sapper__/dev/server/server.j
+ 6601 5050      0:13 {gunicorn} /usr/local/bin/python /usr/local/bin/gunicorn -
+ 6765 1000      0:00 {simple-init.sh} /bin/bash /usr/local/bin/simple-init.sh /
+ 6766 1000      0:03 tmate -F -v -S /tmp/ii.default.target.iisocket new-session
+ 6767 1000      0:00 {simple-init.sh} /bin/bash /usr/local/bin/simple-init.sh /
+ 6768 1000      0:00 inotifywait -e create,open --format %f --quiet /tmp --moni
+ 6769 1000      0:00 tmate -S /tmp/ii.default.target.iisocket wait-for tmate-re
+ 6770 1000      0:00 emacsclient --tty /home/humacs
+ 6772 1000      0:30 emacs --daemon
+ 7008 101       0:00 nginx: master process /usr/local/nginx/sbin/nginx -c /etc/
+ 7036 101       0:14 nginx: worker process
+ 7037 101       0:10 nginx: worker process
+ 7038 101       0:10 nginx: worker process
+ 7039 101       0:10 nginx: worker process
+ 7040 101       0:10 nginx: worker process
+ 7041 101       0:10 nginx: worker process
+ 7042 101       0:10 nginx: worker process
+ 7043 101       0:10 nginx: worker process
+ 7044 101       0:00 nginx: cache manager process
+ 7564 root      3:34 local-path-provisioner --debug start --helper-image us.gcr
+369898root      0:00 /bin/sh
+372238root      0:00 /bin/sh
+374176root      0:00 /bin/sh
+383296root      0:00 /bin/sh
+405102root      0:00 /bin/sh
+406630root      0:00 /bin/sh
+409570root      0:00 /bin/sh
+417696root      0:00 /bin/sh
+417953root      0:00 /bin/sh
+447929root      0:00 [kworker/3:1-rcu]
+451487root      0:00 [kworker/1:1-cgr]
+452591root      0:00 [kworker/4:2-cgr]
+455443root      0:00 [kworker/0:2-cgr]
+457598root      0:00 [kworker/6:0-rcu]
+458314root      0:00 [kworker/5:0-rcu]
+458322root      0:00 [kworker/u16:1+e]
+458323root      0:00 [kworker/7:1-cgr]
+460736root      0:00 [kworker/2:1-rcu]
+461997root      0:00 [kworker/3:0-rcu]
+462080root      0:00 [kworker/6:1-vir]
+463108root      0:00 [kworker/5:2-vir]
+463133root      0:00 [kworker/u16:4-e]
+463192root      0:00 [kworker/4:0-cgr]
+463193root      0:00 [kworker/1:0-eve]
+463453root      0:00 [kworker/7:0-cgr]
+463909root      0:00 [kworker/2:2-cgr]
+464823root      0:00 [kworker/0:1-eve]
+467679root      0:00 [kworker/2:0-cgr]
+467680root      0:00 [kworker/4:1-eve]
+467829root      0:00 [kworker/5:1-rcu]
+468126root      0:00 [kworker/u16:0-e]
+468127root      0:00 [kworker/5:3-mm_]
+468147root      0:00 [kworker/u16:2-e]
+468209root      0:00 [kworker/1:2-rcu]
+468210root      0:00 [kworker/6:2-rcu]
+468853root      0:00 [kworker/1:3-eve]
+468954root      0:00 [kworker/6:3-rcu]
+469066root      0:00 [kworker/3:2-eve]
+469135root      0:00 [kworker/u16:3-e]
+469227root      0:00 [kworker/7:2-eve]
+469665root      0:00 containerd-shim -namespace moby -workdir /var/lib/docker/c
+469688root      0:00 /bin/sleep 9999
+469817root      0:00 /bin/sh
+470159root      0:00 /bin/sh
+470160root      0:00 bash
+470161root      0:00 ps ax
+#+end_src
+
+* Build kind image
+** go get k8s
+#+begin_src shell :async yes
+  go get -u github.com/kubernetes/kubernetes
+#+end_src
+** ensure k8s is updated
+#+begin_src shell :async yes
+  cd `go env GOPATH`/src/github.com/kubernetes/kubernetes
+  git remote -v origin
+  git fetch origin master
+  git status
+#+end_src
+
+#+RESULTS:
+#+begin_example
+On branch master
+Your branch is up to date with 'origin/master'.
+
+nothing to commit, working tree clean
+#+end_example
+
+** kind build
+
+This can take a while, and you can allocate more CPU and memory to your docker VM to speed things up.
+
+#+begin_src tmate
+  ls -la ~/go/src/github.com/kubernetes/kubernetes
+  kind build node-image --kube-root ~/go/src/github.com/kubernetes/kubernetes
+#+end_src
+
+** kind image
+
+This image contains k8s build from src.
+
+#+begin_src shell
+  docker image ls | grep kindest/node\\\|kindest/base | head -2
+#+end_src
+
+#+RESULTS:
+#+begin_example
+kindest/node                                            latest                              2269496e1075        7 minutes ago       1.32GB
+kindest/base                                            v20200726-5f02d4ed                  93310cab5bac        2 weeks ago         292MB
+#+end_example
+
+* kind-config
+
+We need to copy a few files in so they are available to apiserver. Then we add
+commandline arguments enabling auditsink towards the to be deployed APISnoop.
+
+FIXME: Tried to map these files seperately, on OSX only the first one makes it into the control-plane. Temp-fix: Map a folder.
+
+This gets the files onto the **kind-control-plane** docker container but not onto the kube-apiserver inner cri container.
+
+A quick explore notes that /etc/kubernetes/pki is hostpath mounted.
+So likley if we mount within that folder, we can piggy back on an existing mount rather than trying to figure out the plumbing for the cri container.
+
+** audit-policy.yaml
+ #+begin_src yaml :tangle audit/policy.yaml
+   apiVersion: audit.k8s.io/v1beta1
+   kind: Policy
+   rules:
+     - level: Metadata
+       stages:
+         - ResponseComplete
+ #+end_src
+** audit-sink.yaml
+Currently hardcoded. Would be good if we had dynamic.
+ #+begin_src yaml :tangle audit/sink.yaml
+   apiVersion: v1
+   kind: Config
+   clusters:
+   - cluster:
+       server: http://10.96.96.96:9900/events
+     name: auditsink-cluster
+   contexts:
+   - context:
+       cluster: auditsink-cluster
+       user: ""
+     name: auditsink-context
+   current-context: auditsink-context
+   users: []
+   preferences: {}
+ #+end_src
+** kind-config.yaml
+:PROPERTIES:
+:header-args:yaml+: :tangle kind-config.yaml
+:END:
+*** kind Cluster apiVersion
+ #+begin_src yaml
+   kind: Cluster
+   apiVersion: kind.x-k8s.io/v1alpha4
+ #+end_src
+*** kind worker nodes
+Note we may in the host docker socket and TMP
+#+begin_src yaml
+  nodes:
+    # First entry under nodes
+    - role: worker
+      extraMounts:
+      # - containerPath: /var/local-path-provisioner
+      #   hostPath: /tmp/workspace/pvcs
+      #   readOnly: False
+      - containerPath: /var/run/docker.sock
+        hostPath: /var/run/docker.sock
+        readOnly: False
+      - containerPath: /var/host/tmp
+        hostPath: /tmp
+        readOnly: False
+#+end_src
+*** kind master node
+**** audit-{policy,webhook}.yaml
+On master we need audit-{policy,sink}.yaml for apiserver.
+#+begin_src yaml
+  # Second entry under nodes
+    - role: control-plane
+      extraMounts:
+      - containerPath: /etc/kubernetes/pki/audit
+        hostPath: audit
+        readOnly: True
+      # - containerPath: /etc/kubernetes/audit-sink.yaml
+      #   hostPath: audit-sink.yaml
+      #   readOnly: True
+#+end_src
+**** extraPortMappings
+We export postgres, web, and tilt sometimes.
+#+begin_src yaml
+  # PortMappings for control-plane
+      extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+      - containerPort: 443
+        hostPort: 443
+      - containerPort: 5432
+        hostPort: 5432
+      - containerPort: 6443
+        hostPort: 6443
+      - containerPort: 10350
+        hostPort: 10350
+#+end_src
+**** ingress kubeadmConfigPatches
+Since we run our own ingress, our node needs to be labeled **ingress-ready=true**
+#+begin_src yaml
+  # control-plane config patches
+      kubeadmConfigPatches:
+      - |
+        apiVersion: kubeadm.k8s.io/v1beta2
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+            authorization-mode: "AlwaysAllow"
+#+end_src
+*** patch/add apiServer/certSANs for domains
+This helps us use internet hosts + ssl.
+#+begin_src yaml
+  kubeadmConfigPatchesJSON6902:
+  - group: kubeadm.k8s.io
+    version: v1beta2
+    kind: ClusterConfiguration
+    patch: |
+      - op: add
+        path: /apiServer/certSANs/-
+        value: '*.ii.nz'
+      - op: add
+        path: /apiServer/certSANs/-
+        value: '*.ii.coop'
+      - op: add
+        path: /apiServer/certSANs/-
+        value: '*.sharing.io'
+#+end_src
+*** app apiServer extrArgs
+#+begin_src yaml
+kubeadmConfigPatches:
+- |
+  apiVersion: kubeadm.k8s.io/v1beta2
+  kind: ClusterConfiguration
+  metadata:
+    name: config
+  apiServer:
+    extraArgs:
+      "audit-webhook-config-file": "/etc/kubernetes/pki/audit/sink.yaml"
+      "audit-policy-file": "/etc/kubernetes/pki/audit/policy.yaml"
+#+end_src
+* kind create cluster
+** cluster
+#+begin_src tmate :dir . :window kind
+kind create cluster --config kind-config.yaml --image kindest/node:latest
+#+end_src
+* APISnoop specifics
+Likely need to remove the auditsync as it's no longer a valid API.
+We've passed it in as files + arguments to apiserver itself.
+** tilt
+#+begin_src shell
+# on osx
+brew install tilt-dev/tap/tilt
+#+end_src
+* kind-control-plane
+#+begin_src bash :dir /docker:kind-control-plane:/
+crictl ps \
+ | grep kube-\\\|kindnet\\\|local-path-provisioner\\\|coredns\\\|etcd \
+ | sort -k 7
+#+end_src
+
+#+RESULTS:
+#+begin_src bash
+e22b5d8e5f62c       67da37a9a360e       3 days ago          Running             coredns                    1                   df43dea795628
+7525003b874f4       67da37a9a360e       3 days ago          Running             coredns                    1                   e4200c1660bed
+6439d6bfdf228       303ce5db0e90d       3 days ago          Running             etcd                       0                   7d29f9e422687
+4d1c5e8c66fd4       44541d1d37515       3 days ago          Running             kindnet-cni                1                   a6963a281bb47
+22f5611f2d170       a01d4e6998666       3 days ago          Running             kube-apiserver             0                   29d97c6774643
+9fa8c46d38818       d0cf025105b28       3 days ago          Running             kube-controller-manager    1                   10c9a0a6183f2
+a529defa71dc5       c982785a4b2a2       3 days ago          Running             kube-proxy                 1                   9abca26fd69ba
+7d8c7d461fb56       a52a5457c91e8       3 days ago          Running             kube-scheduler             1                   974d4c0a0fa14
+#+end_src
+
+#+begin_src bash :dir /docker:kind-control-plane:/
+crictl ps \
+ | grep -v kube-\\\|kindnet\\\|local-path-provisioner\\\|coredns\\\|etcd \
+ | sort -k 7
+#+end_src
+
+#+RESULTS:
+#+begin_src bash
+CONTAINER           IMAGE               CREATED             STATE               NAME                       ATTEMPT             POD ID
+7645fa6a2967e       df9cb1f613915       2 days ago          Running             nginx-ingress-controller   1                   66afbb32efdd8
+#+end_src
+
+* kind-worker
+#+begin_src bash :dir /docker:kind-worker:/
+crictl ps \
+ | grep kube-\\\|kindnet\\\|local-path-provisioner \
+ | sort -k 7
+#+end_src
+
+#+RESULTS:
+#+begin_src bash
+86bd0e3aa50dc       44541d1d37515       2 days ago          Running             kindnet-cni              1                   00027cd9b879c
+e9abd82848eb5       c982785a4b2a2       2 days ago          Running             kube-proxy               1                   82c78fe49ec1c
+e35e47baac4c7       db10073a6f829       2 days ago          Running             local-path-provisioner   2                   ce6e9259c6a45
+#+end_src
+
+#+begin_src bash :dir /docker:kind-worker:/
+crictl ps \
+ | grep -v kube-\\\|kindnet\\\|local-path-provisioner \
+ | sort -k 7
+#+end_src
+
+#+RESULTS:
+#+begin_src bash
+CONTAINER           IMAGE               CREATED             STATE               NAME                     ATTEMPT             POD ID
+0ae49bdf78c0e       624b52884a9c4       2 days ago          Running             humacs                   1                   95c17d6b19cad
+d80fcb934dedf       a9b93747c62f9       2 days ago          Running             pgadmin                  1                   3e58642e53ae8
+5f9367939f251       2040f08710e64       2 days ago          Running             postgres                 1                   c8d30b601ec5f
+5e7fc72950214       1806290817502       2 days ago          Running             webapp                   1                   8659f1fecbb95
+#+end_src
