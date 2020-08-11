@@ -49,6 +49,10 @@ begin;
    group by endpoint, first_release, first_conformance_test
    order by first_release::semver desc) ce;
 \o
- \a
- \t
- commit;
+\o './resources/coverage/ineligible_endoints.json'
+  select jsonb_pretty(json_agg(ie)::jsonb)
+  from (select * from conformance.ineligible_endpoint order by endpoint) ie ;
+\o
+\a
+\t
+commit;
