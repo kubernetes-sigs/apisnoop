@@ -137,3 +137,21 @@ export const confFilteredEndpoints = derived(
     set(flatten(activeGroupings));
   }
 )
+
+export const ineligibleEndpointsRaw = writable([]);
+
+export const ineligibleEndpoints = derived(
+  ineligibleEndpointsRaw,
+  ($raw, set) => {
+    if ($raw.length === 0) {
+      set([]);
+    } else {
+      set($raw.map(e => ({
+        endpoint: e.endpoint,
+        reason: e.reason,
+        link: e.link,
+        sql: e['sql logic']
+      })));
+    }
+  }
+);
