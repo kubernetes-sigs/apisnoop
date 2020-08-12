@@ -77,7 +77,7 @@
 
 <section id="coverage-at-time-of-release">
   <h2><a href="conformance-progress#coverage-at-time-of-release">Stable Endpoint Coverage At Time of Release <Link width="1.25rem" /> </a></h2>
-  <em>How many endpoints were introduced in a release, and how many came in with tests?  What was the conformance coverage at the time of this release?</em>
+  <em>Per release, how many endpoints were introduced with tests and, regrettably, without tests? What work was done to decrease technical debt by adding new tests for old endpoints? What was the overall state of coverage at the time of the release?</em>
 
   {#if $stableCoverageAtRelease.length === 0}
     <div id='stable-coverage-at-release'>
@@ -100,6 +100,10 @@
 </section>
 
 <style>
+ section {
+   margin-top: 2rem;
+ }
+
  div#stable-coverage-at-release {
    margin-top: 2rem;
  }

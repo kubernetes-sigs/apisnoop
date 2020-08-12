@@ -58,8 +58,8 @@
 
 <section id="coverage-by-release">
   <h2><a href="conformance-progress#coverage-by-release">Conformance Coverage By Release <Link width="1.25rem"/></a></h2>
-  <p>For the endpoints promoted in a release, how many of them are tested as of today?</p>
-  <p><b>Note:</b>We mark the number of still untested endpoints as a negative number, since they represent technical debt.</p>
+  <em>Per release, for the endpoints promoted in this release, how many are tested or untested today?</em>
+  <p><b>Note:</b> We mark the number of still untested endpoints as a negative number, since they represent technical debt.</p>
 
   {#if $coverageByRelease.length === 0}
     <div id="coverage-by-release_chart">
@@ -71,7 +71,13 @@
 </section>
 
 <style>
+ section {
+   margin-top: 2rem;
+ }
  div {
    margin-top: 2rem;
+ }
+ p {
+   margin-top: 0;
  }
 </style>

@@ -22,12 +22,11 @@
   <title>APISnoop | Conformance Progress</title>
 </svelte:head>
 
-<h1>Conformance Progress</h1>
+<h1>Conformance Progress Charts</h1>
 
 <section id="prologue">
-  <p>These charts track the progress on conformance coverage for kubernetes stable endpoints.</p>
-  <p>In these, we only look at endpoints that are in GA, and qualify for conformance tests (do not use vendor specific features like volumes and other non-conformant behaviour).</p>
-  <p>We also limit the set to endpoints still around today, excluding historically stable endpoints that have since been deprecrated.</p>
+  <em>The history of conformance coverage for kubernetes stable endpoints, and where we are at today.</em>
+  <p><b>Note:</b> These charts are focused to endpoints that exist today and are eligible for conformance.  Because of this, the numbers will be different from our main page, as that page includes ineligible endpoints.  To see what is excluded, check out <a href="conformance-progress/ineligible-endpoints">our list of ineligible endpoints</a>.</p>
 </section>
 
 <StableCoverageAtRelease />
@@ -38,9 +37,6 @@
  h2 {
    margin-top: 2rem;
    font-size: 1.75rem;
- }
- a {
-   text-decoration: none;
  }
  a:hover {
    background: aliceblue;
