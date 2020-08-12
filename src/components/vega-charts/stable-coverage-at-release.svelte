@@ -90,12 +90,12 @@
     <div class="chart-type" >
     <strong>View As:</strong>
     <div>
-      <input on:click="{()=>handleSwitch('number')}" type="radio" id="stable-number" name="chart-type" bind:group={chartType} value="number">
-      <label for="number">Number</label>
+      <input on:click="{()=>handleSwitch('number')}" type="radio" id="stable-number" name="stable-chart-type" bind:group={chartType} value="number">
+      <label for="stable-number">Number</label>
     </div>
     <div>
-      <input on:click="{()=>handleSwitch('percentage')}" type="radio" id="stable-percentage" name="chart-type" bind:group={chartType} value="percentage">
-      <label for="percentage">Percentage</label>
+      <input on:click="{()=>handleSwitch('percentage')}" type="radio" id="stable-percentage" name="stable-chart-type" bind:group={chartType} value="percentage">
+      <label for="stable-percentage">Percentage</label>
     </div>
     </div>
     <div id='stable-coverage-at-release_chart'></div>
