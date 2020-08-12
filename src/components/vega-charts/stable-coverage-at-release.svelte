@@ -5,7 +5,7 @@
  import Link from '../icons/link-solid.svelte';
 
  const dispatch = createEventDispatcher();
- const handleSwitch = (type) => dispatch('CHART_TYPE_SWITCHED', {chart: 'relchart', type});
+ const handleSwitch = (type) => dispatch('CHART_TYPE_SWITCHED', {chart: 'stablechart', type});
 
  export let chartType = 'number';
 
