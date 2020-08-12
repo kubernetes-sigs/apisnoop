@@ -90,11 +90,11 @@
     <div class="chart-type" >
     <strong>View As:</strong>
     <div>
-      <input on:click="{()=>handleSwitch('number')}" type="radio" id="number" name="chart-type" bind:group={chartType} value="number">
+      <input on:click="{()=>handleSwitch('number')}" type="radio" id="stable-number" name="chart-type" bind:group={chartType} value="number">
       <label for="number">Number</label>
     </div>
     <div>
-      <input on:click="{()=>handleSwitch('percentage')}" type="radio" id="percentage" name="chart-type" bind:group={chartType} value="percentage">
+      <input on:click="{()=>handleSwitch('percentage')}" type="radio" id="stable-percentage" name="chart-type" bind:group={chartType} value="percentage">
       <label for="percentage">Percentage</label>
     </div>
     </div>
