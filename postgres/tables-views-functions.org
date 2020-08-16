@@ -51,12 +51,11 @@
 
    #+NAME: open_api comments
    #+begin_src sql-mode
-     comment on table open_api is 'Details on k8s endpoints taken from the openapi spec for that release';
-
-     comment on column open_api.release is 'kubernetes release this spec is taken from';
-     comment on column open_api.release_date is 'canonical release dat for this k8s release';
-     comment on column open_api.endpoint is 'a kubernetes endpoint, the operation_id in the spec';
-     comment on column open_api.level is 'level of endpoint: alpha, beta, or stable';
+     comment on table open_api is 'endpoint details from openAPI spec';
+     comment on column open_api.release is 'kubernetes release of this spec';
+     comment on column open_api.release_date is 'canonical release date for k8s release';
+     comment on column open_api.endpoint is 'kubernetes endpoint, the operation_id in the spec';
+     comment on column open_api.level is 'alpha, beta, or stable';
      comment on column open_api.category is 'endpoint category, roughly its group, taken from the first tag in the spec.';
      comment on column open_api.path is 'the http path of the endpoint';
      comment on column open_api.k8s_group is 'k8s group for endpoint';
@@ -65,7 +64,7 @@
      comment on column open_api.k8s_action is 'endpoint action, roughly related to an http method';
      comment on column open_api.deprecated is 'is endpoint marked as deprecated?';
      comment on column open_api.description is 'description of endpoint';
-     comment on column open_api.spec is 'the url location for this open api spec. will be from github.';
+     comment on column open_api.spec is 'the source for this open api spec, taken from github.';
 
    #+end_src
 ** audit_event
@@ -93,18 +92,18 @@
 
    #+NAME: audit event comments
    #+begin_src sql-mode
-     comment on table audit_event is 'each audit event taken from the logs of an e2e test suite run';
+     comment on table audit_event is 'every event from an e2e test run, or multiple test runs.';
 
      comment on column audit_event.release is 'release this test suite was run for';
-     comment on column audit_event.release_date is 'canonical release, or date of run if version has not been released yet';
+     comment on column audit_event.release_date is 'canonical release date (or test run date if version not released yet';
      comment on column audit_event.audit_id is 'audit event id as given in log.  Note these are not necessarily unique.';
-     comment on column audit_event.endpoint is 'the endpoint hit by this audit event';
-     comment on column audit_event.useragent is 'the useragent of the event, stored in events request header';
+     comment on column audit_event.endpoint is 'endpoint hit by this audit event';
+     comment on column audit_event.useragent is 'useragent of the event, taken from events request header';
      comment on column audit_event.test is 'the test codename if it can be extracted from useragent, else null';
-     comment on column audit_event.test_hit is 'is this event one where a test is hitting an endpoint, as seen in its useragent?';
-     comment on column audit_event.conf_test_hit is 'is this event one where a conformance test is hitting an endpoint?';
+     comment on column audit_event.test_hit is 'is the useragent of the event a test?';
+     comment on column audit_event.conf_test_hit is 'is the useragent of the event a conformance test?';
      comment on column audit_event.data is 'the full json of the audit event';
-     comment on column audit_event.source is 'the url location of the bucket where the test run logs are stored';
+     comment on column audit_event.source is 'url of the bucket where the test run logs are stored';
      comment on column audit_event.id is 'generated id, this will be unique';
      comment on column audit_event.ingested_at is 'the time at which the audit_event was added to this table';
    #+end_src
@@ -129,15 +128,13 @@
 
   #+NAME: Test Comments
   #+begin_src sql-mode
-    comment on table test is 'info for each conformance test as taken from latest conformance.yaml';
-
-    comment on column test.testname is 'The name of the test';
-    comment on column test.codename is 'How the test is displayed in code, i.e in the useragent of an audit event';
-    comment on column test.release is 'The release in which this test  was promoted to conformance';
-    comment on column test.description is 'A description of this test';
-    comment on column test.file is 'The file in kubernetes/kubernetes where this test is defined';
+    comment on table test is 'info for each conformance test, from latest conformance.yaml';
+    comment on column test.testname is 'name of the test';
+    comment on column test.codename is 'How the test is displayed within a useragent';
+    comment on column test.release is 'release in which this test was promoted to conformance';
+    comment on column test.description is 'Description of this test';
+    comment on column test.file is 'File in kubernetes/kubernetes where this test is defined';
   #+end_src
-
 * Functions
 ** load_open_api
    :PROPERTIES:
@@ -267,7 +264,7 @@
     #+NAME: load_open_api comments
     #+begin_src sql-mode
 
-      comment on function load_open_api is 'loads given release to open_api table.  Can pass release as "v.X.XX.X" to load specific release, otherwise loads latest';
+      comment on function load_open_api is 'loads given release to open_api table.  Pass release (as "v.X.XX.X") to load specific release, otherwise loads latest';
     #+end_src
 
 ** load_audit_events
@@ -421,7 +418,6 @@
        select row_to_json(c) from (
          select release, release_date, spec,
                 (select array_agg(source) from (select source from audit_event where release = latest_release group by source) s) as sources,
-                (select source from (select source from audit_event where release = latest_release limit 1) s) as source,
                 (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = latest_release) as endpoints,
                 (select array_agg(row_to_json(audit_event_test)) from audit_event_test where release = latest_release) as tests
            from open_api
@@ -429,6 +425,11 @@
           group by release, release_date, spec) c);
      end;
      $$ language plpgsql;
+   #+end_src
+   #+NAME: generate latest coverage json comment
+   #+begin_src sql-mode
+
+     comment on function generate_latest_coverage_json is 'helper to create properly formatted json to be output as a  coverage/X.XX.json file';
    #+end_src
 ** describe_relations
    :PROPERTIES:
@@ -553,21 +554,20 @@
 
    #+NAME: endpoint_coverage comments
    #+begin_src sql-mode
-     comment on view endpoint_coverage is 'All endpoints from a release and their coverage, per audit events for that release';
+     comment on view endpoint_coverage is 'Coverage info for every endpoint in a release, taken from audit events for that release';
 
-     comment on column endpoint_coverage.release is 'Release endpoint details come from';
+     comment on column endpoint_coverage.release is 'Release the endpoint details come from';
      comment on column endpoint_coverage.endpoint is 'a kubernetes endpoint, the operation_id in the spec';
      comment on column endpoint_coverage.level is 'alpha, beta, or stable';
-     comment on column endpoint_coverage.level is 'level of endpoint: alpha, beta, or stable';
      comment on column endpoint_coverage.category is 'endpoint category, roughly its group, taken from the first tag in the spec.';
      comment on column endpoint_coverage.path is 'the http path of the endpoint';
      comment on column endpoint_coverage.group is 'k8s group for endpoint';
      comment on column endpoint_coverage.version is 'k8s version for endpoint';
      comment on column endpoint_coverage.kind  is 'k8s kind  for endpoint';
      comment on column endpoint_coverage.action is 'endpoint action, roughly related to an http method';
-     comment on column endpoint_coverage.tested is 'was endpoint hit at least once by a test useragent in the audit logs of this release?';
-     comment on column endpoint_coverage.conf_tested is 'was endpoint hit at least once by a conformance test useragent in the audit logs of this release?';
-     comment on column endpoint_coverage.tests is 'array of codenames of all tests that hit this endpoint in audit log of this release';
+     comment on column endpoint_coverage.tested is 'was endpoint hit at least once by a test useragent';
+     comment on column endpoint_coverage.conf_tested is 'was endpoint hit at least once by a conformance test useragent';
+     comment on column endpoint_coverage.tests is 'array of codenames of all tests that hit this endpoint';
 
    #+end_src
 ** Audit Event Test
@@ -635,6 +635,9 @@
 
       comment on column conformance.eligible_endpoint.endpoint is 'the endpoint, as its defined in the open_api table';
     #+end_src
+   #+begin_src sql-mode
+     select 'conformance.eligible_endpoint defined and commented' as "build log";
+   #+end_src
 
 ** ineligible endopint
    :PROPERTIES:
@@ -696,6 +699,19 @@ create or replace view conformance.ineligible_endpoint as
         )
         order by reason;
   #+end_src
+
+  #+begin_src sql-mode
+    comment on view conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing and the reason for ineligibility.';
+
+    comment on column conformance.ineligible_endpoint.endpoint is 'the ineligible endpoint';
+    comment on column conformance.ineligible_endpoint.reason is 'reason, from conformance guidelines, for ineligibility';
+    comment on column conformance.ineligible_endpoint."sql logic" is 'how we tested reason using sql';
+    comment on column conformance.ineligible_endpoint.link is 'url source for reason';
+  #+end_src
+
+   #+begin_src sql-mode
+     select 'conformance.ineligible_endpoint defined and commented' as "build log";
+   #+end_src
 ** eligible endpoint coverage
    :PROPERTIES:
    :header-args: :tangle ./initdb/15_view_conformance_eligible_endpoint_coverage.sql
@@ -721,19 +737,19 @@ create or replace view conformance.ineligible_endpoint as
 
    #+NAME: eligible endopint coverage comments
    #+begin_src sql-mode
-     comment on materialized view conformance.eligible_endpoint_coverage is 'conformance-eligible endpoints-- when they were first released and conformance tested';
+     comment on materialized view conformance.eligible_endpoint_coverage is 'in-depth coverage info for eligible endpoints';
 
      comment on column conformance.eligible_endpoint_coverage.endpoint is 'endpoint as defined in table open_api';
      comment on column conformance.eligible_endpoint_coverage.first_conformance_test is 'release of earliest conformance test that hits endpoint. May be earlier than release of endpoint.';
      comment on column conformance.eligible_endpoint_coverage.test is 'Name of first test that hits endopint, as given in conformance.yaml';
      comment on column conformance.eligible_endpoint_coverage.codename is 'first test as it appears in useragent of auditlog';
      comment on column conformance.eligible_endpoint_coverage.file is 'file where this first test is defined';
-     comment on column conformance.eligible_endpoint_coverage.first_release is 'release in which this endpoint first appears in the open_api spec as a stable,eligible endpoint.';
+     comment on column conformance.eligible_endpoint_coverage.first_release is 'release in which this endpoint first appears in the open_api spec as an eligible endpoint.';
      comment on column conformance.eligible_endpoint_coverage.all_test_releases is 'set of releases for tests that hit this endpoint';
    #+end_src
 
    #+begin_src sql-mode
-\dmv+ conformance.eligible_endpoint_coverage;
+     select 'conformance.eligible_endpoint_coverage defined and commented' as "build log";
    #+end_src
 ** conformance progress
    :PROPERTIES:
@@ -785,7 +801,7 @@ create or replace view conformance.ineligible_endpoint as
 
     #+NAME: conformance progress comments
     #+begin_src sql-mode
-      comment on view conformance.progress is 'per release, the # of new, eligible endpoints and the ratios of tested eligible endpoints';
+      comment on view conformance.progress is 'per release, the # of new, eligible endpoints and coverage ratios';
 
       comment on column conformance.progress.release is 'the kubernetes release';
       comment on column conformance.progress.new_endpoints is '# of eligible endpoints promoted to stable in this release';
@@ -797,6 +813,10 @@ create or replace view conformance.ineligible_endpoint as
       comment on column conformance.progress.total_tested_endpoints is 'total # of eligible endopints hit by tests';
       comment on column conformance.progress.endpoints_still_untested_today is '# of new endopints from this release that are unhit as of the present day';
     #+end_src
+
+   #+begin_src sql-mode
+     select 'conformance.conformance_progress defined and commented' as "build log";
+   #+end_src
 ** coverage per release
    :PROPERTIES:
    :header-args: :tangle ./initdb/17_view_conformance_coverage_per_release.sql
@@ -832,19 +852,23 @@ create or replace view conformance.coverage_per_release as
 
     #+NAME: coverage per release definition
     #+begin_src sql-mode
-      comment on view conformance.coverage_per_release is 'Per release, # of eligible endpoints from that release that are tested today along with useful running tallies.';
+      comment on view conformance.coverage_per_release is 'How many endopoints from a release are tested today?';
 
       comment on column conformance.coverage_per_release.release is 'the given kubernetes release';
       comment on column conformance.coverage_per_release.tested is '# of endpoints from this release that are tested today';
       comment on column conformance.coverage_per_release.untested is '# of endpoints from this release that are untested today.';
       comment on column conformance.coverage_per_release."new endpoints" is '# of endpoints introduced in this release';
-      comment on column conformance.coverage_per_release."total tested" is '# of total tested endpoints from this release and earlier. will be higher than conformance.progress as it includes endpoints hit by tests introduced in a later release.';
+      comment on column conformance.coverage_per_release."total tested" is '# of total tested endpoints from this release and earlier. will be higher than same column in conformance.progress as it includes endpoints hit by tests introduced in a later release.';
       comment on column conformance.coverage_per_release."total untested" is '# of total untested endpoints from this release and earlier';
       comment on column conformance.coverage_per_release."total endpoints" is '# of total endpoints at time of release';
 
 
     #+end_src
-** new enddpoints
+
+   #+begin_src sql-mode
+     select 'conformance.coverage_per_release defined and commented' as "build log";
+   #+end_src
+** new endpoints
    :PROPERTIES:
    :header-args: :tangle ./initdb/18_view_conformance_new_endpoints.sql
    :END:
@@ -861,11 +885,15 @@ create or replace view conformance.coverage_per_release as
    #+end_src
 
    #+begin_src sql-mode
-     comment on view conformance.new_endpoint is 'list of eligible endpoints, their release, and whether they are tested';
+     comment on view conformance.new_endpoint is 'eligible endpoints sorted by release and whether they are tested';
 
      comment on column conformance.new_endpoint.endpoint is 'eligible endpoint as defined in table open_api';
      comment on column conformance.new_endpoint.release is 'release in which this endpoint was promoted';
      comment on column conformance.new_endpoint.endpoint is 'is this endpoint hit by a conformance test, as of latest test run?';
+   #+end_src
+
+   #+begin_src sql-mode
+     select 'conformance.new_endpoint defined and commented' as "build log";
    #+end_src
 
 * Select Scripts

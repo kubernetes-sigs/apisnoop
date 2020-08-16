@@ -115,4 +115,4 @@ except Exception as e:
 $$ LANGUAGE plpython3u ;
 reset role;
 
-comment on function load_open_api is 'loads given release to open_api table.  Can pass release as "v.X.XX.X" to load specific release, otherwise loads latest';
+comment on function load_open_api is 'loads given release to open_api table.  Pass release (as "v.X.XX.X") to load specific release, otherwise loads latest';

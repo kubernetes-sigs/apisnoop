@@ -52,3 +52,12 @@ create or replace view conformance.ineligible_endpoint as
            where endpoint ~~ any('{"%NodeProxy", "%PodProxy", "%ServiceProxy"}')
         )
         order by reason;
+
+comment on view conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing and the reason for ineligibility.';
+
+comment on column conformance.ineligible_endpoint.endpoint is 'the ineligible endpoint';
+comment on column conformance.ineligible_endpoint.reason is 'reason, from conformance guidelines, for ineligibility';
+comment on column conformance.ineligible_endpoint."sql logic" is 'how we tested reason using sql';
+comment on column conformance.ineligible_endpoint.link is 'url source for reason';
+
+select 'conformance.ineligible_endpoint defined and commented' as "build log";

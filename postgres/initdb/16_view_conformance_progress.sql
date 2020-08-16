@@ -39,7 +39,7 @@ create or replace view conformance.progress as
     group by epr.release
     order by epr.release::semver;
 
-comment on view conformance.progress is 'per release, the # of new, eligible endpoints and the ratios of tested eligible endpoints';
+comment on view conformance.progress is 'per release, the # of new, eligible endpoints and coverage ratios';
 
 comment on column conformance.progress.release is 'the kubernetes release';
 comment on column conformance.progress.new_endpoints is '# of eligible endpoints promoted to stable in this release';
@@ -50,3 +50,5 @@ comment on column conformance.progress.new_endpoints_covered_by_old_tests is '# 
 comment on column conformance.progress.old_endpoints_covered_by_new_tests is '# old endoints hit for the first time by a test from this release.  This shows the payment of technical debt';
 comment on column conformance.progress.total_tested_endpoints is 'total # of eligible endopints hit by tests';
 comment on column conformance.progress.endpoints_still_untested_today is '# of new endopints from this release that are unhit as of the present day';
+
+select 'conformance.conformance_progress defined and commented' as "build log";

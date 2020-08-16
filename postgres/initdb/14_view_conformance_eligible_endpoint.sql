@@ -19,3 +19,5 @@ create or replace view conformance.eligible_endpoint as
 comment on view conformance.eligible_endpoint is 'all current stable endpoints for which conformant tests could be written, following conformance guidelines';
 
 comment on column conformance.eligible_endpoint.endpoint is 'the endpoint, as its defined in the open_api table';
+
+select 'conformance.eligible_endpoint defined and commented' as "build log";

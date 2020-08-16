@@ -14,14 +14,14 @@ create materialized view conformance.eligible_endpoint_coverage as
        left join test on (ae.test = test.codename)
 group by endpoint;
 
-comment on materialized view conformance.eligible_endpoint_coverage is 'conformance-eligible endpoints-- when they were first released and conformance tested';
+comment on materialized view conformance.eligible_endpoint_coverage is 'in-depth coverage info for eligible endpoints';
 
 comment on column conformance.eligible_endpoint_coverage.endpoint is 'endpoint as defined in table open_api';
 comment on column conformance.eligible_endpoint_coverage.first_conformance_test is 'release of earliest conformance test that hits endpoint. May be earlier than release of endpoint.';
 comment on column conformance.eligible_endpoint_coverage.test is 'Name of first test that hits endopint, as given in conformance.yaml';
 comment on column conformance.eligible_endpoint_coverage.codename is 'first test as it appears in useragent of auditlog';
 comment on column conformance.eligible_endpoint_coverage.file is 'file where this first test is defined';
-comment on column conformance.eligible_endpoint_coverage.first_release is 'release in which this endpoint first appears in the open_api spec as a stable,eligible endpoint.';
+comment on column conformance.eligible_endpoint_coverage.first_release is 'release in which this endpoint first appears in the open_api spec as an eligible endpoint.';
 comment on column conformance.eligible_endpoint_coverage.all_test_releases is 'set of releases for tests that hit this endpoint';
 
-\dmv+ conformance.eligible_endpoint_coverage;
+select 'conformance.eligible_endpoint_coverage defined and commented' as "build log";
