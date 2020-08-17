@@ -1,4 +1,4 @@
-FROM postgres:12.0
+FROM postgres:12.4
  MAINTAINER Hippie Hacker <hh@ii.coop>
  RUN apt-get update \
    && apt-get install -y --no-install-recommends \
