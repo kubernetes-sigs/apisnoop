@@ -1,180 +1,81 @@
 
-# v1.19
+# v1.20
 
 Our goal is to not make radical changes to process or approach, but iterate on our working methods to increase velocity and output in a stable, consistent way.
 
-## June News
+## Looking back at 1.19
 
-### ****SIG-Release 1.19 [Timelines](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.19#timeline) due to Covid****
+### ****Gate cncf/k8s-conformance PR's****
 
--   Dates [may yet again slip](https://groups.google.com/forum/?utm_medium=email&utm_source=footer#!msg/kubernetes-dev/TVXhcNO3SPU/-Uj-xJP2BQAJ), not confirmed
--   Tests need to be in Week 15 (July 23)
--   Test Freeze Week 17 (August 6th)
+-   ****KR1**** Setup prow.cncf.io
+-   ****KR2**** Connect cncf/k8s-conformance to prow.cncf.io
+-   ****KR3**** gate+comment
+-   The Conformance gate is implemented and tested on [cncf-infra/k8s-conformance](https://github.com/cncf-infra/k8s-conformance/).
+-   It is ready to be pointed at [cncf/k8s-conformance](https://github.com/cncf/k8s-conformance/).
 
-### ****prow.cncf.io****
+### Next steps for cncf/K8s-conformance gate
 
--   Created [github.com/cncf-infra](https://github.com/cncf-infra) org
--   [prow-config](https://github.com/cncf-infra/prow-config) has two plugins
-    -   verify-conformance-release
-    -   verify-conformance-tests
--   Test PRs in fork of [k8s-conformance](https://github.com/cncf-infra/k8s-conformance/pulls)
+-   Agree on implementation date
+-   Update and improve based on feedback
+-   Maintenance strategy
 
-### ****Increase in coverage for 1.19 over 1.18 Stable****
+### ****Gate k/k of PR's touching test/e2e or API****
 
--   Total of 41 Endpoints promoted from Beta
--   39 Endpoints promoted with test
--   2 Endpoints that came in without conformance test picked up by ii
--   14 Endpoints hit by ii Confromance tests
+-   This is the key focus for 1.20
+-   In progress, setting up infrastructure in AWS
 
-### ****9.61% increase in coverage since 1.18****
+### ****Increase Stable Test Coverage by 40 endpoints****
 
--   1.18 coverage 38.86% = 150/386
--   Current 1.19 coverage: 48.47% = 207/427
+### ****KR1 (39/40) new conformant stable endpoints****
 
-### ****Watch Tooling Refactoring****
+-   Community introduced 41 New endpoints to GA
+-   40 Endpoint was introduced with tests
+-   ii introduced Conformance tests for 38 old endpoints
+-   ii added a Conformance test to 1 new endpoints promoted without a test
 
--   [PR #92621](https://github.com/kubernetes/kubernetes/pull/92621/) Simplify ConfigMap lifecycle e2e test by @spiffxp
--   In Conformance Office Hours Meeting of 14 July it was agreed to follow the approach proposed by Aaron. The results will be evaluated as we go forward
+### ****KR2 (17.54% / +9%) Coverage Increase****
 
-### ****+29 Endpoints Backlogged by Tooling Request****
+****38.86%->56.4%****
 
--   Existing Test PRs: +21
-    -   Promotion #90939 (+4)
-    -   Tests #90942,90988,92589 (+17)
--   Triage 2 Issues: +8
--   ****Pushing**** #90939,90942 & 92589 for 1.19 (+14)
+-   Target have been exceeded with ii and the community's effort
+-   Percentage would not be used as a measure from 1.20
+-   Percentage many not be a clear indicator due to:
+    -   New endpoints, deprecation and ineligible endpoints etc.
 
-### ****Conformance coverage progress****
+### ****KR3 (stretch 56.4%) +50% stable endpoints hit by conformance tests****
 
--   @liggitt's team merged 2 Conformance Test +32 Endpoints
--   @Wojtek-t's team merged 1 conformance Test +7 Endpoints
--   ii merged 7 Conformance Tests +14 Endpoints
--   3 Promotions +21 Endpoints
-    -   1 of 4 Endpoints for Watch Tooling
--   3 Test +17 Endpoints all for Watch Tooling
--   2 Issues of 8 Endpoints in Backlog for Watch Tooling
+-   Achieved by the team work of ii and the community
 
-### ****Preventing further technical debt****
+### ****Achievements not in OKRs for 1.19****
 
--   Endpoint graduating from Beta to GA without Confromance tests is caught by the ii team in APISnoop
--   ii closed #93038 + 1 - Ingress Endpoint
--   @Wojtek-t's team working on #93296 + 1 Event Endpoint
+### Preventing further technical debt
 
-### ****Summery****
+-   Two Endpoints graduated from Beta to GA sans Conformance
+-   Both endpoints was pick-up by APISnoop and Conformance tests where add in 1.19
+-   No new technical debt
 
-| Status:             | Endpoints  | Blocked-Watch tooling |
-|------------------- |---------- |--------------------- |
-| Promotion:          | 21         | 4                     |
-| Tests:              | 17         | 17                    |
-| Backlog:            | 8          | 8                     |
-| ****Total Open:**** | ****47**** | ****31****            |
-| Merge:              | 14         |                       |
-| ****Total:****      | ****60**** |                       |
+### APISnoop improvements in 1.19
 
-### ****APISnoop changes****
+-   New endpoints for each release beneath sunburst
+-   Progress graph toggle between percentage and numbers
+-   SnoopDB (openAPI spec + conformance coverage)
+-   Coverage data taken from e2e test suite runs
+-   Used for CI / coverage updates
+-   Used for research and issue creation
 
--   [apisnoop.cncf.io](https://apisnoop.cncf.io) been updated
-    -   Sunburst graph at the top of the page
-        -   With data from 1.15 on wards
-    -   Confromance progress is shown in 3 graphs
-        -   Stable Endpoint Coverage At Time of Release
-        -   Stable Endpoint Coverage At Time of Release (%)
-        -   Conformance Coverage By Release
+## Looking forward to 1.20
 
-### ****Historical Endpoint data****
+## ****Gate cncf/k8s-conformance PRs****
 
--   Historical Endpoint [graphs](https://hackmd.io/6klrNXc7TzGuE6T_gZ9p3g?view)
-    -   PR [#1806](https://github.com/kubernetes/community/pull/1806) API's promoted to GA must come with conformance tests
+-   The next steps for production implementation must be agreed
 
-### ****APISnoop now use SnoopDB.****
-
-It is now easy to run SnoopDB as one docker run command. This helps us with pipeline for updating coverage, but also makes it easy for user to spin up their own database and investigate k8s coverage.
-
-### ****How it work:****
-
-With the SnoopDB image, you can run something as simple as `"docker run -p 5432:5432 snoopdb"`, which will create a postgres database with tables for:
-
--   the entire open api spec
--   the entire set of conformance tests
--   coverage data taken from e2e test suite runs
-
-All of it loaded with fresh data ready to explore.
-
-### ****Other enhancements:****
-
--   Automating the updates of our coverage jsons, updating daily through github actions pipeline
-
--   Listing new endpoints for this release beneath sunburst, sorted to have stable, non-conformance tested endpoints at top of list.
-
--   Stable Endpoint Coverage at Time Of Release(Percentage) - This graph shows the coverage ratio for each release, which better shows the work done to cover older endpoints.
-
-### ****NEXT UP****
-
--   Improved styling and ux/ui for sunburst page. It's a proof of concept awaiting feedback, but we want to make it more user-friendly and discoverable
-
--   List of tests that hit an endpoint shown on sunburst, when zoomed into an endpoint. This already exists but was turned off to work out some issues with its filters, and we'll be adding it back to the site.
-
-### ****AND MORE****
-
--   New Coverage showing below sunburst. This table would show existing endpoints but that are newly tested in this release.
-
--   Increased documentation for SnoopDB. Everything within the database is commented, but external documentation would make it far more beginner friendly, and we'll be tackling that next.
-
-## Gate cncf/k8s-conformance PRs
-
--   [cncf/k8s-conformance project board](https://github.com/cncf/apisnoop/projects/29)
-
-### KR1 Setup prow.cncf.io
-
--   [X] DNS prow.cncf.io pointing to prow.apisnoop.io
--   [X] Grant cncf-ci bot permissions to cncf github org
--   [X] Deploy prow onto prow.cncf.io
--   [X] Researching the isolation / clusters used by test-infra / k8s-infra-wg
--   [ ] Look into setting up #wg-cncf-infra if there is interest
-
-### KR2 Connect cncf/k8s-conformance to prow.cncf.io
-
--   [X] Comments and admin actions from prow.cncf.io
--   [X] Will be made using the [cncf-ci](https://github.com/cncf-ci) bot/github account.
--   [X] Enable [meow](https://github.com/cncf/k8s-conformance/pull/971) and simple prow bot plugins
-
-### KR3 gate+comment
-
--   Verify Release -[X] ****release-X.Y**** -[X] ****needs-release**** w/ Comments
--   Verify Tests
-    -   ****tests-run-X.Y****
-    -   ****needs-tests**** w/ Comments
-
-### Verify Release
-
--   [X] PR Title
--   [X] Folder
--   [X] e2e.log
--   [-] junit.xml
--   [X] PRODUCT.yaml has all required fields
--   [X] add ****needs-release**** OR ****release-X.Y****
-
-### Verify Tests
-
--   [X] List of tests required for release
--   [X] List of tests from junit.xml and compare with requiered test
--   [X] Comfirm that e2e Log have no failed tests
--   [X] Comment list/count of missing tests
--   [X] add ****needs-tests**** OR ****tests-run-X.Y****
-
-### definition Informed by [user stories for KEP-960](https://github.com/kubernetes/enhancements/blob/2c19ec7627e326d1c75306dcaa3d2f14002301fa/keps/sig-architecture/960-conformance-behaviors/README.md#role-cncf-conformance-program)
-
-    Must confirm the version of the tests being run matches...
-    Must confirm the set of tests being run matches...
-    Must confirm all behaviors are covered by a test...
-
-## Gate k/k PRs touching test/e2e or API
+## ****Gate k/k PRs touching test/e2e or API****
 
 -   [k/k API+Conformance Gate](https://github.com/cncf/apisnoop/projects/30)
 
 ### Background
 
-Influenced by [Behavior KEP user stories](https://github.com/kubernetes/enhancements/pull/1666/files?short_path=92a9412#diff-92a9412ae55358378bc66295cdbea103) while continuing to focus on endpoints!
+Influenced by [Behaviour KEP user stories](https://github.com/kubernetes/enhancements/pull/1666/files?short_path=92a9412#diff-92a9412ae55358378bc66295cdbea103) while continuing to focus on endpoints!
 
 > Will show increase in endpoints, and tested endpoints, but also, explicitly, whether conformance coverage increased.
 
@@ -182,7 +83,7 @@ Influenced by [Behavior KEP user stories](https://github.com/kubernetes/enhancem
 
 ### OKing PR
 
-> Existing responsiblity via owners file ensures that PRs touching swagger or conformance tests are ****/approved**** by right people.
+> Existing responsibility via owners file ensures that PRs touching swagger or conformance tests are ****/approved**** by right people.
 
 > A label of ****requires-conformance**** will applied, and ****conformance**** label will need to be added by this gate + automation.
 
@@ -234,40 +135,17 @@ Ensure the API Review process has been followed.
 -   [ ] Get as to location of repo under k8s org
 -   [ ] Migration maybe in Q4
 
-## Increase Stable Test Coverage by 40 endpoints
+## ****Increase Stable Test Coverage****
 
-### ****KR1 (14/40) new conformant stable endpoints****
+### ****KR1 increase new conformant stable endpoints****
 
--   \#89753 + 5 points
--   \#90390 + 3 points
--   \#90812 + 1 point
--   \#90941 + 2 points
--   \#92813 + 1 point
--   \#93084 + 1 point
--   \#93038 + 1 point Ingress Endpoint
+-   Goal: 30
+-   Stretch Goal: 40
+-   Moving over 50% conformance would likeky increase complexity
 
-### ****What is in the numbers****
+### ****KR2 clean-up technical debt****
 
--   14 Endpoints by ii
--   39 Endpoints by the community
+-   Goal: Clean technical debt back to 1.15
+-   Stretch Goal: 6 of 18 Endpoints of 1.14
 
-Total: 53
-
--   21 Promotion Endpoints by ii
--   17 Watch tooling test Endpoints by ii
-
-Total: 38 ****Grand total possible: 91****
-
-### ****KR2 (9.61% / +9%) Coverage Increase****
-
-****38.86%->48.47%****
-
--   Target have been exceeded with ii and the community's effort
--   Further increase expected before 1.19 test freeze
--   Due to increase in total endpoints, our increase may be hidden.
-
-Percentage many not be a clear indicator.
-
-### ****KR3 (stretch +49) 50% stable endpoints hit by conformance tests****
-
--   Possible, only need Conformance tests for 7 more Endpoints to Merge
+## ****Looking forward to a successful 1.20****
