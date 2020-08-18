@@ -13,7 +13,7 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 -   The Conformance gate is implemented and tested on [cncf-infra/k8s-conformance](https://github.com/cncf-infra/k8s-conformance/).
 -   It is ready to be pointed at [cncf/k8s-conformance](https://github.com/cncf/k8s-conformance/).
 
-### Next steps for cncf/K8s-conformance gate
+### ****Next steps for cncf/K8s-conformance gate****
 
 -   Agree on implementation date
 -   Update and improve based on feedback
@@ -21,8 +21,9 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 ### ****Gate k/k of PR's touching test/e2e or API****
 
--   This is the key focus for 1.20
--   In progress, setting up infrastructure in AWS
+-   The high level overview was agreed in the SIG Architecture office hours meeting
+-   There was no objections from the community
+-   We are soliciting feedback from SIG Testing on the technical details
 
 ### ****Increase Stable Test Coverage by 40 endpoints****
 
@@ -51,8 +52,8 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 ### Preventing further technical debt
 
 -   Two Endpoints graduated from Beta to GA sans Conformance
--   Both endpoints was pick-up by APISnoop and Conformance tests where add in 1.19
--   No new technical debt
+-   Both endpoints was picked-up by APISnoop and Conformance tests where add in 1.19
+-   We allowed no new technical debt
 
 ### APISnoop improvements in 1.19
 
@@ -71,69 +72,38 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 ## ****Gate k/k PRs touching test/e2e or API****
 
--   [k/k API+Conformance Gate](https://github.com/cncf/apisnoop/projects/30)
+### ****Identify list of endpoints added/removed****
 
-### Background
+-   Tooling will compare path/operation id in api/openapi-spec/swagger.json
+    -   Generate list of new endpoints
+    -   Generate list of removed endpoints
+-   Run APISnoop against PR to generate endpoint coverage review
 
-Influenced by [Behaviour KEP user stories](https://github.com/kubernetes/enhancements/pull/1666/files?short_path=92a9412#diff-92a9412ae55358378bc66295cdbea103) while continuing to focus on endpoints!
+### ****Tooling will provide a list of tested and conformant endpoints.****
 
-> Will show increase in endpoints, and tested endpoints, but also, explicitly, whether conformance coverage increased.
+-   Wait for main prow job to finish
+-   Generate list of hit/tested endpoints
+-   Generate list of conformant endpoints
+-   Bot comment with list of increase/decrease of endpoints
 
-> Comment: "you are adding a new endpoint to stable, and you are adding a conformance test for it"
+### ****Tooling will comment directly on PR + Link to APISnoop landing page****
 
-### OKing PR
+-   ****Alpha & Beta:**** List endpoints needing tests. Note: Endpoints can not be promoted to GA without Conformance test.
+-   ****Stable:**** comment+block via tag. (List endpoints needing tests. Note: Endpoints can not be promoted to GA without Conformance test.)
 
-> Existing responsibility via owners file ensures that PRs touching swagger or conformance tests are ****/approved**** by right people.
+### ****APISnoop landing page****
 
-> A label of ****requires-conformance**** will applied, and ****conformance**** label will need to be added by this gate + automation.
+Explain conformance testing is a requirement for Endpoints to be promoted to GA
 
-### KR1 Identify a PR as requiring conformance review
+-   List documents:
+    -   Conformance Test Requirements
+    -   Promoting Tests to Conformance
+    -   Writing good e2e tests for Kubernetes
+    -   Introduction to APISnoop tool + links
+    -   Explanation & Access to different release data
+    -   Link to Conformance Office Hours Meeting Notes
 
-PR must touch file in conformance-specific directory
-
--   (initially /area-conformance + /sig-arch)
--   [ ] Create `run_if_changed` presubmit
-
-    eg: update test/conformance/behaviors/..
-    eg: mv from test/e2e to test/conformance
-
-### KR2 Identify list of endpoints added/removed
-
-Tooling will compare `path/operation_id` in `api/openapi-spec/swagger.json`
-
--   [ ] Generate list of new endpoints
--   [ ] Generate list of removed endpoints
-
-### KR3 Run APISnoop against PR to generate endpoint coverage
-
-Tooling will provide a list of tested and conformant endpoints.
-
--   [ ] Wait for main prow job to finish
--   [ ] Generate list of hit/tested endpoints
--   [ ] Generate list of conformant endpoints
-
-### KR4 bot comment w/ list of increase/decrease of endpoints
-
-Tooling will comment directly on PR
-
--   [ ] alpha : endpoints needing tests
--   [ ] beta : endpoints needing tests
--   [ ] stable : comment+block via tag
-
-> You've added api's without tests it will not be able to reach stable.
-
-### KR5 Manual Approval for SIG-Arch (or appropriate owners)
-
-Ensure the API Review process has been followed.
-
--   [ ] Get feedback on approval process from SIG-Arch
--   [ ] Ensure the correct tagging / OWNERS are respected
-
-### KR6 Donate APISnoop to sig-arch
-
--   [ ] Get feedback if this is desired
--   [ ] Get as to location of repo under k8s org
--   [ ] Migration maybe in Q4
+### The goal is to introduce the k/k gate in the next 4 - 8 weeks
 
 ## ****Increase Stable Test Coverage****
 
