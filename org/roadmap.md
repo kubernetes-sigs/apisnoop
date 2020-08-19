@@ -5,91 +5,94 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 ## Looking back at 1.19
 
+### OKR Scoring
+
+-   ****Gate cncf/k8s-conformance PR's****
+    -   Result: 0.9 (Final Switchover Pending)
+-   ****Gate k/k of PR's touching test/e2e or API****
+    -   Result: 0.4 (Major Direction Change)
+-   ****Increase Stable Test Coverage****
+    -   Result: 1.0 (Best Ever)
+
 ### ****Gate cncf/k8s-conformance PR's****
 
 -   ****KR1**** Setup prow.cncf.io
 -   ****KR2**** Connect cncf/k8s-conformance to prow.cncf.io
 -   ****KR3**** gate+comment
 -   The Conformance gate is implemented and tested on [cncf-infra/k8s-conformance](https://github.com/cncf-infra/k8s-conformance/).
--   It is ready to be pointed at [cncf/k8s-conformance](https://github.com/cncf/k8s-conformance/).
+-   CNCF Approval needed to point at [cncf/k8s-conformance](https://github.com/cncf/k8s-conformance/).
 
-### ****Next steps for cncf/K8s-conformance gate****
+### ****Final Switchover for cncf/K8s-conformance gate****
 
--   Agree on implementation date
--   Update and improve based on feedback
--   Maintenance strategy
+-   [Update Docs](https://github.com/cncf/k8s-conformance/pull/1070) to only allow single submissions
+-   Set implementation date / switch over
 
 ### ****Gate k/k of PR's touching test/e2e or API****
 
--   The high level overview was agreed in the SIG Architecture office hours meeting
--   There was no objections from the community
+-   ****KRs**** Will be updated for 1.20
+-   Feedback from #sig-testing / #sig-contribex
+    -   Discouraged: ****PR Blocking Presubmits****
+    -   Prefered: ****Release Blocking Periodic****
 -   We are soliciting feedback from SIG Testing on the technical details
 
 ### ****Increase Stable Test Coverage by 40 endpoints****
 
-### ****KR1 (39/40) new conformant stable endpoints****
+-   ****KR1**** (39/40) new conformant stable endpoints
+-   ****KR2**** (17.54% / +9%) Coverage Increase
+-   ****KR3**** (stretch 56.4%) +50% stable endpoints hit by conformance tests
 
--   Community introduced 41 New endpoints to GA
--   40 Endpoint was introduced with tests
--   ii introduced Conformance tests for 38 old endpoints
--   ii added a Conformance test to 1 new endpoints promoted without a test
-
-### ****KR2 (17.54% / +9%) Coverage Increase****
-
-****38.86%->56.4%****
-
--   Target have been exceeded with ii and the community's effort
--   Percentage would not be used as a measure from 1.20
--   Percentage many not be a clear indicator due to:
-    -   New endpoints, deprecation and ineligible endpoints etc.
-
-### ****KR3 (stretch 56.4%) +50% stable endpoints hit by conformance tests****
-
--   Achieved by the team work of ii and the community
-
-### ****Achievements not in OKRs for 1.19****
+## ****Achievements not in OKRs for 1.19****
 
 ### Preventing further technical debt
 
--   Two Endpoints graduated from Beta to GA sans Conformance
--   Both endpoints was picked-up by APISnoop and Conformance tests where add in 1.19
--   We allowed no new technical debt
+-   Two Endpoints Beta->GA sans Conformance
+-   Picked-up by APISnoop
+-   Conformance Tests added
 
-### APISnoop improvements in 1.19
+### APISnoop improvements
 
--   New endpoints for each release beneath sunburst
--   Progress graph toggle between percentage and numbers
--   SnoopDB (openAPI spec + conformance coverage)
--   Coverage data taken from e2e test suite runs
--   Used for CI / coverage updates
--   Used for research and issue creation
+-   Conformance-Coverage Graphs
+-   New Release Endpoints beneath sunburst
+-   Standalone SnoopDB
+    -   (openAPI spec + conformance coverage)
 
 ## Looking forward to 1.20
 
-## ****Gate cncf/k8s-conformance PRs****
+## ****Increase Stable Test Coverage****
 
--   The next steps for production implementation must be agreed
+### ****KR1 increase new conformant stable endpoints****
 
-## ****Gate k/k PRs touching test/e2e or API****
+-   Goal: 30
+-   Stretch Goal: 40
+-   Remaining 50% conformance seems of increased complexity
 
-### ****Identify list of endpoints added/removed****
+### ****KR2 clean-up technical debt****
+
+-   Goal: Clean technical debt back to 1.15
+-   Stretch Goal: 6 of 18 Endpoints of 1.14
+
+## ****Release Blocking k/k Jobs touching test/e2e or API****
+
+This will likely change quite a bit as we move to Release Blocking Job instead of PR blocking Job.
+
+### ****KR1: Identify list of endpoints added/removed****
 
 -   Tooling will compare path/operation id in api/openapi-spec/swagger.json
     -   Generate list of new endpoints
     -   Generate list of removed endpoints
 -   Run APISnoop against PR to generate endpoint coverage review
 
-### ****Tooling will provide a list of tested and conformant endpoints.****
+### ****KR2: Tooling will provide a list of tested and conformant endpoints.****
 
 -   Wait for main prow job to finish
 -   Generate list of hit/tested endpoints
 -   Generate list of conformant endpoints
 -   Bot comment with list of increase/decrease of endpoints
 
-### ****Tooling will comment directly on PR + Link to APISnoop landing page****
+### ****KR3: Tooling will comment directly on PR + Link to APISnoop landing page****
 
 -   ****Alpha & Beta:**** List endpoints needing tests. Note: Endpoints can not be promoted to GA without Conformance test.
--   ****Stable:**** comment+block via tag. (List endpoints needing tests. Note: Endpoints can not be promoted to GA without Conformance test.)
+-   ****Stable:**** comment via tag. (List endpoints needing tests. Note: Endpoints can not be promoted to GA without Conformance test.)
 
 ### ****APISnoop landing page****
 
@@ -102,20 +105,5 @@ Explain conformance testing is a requirement for Endpoints to be promoted to GA
     -   Introduction to APISnoop tool + links
     -   Explanation & Access to different release data
     -   Link to Conformance Office Hours Meeting Notes
-
-### The goal is to introduce the k/k gate in the next month or two
-
-## ****Increase Stable Test Coverage****
-
-### ****KR1 increase new conformant stable endpoints****
-
--   Goal: 30
--   Stretch Goal: 40
--   Moving over 50% conformance would likeky increase complexity
-
-### ****KR2 clean-up technical debt****
-
--   Goal: Clean technical debt back to 1.15
--   Stretch Goal: 6 of 18 Endpoints of 1.14
 
 ## ****Looking forward to a successful 1.20****
