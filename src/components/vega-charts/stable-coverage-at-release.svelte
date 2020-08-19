@@ -38,7 +38,10 @@
      "width": "900",
      "height": "600",
      "encoding": {
-       "href": {"field":"href"},
+       "href": {
+         "field":"href",
+         "type": "nominal"
+       },
        "x": {
          "field": "release",
          "type": "nominal",
@@ -66,8 +69,10 @@
          {"field": "type", "type": "ordinal"},
          {"field": "total", "type": "quantitative"}
        ],
-       "order": {"field": "order"},
-       "legend": {"labelFontSize": 16}
+       "order": {
+         "field": "order",
+         "type": "quantitative"
+       }
      },
      "mark": {"type": "bar"}
    }

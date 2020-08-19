@@ -29,7 +29,7 @@
    let { chart, type } = event.detail;
    let x = window.pageXOffset;
    let y = window.pageYOffset;
-   query = {...query, [chart]: [type]};
+   query = {...query, [chart]: type};
    const queryParams = Object.keys(query);
    const queryParamsPath = trimEnd(queryParams.map(qp => `${qp}=${query[qp]}&`).join(''), '&');
    goto(`/conformance-progress?${queryParamsPath}`).then(()=> window.scrollTo(x,y));
@@ -40,12 +40,11 @@
    let coverageData = await fetch(`${releasesURL}/conformance-coverage-per-release.json`).then(res=>res.json());
    stableCoverageAtReleaseRaw.set(progressData);
    coverageByReleaseRaw.set(coverageData);
-   console.log({stablechart, relchart});
  });
 </script>
 
 <svelte:head>
-  <title>APISnoop | Conformance Progress</title>
+    <title>APISnoop | Conformance Progress</title>
 </svelte:head>
 
 <h1>Conformance Progress Charts</h1>
