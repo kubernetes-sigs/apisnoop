@@ -3,9 +3,12 @@
  import { default as embed } from 'vega-embed';
  import { stableCoverageAtRelease } from '../../store';
  import Link from '../icons/link-solid.svelte';
+ import { conformanceColours } from '../../lib/colours.js';
 
  const dispatch = createEventDispatcher();
  const handleSwitch = (type) => dispatch('CHART_TYPE_SWITCHED', {chart: 'stablechart', type});
+
+ const { promotedWithTests, oldCoveredByNew, tested, promotedWithoutTests, untested } = conformanceColours;
 
  export let chartType = 'number';
 
@@ -57,11 +60,11 @@
          "field": "type",
          "type": "nominal",
          "scale": {"range": [
-                  "hsl(158, 74.2%, 48.0%)",
-                  "hsl(30, 100%, 70.6%)",
-                  "hsl(158, 74.2%, 38.0%)",
-                  "hsl(158, 74.2%, 28.0%)",
-                  "hsl(30, 100%, 60.6%)"
+                  promotedWithTests,
+                  promotedWithoutTests,
+                  oldCoveredByNew,
+                  tested,
+                  untested
                   ]},
          "legend": {"labelFontSize": 14, "orient": "right", "direction": "vertical", "labelLimit": 300}
        },
