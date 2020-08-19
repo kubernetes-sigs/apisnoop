@@ -1,8 +1,38 @@
 <script>
- import { afterUpdate } from 'svelte';
+ import { afterUpdate, createEventDispatcher } from 'svelte';
  import { default as embed } from 'vega-embed';
  import { coverageByRelease } from '../../store';
+ import { conformanceColours } from '../../lib/colours.js';
  import Link from '../icons/link-solid.svelte';
+
+ const { tested, untested } = conformanceColours;
+
+ const dispatch = createEventDispatcher();
+ const handleSwitch = (type) => dispatch('CHART_TYPE_SWITCHED', {chart: 'relchart', type});
+
+ export let chartType = 'number';
+
+ $: x = chartType === 'percentage'
+      ? {
+        "field": "total",
+        "type": "quantitative",
+        "aggregate": "sum",
+        "stack": "normalize",
+        "title": "Percentage of Coverage From This Release",
+        "axis":{
+          "labelFontSize": 16,
+          "titleFontSize": 16,
+          "titlePadding": 8}
+      }
+      : {
+        "field": "total",
+        "type": "quantitative",
+        "title": "Untested & Tested Endpoints From This Release",
+        "axis":{
+          "labelFontSize": 16,
+          "titleFontSize": 16,
+          "titlePadding": 8
+      }}
 
  $: spec = {
    "data": {
@@ -21,16 +51,7 @@
          "titlePadding": 8
        }
      },
-     "x": {
-       "field": "total",
-       "type": "quantitative",
-       "title": "Untested & Tested Endoints From this Release",
-       "axis":{
-         "labelFontSize": 16,
-         "titleFontSize": 18,
-         "titlePadding": 8
-       }
-     },
+     "x": x,
      "tooltip": [
        {"field": "type", "type": "ordinal"},
        {"field": "total", "type": "quantitative"}
@@ -39,8 +60,8 @@
        "field": "type",
        "type": "nominal",
        "scale": {"range": [
-                "hsl(158, 74.2%, 38.0%)",
-                "hsl(30, 100%, 60.6%)"
+                tested,
+                untested
                 ]},
        "legend": {"labelFontSize": 16}
      }
@@ -58,14 +79,25 @@
 
 <section id="coverage-by-release">
   <h2><a href="conformance-progress#coverage-by-release">Conformance Coverage By Release <Link width="1.25rem"/></a></h2>
-  <em>Per release, for the endpoints promoted in this release, how many are tested or untested today?</em>
-  <p><b>Note:</b> We mark the number of still untested endpoints as a negative number, since they represent technical debt.</p>
+  <em>For the endpoints promoted in a release, how many are tested and untested as of today?</em>
+  <p><b>Note:</b> We mark still untested endpoints as a negative number, since they represent technical debt.</p>
 
   {#if $coverageByRelease.length === 0}
     <div id="coverage-by-release_chart">
       <p>loading chart...</p>
     </div>
   {:else}
+    <div class="chart-type" >
+      <strong>View As:</strong>
+      <div>
+        <input on:click="{()=>handleSwitch('number')}" type="radio" id="number" name="chart-type" bind:group={chartType} value="number">
+        <label for="number">Number</label>
+      </div>
+      <div>
+        <input on:click="{()=>handleSwitch('percentage')}" type="radio" id="percentage" name="chart-type" bind:group={chartType} value="percentage">
+        <label for="percentage">Percentage</label>
+      </div>
+    </div>
     <div id="coverage-by-release_chart"></div>
   {/if}
 </section>
@@ -74,10 +106,13 @@
  section {
    margin-top: 2rem;
  }
- div {
+
+ div#coverage-by-release_chart {
    margin-top: 2rem;
  }
+
  p {
    margin-top: 0;
  }
+
 </style>

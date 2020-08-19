@@ -345,20 +345,20 @@ export const stableCoverageAtRelease = derived(
         return {
           release,
           total: {
-            Tested: tested,
-            Untested: untested,
-            'Old Endpoints Covered By New Tests': total.old_tested,
-            'New Endpoints Promoted Without Tests': newUntested,
-            'New Endpoints Promoted With Tests': newTested
+            'Previously Tested (past regular development)': tested,
+            'Still Untested (technical debt)': untested,
+            'Old Endpoints Covered By New Tests (paying off technical debt)': total.old_tested,
+            'New Endpoints Promoted Without Tests (this should not happen)': newUntested,
+            'New Endpoints Promoted With Tests (regular new development)': newTested
           }
         };
       });
       const order = {
-        Tested: {filter: 'tested', order: 'a'},
-        'Old Endpoints Covered By New Tests': {filter: 'old-covered-by-new', order: 'b'},
-        'New Endpoints Promoted With Tests': {filter: 'promoted-with-tests', order: 'c'},
-        Untested: {filter: 'untested', order: 'd'},
-        'New Endpoints Promoted Without Tests': {filter: 'promoted-without-tests', order: 'e'}
+        'Previously Tested (past regular development)': {filter: 'tested', order: 'a'},
+        'Old Endpoints Covered By New Tests (paying off technical debt)': {filter: 'old-covered-by-new', order: 'b'},
+        'New Endpoints Promoted With Tests (regular new development)': {filter: 'promoted-with-tests', order: 'c'},
+        'Still Untested (technical debt)': {filter: 'untested', order: 'd'},
+        'New Endpoints Promoted Without Tests (this should not happen)': {filter: 'promoted-without-tests', order: 'e'}
       };
       const formattedStableCoverage = stableCoverage
         .filter(rel => rel.release !== '1.8.0')
