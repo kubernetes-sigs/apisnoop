@@ -75,10 +75,12 @@ def determine_bucket_job(custom_bucket=None, custom_job=None):
 
 def fetch_swagger(bucket, job):
     """fetches swagger for given bucket and job and returns it, and its appropariate metadata, in a dict"""
-    <<grab metadata for bucket job>>
-    <<determine commit hash from metadata>>
-    <<grab swagger at commit hash>>
-    <<return swagger and metadata>>
+    metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
+    metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+    commit_hash = metadata["version"].split("+")[1]
+    swagger_url =  ''.join([K8S_GITHUB_RAW, commit_hash, '/api/openapi-spec/swagger.json'])
+    swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
+    return (swagger, metadata, commit_hash);
 
 def merge_into(d1, d2):
     for key in d2:
@@ -148,7 +150,7 @@ def load_openapi_spec(url):
             # if the current level doesn't have a key (folder) for this part, create an empty one
             if part not in current_level:
                 current_level[part] = {}
-                # last_part will be this part, unless there are more parts 
+                # last_part will be this part, unless there are more parts
                 last_part=part
                 # last_level will be this level, unless there are more levels
                 last_level = current_level
@@ -166,8 +168,8 @@ def load_openapi_spec(url):
                 # for the nested current_level (end of the path/url) use the method as a lookup to the operationId
                 current_level[method]=swagger_method.get('operationId', '')
                 # cache = {}
-                # cache = {3 : {'/api','v1','endpoints'} 
-                # cache = {3 : {'/api','v1','endpoints'} {2 : {'/api','v1'} 
+                # cache = {3 : {'/api','v1','endpoints'}
+                # cache = {3 : {'/api','v1','endpoints'} {2 : {'/api','v1'}
                 # cache uses the length of the path to only search against other paths that are the same length
                 cache = deep_merge(cache, {path_len:path_dict})
                 openapi_spec['cache'] = cache
