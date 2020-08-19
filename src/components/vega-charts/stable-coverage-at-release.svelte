@@ -66,7 +66,7 @@
                   tested,
                   untested
                   ]},
-         "legend": {"labelFontSize": 14, "orient": "right", "direction": "vertical", "labelLimit": 300}
+         "legend": {"labelFontSize": 14, "orient": "right", "direction": "vertical", "labelLimit": 600}
        },
        "tooltip": [
          {"field": "type", "type": "ordinal"},
@@ -88,7 +88,9 @@
 
 <section id="coverage-at-time-of-release">
   <h2><a href="conformance-progress#coverage-at-time-of-release">Stable Endpoint Coverage At Time of Release <Link width="1.25rem" /> </a></h2>
-  <em>Per release, how many endpoints were introduced with tests and, regrettably, without tests? What work was done to decrease technical debt by adding new tests for old endpoints? What was the overall state of coverage at the time of the release?</em>
+  <em>Per release ow many endpoints were introduced with tests and, regrettably, without tests?</em>
+  <em>What work was done to decrease technical debt by adding new tests for old endpoints?</em>
+  <em>What was the overall state of coverage at the time of the release?</em>
 
   {#if $stableCoverageAtRelease.length === 0}
     <div id='stable-coverage-at-release_chart'>
