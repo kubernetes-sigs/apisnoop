@@ -75,12 +75,10 @@ def determine_bucket_job(custom_bucket=None, custom_job=None):
 
 def fetch_swagger(bucket, job):
     """fetches swagger for given bucket and job and returns it, and its appropariate metadata, in a dict"""
-    metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
-    metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-    commit_hash = metadata["version"].split("+")[1]
-    swagger_url =  ''.join([K8S_GITHUB_RAW, commit_hash, '/api/openapi-spec/swagger.json'])
-    swagger = json.loads(urlopen(swagger_url).read().decode('utf-8')) # may change this to ascii
-    return (swagger, metadata, commit_hash);
+    <<grab metadata for bucket job>>
+    <<determine commit hash from metadata>>
+    <<grab swagger at commit hash>>
+    <<return swagger and metadata>>
 
 def merge_into(d1, d2):
     for key in d2:
@@ -234,7 +232,7 @@ def find_operation_id(openapi_spec, event):
       current_level = current_level[variable_level] # variable part is final part
     else:
       next_part = uri_parts[idx+1]
-      # TODO reduce this down to , find the single next level with a "{" in it 
+      # TODO reduce this down to , find the single next level with a "{" in it
       variable_levels=[x for x in current_level.keys() if '{' in x]
       if not variable_levels: # there is no match
         if part in DUMMY_URL_PATHS or uri_parts == ['openapi', 'v2']: #not part of our spec
