@@ -134,14 +134,15 @@ function logEventsToDB (req, res, next) {
 
 console.log('[status] starting apisnoop-auditlog-event-handler')
 
-app.use(bodyParser.urlencoded({
-    extended: true
+app.use(bodyParser.json({
+  extended: true,
+  limit: '100mb'
 }))
 app.use(express.json())
 app.use(morgan('combined'))
 
 app.get('/', hello)
-app.post('/events', [checkForBodyContent, checkUserAgent, postgresReadyCheck], logEventsToDB)
+app.post('/events', [checkForBodyContent, postgresReadyCheck], logEventsToDB)
 
 knex.raw('select 0;').then(() => {
     console.log('[status] connected to database')
