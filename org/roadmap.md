@@ -103,7 +103,7 @@ Explain conformance testing is a requirement for Endpoints to be promoted to GA
     -   Explanation & Access to different release data
     -   Link to Conformance Office Hours Meeting Notes
 
-### The goal is to introduce the k/k gate in the next 4 - 8 weeks
+### The goal is to introduce the k/k gate in the next month or two
 
 ## ****Increase Stable Test Coverage****
 
