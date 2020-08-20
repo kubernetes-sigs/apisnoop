@@ -63,7 +63,6 @@ function postgresReadyCheck (req, res, next) {
 function logEventsToDB (req, res, next) {
     const requestContent = req.body
     const items = requestContent.items[0]
-    logs(JSON.stringify(requestContent, null, 2))
 
     // set each relevant part of data load to a variable, for easier insertion statement into db below
     const {
@@ -116,7 +115,7 @@ function logEventsToDB (req, res, next) {
         request_received_timestamp: requestReceivedTimestamp,
         data: JSON.stringify(items)
     }
-    logs(dataToInsert)
+    logs("Inserting:", dataToInsert.event_verb, dataToInsert.request_uri, dataToInsert.bucket, dataToInsert.job, dataToInsert.useragent)
 
     knex.transaction((trx) => {
         knex(`${auditTableName}`).transacting(trx).insert(dataToInsert)
