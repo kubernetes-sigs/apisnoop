@@ -55,16 +55,14 @@ function postgresReadyCheck (req, res, next) {
     if (postgresIsReady === true) {
         return next()
     }
+    console.log('[status] postgres is unready')
     knex.raw(`SELECT to_regclass('${auditTableName}');`).then(resp => {
         postgresIsReady = resp.rows[0].to_regclass !== null
+        return next()
     })
 }
 
-function logEventsToDB (req, res, next) {
-    const requestContent = req.body
-    const items = requestContent.items[0]
-    logs(JSON.stringify(requestContent, null, 2))
-
+function logEventToDB (event) {
     // set each relevant part of data load to a variable, for easier insertion statement into db below
     const {
         auditID,
@@ -83,7 +81,7 @@ function logEventsToDB (req, res, next) {
         responseStatus,
         stageTimestamp,
         requestReceivedTimestamp
-    } = items;
+    } = event
 
     // regex for useragent, to determine if a test or conformance test hit
     const STARTS_WITH_E2E = new RegExp('^e2e.test')
@@ -114,9 +112,9 @@ function logEventsToDB (req, res, next) {
         response_status: JSON.stringify(responseStatus),
         stage_timestamp: stageTimestamp,
         request_received_timestamp: requestReceivedTimestamp,
-        data: JSON.stringify(items)
+        data: JSON.stringify(event)
     }
-    logs(dataToInsert)
+    logs("Inserting:", dataToInsert.event_verb, dataToInsert.request_uri, dataToInsert.bucket, dataToInsert.job, dataToInsert.useragent)
 
     knex.transaction((trx) => {
         knex(`${auditTableName}`).transacting(trx).insert(dataToInsert)
@@ -124,24 +122,42 @@ function logEventsToDB (req, res, next) {
             .catch(trx.rollback)
     }).then(resp => {
         logs('[status] successfully submitted entry')
-        res.json({ message: 'operation complete; data inserted' })
-        return res.end()
+        return { success: true, err: null }
     }).catch(err => {
         console.log(`[error] database: ${err}`)
-        requestFailure(req, res, next, `[error] database: ${err}`)
+        return { success: false, err }
     })
+}
+
+function logEventsToDB (req, res, next) {
+    const requestContent = req.body
+    const items = requestContent.items
+
+    var results = items.map((event, index) => {
+        console.log(`Request [${index}/${items.length}]:`, event.requestURI, event.userAgent)
+        return logEventToDB(event)
+    })
+    if (results.some(r => r.success === false)) {
+        let errs = results
+            .filter(r => r.success === false)
+            .map(e => e.err);
+        return requestFailure(req, nes, next, errs)
+    }
+    res.json({ message: 'operation complete; data inserted' })
+    return res.end()
 }
 
 console.log('[status] starting apisnoop-auditlog-event-handler')
 
-app.use(bodyParser.urlencoded({
-    extended: true
+app.use(bodyParser.json({
+  extended: true,
+  limit: '100mb'
 }))
 app.use(express.json())
 app.use(morgan('combined'))
 
 app.get('/', hello)
-app.post('/events', [checkForBodyContent, checkUserAgent, postgresReadyCheck], logEventsToDB)
+app.post('/events', [checkForBodyContent, postgresReadyCheck], logEventsToDB)
 
 knex.raw('select 0;').then(() => {
     console.log('[status] connected to database')

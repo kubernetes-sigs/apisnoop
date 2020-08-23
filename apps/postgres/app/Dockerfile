@@ -1,3 +1,5 @@
+# Dockerfile
+
 FROM postgres:12.4
  MAINTAINER Hippie Hacker <hh@ii.coop>
  RUN apt-get update \

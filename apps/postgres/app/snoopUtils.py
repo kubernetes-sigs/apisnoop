@@ -150,7 +150,7 @@ def load_openapi_spec(url):
             # if the current level doesn't have a key (folder) for this part, create an empty one
             if part not in current_level:
                 current_level[part] = {}
-                # last_part will be this part, unless there are more parts 
+                # last_part will be this part, unless there are more parts
                 last_part=part
                 # last_level will be this level, unless there are more levels
                 last_level = current_level
@@ -168,8 +168,8 @@ def load_openapi_spec(url):
                 # for the nested current_level (end of the path/url) use the method as a lookup to the operationId
                 current_level[method]=swagger_method.get('operationId', '')
                 # cache = {}
-                # cache = {3 : {'/api','v1','endpoints'} 
-                # cache = {3 : {'/api','v1','endpoints'} {2 : {'/api','v1'} 
+                # cache = {3 : {'/api','v1','endpoints'}
+                # cache = {3 : {'/api','v1','endpoints'} {2 : {'/api','v1'}
                 # cache uses the length of the path to only search against other paths that are the same length
                 cache = deep_merge(cache, {path_len:path_dict})
                 openapi_spec['cache'] = cache
@@ -234,7 +234,7 @@ def find_operation_id(openapi_spec, event):
       current_level = current_level[variable_level] # variable part is final part
     else:
       next_part = uri_parts[idx+1]
-      # TODO reduce this down to , find the single next level with a "{" in it 
+      # TODO reduce this down to , find the single next level with a "{" in it
       variable_levels=[x for x in current_level.keys() if '{' in x]
       if not variable_levels: # there is no match
         if part in DUMMY_URL_PATHS or uri_parts == ['openapi', 'v2']: #not part of our spec

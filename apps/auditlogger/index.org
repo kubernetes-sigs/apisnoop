@@ -77,16 +77,14 @@ Here are some environment variables to configure auditlogger
       if (postgresIsReady === true) {
           return next()
       }
+      console.log('[status] postgres is unready')
       knex.raw(`SELECT to_regclass('${auditTableName}');`).then(resp => {
           postgresIsReady = resp.rows[0].to_regclass !== null
+          return next()
       })
   }
 
-  function logEventsToDB (req, res, next) {
-      const requestContent = req.body
-      const items = requestContent.items[0]
-      logs(JSON.stringify(requestContent, null, 2))
-
+  function logEventToDB (event) {
       // set each relevant part of data load to a variable, for easier insertion statement into db below
       const {
           auditID,
@@ -105,7 +103,7 @@ Here are some environment variables to configure auditlogger
           responseStatus,
           stageTimestamp,
           requestReceivedTimestamp
-      } = items;
+      } = event
 
       // regex for useragent, to determine if a test or conformance test hit
       const STARTS_WITH_E2E = new RegExp('^e2e.test')
@@ -136,9 +134,9 @@ Here are some environment variables to configure auditlogger
           response_status: JSON.stringify(responseStatus),
           stage_timestamp: stageTimestamp,
           request_received_timestamp: requestReceivedTimestamp,
-          data: JSON.stringify(items)
+          data: JSON.stringify(event)
       }
-      logs(dataToInsert)
+      logs("Inserting:", dataToInsert.event_verb, dataToInsert.request_uri, dataToInsert.bucket, dataToInsert.job, dataToInsert.useragent)
 
       knex.transaction((trx) => {
           knex(`${auditTableName}`).transacting(trx).insert(dataToInsert)
@@ -146,24 +144,42 @@ Here are some environment variables to configure auditlogger
               .catch(trx.rollback)
       }).then(resp => {
           logs('[status] successfully submitted entry')
-          res.json({ message: 'operation complete; data inserted' })
-          return res.end()
+          return { success: true, err: null }
       }).catch(err => {
           console.log(`[error] database: ${err}`)
-          requestFailure(req, res, next, `[error] database: ${err}`)
+          return { success: false, err }
       })
+  }
+
+  function logEventsToDB (req, res, next) {
+      const requestContent = req.body
+      const items = requestContent.items
+
+      var results = items.map((event, index) => {
+          console.log(`Request [${index}/${items.length}]:`, event.requestURI, event.userAgent)
+          return logEventToDB(event)
+      })
+      if (results.some(r => r.success === false)) {
+          let errs = results
+              .filter(r => r.success === false)
+              .map(e => e.err);
+          return requestFailure(req, nes, next, errs)
+      }
+      res.json({ message: 'operation complete; data inserted' })
+      return res.end()
   }
 
   console.log('[status] starting apisnoop-auditlog-event-handler')
 
-  app.use(bodyParser.urlencoded({
-      extended: true
+  app.use(bodyParser.json({
+    extended: true,
+    limit: '100mb'
   }))
   app.use(express.json())
   app.use(morgan('combined'))
 
   app.get('/', hello)
-  app.post('/events', [checkForBodyContent, checkUserAgent, postgresReadyCheck], logEventsToDB)
+  app.post('/events', [checkForBodyContent, postgresReadyCheck], logEventsToDB)
 
   knex.raw('select 0;').then(() => {
       console.log('[status] connected to database')
@@ -203,23 +219,15 @@ Here are some environment variables to configure auditlogger
  #+NAME: dockerfile for auditlogger bot
  #+begin_src dockerfile :tangle ./app/Dockerfile
    FROM node:12.14.1-alpine3.11
-   RUN apk update && \
-   apk add vim postgresql-client netcat-openbsd
-   RUN adduser -D -H -h /opt/apisnoop apisnoop
-   WORKDIR /opt/apisnoop
+   RUN adduser -D -H -h /app user
+   WORKDIR /app
    COPY auditlogger.js .
    COPY package.json .
    RUN npm i
    EXPOSE 9900
-   USER apisnoop
+   USER user
    CMD ["node", "auditlogger.js"]
  #+end_src
-
-#+NAME: build auditlog bot container image
-#+begin_src shell
-  export TAG=$(TZ='Pacific/Auckland'; export TZ ; date +%F-%H-%M)
-  docker build -t gcr.io/apisnoop/auditlogger:$TAG .
-#+end_src
 
 ** cloudbuild
   #+NAME: auditlogger cloudbuild 
@@ -236,31 +244,99 @@ Here are some environment variables to configure auditlogger
     options:
       substitution_option: 'ALLOW_LOOSE'
 #+end_src
-   
+
+** Build the container image
+Build the container image:
+#+BEGIN_SRC shell :async yes
+  TAG="$(date +%Y.%m.%d)"
+  docker build -t raiinbow/auditlogger:"$TAG" app
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+Sending build context to Docker daemon  10.75kB
+Step 1/9 : FROM node:12.14.1-alpine3.11
+ ---> b0dc3a5e5e9e
+Step 2/9 : RUN adduser -D -H -h /app user
+ ---> Running in cf406d7f8e52
+Removing intermediate container cf406d7f8e52
+ ---> a594ad0c24a4
+Step 3/9 : WORKDIR /app
+ ---> Running in 3e176c6a8d90
+Removing intermediate container 3e176c6a8d90
+ ---> 985e805dafa5
+Step 4/9 : COPY auditlogger.js .
+ ---> ebd367717f44
+Step 5/9 : COPY package.json .
+ ---> 0df7b5c90163
+Step 6/9 : RUN npm i
+ ---> Running in 5141aa5b0ee9
+[91mnpm WARN deprecated resolve-url@0.2.1: https://github.com/lydell/resolve-url#deprecated
+[0m[91mnpm WARN deprecated urix@0.1.0: Please see https://github.com/lydell/urix#deprecated
+[0m[91mnpm notice created a lockfile as package-lock.json. You should commit this file.
+[0m[91mnpm WARN apisnoop-auditlogger@0.0.2 No repository field.
+[0m[91m
+[0madded 227 packages from 171 contributors and audited 227 packages in 11.046s
+
+1 package is looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+Removing intermediate container 5141aa5b0ee9
+ ---> 4f55946ef552
+Step 7/9 : EXPOSE 9900
+ ---> Running in c3f6877d3d28
+Removing intermediate container c3f6877d3d28
+ ---> 87c671377c69
+Step 8/9 : USER user
+ ---> Running in 218ff7e8cbbd
+Removing intermediate container 218ff7e8cbbd
+ ---> 4b603e331a4d
+Step 9/9 : CMD ["node", "auditlogger.js"]
+ ---> Running in 840d861c1571
+Removing intermediate container 840d861c1571
+ ---> a84d2055ae5b
+Successfully built a84d2055ae5b
+Successfully tagged raiinbow/auditlogger:2020.08.20
+#+end_example
+
+Push the image:
+#+BEGIN_SRC shell :async yes
+  TAG="$(date +%Y.%m.%d)"
+  docker push raiinbow/auditlogger:"$TAG" 2>&1
+  :
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+The push refers to repository [docker.io/raiinbow/auditlogger]
+8d0a7a90a236: Preparing
+2ffcc1ae88f2: Preparing
+d79c5a4fbe79: Preparing
+5ffe26237eec: Preparing
+b99ea7d4c871: Preparing
+5280d2327565: Preparing
+77d806cfa004: Preparing
+930c8bc01816: Preparing
+5216338b40a7: Preparing
+5280d2327565: Waiting
+77d806cfa004: Waiting
+930c8bc01816: Waiting
+5216338b40a7: Waiting
+d79c5a4fbe79: Pushed
+5ffe26237eec: Pushed
+b99ea7d4c871: Pushed
+2ffcc1ae88f2: Pushed
+5280d2327565: Layer already exists
+77d806cfa004: Layer already exists
+930c8bc01816: Layer already exists
+5216338b40a7: Layer already exists
+8d0a7a90a236: Pushed
+2020.08.20: digest: sha256:e2cbcf3f5c102ae8ae5aa8e1628e55ab6e662c9f4f98c5c1121ef4e952cdaa77 size: 2199
+#+end_example
 
 * Deployment
-** Audit-sink  
-#+NAME: audit-sink.yaml   
-#+begin_src yaml :tangle ./deployment/audit-sink.yaml
-apiVersion: auditregistration.k8s.io/v1alpha1
-kind: AuditSink
-metadata:
-  name: auditlogger
-spec:
-  policy:
-    level: Metadata
-    stages:
-    - ResponseComplete
-  webhook:
-    throttle:
-      qps: 10
-      burst: 15
-    clientConfig:
-      #url: "http://apisnoop-auditlogger.kube-system.svc.cluster.local:9900/events"
-      # svc cluster ip of apisnoop-auditlogger
-      url: "http://10.96.96.96:9900/events"
-#+end_src
-
 ** deployment
 #+NAME: deployment.yaml   
 #+begin_src yaml :tangle ./deployment/deployment.yaml
@@ -280,7 +356,7 @@ spec:
     spec:
       containers:
         - name: apisnoop-auditlogger
-          image: "gcr.io/k8s-staging-apisnoop/auditlogger:v20200211-0.9.34-1-g24cf96f"
+          image: "raiinbow/auditlogger:v20200211-0.9.34-1-g24cf96f"
           #command:
           #  - "sleep"
           #args: 
@@ -295,7 +371,6 @@ spec:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - audit-sink.yaml
   - deployment.yaml
   - service.yaml
 #+end_src

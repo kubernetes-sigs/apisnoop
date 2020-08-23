@@ -1,0 +1,149 @@
+# -*- ii: apisnoop; -*-
+* Minikube
+
+** Prepare
+*** Certs
+#+begin_src shell
+  mkdir -p ~/.minikube/files/etc/ssl/certs
+#+end_src
+
+*** Audit-Policy
+#+begin_src yaml :tangle ~/.minikube/files/etc/ssl/certs/audit-policy.yaml
+  # Log all requests at the Metadata level.
+  apiVersion: audit.k8s.io/v1
+  kind: Policy
+  rules:
+  - level: RequestResponse
+#+end_src
+
+*** audit-sink.yaml
+Currently hardcoded. Would be good if we had dynamic.
+ #+begin_src yaml :tangle ~/.minikube/files/etc/ssl/certs/audit-sink.yaml
+   apiVersion: v1
+   kind: Config
+   clusters:
+   - cluster:
+       server: http://10.96.96.96:9900/events
+     name: auditsink-cluster
+   contexts:
+   - context:
+       cluster: auditsink-cluster
+       user: ""
+     name: auditsink-context
+   current-context: auditsink-context
+   users: []
+   preferences: {}
+ #+end_src
+
+** Start
+#+begin_src tmate :window minikube
+  minikube start \
+    --insecure-registry "10.0.0.0/24" \
+    --addons registry \
+    --addons ingress \
+    --extra-config=apiserver.audit-policy-file=/etc/ssl/certs/audit-policy.yaml \
+    --extra-config=apiserver.audit-log-path=- \
+    --extra-config=apiserver.audit-webhook-config-file=/etc/ssl/certs/audit-sink.yaml
+#+end_src
+
+#+RESULTS:
+#+BEGIN_example
+,* minikube v1.11.0 on Fedora 32
+,* Automatically selected the kvm2 driver
+,* Starting control plane node minikube in cluster minikube
+,* Creating kvm2 VM (CPUs=2, Memory=3900MB, Disk=20000MB) ...
+,* Preparing Kubernetes v1.18.3 on Docker 19.03.8 ...
+  - apiserver.audit-policy-file=/etc/ssl/certs/audit-policy.yaml
+  - apiserver.audit-log-path=-
+  - apiserver.audit-webhook-config-file=/etc/ssl/certs/audit-sink.yaml
+,* Verifying Kubernetes components...
+,* Enabled addons: default-storageclass, registry, storage-provisioner
+,* Done! kubectl is now configured to use "minikube"
+#+END_example
+
+** Tilt Minikube registry tweaks
+#+BEGIN_SRC shell :async yes
+nodes=$(kubectl get nodes -o go-template --template='{{range .items}}{{printf "%s\n" .metadata.name}}{{end}}')
+if [ ! -z $nodes ]; then
+  for node in $nodes; do
+    kubectl annotate --overwrite node "${node}" \
+        tilt.dev/registry=localhost:5000 \
+        tilt.dev/registry-from-cluster=localhost:5000
+  done
+fi
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+node/minikube annotated
+#+end_example
+
+* Humacs + Minikube + Podman caching steps
+** Setting the host's DOCKER_HOST
+#+begin_src shell
+  eval $(minikube -p minikube docker-env)  
+#+end_src
+
+#+RESULTS:
+#+BEGIN_example
+#+END_example
+
+** Building with Docker
+#+begin_src shell
+  docker build -t docker.io/humacs/humacs:2020.08.19 .
+  docker build -t docker.io/humacs/ii:2020.08.19 -f ii.Dockerfile .
+#+end_src
+
+** Caching the images inside the host's Podman registry 
+Replace the image name with the image which you wish to keep.
+#+begin_src shell
+  docker save docker.io/humacs/ii:2020.08.19 | podman load
+#+end_src
+
+* Bringing up Humacs in Minikube from Podman local cache
+** Setting the host's DOCKER_HOST
+#+begin_src shell
+  eval $(minikube -p minikube docker-env)  
+#+end_src
+
+** Loading the cached the images from the host's Podman registry 
+Replace the image name with the image which you wish to load.
+#+begin_src shell
+  podman save docker.io/humacs/ii:2020.08.19 | docker load
+#+end_src
+
+#+RESULTS:
+#+BEGIN_example
+#+END_example
+
+** Create Humacs namespace
+#+begin_src shell
+  kubectl create ns humacs   
+#+end_src
+
+#+RESULTS:
+#+begin_example
+namespace/humacs created
+#+end_example
+
+** Bring up Humacs with Helm
+Navigate to the local humacs directory
+#+begin_src shell :dir ../../humacs
+  helm install humacs --namespace humacs -f chart/humacs/values/apisnoop.yaml chart/humacs
+#+end_src
+
+#+RESULTS:
+#+begin_example
+NAME: humacs
+LAST DEPLOYED: Thu Aug 20 08:11:58 2020
+NAMESPACE: humacs
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+0. View logs from the humacs-0 Pod
+  kubectl --namespace humacs logs -f humacs-0
+
+1. Attach to the tmate session humacs
+  kubectl --namespace humacs exec -it humacs-0 -- attach
+#+end_example
