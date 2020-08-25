@@ -75,9 +75,9 @@ export function fadeColour (colour, desiredOpacity) {
 };
 
 export const conformanceColours = {
-  promotedWithTests: "hsl(158, 74.2%, 38.0%)",
-  oldCoveredByNew: "hsl(240, 100.0%, 50.0%)",
-  tested: "hsl(158, 74.2%, 28.0%)",
-  promotedWithoutTests: "hsl(60, 100%, 50.0%)",
-  untested: "hsl(30, 100%, 60.6%)"
+  promotedWithTests: "hsl(177, 70.6%, 54.7%)",
+  oldCoveredByNew: "hsl(341, 100.0%, 50.0%)",
+  tested: "hsl(207, 83.8%, 21.8%)",
+  promotedWithoutTests: "hsl(27, 100.0%, 50.0%)",
+  untested: "hsl(205, 14.1%, 69.4%)"
 };
