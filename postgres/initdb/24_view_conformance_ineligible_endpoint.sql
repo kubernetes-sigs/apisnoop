@@ -41,23 +41,13 @@ create or replace view conformance.ineligible_endpoint as
            where k8s_kind = 'Node'
              and k8s_action = any('{"delete", "post"}')
         )
-        union
-        (
-          -- Redirects to other endpoint
-          select endpoint,
-                 'redirects to other endpoint' as reason,
-                 'endpoint ends in PodProxy, NodeProxy, or ServiceProxy' as "sql logic",
-               'https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218' as link
-            from current_stable_endpoints
-           where endpoint ~~ any('{"%NodeProxy", "%PodProxy", "%ServiceProxy"}')
-        )
         order by reason;
 
-comment on view conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing and the reason for ineligibility.';
+    comment on view conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing and the reason for ineligibility.';
 
-comment on column conformance.ineligible_endpoint.endpoint is 'the ineligible endpoint';
-comment on column conformance.ineligible_endpoint.reason is 'reason, from conformance guidelines, for ineligibility';
-comment on column conformance.ineligible_endpoint."sql logic" is 'how we tested reason using sql';
-comment on column conformance.ineligible_endpoint.link is 'url source for reason';
+    comment on column conformance.ineligible_endpoint.endpoint is 'the ineligible endpoint';
+    comment on column conformance.ineligible_endpoint.reason is 'reason, from conformance guidelines, for ineligibility';
+    comment on column conformance.ineligible_endpoint."sql logic" is 'how we tested reason using sql';
+    comment on column conformance.ineligible_endpoint.link is 'url source for reason';
 
-select 'conformance.ineligible_endpoint defined and commented' as "build log";
+     select 'conformance.ineligible_endpoint defined and commented' as "build log";

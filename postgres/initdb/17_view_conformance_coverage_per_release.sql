@@ -23,14 +23,14 @@ create or replace view conformance.coverage_per_release as
             from counts;
     ;
 
-comment on view conformance.coverage_per_release is 'How many endopoints from a release are tested today?';
+      comment on view conformance.coverage_per_release is 'How many endopoints from a release are tested today?';
 
-comment on column conformance.coverage_per_release.release is 'the given kubernetes release';
-comment on column conformance.coverage_per_release.tested is '# of endpoints from this release that are tested today';
-comment on column conformance.coverage_per_release.untested is '# of endpoints from this release that are untested today.';
-comment on column conformance.coverage_per_release."new endpoints" is '# of endpoints introduced in this release';
-comment on column conformance.coverage_per_release."total tested" is '# of total tested endpoints from this release and earlier. will be higher than same column in conformance.progress as it includes endpoints hit by tests introduced in a later release.';
-comment on column conformance.coverage_per_release."total untested" is '# of total untested endpoints from this release and earlier';
-comment on column conformance.coverage_per_release."total endpoints" is '# of total endpoints at time of release';
+      comment on column conformance.coverage_per_release.release is 'the given kubernetes release';
+      comment on column conformance.coverage_per_release.tested is '# of endpoints from this release that are tested today';
+      comment on column conformance.coverage_per_release.untested is '# of endpoints from this release that are untested today.';
+      comment on column conformance.coverage_per_release."new endpoints" is '# of endpoints introduced in this release';
+      comment on column conformance.coverage_per_release."total tested" is '# of total tested endpoints from this release and earlier. will be higher than same column in conformance.progress as it includes endpoints hit by tests introduced in a later release.';
+      comment on column conformance.coverage_per_release."total untested" is '# of total untested endpoints from this release and earlier';
+      comment on column conformance.coverage_per_release."total endpoints" is '# of total endpoints at time of release';
 
-select 'conformance.coverage_per_release defined and commented' as "build log";
+     select 'conformance.coverage_per_release defined and commented' as "build log";
