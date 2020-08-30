@@ -26,5 +26,6 @@ FROM postgres:12.0
      && cd pg-semver \
      && make && make install
 
- COPY initdb /docker-entrypoint-initdb.d
- COPY ./snoopUtils.py /usr/local/lib/python3.7/dist-packages/snoopUtils.py
+COPY initdb /docker-entrypoint-initdb.d
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY ./snoopUtils.py /usr/local/lib/python3.7/dist-packages/snoopUtils.py
