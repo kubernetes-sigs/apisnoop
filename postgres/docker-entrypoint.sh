@@ -311,7 +311,6 @@ _main() {
 			echo
 		fi
 	fi
-    echo "very cool"
 	exit 0
 	# exec "$@"
 }
