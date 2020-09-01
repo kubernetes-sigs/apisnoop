@@ -11,37 +11,57 @@ create or replace view conformance.ineligible_endpoint as
             limit 1
          )
     )
-        (
-          -- vendor specific features
-          select endpoint,
-                 'vendor specific feature' as reason,
-                 'path includes "volume" or "storage"' as "sql logic",
-             'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64' as link
-            from current_stable_endpoints
-           where path ~~ any('{"%volume%", "%storage%"}')
-        )
-        union
-        (
-          -- endpoint is pending deprecation
-          select endpoint,
-                 'pending deprecation' as reason,
-                 'kind equals ComponentStatus' as "sql logic",
-               'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L69' as link
-            from current_stable_endpoints
-           where k8s_kind = 'ComponentStatus'
-        )
-        union
-        (
-          -- Uses the kubelet api
-          select endpoint,
-                 'uses kubelet api' as reason,
-                 'kind equals Node and action equals delete or post' as "sql logic",
-               'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L36' as link
-            from current_stable_endpoints
-           where k8s_kind = 'Node'
-             and k8s_action = any('{"delete", "post"}')
-        )
-        order by reason;
+    (
+        -- vendor specific features
+        select endpoint,
+                'vendor specific feature' as reason,
+                'path includes "volume" or "storage"' as "sql logic",
+            'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64' as link
+        from current_stable_endpoints
+        where path ~~ any('{"%volume%", "%storage%"}')
+    )
+    union
+    (
+        -- endpoint is pending deprecation
+        select endpoint,
+                'pending deprecation' as reason,
+                'kind equals ComponentStatus' as "sql logic",
+            'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L69' as link
+        from current_stable_endpoints
+        where k8s_kind = 'ComponentStatus'
+    )
+    union
+    (
+        -- Uses the kubelet api
+        select endpoint,
+                'uses kubelet api' as reason,
+                'kind equals Node and action equals delete or post' as "sql logic",
+            'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L36' as link
+        from current_stable_endpoints
+        where k8s_kind = 'Node'
+            and k8s_action = any('{"delete", "post"}')
+    )
+    union
+    (
+    -- Optional feature
+    select endpoint,
+    'optional feature' as reason,
+    'endpoint = ' || endpoint as "sql logic",
+    'https://github.com/kubernetes/kubernetes/issues/80770' as link
+    from current_stable_endpoints
+    where endpoint = 'createCoreV1NamespacedServiceAccountToken'
+    )
+    union
+    (
+    -- Dependent on Alpha Feature
+    select endpoint,
+    'depends on alpha feature' as reason,
+    'endpoint = ' || endpoint as "sql logic",
+    'https://docs.google.com/document/d/1W31nXh9RYAb_VaYkwuPLd1hFxuRX3iU0DmaQ4lkCsX8/edit#heading=h.ubctp9ixex2w' as link
+    from current_stable_endpoints
+    where endpoint = 'getFlowcontrolApiserverAPIGroup'
+    )
+    order by reason;
 
 comment on view conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing and the reason for ineligibility.';
 
