@@ -1,4 +1,4 @@
-const connectionString = typeof process.env.APP_DB_CONNECTION_STRING !== 'undefined' ? process.env.APP_DB_CONNECTION_STRING : 'postgres://apisnoop:s3cretsauc3@postgres/apisnoop?sslmode=disable'
+const connectionString = typeof process.env.APP_DB_CONNECTION_STRING !== 'undefined' ? process.env.APP_DB_CONNECTION_STRING : 'postgres://apisnoop:apisnoop@postgres/apisnoop?sslmode=disable'
 const auditTableName = typeof process.env.APP_DB_AUDIT_EVENT_TABLE !== 'undefined' ? process.env.APP_DB_AUDIT_EVENT_TABLE : 'audit_event'
 const appPort = typeof process.env.APP_PORT !== 'undefined' ? process.env.APP_PORT : '9900'
 const appDisableLogs = typeof process.env.APP_DISABLE_LOGS !== 'undefined' ? process.env.APP_DISABLE_LOGS : 'false'
