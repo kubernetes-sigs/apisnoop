@@ -1,2 +1,2 @@
-     create extension plpython3u;
-     create extension semver;
+create extension plpython3u;
+create extension semver;
