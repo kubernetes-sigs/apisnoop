@@ -1,4 +1,10 @@
 begin;
+
+select 'writing untested endpoints for ' || release || ' to /tmp/untested-endpoints.txt' as "build log"
+from open_api
+order by release::semver desc
+limit 1;
+
 \t
 \a
 \o '/tmp/untested-endpoints.txt'

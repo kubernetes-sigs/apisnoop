@@ -181,8 +181,17 @@ if [ -z "$K8S_JOB" ]; then
     echo
    exec "$@"
 else
-    echo
-    echo 'K8s Job, stopping db'
-    echo
-    exit 0
+    echo '=================='
+    echo 'UNTESTED ENDPOINTS'
+	cat /tmp/untested-endpoints.txt
+	echo
+    UNTESTED=$(wc -l /tmp/untested-endpoints.txt | cut -d" " -f1)
+    echo '=================='
+    echo "You have ${UNTESTED} untested endpoints"
+    echo '=================='
+	if [ $UNTESTED -eq 0 ]; then
+		exit 0
+	else
+	    exit 1
+	fi
 fi
