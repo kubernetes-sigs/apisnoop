@@ -57,7 +57,7 @@ create or replace view conformance.ineligible_endpoint as
     select endpoint,
     'depends on alpha feature' as reason,
     'endpoint = ' || endpoint as "sql logic",
-    'https://docs.google.com/document/d/1W31nXh9RYAb_VaYkwuPLd1hFxuRX3iU0DmaQ4lkCsX8/edit#heading=h.ubctp9ixex2w' as link
+    'https://github.com/kubernetes/enhancements/blob/f16c4c7f1c9e28a3cc4bb4d0e6503efea2ae7987/keps/sig-api-machinery/20190228-priority-and-fairness.md' as link
     from current_stable_endpoints
     where endpoint = 'getFlowcontrolApiserverAPIGroup'
     )
