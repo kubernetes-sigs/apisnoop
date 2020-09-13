@@ -1,0 +1,460 @@
+# -*- ii: apisnoop; -*-
+#+TITLE: Mock Ticket Template
+#+AUTHOR: ii team
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+#+OPTIONS: toc:nil tags:nil todo:nil
+#+EXPORT_SELECT_TAGS: export
+* TODO [0%] In-Cluster Setup                                    :neverexport:
+  :PROPERTIES:
+  :LOGGING:  nil
+  :END:
+** TODO Connect demo to right eye
+
+   #+begin_src tmate :session foo:hello :eval never-export
+     echo "What parts of Kubernetes do you depend on $USER?"
+   #+end_src
+** Tilt Up
+   #+begin_src tmate :session foo:hello :eval never-export
+     cd ~/apisnoop
+     tilt up --host 0.0.0.0
+   #+end_src
+** TODO Verify Pods Running
+   #+begin_src shell
+     kubectl get pods
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   NAME                                    READY   STATUS    RESTARTS   AGE
+   apisnoop-auditlogger-86dcf97749-nb2rp   1/1     Running   1          6d23h
+   hasura-7c5775fc95-rmp28                 1/1     Running   1          6d23h
+   kubemacs-0                              1/1     Running   1          6d23h
+   pgadmin-78b7448594-bmvxl                1/1     Running   0          6d23h
+   postgres-6dbf95b969-hpr7k               1/1     Running   0          6d23h
+   webapp-5bd67b658b-fc6pr                 1/1     Running   0          6d23h
+   #+end_example
+
+** TODO Check it all worked
+
+   #+begin_src sql-mode :results replace
+     \d+
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                                                              List of relations
+    Schema |               Name               |       Type        |  Owner   |  Size   |                                    Description                                    
+   --------+----------------------------------+-------------------+----------+---------+-----------------------------------------------------------------------------------
+    public | api_operation                    | view              | apisnoop | 0 bytes | 
+    public | api_operation_material           | materialized view | apisnoop | 3056 kB | details on each operation_id as taken from the openAPI spec
+    public | api_operation_parameter_material | materialized view | apisnoop | 5008 kB | the parameters for each operation_id in open API spec
+    public | audit_event                      | view              | apisnoop | 0 bytes | a record for each audit event in an audit log
+    public | bucket_job_swagger               | table             | apisnoop | 3128 kB | metadata for audit events  and their respective swagger.json
+    public | endpoint_coverage                | view              | apisnoop | 0 bytes | the test hits and conformance test hits per operation_id & other useful details
+    public | endpoint_coverage_material       | materialized view | apisnoop | 144 kB  | 
+    public | endpoints_hit_by_new_test        | view              | apisnoop | 0 bytes | list endpoints hit during our live auditing alongside their current test coverage
+    public | projected_change_in_coverage     | view              | apisnoop | 0 bytes | overview of coverage stats if the e2e suite included your tests
+    public | raw_audit_event                  | table             | apisnoop | 4405 MB | a record for each audit event in an audit log
+    public | stable_endpoint_stats            | view              | apisnoop | 0 bytes | coverage stats for entire test run, looking only at its stable endpoints
+    public | tests                            | view              | apisnoop | 0 bytes | 
+    public | untested_stable_core_endpoints   | view              | apisnoop | 0 bytes | list stable core endpoints not hit by any tests, according to their test run
+    public | useragents                       | view              | apisnoop | 0 bytes | 
+   (14 rows)
+
+   #+end_SRC
+
+** TODO Check current coverage
+   #+NAME: stable endpoint stats
+   #+begin_src sql-mode
+     select * from stable_endpoint_stats where job != 'live';
+   #+end_src
+
+   #+RESULTS: stable endpoint stats
+   #+begin_SRC example
+            job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+    1229108788603129860 | 2020-02-16 |             438 |       190 |       138 |          43.38 |               31.51
+   (1 row)
+
+   #+end_SRC
+
+* Identifying an untested feature Using APISnoop                     :export:
+
+According to this APIsnoop query, there are still some remaining Service endpoints which are untested.
+
+  #+NAME: untested_stable_core_endpoints
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    SELECT
+      operation_id,
+      -- k8s_action,
+      -- path,
+      -- description,
+      kind
+      FROM untested_stable_core_endpoints
+      where path not like '%volume%'
+      -- and kind like ''
+      and operation_id ilike '%ServiceStatus%'
+     ORDER BY kind,operation_id desc
+     LIMIT 25
+           ;
+  #+end_src
+
+* API Reference and feature documentation                            :export:
+- [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+- [[https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/Service.go][client-go - Service]] 
+#+begin_src bash
+kubectl explain service
+#+end_src
+
+#+RESULTS:
+#+begin_src bash
+KIND:     Service
+VERSION:  v1
+
+DESCRIPTION:
+     Service is a named abstraction of software service (for example, mysql)
+     consisting of local port (for example 3306) that the proxy listens on, and
+     the selector that determines which pods will answer requests sent through
+     the proxy.
+
+FIELDS:
+   apiVersion	<string>
+     APIVersion defines the versioned schema of this representation of an
+     object. Servers should convert recognized schemas to the latest internal
+     value, and may reject unrecognized values. More info:
+     https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+
+   kind	<string>
+     Kind is a string value representing the REST resource this object
+     represents. Servers may infer this from the endpoint the client submits
+     requests to. Cannot be updated. In CamelCase. More info:
+     https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+
+   metadata	<Object>
+     Standard object's metadata. More info:
+     https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+
+   spec	<Object>
+     Spec defines the behavior of a service.
+     https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+
+   status	<Object>
+     Most recently observed status of the service. Populated by the system.
+     Read-only. More info:
+     https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+
+#+end_src
+
+* The mock test                                                      :export:
+** Test outline
+1. Create a Service with a static label
+
+2. Patch the ServiceStatus with a new Label and updated data
+
+3. Get the Service to ensure it's patched
+
+4. Update the ServiceStatus with new data
+
+5. Get the Service to ensure it's updated
+
+6. List all Services in all Namespaces
+   find the Service
+   ensure that the Service is found and is patched
+
+7. Delete Namespaced Service
+
+** Test the functionality in Go
+   #+begin_src go
+     package main
+
+     import (
+       "encoding/json"
+       "fmt"
+       "flag"
+       "os"
+       v1 "k8s.io/api/core/v1"
+       "k8s.io/client-go/dynamic"
+       "k8s.io/apimachinery/pkg/runtime/schema"
+       metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+       "k8s.io/client-go/kubernetes"
+       "k8s.io/apimachinery/pkg/types"
+       "k8s.io/client-go/tools/clientcmd"
+       "k8s.io/apimachinery/pkg/util/intstr"
+       watch "k8s.io/apimachinery/pkg/watch"
+     )
+
+     func main() {
+       // uses the current context in kubeconfig
+       kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+       flag.Parse()
+       config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       // make our work easier to find in the audit_event queries
+       config.UserAgent = "live-test-writing"
+       // creates the clientset
+       ClientSet, _ := kubernetes.NewForConfig(config)
+       DynamicClientSet, _ := dynamic.NewForConfig(config)
+       svcResource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "services"}
+
+       testServiceName := "ts1"
+       testNamespaceName := "default"
+
+       fmt.Println("creating a Service")
+       testService := v1.Service{
+           ObjectMeta: metav1.ObjectMeta{
+               Name: testServiceName,
+               Labels: map[string]string{"test-service-static": "true"},
+           },
+           Spec: v1.ServiceSpec{
+               Type: "ClusterIP",
+               Ports: []v1.ServicePort{{
+                   Name: "http",
+                   Protocol: v1.ProtocolTCP,
+                   Port: int32(80),
+                   TargetPort: intstr.FromInt(80),
+               }},
+           },
+       }
+          fmt.Println(testService)
+       _, err = ClientSet.CoreV1().Services(testNamespaceName).Create(&testService)
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+
+       fmt.Println("watching for the Service to be added")
+       svcWatchTimeoutSeconds := int64(180)
+       svcWatch, err := ClientSet.CoreV1().Services(testNamespaceName).Watch(metav1.ListOptions{LabelSelector: "test-service-static=true", TimeoutSeconds: &svcWatchTimeoutSeconds})
+       if err != nil {
+           fmt.Println(err, "Failed to setup watch on newly created Service")
+           return
+       }
+
+       svcWatchChan := svcWatch.ResultChan()
+
+       for event := range svcWatchChan {
+           if event.Type == watch.Added {
+               break
+           }
+       }
+
+       fmt.Println("patching the ServiceStatus")
+       serviceStatusPatch, err := json.Marshal(map[string]interface{}{
+           "metadata": map[string]interface{}{
+               "labels": map[string]string{"test-service": "patched"},
+           },
+            "spec": map[string]interface{}{
+                "ports": []map[string]interface{}{{
+                    "name": "http8080",
+                    "port": int32(8080),
+                    "targetPort": int(8080),
+                "selector": []map[string]interface{}{{
+                "type": "LoadBalancer",
+               }},
+          }},
+           },
+       })
+
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+
+       fmt.Println("line 224")
+       svcStatus, err := DynamicClientSet.Resource(svcResource).Namespace(testNamespaceName).Patch(testServiceName, types.StrategicMergePatchType, []byte(serviceStatusPatch), metav1.PatchOptions{}, "status")
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       fmt.Println("line 230")
+
+       for event := range svcWatchChan {
+           if event.Type == watch.Modified {
+               break
+           }
+       }
+
+       fmt.Println("line 238")
+       fmt.Println("getting the ServiceStatus to ensure that it's patched")
+       svcStatus, err = DynamicClientSet.Resource(svcResource).Namespace(testNamespaceName).Get(testServiceName, metav1.GetOptions{}, "status")
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       var svcStatusGet v1.Service
+       svcStatusUjson, err := json.Marshal(svcStatus)
+       if err != nil {
+           fmt.Println(err, "Failed to marshal json of replicationcontroller label patch")
+           return
+       }
+       json.Unmarshal(svcStatusUjson, &svcStatusGet)
+       fmt.Println(svcStatusGet)
+       if ! (svcStatusGet.ObjectMeta.Labels["test-service"] == "true" &&
+          svcStatusGet.Spec.Type == "LoadBalancer" &&
+          svcStatusGet.Spec.Ports[0].Name == "http8080" &&
+          svcStatusGet.Spec.Ports[0].TargetPort == intstr.FromInt(8080)) {
+           fmt.Println("failed to patch the Service")
+           // return
+       }
+           fmt.Println("We done patched")
+
+       fmt.Println("line 262")
+       //svcStatus, err := DynamicClientSet.Resource(svcResource).Namespace(testNamespaceName).Update(testServiceName, types.StrategicMergePatchType, []byte(serviceStatusPatch), metav1.PatchOptions{}, "status")
+       //if err != nil {
+       //    fmt.Println(err)
+       //    return
+       //}
+       fmt.Println("updating the ServiceStatus")
+       svcStatusGet.Spec.Ports[0].Name = "http8081"
+       svcStatusGet.Spec.Ports[0].Port = int32(8081)
+       svcStatusGet.ObjectMeta.Labels["test-service"] = "updated"
+       _, err = ClientSet.CoreV1().Services(testNamespaceName).UpdateStatus(&svcStatusGet)
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+
+       for event := range svcWatchChan {
+           if event.Type == watch.Modified {
+               break
+           }
+       }
+
+       fmt.Println("finding Service in list")
+       svcs, err := ClientSet.CoreV1().Services("").List(metav1.ListOptions{LabelSelector: "test-service-static=true"})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       fmt.Println(svcs)
+       foundSvc := false
+       for _, svcItem := range svcs.Items {
+           if svcItem.ObjectMeta.Name == testServiceName &&
+              svcItem.ObjectMeta.Namespace == testNamespaceName &&
+              svcItem.ObjectMeta.Labels["test-service"] == "updated" &&
+              svcItem.Spec.Ports[0].Name == "http8081" &&
+              svcItem.Spec.Ports[0].Port == int32(8081) {
+               foundSvc = true
+               break
+           }
+       }
+       if foundSvc != true {
+           fmt.Println("unable to find Service in list of Services")
+           return
+       }
+
+       fmt.Println("deleting the Service")
+       err = ClientSet.CoreV1().Services(testNamespaceName).Delete(testServiceName, &metav1.DeleteOptions{})
+       if err != nil {
+           fmt.Println(err)
+           return
+       }
+       for event := range svcWatchChan {
+           if event.Type == watch.Deleted {
+               break
+           }
+       }
+
+       fmt.Println("[status] complete")
+
+     }
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
+   creating a Service
+   {{ } {ts1      0 0001-01-01 00:00:00 +0000 UTC <nil> <nil> map[test-service-static:true] map[] [] []  []} {[{http TCP 80 {0 80 } 0}] map[]  ClusterIP []   []   0 false nil <nil> []} {{[]}}}
+   watching for the Service to be added
+   patching the ServiceStatus
+   line 224
+   line 230
+   line 238
+   getting the ServiceStatus to ensure that it's patched
+   {{Service v1} {ts1  default /api/v1/namespaces/default/services/ts1/status d888c52c-70cd-4b19-80bf-32f192863205 1388537 0 2020-09-14 07:16:28 +1200 NZST <nil> <nil> map[test-service:patched test-service-static:true] map[] [] []  [{live-test-writing Update v1 2020-09-14 07:16:28 +1200 NZST FieldsV1 &FieldsV1{Raw:*[123 34 102 58 109 101 116 97 100 97 116 97 34 58 123 34 102 58 108 97 98 101 108 115 34 58 123 34 46 34 58 123 125 44 34 102 58 116 101 115 116 45 115 101 114 118 105 99 101 34 58 123 125 44 34 102 58 116 101 115 116 45 115 101 114 118 105 99 101 45 115 116 97 116 105 99 34 58 123 125 125 125 44 34 102 58 115 112 101 99 34 58 123 34 102 58 112 111 114 116 115 34 58 123 34 46 34 58 123 125 44 34 107 58 123 92 34 112 111 114 116 92 34 58 56 48 44 92 34 112 114 111 116 111 99 111 108 92 34 58 92 34 84 67 80 92 34 125 34 58 123 34 46 34 58 123 125 44 34 102 58 110 97 109 101 34 58 123 125 44 34 102 58 112 111 114 116 34 58 123 125 44 34 102 58 112 114 111 116 111 99 111 108 34 58 123 125 44 34 102 58 116 97 114 103 101 116 80 111 114 116 34 58 123 125 125 44 34 107 58 123 92 34 112 111 114 116 92 34 58 56 48 56 48 44 92 34 112 114 111 116 111 99 111 108 92 34 58 92 34 84 67 80 92 34 125 34 58 123 34 46 34 58 123 125 44 34 102 58 110 97 109 101 34 58 123 125 44 34 102 58 112 111 114 116 34 58 123 125 44 34 102 58 112 114 111 116 111 99 111 108 34 58 123 125 44 34 102 58 116 97 114 103 101 116 80 111 114 116 34 58 123 125 125 125 44 34 102 58 115 101 115 115 105 111 110 65 102 102 105 110 105 116 121 34 58 123 125 44 34 102 58 116 121 112 101 34 58 123 125 125 125],}}]} {[{http TCP 80 {0 80 } 0}] map[] 10.102.146.59 ClusterIP [] None  []   0 false nil <nil> []} {{[]}}}
+   failed to patch the Service
+   We done patched
+   line 262
+   updating the ServiceStatus
+   finding Service in list
+   &ServiceList{ListMeta:{/api/v1/services 1388538  <nil>},Items:[]Service{Service{ObjectMeta:{testservice27  default /api/v1/namespaces/default/services/testservice27 8505ae43-a76c-484a-a839-71c19715ea09 577653 0 2020-09-11 14:09:53 +1200 NZST <nil> <nil> map[test-service-static:true] map[] [] []  [{live-test-writing Update v1 2020-09-11 14:09:53 +1200 NZST FieldsV1 FieldsV1{Raw:*[123 34 102 58 109 101 116 97 100 97 116 97 34 58 123 34 102 58 108 97 98 101 108 115 34 58 123 34 46 34 58 123 125 44 34 102 58 116 101 115 116 45 115 101 114 118 105 99 101 45 115 116 97 116 105 99 34 58 123 125 125 125 44 34 102 58 115 112 101 99 34 58 123 34 102 58 112 111 114 116 115 34 58 123 34 46 34 58 123 125 44 34 107 58 123 92 34 112 111 114 116 92 34 58 56 48 44 92 34 112 114 111 116 111 99 111 108 92 34 58 92 34 84 67 80 92 34 125 34 58 123 34 46 34 58 123 125 44 34 102 58 110 97 109 101 34 58 123 125 44 34 102 58 112 111 114 116 34 58 123 125 44 34 102 58 112 114 111 116 111 99 111 108 34 58 123 125 44 34 102 58 116 97 114 103 101 116 80 111 114 116 34 58 123 125 125 125 44 34 102 58 115 101 115 115 105 111 110 65 102 102 105 110 105 116 121 34 58 123 125 44 34 102 58 116 121 112 101 34 58 123 125 125 125],}}]},Spec:ServiceSpec{Ports:[]ServicePort{ServicePort{Name:http,Protocol:TCP,Port:80,TargetPort:{0 80 },NodePort:0,},},Selector:map[string]string{},ClusterIP:10.107.14.14,Type:ClusterIP,ExternalIPs:[],SessionAffinity:None,LoadBalancerIP:,LoadBalancerSourceRanges:[],ExternalName:,ExternalTrafficPolicy:,HealthCheckNodePort:0,PublishNotReadyAddresses:false,SessionAffinityConfig:nil,IPFamily:nil,TopologyKeys:[],},Status:ServiceStatus{LoadBalancer:LoadBalancerStatus{Ingress:[]LoadBalancerIngress{},},},},Service{ObjectMeta:{testservice28  default /api/v1/namespaces/default/services/testservice28 dae091e6-2704-4abe-a151-6581bf36f450 578791 0 2020-09-11 14:15:22 +1200 NZST <nil> <nil> map[test-service:updated test-service-static:true] map[] [] []  [{live-test-writing Update v1 2020-09-11 14:15:22 +1200 NZST FieldsV1 FieldsV1{Raw:*[123 34 102 58 109 101 116 97 100 97 116 97 34 58 123 34 102 58 108 97 98 101 108 115 34 58 123 34 46 34 58 123 125 44 34 102 58 116 101 115 116 45 115 101 114 118 105 99 101 34 58 123 125 44 34 102 58 116 101 115 116 45 115 101 114 118 105 99 101 45 115 116 97 116 105 99 34 58 123 125 125 125 44 34 102 58 115 112 101 99 34 58 123 34 102 58 112 111 114 116 115 34 58 123 34 46 34 58 123 125 44 34 107 58 123 92 34 112 111 114 116 92 34 58 56 48 56 48 44 92 34 112 114 111 116 111 99 111 108 92 34 58 92 34 84 67 80 92 34 125 34 58 123 34 46 34 58 123 125 44 34 102 58 110 97 109 101 34 58 123 125 44 34 102 58 112 111 114 116 34 58 123 125 44 34 102 58 112 114 111 116 111 99 111 108 34 58 123 125 44 34 102 58 116 97 114 103 101 116 80 111 114 116 34 58 123 125 125 44 34 107 58 123 92 34 112 111 114 116 92 34 58 56 48 56 49 44 92 34 112 114 111 116 111 99 111 108 92 34 58 92 34 84 67 80 92 34 125 34 58 123 34 46 34 58 123 125 44 34 102 58 110 97 109 101 34 58 123 125 44 34 102 58 112 111 114 116 34 58 123 125 44 34 102 58 112 114 111 116 111 99 111 108 34 58 123 125 44 34 102 58 116 97 114 103 101 116 80 111 114 116 34 58 123 125 125 125 44 34 102 58 115 101 115 115 105 111 110 65 102 102 105 110 105 116 121 34 58 123 125 44 34 102 58 116 121 112 101 34 58 123 125 125 125],}}]},Spec:ServiceSpec{Ports:[]ServicePort{ServicePort{Name:http,Protocol:TCP,Port:80,TargetPort:{0 80 },NodePort:0,},},Selector:map[string]string{},ClusterIP:10.105.71.170,Type:ClusterIP,ExternalIPs:[],SessionAffinity:None,LoadBalancerIP:,LoadBalancerSourceRanges:[],ExternalName:,ExternalTrafficPolicy:,HealthCheckNodePort:0,PublishNotReadyAddresses:false,SessionAffinityConfig:nil,IPFamily:nil,TopologyKeys:[],},Status:ServiceStatus{LoadBalancer:LoadBalancerStatus{Ingress:[]LoadBalancerIngress{},},},},Service{ObjectMeta:{testservice29  default /api/v1/namespaces/default/services/testservice29 b5144b55-c1d3-45f2-8f12-b41b3037cd4d 582005 0 2020-09-11 14:30:45 +1200 NZST <nil> <nil> map[test-service:updated test-service-static:true] map[] [] []  [{live-test-writing Update v1 2020-09-11 14:30:45 +1200 NZST FieldsV1 FieldsV1{Raw:*[123 34 102 58 109 101 116 97 100 97 116 97 34 58 123 34 102 58 108 97 98 101 108 115 34 58 123 34 46 34 58 123 125 44 34 102 58 116 101 115 116 45 115 101 114 118 105 99 101 34 58 123 125 44 34 102 58 116 101 115 116 45 115 101 114 118 105 99 101 45 115 116 97 116 105 99 34 58 123 125 125 125 44 34 102 58 115 112 101 99 34 58 123 34 102 58 112 111 114 116 115 34 58 123 34 46 34 58 123 125 44 34 107 58 123 92 34 112 111 114 116 92 34 58 56 48 56 48 44 92 34 112 114 111 116 111 99 111 108 92 34 58 92 34 84 67 80 92 34 125 34 58 123 34 46 34 58 123 125 44 34 102 58 110 97 109 101 34 58 123 125 44 34 102 58 112 111 114 116 34 58 123 125 44 34 102 58 112 114 111 116 111 99 111 108 34 58 123 125 44 34 102 58 116 97 114 103 101 116 80 111 114 116 34 58 123 125 125 44 34 107 58 123 92 34 112 111 114 116 92 34 58 56 48 56 49 44 92 34 112 114 111 116 111 99 111 108 92 34 58 92 34 84 67 80 92 34 125 34 58 123 34 46 34 58 123 125 44 34 102 58 110 97 109 101 34 58 123 125 44 34 102 58 112 111 114 116 34 58 123 125 44 34 102 58 112 114 111 116 111 99 111 108 34 58 123 125 44 34 102 58 116 97 114 103 101 116 80 111 114 116 34 58 123 125 125 125 44 34 102 58 115 101 115 115 105 111 110 65 102 102 105 110 105 116 121 34 58 123 125 44 34 102 58 116 121 112 101 34 58 123 125 125 125],}}]},Spec:ServiceSpec{Ports:[]ServicePort{ServicePort{Name:http,Protocol:TCP,Port:80,TargetPort:{0 80 },NodePort:0,},},Selector:map[string]string{},ClusterIP:10.98.20.111,Type:ClusterIP,ExternalIPs:[],SessionAffinity:None,LoadBalancerIP:,LoadBalancerSourceRanges:[],ExternalName:,ExternalTrafficPolicy:,HealthCheckNodePort:0,PublishNotReadyAddresses:false,SessionAffinityConfig:nil,IPFamily:nil,TopologyKeys:[],},Status:ServiceStatus{LoadBalancer:LoadBalancerStatus{Ingress:[]LoadBalancerIngress{},},},},Service{ObjectMeta:{ts1  default /api/v1/namespaces/default/services/ts1 d888c52c-70cd-4b19-80bf-32f192863205 1388538 0 2020-09-14 07:16:28 +1200 NZST <nil> <nil> map[test-service:updated test-service-static:true] map[] [] []  [{live-test-writing Update v1 2020-09-14 07:16:28 +1200 NZST FieldsV1 FieldsV1{Raw:*[123 34 102 58 109 101 116 97 100 97 116 97 34 58 123 34 102 58 108 97 98 101 108 115 34 58 123 34 46 34 58 123 125 44 34 102 58 116 101 115 116 45 115 101 114 118 105 99 101 34 58 123 125 44 34 102 58 116 101 115 116 45 115 101 114 118 105 99 101 45 115 116 97 116 105 99 34 58 123 125 125 125 44 34 102 58 115 112 101 99 34 58 123 34 102 58 112 111 114 116 115 34 58 123 34 46 34 58 123 125 44 34 107 58 123 92 34 112 111 114 116 92 34 58 56 48 56 48 44 92 34 112 114 111 116 111 99 111 108 92 34 58 92 34 84 67 80 92 34 125 34 58 123 34 46 34 58 123 125 44 34 102 58 110 97 109 101 34 58 123 125 44 34 102 58 112 111 114 116 34 58 123 125 44 34 102 58 112 114 111 116 111 99 111 108 34 58 123 125 44 34 102 58 116 97 114 103 101 116 80 111 114 116 34 58 123 125 125 44 34 107 58 123 92 34 112 111 114 116 92 34 58 56 48 56 49 44 92 34 112 114 111 116 111 99 111 108 92 34 58 92 34 84 67 80 92 34 125 34 58 123 34 46 34 58 123 125 44 34 102 58 110 97 109 101 34 58 123 125 44 34 102 58 112 111 114 116 34 58 123 125 44 34 102 58 112 114 111 116 111 99 111 108 34 58 123 125 44 34 102 58 116 97 114 103 101 116 80 111 114 116 34 58 123 125 125 125 44 34 102 58 115 101 115 115 105 111 110 65 102 102 105 110 105 116 121 34 58 123 125 44 34 102 58 116 121 112 101 34 58 123 125 125 125],}}]},Spec:ServiceSpec{Ports:[]ServicePort{ServicePort{Name:http,Protocol:TCP,Port:80,TargetPort:{0 80 },NodePort:0,},},Selector:map[string]string{},ClusterIP:10.102.146.59,Type:ClusterIP,ExternalIPs:[],SessionAffinity:None,LoadBalancerIP:,LoadBalancerSourceRanges:[],ExternalName:,ExternalTrafficPolicy:,HealthCheckNodePort:0,PublishNotReadyAddresses:false,SessionAffinityConfig:nil,IPFamily:nil,TopologyKeys:[],},Status:ServiceStatus{LoadBalancer:LoadBalancerStatus{Ingress:[]LoadBalancerIngress{},},},},},}
+   unable to find Service in list of Services
+   #+end_src
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+* Verifying increase it coverage with APISnoop                       :export:
+Discover useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+  #+end_src
+
+List endpoints hit by the test:
+#+begin_src sql-mode :exports both :session none
+select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+#+end_src
+
+Display endpoint coverage change:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select * from projected_change_in_coverage;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     category    | total_endpoints | old_coverage | new_coverage | change_in_number 
+  ---------------+-----------------+--------------+--------------+------------------
+   test_coverage |             438 |          183 |          183 |                0
+  (1 row)
+
+  #+end_SRC
+
+* Final notes :export:
+If a test with these calls gets merged, **test coverage will go up by N points**
+
+This test is also created with the goal of conformance promotion.
+
+-----  
+/sig testing  
+
+/sig architecture  
+
+/area conformance  
+
+* Options :neverexport:
+** Delete all events after postgres initialization
+   #+begin_src sql-mode :eval never-export :exports both :session none
+   delete from raw_audit_event where bucket = 'apisnoop' and job='live';
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   DELETE 3945
+   #+end_SRC
+
+* Open Tasks
+  Set any open tasks here, using org-todo
+** DONE Live Your Best Life
+* Footnotes                                                     :neverexport:
+  :PROPERTIES:
+  :CUSTOM_ID: footnotes
+  :END:
