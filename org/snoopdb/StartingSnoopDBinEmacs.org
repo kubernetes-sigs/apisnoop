@@ -1,0 +1,296 @@
+#+Title: SnoopDB in Emacs
+
+* On Packet:
+- Launch Packetbox
+- At root type:  tmux
+- Next type: docker run -p 5432:5432 snoopDB
+- To run a query use SQL mode
+- make a code block by typing ,ibQ in Normal mode
+- Enter the SQL query and run with ,, in Normal mode
+
+
+
+* Some Sample Queries:
+**  Describing a field with \d+
+
+ #+BEGIN_SRC sql-mode
+\d+ endpoint_coverage
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_SRC example
+                                                                     View "public.endpoint_coverage"
+    Column    |  Type   | Collation | Nullable | Default | Storage  |                                            Description
+ -------------+---------+-----------+----------+---------+----------+---------------------------------------------------------------------------------------------------
+  release     | text    |           |          |         | extended | Release endpoint details come from
+  endpoint    | text    |           |          |         | extended | a kubernetes endpoint, the operation_id in the spec
+  level       | text    |           |          |         | extended | level of endpoint: alpha, beta, or stable
+  category    | text    |           |          |         | extended | endpoint category, roughly its group, taken from the first tag in the spec.
+  path        | text    |           |          |         | extended | the http path of the endpoint
+  description | text    |           |          |         | extended |
+  kind        | text    |           |          |         | extended | k8s kind  for endpoint
+  version     | text    |           |          |         | extended | k8s version for endpoint
+  group       | text    |           |          |         | extended | k8s group for endpoint
+  action      | text    |           |          |         | extended | endpoint action, roughly related to an http method
+  tested      | boolean |           |          |         | plain    | was endpoint hit at least once by a test useragent in the audit logs of this release?
+  conf_tested | boolean |           |          |         | plain    | was endpoint hit at least once by a conformance test useragent in the audit logs of this release?
+  tests       | text[]  |           |          |         | extended | array of codenames of all tests that hit this endpoint in audit log of this release
+ View definition:
+  SELECT open_api.release,
+     open_api.endpoint,
+     open_api.level,
+     open_api.category,
+     open_api.path,
+     open_api.description,
+     open_api.k8s_kind AS kind,
+     open_api.k8s_version AS version,
+     open_api.k8s_group AS "group",
+     open_api.k8s_action AS action,
+     count(audit_event.test_hit) FILTER (WHERE audit_event.test_hit IS TRUE) > 0 AS tested,
+     count(audit_event.conf_test_hit) FILTER (WHERE audit_event.conf_test_hit IS TRUE) > 0 AS conf_tested,
+     array_agg(DISTINCT audit_event.test) AS tests
+    FROM open_api
+      LEFT JOIN audit_event USING (endpoint, release)
+   WHERE open_api.deprecated IS FALSE
+   GROUP BY open_api.release, open_api.endpoint, open_api.level, open_api.category, open_api.path, open_api.description, open_api.k8s_kind, open_api.k8s_version, open_api.k8s_group, open_api.k8s_action
+   ORDER BY open_api.level DESC, open_api.endpoint;
+
+ #+end_SRC
+
+
+** Finding a test for an endpoint:
+ #+begin_src sql-mode
+  select endpoint,
+         unnest(tests) as test
+    from endpoint_coverage
+   where endpoint like '%Token%'
+     and release = '1.19.0'
+    group by endpoint, test, level, category;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                 endpoint                  |                                     test
+-------------------------------------------+-------------------------------------------------------------------------------
+ createAuthenticationV1beta1TokenReview    |
+ createAuthenticationV1TokenReview         | [sig-auth] ServiceAccounts should mount an API token into pods  [Conformance]
+ createCoreV1NamespacedServiceAccountToken |
+(3 rows)
+
+#+end_SRC
+
+
+** Give a description of avalible tables
+#+BEGIN_SRC sql-mode
+\dt+
+#+END_SRC
+
+#+RESULTS:
+#+begin_SRC example
+                                                     List of relations
+ Schema |    Name     | Type  |  Owner   |  Size   |                              Description
+--------+-------------+-------+----------+---------+-----------------------------------------------------------------------
+ public | audit_event | table | postgres | 822 MB  | each audit event taken from the logs of an e2e test suite run
+ public | open_api    | table | postgres | 4720 kB | Details on k8s endpoints taken from the openapi spec for that release
+ public | test        | table | postgres | 192 kB  | info for each conformance test as taken from latest conformance.yaml
+(3 rows)
+
+#+end_SRC
+
+
+** List endpoints from conformance file
+
+#+begin_src sql-mode
+select * from conformance.new_endpoint
+where tested = 'f'limit 5;
+
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                 endpoint                  | release | tested
+-------------------------------------------+---------+--------
+ getFlowcontrolApiserverAPIGroup           | 1.17.0  | f
+ createCoreV1NamespacedServiceAccountToken | 1.16.0  | f
+ deleteSchedulingV1CollectionPriorityClass | 1.14.0  | f
+ listCoordinationV1LeaseForAllNamespaces   | 1.14.0  | f
+ listSchedulingV1PriorityClass             | 1.14.0  | f
+(5 rows)
+
+#+end_SRC
+
+
+
+* Describing
+#+begin_src sql-mode
+select * from describe_relations();
+
+
+#+end_src
+
+
+
+#+begin_src sql-mode
+select * from describe_relation('conformance','progress');
+
+
+#+end_src
+
+
+#+begin_src sql-mode
+select * from describe_columns('public','endpoint_coverage');
+
+
+#+end_src
+
+
+
+#+begin_src sql-mode
+select * from describe_column('public','endpoint_coverage','tested');
+
+
+#+end_src
+
+
+#+begin_src sql-mode
+select * from describe_relation('conformance','eligible_endpoint');
+
+
+#+end_src
+
+
+
+* Running queries
+
+#+begin_src sql-mode
+  select endpoint, useragent
+    from open_api
+     left join audit_event using(endpoint)
+   where endpoint like '%Event'
+  group by endpoint, useragent;
+
+#+end_src
+
+
+
+* What can be called in the "Audit event"
+#+begin_src sql-mode
+select * from describe_columns('public', 'audit_event');
+
+#+end_src
+
+Find the file .go containing a test
+#+begin_src sql-mode
+  select testname, file
+    from public.test
+   where file like '%server_version%'
+         group by testname, file;
+#+end_src
+
+
+* Link test to endpoints it hit
+#+begin_src sql-mode
+  select codename, endpoint
+    from public.test
+   left join audit_event on(test = codename)
+   where file like '%server_version%'
+  group by codename, endpoint;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                                    codename                                     |                    endpoint
+---------------------------------------------------------------------------------+------------------------------------------------
+ [sig-api-machinery] server version should find the server version [Conformance] | createAuthorizationV1SubjectAccessReview
+ [sig-api-machinery] server version should find the server version [Conformance] | createCoreV1Namespace
+ [sig-api-machinery] server version should find the server version [Conformance] | createRbacAuthorizationV1NamespacedRoleBinding
+ [sig-api-machinery] server version should find the server version [Conformance] | deleteCoreV1Namespace
+ [sig-api-machinery] server version should find the server version [Conformance] | listCoreV1NamespacedServiceAccount
+ [sig-api-machinery] server version should find the server version [Conformance] | listCoreV1Node
+(6 rows)
+
+#+end_SRC
+
+
+
+
+* Are endpoints hit by a test?
+#+begin_src sql-mode
+  select endpoint, conf_test_hit, useragent
+    from open_api
+         Left join audit_event using(endpoint)
+   where endpoint like '%NamespacedEvent%'
+     and category = 'core'
+   group by endpoint, conf_test_hit, useragent;
+
+
+
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+               endpoint                | conf_test_hit | useragent
+---------------------------------------+---------------+-----------
+ createCoreV1NamespacedEvent           |               |
+ deleteCoreV1CollectionNamespacedEvent |               |
+ deleteCoreV1NamespacedEvent           |               |
+ listCoreV1NamespacedEvent             |               |
+ patchCoreV1NamespacedEvent            |               |
+ readCoreV1NamespacedEvent             |               |
+ replaceCoreV1NamespacedEvent          |               |
+ watchCoreV1NamespacedEvent            |               |
+ watchCoreV1NamespacedEventList        |               |
+(9 rows)
+
+#+end_SRC
+
+
+
+* List of all user agents
+
+#+begin_src sql-mode
+select useragent from audit_event where test is null group by useragent;
+
+
+#+end_src
+
+
+
+
+* See what endpoints are het by a spesific test
+
+#+begin_src sql-mode
+select audit_id, endpoint
+  from audit_event
+ where test like '%server version should find the server version%'
+ order by endpoint;
+
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+               audit_id               |                    endpoint
+--------------------------------------+------------------------------------------------
+ 183bc16a-7e23-4901-a176-4140c8ce1fd4 | createAuthorizationV1SubjectAccessReview
+ 468086ad-482c-4a63-8a44-c5dd39265b7d | createCoreV1Namespace
+ a6bb3f69-5414-40e0-aa5b-23572431e4b5 | createCoreV1Namespace
+ a17b232d-1ade-4b76-9f6a-b80fcbf145ea | createRbacAuthorizationV1NamespacedRoleBinding
+ 5f4db551-4b4c-4dde-a752-70b802e751f1 | deleteCoreV1Namespace
+ af38fbb6-f1b2-40d3-9675-51fea2fa67ae | deleteCoreV1Namespace
+ 27d18dab-4b1d-47b8-852a-1da47f0cc124 | listCoreV1NamespacedServiceAccount
+ 47c05cf2-ddc6-480e-8753-237ff74826a6 | listCoreV1NamespacedServiceAccount
+ 5963502a-449b-4416-a5dc-a391c80de735 | listCoreV1NamespacedServiceAccount
+ 2500ceee-9ca0-4300-8ce3-e31ec17267b4 | listCoreV1NamespacedServiceAccount
+ 27d18dab-4b1d-47b8-852a-1da47f0cc124 | listCoreV1NamespacedServiceAccount
+ c2478c20-2d71-48fa-81b4-3195c706c6d3 | listCoreV1NamespacedServiceAccount
+ c7e97e4d-955e-471b-9ef3-95e173f69abf | listCoreV1NamespacedServiceAccount
+ 5963502a-449b-4416-a5dc-a391c80de735 | listCoreV1NamespacedServiceAccount
+ 0499a6a6-d6fd-42de-a6b7-ef08ec24ad8f | listCoreV1NamespacedServiceAccount
+ 0499a6a6-d6fd-42de-a6b7-ef08ec24ad8f | listCoreV1NamespacedServiceAccount
+ 2050cb92-85d8-4dab-bd21-a5a608c08da3 | listCoreV1NamespacedServiceAccount
+ 2500ceee-9ca0-4300-8ce3-e31ec17267b4 | listCoreV1NamespacedServiceAccount
+ 49fd1c04-d75b-41bf-ae26-57d011e98c8a | listCoreV1Node
+ a4b935c9-6ad0-49fe-a7be-4d6a0b00349d | listCoreV1Node
+(20 rows)
+
+#+end_SRC

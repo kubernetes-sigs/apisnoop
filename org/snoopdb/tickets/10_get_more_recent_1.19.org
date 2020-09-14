@@ -1,0 +1,120 @@
+#+TITLE:  Get newer version of 1.19.0 in the coverage jsons #10
+
+* The Ticket
+* Getting latest 1.19 run
+  it's now in the k8sbeta-default bucket, so we can grab from there.
+
+  #+begin_src sql-mode
+  select * from load_audit_events('ci-kubernetes-e2e-gce-cos-k8sbeta-default');
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   load_audit_events
+  -------------------
+   it worked
+  (1 row)
+
+  #+end_SRC
+
+  #+begin_src sql-mode
+    begin;
+    \t
+    \a
+    \o ../../resources/coverage/1.19.0.json
+      select row_to_json(c) from (
+        select release, release_date, spec,
+               (select source from (select source from audit_event where release = '1.19.0' limit 1) s) as source,
+               (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = '1.19.0') as endpoints,
+               (select array_agg(row_to_json(audit_event_test)) from audit_event_test where release = '1.19.0') as tests
+          from open_api
+         where release = '1.19.0'
+         group by release, release_date, spec) c;
+    \o
+    \a
+    \t
+    commit;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  BEGIN
+  Tuples only is on.
+  Output format is unaligned.
+  #+end_SRC
+
+  I also want to add in a conformance specific test run, that is intended to run all conformance tests.
+  I can use this bucket for that:
+  ci-kubernetes-gce-conformance-latest-1-19/1284970302572335110
+
+  NOTE: this means we will need to update our frontend to say that 1.20 and 1.19 are a combination of runs.
+
+  #+begin_src sql-mode
+  select * from load_audit_events('ci-kubernetes-gce-conformance-latest-1-19');
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   load_audit_events
+  -------------------
+   it worked
+  (1 row)
+
+  #+end_SRC
+
+  If this worked, the number of tested and conf_tested endpoints for 1.19 should match 1.20
+
+  #+begin_src sql-mode
+    select release, level,
+           count(*) filter(where tested is true)  as tested,
+           count(*) filter(where conf_tested is true)  as "conformance tested"
+      from endpoint_coverage
+     where release::semver >= '1.19.0'::semver
+       and level = 'stable'
+     group by release, level;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   release | level  | tested | conformance tested
+  ---------+--------+--------+--------------------
+   1.19.0  | stable |    261 |                203
+   1.20.0  | stable |    261 |                210
+  (2 rows)
+
+  #+end_SRC
+
+ It does not.  There are newly merged tests in the latest test run that aren't being included in either of these buckets.  This requires a moment to step back.
+
+* Rethink our coverage jsons
+  The month of july has been a bit confusing with pulling data, since we are in a code freeze but not a testing freeze before 1.19 releases.  This means that the list of endpoints in 1.19 will stay the same until the official release, but conformance.yaml is being updated continually.  Our testing runs now shows for 1.20....but it reflects changes that will be in the 1.19 release.  This is confusing to grok on our side, but I'd imagine even harder for a site visitor.  For a kubernetes contributor, they'd see that the current release is 1.18...but on apisnoop the current release is 1.20...1.19 somehow lost in the mix...and that our progress page shows different numbers.  To explain the discrepancy requires explaining the semver methods of a particular google cloud bucket, which doesn't illuminate much.
+
+In talking with hh, it makes sense for apisnoop to match whatever is the most recent, in progress release as the 'latest' release.  And so, 1.20 shouldn't show at all on apisnoop until 1.19 is released.
+
+This means we'd need to backdate the release given in our latest test run to be 1.19.  OPne simple way to do this would be to keep a releases.yaml in our resources folder, where the most recent release is 1.19.  When we load fresh data, we set the release to be whatever is the first in that list of releases.  There would still be manual upkeep required, but it is just updating the yaml file once a new release comes out, which is pretty minimal upkeep.
+* Create our json  file
+  In some nice forward thought, this file already exists as yaml, with 1.19 already as the most recent release.  It has a redundant key definition that I removed.
+  #+begin_src yaml
+       releases:
+         - 1.19.0
+         - 1.18.0
+         - ...
+  #+end_src
+
+  So it is now:
+
+  #+begin_src yaml :tangle ../../resources/coverage/releases.yaml :comments no
+    ---
+    - 1.19.0
+    - 1.18.0
+    - 1.17.0
+    - 1.16.0
+    - 1.15.0
+  #+end_src
+* Delete 1.20.0.json
+  Now there should only be json for the releases listed in our releases.yaml
+* Update the release logic in our loading functions
+  This should import our releases.yaml, and choose the first in the list as our latest version.
+  This is work I'll do in [[file:~/snoop/postgres/tables-views-functions.org][tables-views-functions.org]]
+
+* conclusion | next steps
