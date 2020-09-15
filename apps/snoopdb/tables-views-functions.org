@@ -1021,7 +1021,6 @@ create or replace view conformance.coverage_per_release as
    :header-args: :tangle ./postgres/initdb/307_fn_determine_endpoint.sql
    :END:
 #+BEGIN_SRC sql-mode
-set role dba;
 create or replace function determine_endpoint() RETURNS TRIGGER as $$
    import json
    from snoopUtils import load_openapi_spec, find_operation_id
@@ -1034,46 +1033,44 @@ create or replace function determine_endpoint() RETURNS TRIGGER as $$
        TD["new"]["endpoint"] = find_operation_id(spec, event);
    return "modify";
 $$ language plpython3u;
-reset role;
 #+END_SRC
 *** Generate latest coverage json
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/308_fn_generate_latest_coverage_json.sql
-   :END:
-   #+begin_src sql-mode
-     create function generate_latest_coverage_json()
-       returns json as $$
-     declare latest_release varchar;
-     begin
-     select release into latest_release from audit_event order by release::semver limit 1;
-     return(
-       select row_to_json(c) from (
-         select release, release_date, spec,
-                (select array_agg(source) from (select source from audit_event where release = latest_release group by source) s) as sources,
-                (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = latest_release) as endpoints,
-                (select array_agg(row_to_json(audit_event_test)) from audit_event_test where release = latest_release) as tests
-           from open_api
-          where release = latest_release
-          group by release, release_date, spec) c);
-     end;
-     $$ language plpgsql;
-   #+end_src
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/308_fn_generate_latest_coverage_json.sql
+:END:
+#+begin_src sql-mode
+create function generate_latest_coverage_json()
+returns json as $$
+declare latest_release varchar;
+begin
+select release into latest_release from audit_event order by release::semver limit 1;
+return(
+select row_to_json(c) from (
+    select release, release_date, spec,
+        (select array_agg(source) from (select source from audit_event where release = latest_release group by source) s) as sources,
+        (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = latest_release) as endpoints,
+        (select array_agg(row_to_json(audit_event_test)) from audit_event_test where release = latest_release) as tests
+    from open_api
+    where release = latest_release
+    group by release, release_date, spec) c);
+end;
+$$ language plpgsql;
+#+end_src
 
-   #+NAME: generate latest coverage json comment
-   #+begin_src sql-mode
-     comment on function generate_latest_coverage_json is 'helper to create properly formatted json to be output as a  coverage/X.XX.json file';
-   #+end_src
+#+NAME: generate latest coverage json comment
+#+begin_src sql-mode
+comment on function generate_latest_coverage_json is 'helper to create properly formatted json to be output as a  coverage/X.XX.json file';
+#+end_src
 
-   #+name: Build Log
-   #+begin_src sql-mode
-     select 'generate_latest_coverage_json function defined and commented' as "build log";
-   #+end_src
+#+name: Build Log
+#+begin_src sql-mode
+select 'generate_latest_coverage_json function defined and commented' as "build log";
+#+end_src
 * Triggers
 ** Add Endpoint
 :PROPERTIES:
 :header-args: :tangle ./postgres/initdb/400_trg_add_endpoint.sql
 :END:
-
 #+BEGIN_SRC sql-mode
 create trigger add_endpoint
 before insert on testing.audit_event

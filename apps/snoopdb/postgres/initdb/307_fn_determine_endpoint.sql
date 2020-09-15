@@ -1,4 +1,3 @@
-set role dba;
 create or replace function determine_endpoint() RETURNS TRIGGER as $$
    import json
    from snoopUtils import load_openapi_spec, find_operation_id
@@ -11,4 +10,3 @@ create or replace function determine_endpoint() RETURNS TRIGGER as $$
        TD["new"]["endpoint"] = find_operation_id(spec, event);
    return "modify";
 $$ language plpython3u;
-reset role;
