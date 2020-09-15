@@ -1,8 +1,5 @@
 begin;
 
-from open_api
-order by release::semver desc
-limit 1;
 
 \t
 \a
@@ -23,4 +20,7 @@ where tested is false;
 \a
 \t
 select 'untested endpoints for '||release||' written to /tmp/untested-endpoints.txt' as "build log"
+  from open_api
+ order by release::semver desc
+ limit 1;
 commit;
