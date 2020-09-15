@@ -1,4 +1,4 @@
-     CREATE UNLOGGED TABLE conformance.audit_event (
+     CREATE UNLOGGED TABLE testing.audit_event (
        release text,
        release_date text,
        audit_id text NOT NULL,
