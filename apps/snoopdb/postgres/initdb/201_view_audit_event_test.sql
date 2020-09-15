@@ -8,7 +8,7 @@
          from      audit_event event
          left join conformance.test test on(event.test = test.codename)
         where test is not null
-        group by test, testname, file, test.release, audit_event.release;
+        group by test, testname, file, test.release, event.release;
 
      comment on view audit_event_test is 'every test in the audit_log of a release';
      comment on column audit_event_test.release is 'audit log relesae this test is pulled from';
