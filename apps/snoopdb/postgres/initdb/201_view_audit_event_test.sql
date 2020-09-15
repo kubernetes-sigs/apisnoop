@@ -1,12 +1,12 @@
      create or replace view audit_event_test as
-       select audit_event.release,
-              test,
-              (testname is not null) as conformance_test,
+       select event.release,
+              event.test,
+              (test.testname is not null) as conformance_test,
                 test.testname,
               test.file,
               test.release as promotion_release
-         from      audit_event
-         left join test on(test = codename)
+         from      audit_event event
+         left join conformance.test test on(event.test = test.codename)
         where test is not null
         group by test, testname, file, test.release, audit_event.release;
 
