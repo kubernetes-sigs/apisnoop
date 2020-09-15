@@ -175,9 +175,9 @@ if [ "$1" = 'postgres' ]; then
 	fi
 fi
 
-if [ -z "$K8S_JOB" ]; then
+if [ -z "$JOB_NAME" ]; then
     echo
-    echo 'Not a K8s Job, keeping db running'
+    echo 'Not a prow job, will keep db running'
     echo
    exec "$@"
 else
