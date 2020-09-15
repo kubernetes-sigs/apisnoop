@@ -80,7 +80,7 @@ function logEventToDB (event) {
         useragent: userAgent,
         test: userAgent,
         test_hit:  STARTS_WITH_E2E.test(userAgent),
-        conf_test_hit: HAS_CONF_IN_BRACKETS(userAgent),
+        conf_test_hit: HAS_CONF_IN_BRACKETS.test(userAgent),
         data: JSON.stringify(event),
         source: 'live'
     }
