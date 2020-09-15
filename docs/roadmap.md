@@ -26,9 +26,10 @@ Moved to Release Blocking Job instead of PR blocking Job by community agreement.
 
 ### ****Progress****
 
--   The [Prow instance](https://prow.cncf.io/) is running and [PR19173](https://github.com/kubernetes/test-infra/pull/19173) was shared with the SIG Testing community
--   Some constructive feedback was recieved
--   SIG Network responed with [PR19160](https://github.com/kubernetes/test-infra/issues/19160) to take responsibility for the Conformance of their API's
+-   The job within [k/test-infra#19173](https://github.com/kubernetes/test-infra/pull/19173) is runnig on [prow.cncf.io](https://prow.cncf.io/)
+-   Caught new untested endpoint
+-   SIG Network responed with [k/test-infra/#19160](https://github.com/kubernetes/test-infra/issues/19160)
+    -   to take responsibility for the Conformance of their API's
     -   APISnoop also seem to gain more traction in the community in this way
 
 ### ****APISnoop landing page****
