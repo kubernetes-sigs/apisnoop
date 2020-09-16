@@ -1,4 +1,3 @@
-
 # v1.20
 
 Our goal is to not make radical changes to process or approach, but iterate on our working methods to increase velocity and output in a stable, consistent way.
