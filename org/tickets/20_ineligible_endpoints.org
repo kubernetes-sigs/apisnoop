@@ -1,0 +1,251 @@
+#+TITLE: 20: Ineligible Endpoints
+
+* Ticket
+  There should be a premade view in our conformance schema that is the complement to eligible endpoints.
+
+This view should list all non-deprecated stable endpoints that are ineligible for conformance tests for one or more reasons. These reasons are outlined across various tickets and docks among the conformance community.
+
+For each endpoint, list the documented reason it is ineligible and the sql logic that excludes it. For example, for fooV1Storage: it's documented reason is that the 'endpoint uses a vendor specific feature', while it's sql logic is endpoint name includes storage or volume.
+
+If possible, include link to the documented reason as the 'source' column.
+
+Lastly, there should be a funciton that outputs this view to json, so it can be consumed by our apisnoop app.
+
+* Process
+** Gather up list of ineligible criteria
+   We have a list already gathered here: https://github.com/cncf/apisnoop/blob/master/tickets/k8s/EndpointsToNotTest.org
+   In summary it is:
+   - uses vendor-specific features (volume or storage)
+   - Pending deprecation
+   - Requires use to the kubelet api.
+   - is a redirect (the proxy endopints)
+
+Each of these I can link to a line in our [[https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md#conformance-test-requirements][conformance test requirements]] , and so we have a nice source of the reason.
+** Create a union of ineligible criteria endpoints
+  Now we create our sql query.  What I want is the name of the endpoint, teh reason it is ineligible, our sql logic, and source.
+
+    #+begin_src sql-mode
+    #+end_src
+  #+begin_src sql-mode
+    with current_stable_endpoints as (
+      select endpoint, path, k8s_kind, k8s_action
+        from open_api
+       where deprecated is false
+         and level = 'stable'
+         and release = (
+           select release
+             from open_api
+            order by release::semver desc
+            limit 1
+         )
+    )
+        (
+          -- vendor specific features
+          select endpoint,
+                 'vendor specific feature' as reason,
+                 'path includes "volume" or "storage"' as "sql logic",
+             'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64' as link
+            from current_stable_endpoints
+           where path ~~ any('{"%volume%", "%storage%"}')
+        )
+        union
+        (
+          -- endpoint is pending deprecation
+          select endpoint,
+                 'pending deprecation' as reason,
+                 'kind equals ComponentStatus' as "sql logic",
+               'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L69' as link
+            from current_stable_endpoints
+           where k8s_kind = 'ComponentStatus'
+        )
+        union
+        (
+          -- Uses the kubelet api
+          select endpoint,
+                 'uses kubelet api' as reason,
+                 'kind equals Node and action equals delete or post' as "sql logic",
+               'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L36' as link
+            from current_stable_endpoints
+           where k8s_kind = 'Node'
+             and k8s_action = any('{"delete", "post"}')
+        )
+        union
+        (
+          -- Redirects to other endpoint
+          select endpoint,
+                 'redirects to other endpoint' as reason,
+                 'endpoint ends in PodProxy, NodeProxy, or ServiceProxy' as "sql logic",
+               'https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218' as link
+            from current_stable_endpoints
+           where endpoint ~~ any('{"%NodeProxy", "%PodProxy", "%ServiceProxy"}')
+        )
+        order by reason;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                         endpoint                        |           reason            |                       sql logic                       |                                                             link
+  -------------------------------------------------------+-----------------------------+-------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------
+   readCoreV1ComponentStatus                             | pending deprecation         | kind equals ComponentStatus                           | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L69
+   listCoreV1ComponentStatus                             | pending deprecation         | kind equals ComponentStatus                           | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L69
+   connectCoreV1DeleteNamespacedPodProxy                 | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1PatchNodeProxy                           | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1HeadNodeProxy                            | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1DeleteNamespacedServiceProxy             | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1OptionsNodeProxy                         | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1PutNamespacedPodProxy                    | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1PostNodeProxy                            | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1PutNodeProxy                             | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1HeadNamespacedServiceProxy               | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1PostNamespacedPodProxy                   | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1GetNamespacedServiceProxy                | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1OptionsNamespacedPodProxy                | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1PostNamespacedServiceProxy               | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1PatchNamespacedPodProxy                  | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1OptionsNamespacedServiceProxy            | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1GetNamespacedPodProxy                    | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1PutNamespacedServiceProxy                | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1GetNodeProxy                             | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1HeadNamespacedPodProxy                   | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1DeleteNodeProxy                          | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   connectCoreV1PatchNamespacedServiceProxy              | redirects to other endpoint | endpoint ends in PodProxy, NodeProxy, or ServiceProxy | https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go#L206-L218
+   createCoreV1Node                                      | uses kubelet api            | kind equals Node and action equals delete or post     | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L36
+   deleteCoreV1Node                                      | uses kubelet api            | kind equals Node and action equals delete or post     | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L36
+   replaceStorageV1CSINode                               | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   readStorageV1StorageClass                             | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteStorageV1CollectionVolumeAttachment             | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   createStorageV1CSIDriver                              | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   getStorageAPIGroup                                    | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   readStorageV1VolumeAttachment                         | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   patchStorageV1StorageClass                            | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   replaceStorageV1StorageClass                          | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   replaceCoreV1PersistentVolumeStatus                   | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteStorageV1VolumeAttachment                       | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   patchCoreV1NamespacedPersistentVolumeClaim            | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   createStorageV1VolumeAttachment                       | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   patchCoreV1NamespacedPersistentVolumeClaimStatus      | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   patchStorageV1CSIDriver                               | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   replaceStorageV1VolumeAttachmentStatus                | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteStorageV1CSIDriver                              | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   readStorageV1VolumeAttachmentStatus                   | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   readCoreV1PersistentVolumeStatus                      | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   listCoreV1PersistentVolumeClaimForAllNamespaces       | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   readStorageV1CSIDriver                                | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   patchCoreV1PersistentVolume                           | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteCoreV1CollectionPersistentVolume                | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   readCoreV1NamespacedPersistentVolumeClaimStatus       | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   listStorageV1CSIDriver                                | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteStorageV1CollectionCSIDriver                    | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   replaceCoreV1NamespacedPersistentVolumeClaim          | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   replaceStorageV1CSIDriver                             | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   readCoreV1PersistentVolume                            | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteCoreV1CollectionNamespacedPersistentVolumeClaim | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   listStorageV1CSINode                                  | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   createStorageV1StorageClass                           | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   listCoreV1PersistentVolume                            | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   listCoreV1NamespacedPersistentVolumeClaim             | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   getStorageV1APIResources                              | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   patchCoreV1PersistentVolumeStatus                     | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   replaceCoreV1PersistentVolume                         | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   replaceCoreV1NamespacedPersistentVolumeClaimStatus    | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   replaceStorageV1VolumeAttachment                      | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   patchStorageV1VolumeAttachmentStatus                  | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   createStorageV1CSINode                                | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteCoreV1PersistentVolume                          | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteCoreV1NamespacedPersistentVolumeClaim           | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteStorageV1CollectionStorageClass                 | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteStorageV1CollectionCSINode                      | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   createCoreV1NamespacedPersistentVolumeClaim           | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   readCoreV1NamespacedPersistentVolumeClaim             | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   createCoreV1PersistentVolume                          | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteStorageV1StorageClass                           | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   listStorageV1StorageClass                             | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   deleteStorageV1CSINode                                | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   patchStorageV1VolumeAttachment                        | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   listStorageV1VolumeAttachment                         | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   readStorageV1CSINode                                  | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+   patchStorageV1CSINode                                 | vendor specific feature     | path includes "volume" or "storage"                   | https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64
+  (79 rows)
+
+  #+end_SRC
+
+
+
+** Check for duplicates in this set
+   I can do this check quickly by ordering by endpoint and seeing if there are any duplicates in that column.  Doing this returns no duplicates, and so I feel good.
+** Add view to migrations
+  I will add this and update our existing eligible endpoints view to include the proxy filter.  The list of eligible endoints should equal total stable minus this list of ineligible.
+
+  #+begin_src sql-mode
+    (
+      select 'eligible' as endpoints,
+             count(*) as total
+        from conformance.eligible_endpoint
+    )
+      union
+      (
+        select 'ineligible' as endpoints,
+               count(*) as total
+          from conformance.ineligible_endpoint
+      )
+      union
+      (
+        select 'total' as endpoints,
+               count(*) as total
+          from open_api
+         where release = '1.19.0'
+           and level = 'stable'
+           and deprecated is false
+      );
+
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   endpoints  | total
+  ------------+-------
+   total      |   485
+   ineligible |    79
+   eligible   |   406
+  (3 rows)
+
+  #+end_SRC
+
+  405 + 79 = 485.   Looks good!
+** Create function to wrap view into json output
+   Here the simpler the better, we just want an array of endoint objects that include all these details
+   #+begin_src sql-mode
+     begin;
+     \t
+     \a
+     \o '../../resources/coverage/ineligible_endoints.json'
+       select jsonb_pretty(json_agg(ie)::jsonb)
+       from (select * from conformance.ineligible_endpoint order by endpoint) ie ;
+     \o
+     \a
+     \t
+     commit;
+     ;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   BEGIN
+   Tuples only is on.
+   Output format is unaligned.
+   postgres=# postgres=# Output format is aligned.
+   Tuples only is off.
+   COMMIT
+   #+end_SRC
+
+ When I do this, the json object lists link first, then reason, endpoint, and sql logic respectively.  I am not sure why it does this, but it felt like a rbbit hole trying to sort it...especially when I am uncertain anyone is using this by just looking at the output json.  I, for example, will be consuming it and dispalying it totally different for our apisnoop webapp.  I will leave it alone for now
+
+** Add fn to generate_json.sql
+   It's small enough to just include it inline, which i did!
+** Push output json to resources/coverage
+
+   after running our generate_json script, i can see there's a new ineligible endpoints list.  awesome!  We'll commit it with this work journal.
+** Celebrate
+   We did it!  This will hopefully be a useful list.  Now is the time to add it to our webapp.
+* Conclusion
+  I created a new view in conformance: ineligible_endpoint.  This is the complement to conformance.eligible_endpoint and when we combine the two counts they accruately totatl our current stable endpoints.    You can view the output json from this view at ~resources/coverage/ineligible_endpoints.json~

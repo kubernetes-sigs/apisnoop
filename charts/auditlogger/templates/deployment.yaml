@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "auditlogger.fullname" . }}
+  labels:
+    io.cncf.component-group: apisnoop
+    io.cncf.apisnoop-component: auditlogger
+    {{- include "auditlogger.labels" . | nindent 4 }}
+spec:
+{{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+{{- end }}
+  selector:
+    matchLabels:
+      io.cncf.component-group: apisnoop
+      io.cncf.apisnoop-component: auditlogger
+      {{- include "auditlogger.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+    {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      labels:
+        io.cncf.component-group: apisnoop
+        io.cncf.apisnoop-component: auditlogger
+        {{- include "auditlogger.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "auditlogger.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: APP_DB_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "auditlogger.fullname" . }}
+                  key: postgresConnectionString
+            - name: APP_DB_AUDIT_EVENT_TABLE
+              value: {{ .Values.auditEventTable }}
+            - name: APP_PORT
+              value: {{ .Values.service.port | toString | quote }}
+            - name: APP_DISABLE_LOGS
+              value: {{ .Values.noDebug | toString | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

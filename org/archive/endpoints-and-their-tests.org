@@ -1,0 +1,204 @@
+#+TITLE: Endpoints and their Tests
+#+PROPERTY: header-args:sql-mode :product postgres :noweb yes
+
+* Purpose
+  To create a yaml file that shows all stable endpoints, when they were released, when they were first tested, and a list of conformant endpoints that hit them.
+* Prereq
+  This will need the main tables that make up snoop:
+  - open_api
+  - tests
+  - audit_event
+  - stable_endpoint_first
+* Adjust 1.8 test releases
+  We want to alter our test tables, so any test with 1.8 is replaced with 1.9
+  1.8 is a stopgap based on an issue with a set of conformance tests.  The issue is that the conformance.yaml generates the release for tesets, based on a release comment written above the test.  Some of the tests are missing release comments, and so have an empty string as their release in the conformance.yaml
+  An issue is beign raised for this, but until the we will set them to 1.9 since that was the start of the conformance initiative, and it doesn't make sense for a conformance test to be released before conformance existed.
+
+  #+begin_src sql-mode
+     update test bucket_job_swagger
+        set release = '1.9.0'
+      where release = '1.8.0';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  UPDATE 17
+  #+end_SRC
+
+  Refresh our materialized view and we are good to go
+  #+begin_src sql-mode
+  refresh materialized view stable_endpoint_first;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  REFRESH MATERIALIZED VIEW
+  #+end_SRC
+
+* Get a list of endpoints and tests
+  #+TITLE: endpoints and tests
+  #+begin_src sql-mode
+      create or replace view endpoint_and_test as
+          with current_stable_endpoints as (
+            select endpoint
+              from open_api
+             where release = '1.19.0'
+               and level = 'stable'
+            except
+              select endpoint
+                from open_api
+               where path like '%volume%'
+                  or deprecated is true
+                  or k8s_kind = 'ComponentStatus'
+                  or (k8s_kind = 'Node' and k8s_action = any('{"delete", "post"}'))
+          )
+          select stable.endpoint,
+                 stable.first_release,
+                 case
+                   when first_conformance_test::semver < first_release::semver
+                   then first_release
+                   else first_conformance_test
+                 end as first_tested,
+                 test.testname as test,
+                 test.release as test_release,
+                 test.file as test_location
+            from      stable_endpoint_first stable
+                 join current_stable_endpoints using(endpoint)
+            left join audit_event on(audit_event.endpoint = stable.endpoint and audit_event.test is not null)
+            left join test on (audit_event.test = test.codename and audit_event.test is not null)
+        group by stable.endpoint, first_conformance_test, first_release, testname, test_release, test.file
+           ;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+  CREATE VIEW
+  #+end_SRC
+
+  We'll do some sanity checks with this.
+  We know we have 423 stable, eligible endoints due to work we did on conformance_progress.
+  This view should /also/ return endpoints, then.
+ #+begin_src sql-mode
+  select count(distinct endpoint) from endpoint_and_test;
+ #+end_src
+
+ #+RESULTS:
+ #+begin_SRC example
+  count
+ -------
+    423
+ (1 row)
+
+ #+end_SRC
+
+If we filter to tested, then it should only be 160
+
+#+begin_src sql-mode
+  select count(distinct endpoint) from endpoint_and_test where first_tested is not null;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ count
+-------
+   160
+(1 row)
+
+#+end_SRC
+
+We know there were 14 endpoints introduced in 1.19 and all are tested.   this query should return the same number.
+
+#+begin_src sql-mode
+  select count(distinct endpoint) from endpoint_and_test where first_release = '1.19.0' and first_tested is not null;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ count
+-------
+    14
+(1 row)
+
+#+end_SRC
+
+This feels good!
+
+* Output to json
+
+  This sql ended up a bit tricky, as our audit_event join means we are including times when an endpoint is hit but not hit by a test...and that was adding null test values in our array of tests.
+  Then I realized that the filter operator can be used on /any/ array function in postgres, so we can simply filter those null values out.
+  I then added a case statement so tthat if tested is not null we build an array of tests, otherwise we just return [].  this makes the outputted json maintaion type consistency..tests is always an array, ikt just may be an empty array.
+  #+begin_src sql-mode :results silent
+    begin;
+    \t
+    \a
+    \o ../resources/endpoints.json
+    select jsonb_pretty(json_agg(ep)::jsonb) from (
+       select endpoint, first_release, first_tested,
+         case
+         when first_tested is not null
+         then json_agg(
+            json_build_object(
+              'test', test,
+              'release', test_release,
+              'file', test_location
+          )
+        ) filter (where test is not null)
+        else '[]'
+        end as tests
+      from endpoint_and_test
+     group by endpoint, first_release, first_tested) ep;
+    \o
+    \a
+    \t
+    commit;
+  #+end_src
+
+* Convert to Yaml
+
+ We can use yq to read the json and convert it back into yaml and output to a file
+
+ #+begin_src shell :dir ../resources :results silent
+  yq r --prettyPrint endpoints.json  > endpoints.yaml
+ #+end_src
+
+
+
+ #+begin_src sql-mode
+   select endpoint, k8s_kind
+   from stable_endpoint_first
+   join open_api using(endpoint)
+   where first_release = '1.17.0';
+ #+end_src
+
+ #+RESULTS:
+ #+begin_SRC example
+              endpoint             | k8s_kind
+ ----------------------------------+----------
+  listStorageV1CSINode             | CSINode
+  getFlowcontrolApiserverAPIGroup  |
+  listStorageV1CSINode             | CSINode
+  createStorageV1CSINode           | CSINode
+  deleteStorageV1CollectionCSINode | CSINode
+  readStorageV1CSINode             | CSINode
+  patchStorageV1CSINode            | CSINode
+  deleteStorageV1CSINode           | CSINode
+  replaceStorageV1CSINode          | CSINode
+  getFlowcontrolApiserverAPIGroup  |
+  deleteStorageV1CollectionCSINode | CSINode
+  createStorageV1CSINode           | CSINode
+  deleteStorageV1CSINode           | CSINode
+  readStorageV1CSINode             | CSINode
+  patchStorageV1CSINode            | CSINode
+  replaceStorageV1CSINode          | CSINode
+  getFlowcontrolApiserverAPIGroup  |
+  deleteStorageV1CollectionCSINode | CSINode
+  listStorageV1CSINode             | CSINode
+  createStorageV1CSINode           | CSINode
+  readStorageV1CSINode             | CSINode
+  patchStorageV1CSINode            | CSINode
+  replaceStorageV1CSINode          | CSINode
+  deleteStorageV1CSINode           | CSINode
+ (24 rows)
+
+ #+end_SRC

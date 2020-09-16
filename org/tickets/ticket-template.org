@@ -1,0 +1,1139 @@
+# -*- ii: y; -*-
+#+TITLE: Test Writing Flow
+#+AUTHOR: ii team
+#+TODO: TODO(t) NEXT(n) IN-PROGRESS(i) BLOCKED(b) | DONE(d)
+#+OPTIONS: toc:nil tags:nil todo:nil
+#+EXPORT_SELECT_TAGS: export
+
+* Notes :export:
+This issue proposes the writing of a new test for the API endpoints ~ENDPOINT(1)~, ~ENDPOINT(2)~ with the intention of promoting it to Conformance. This issue contains a **very basic mock test** in order to start the conversation about what a good e2e test would look like for this endpoint. The code below is verified to be hitting the intended endpoint, show as per the queries in APIsnoop's live view of the cluster's audit logs.
+
+* Filling the Gaps in Kubernetes Test Coverage
+
+Are the Kubernetes behaviors your applications actually require well tested and guaranteed to be available on all cloud providers?
+
+In this session, you will learn how to ensure your Kubernetes API surface area usage is exercised by tests all Kubernetes Certified Service Providers must pass.
+
+We will cover:
+- the e2e test suite
+- automation that runs the suite before code is merged into Kubernetes.
+- the API surface area covered by these tests
+- the API surface area required by several popular applications.
+- Identifying the untested API surface area your applications require
+- Contributing tests that increase API surface coverage
+- Promoting tests to Conformance
+
+* TODO [91%] Cluster Setup :neverexport:
+  :PROPERTIES:
+  :LOGGING:  nil
+  :END:
+** DONE Connect demo to right eye
+
+   #+begin_src tmate :session foo:hello :eval never-export
+     echo "What parts of Kubernetes do you depend on $USER?"
+   #+end_src
+
+** DONE Create a K8s cluster using KIND
+
+[[file:~/cncf/apisnoop/deployment/k8s/kind-cluster-config.yaml::#%20kind-cluster-config.yaml][kind-cluster-config.yaml (enabling Dynamic Audit Logging)]]
+
+   #+BEGIN_SRC tmate :eval never-export :session foo:cluster :prologue "cd ~/cncf/apisnoop/\n"
+     # Uncomment the next line if you want to clean up a previously created cluster.
+     kind delete cluster
+     kind create cluster --config ~/cncf/apisnoop/deployment/k8s/kind-cluster-config.yaml
+   #+END_SRC
+   
+** DONE Grab cluster info, to ensure it is up.
+   
+   #+BEGIN_SRC shell :results replace 
+     kubectl cluster-info
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_src shell
+   Kubernetes master is running at https://127.0.0.1:41743
+   KubeDNS is running at https://127.0.0.1:41743/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+   To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+   #+end_src
+
+** DONE Prepull our images
+*** apisnoop
+   #+BEGIN_SRC tmate :eval never-export :session x:img :prologue "cd ~/cncf/apisnoop/\n"
+     # Run twice... first time will pull and save, second will load into kind
+     kind load image-archive   hasura:2019-12-03-16-31.docker-image \
+       || docker pull raiinbow/hasura:2019-12-03-16-31 \
+       && docker save raiinbow/hasura:2019-12-03-16-31 -o hasura:2019-12-03-16-31.docker-image
+
+     kind load image-archive   postgres:2019-12-03-14-19.docker-image \
+       || docker pull raiinbow/postgres:2019-12-03-14-19 \
+       && docker save raiinbow/postgres:2019-12-03-14-19 -o postgres:2019-12-03-14-19.docker-image
+
+     kind load image-archive   auditlogger:2019-12-08-31.docker-image \
+       || docker pull raiinbow/auditlogger:2019-12-08-31 \
+       && docker save raiinbow/auditlogger:2019-12-08-31 -o auditlogger:2019-12-08-31.docker-image
+
+   #+END_SRC
+*** check
+   #+begin_src shell :eval never-export :exports both
+     #ps ax | grep kind\ load | grep -v grep
+     docker exec kind-control-plane crictl img
+   #+end_src
+
+  #+RESULTS:
+  #+begin_src shell
+  IMAGE                                TAG                 IMAGE ID            SIZE
+  docker.io/kindest/kindnetd           0.5.3               aa67fec7d7ef7       80.3MB
+  docker.io/raiinbow/auditlogger       2019-12-08-31       b725b8a8594c9       381MB
+  docker.io/raiinbow/hasura            2019-12-08-21-00    bb2e8f81a4687       36.6MB
+  docker.io/raiinbow/auditlogger       2019-12-08-20-49    bb2e8f81a4687       36.6MB
+  docker.io/raiinbow/postgres          2019-12-03-14-19    e712ce7cc2a67       461MB
+  k8s.gcr.io/coredns                   1.6.2               bf261d1579144       44.2MB
+  k8s.gcr.io/etcd                      3.3.15-0            b2756210eeabf       248MB
+  k8s.gcr.io/kube-apiserver            v1.16.3             392249bd86967       185MB
+  k8s.gcr.io/kube-controller-manager   v1.16.3             808025b3748ef       128MB
+  k8s.gcr.io/kube-proxy                v1.16.3             f4fd1d7052b4e       103MB
+  k8s.gcr.io/kube-scheduler            v1.16.3             1974a03197540       105MB
+  k8s.gcr.io/pause                     3.1                 da86e6ba6ca19       746kB
+  #+end_src
+
+** DONE Check on cluster
+#+begin_src shell :eval never-export :exports both
+docker exec kind-control-plane crictl ps 
+#+end_src
+
+#+RESULTS:
+#+begin_src shell
+CONTAINER           IMAGE               CREATED             STATE               NAME                      ATTEMPT             POD ID
+968a756bd6afe       bb2e8f81a4687       27 seconds ago      Running             apisnoop-auditlogger      3                   271c5a984b04d
+54560b301a462       e712ce7cc2a67       2 minutes ago       Running             postgres                  0                   7e9e1cc2ddb82
+af1c54ff5bdef       bf261d1579144       22 minutes ago      Running             coredns                   0                   9a515ddfde7fd
+7af864e62df4d       bf261d1579144       22 minutes ago      Running             coredns                   0                   eea023ec31d2a
+25bec1a1f8c52       f4fd1d7052b4e       22 minutes ago      Running             kube-proxy                0                   a49246e1e712e
+b2db0dd45ab85       aa67fec7d7ef7       22 minutes ago      Running             kindnet-cni               0                   25a185c1dbb9a
+7f765253343a0       b2756210eeabf       23 minutes ago      Running             etcd                      0                   1469b2f82e6b4
+5c2eb1ca6453c       392249bd86967       23 minutes ago      Running             kube-apiserver            0                   79313d5b5a557
+0414a8147685e       808025b3748ef       23 minutes ago      Running             kube-controller-manager   0                   983195c1c3b9d
+57331d03cc0a2       1974a03197540       23 minutes ago      Running             kube-scheduler            0                   51bb98d6c3eb2
+#+end_src
+
+** DONE Deploy APISnoop                                              :export:
+   
+   #+begin_src shell :eval never-export :wrap "SRC text"
+     kubectl apply -f ~/cncf/apisnoop/deployment/k8s/raiinbow.yaml
+   #+end_src
+
+** DONE Verify Pods Running
+   #+begin_src shell
+     kubectl get pods
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src shell
+   NAME                        READY   STATUS             RESTARTS   AGE
+   hasura-5d447cc65d-jbclm     0/1     CrashLoopBackOff   6          10m
+   postgres-7b494768d5-f6zvc   1/1     Running            0          10m
+   #+end_src
+** DONE Setup Port-Forwarding from us to sharing to the cluster
+
+   We'll setup port-forwarding for postgres, to let us easily send queries from within our org file.
+   You can check the status of the port-forward in your right eye.
+   #+BEGIN_SRC tmate :eval never-export :session foo:postgres
+     export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.gcreds.json
+     # export K8S_NAMESPACE="kube-system"
+     # kubectl config set-context $(kubectl config current-context) --namespace=$K8S_NAMESPACE 2>&1 > /dev/null
+     POSTGRES_POD=$(kubectl get pod --selector=io.apisnoop.db=postgres -o name | sed s:pod/::)
+     POSTGRES_PORT=$(kubectl get pod $POSTGRES_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+     kubectl port-forward $POSTGRES_POD $(id -u)1:$POSTGRES_PORT
+   #+END_SRC
+
+   Then we'll setup a port-forward for hasura, so our web app can query it directly.
+   #+BEGIN_SRC tmate :eval never-export :session foo:hasura
+     HASURA_POD=$(kubectl get pod --selector=io.apisnoop.graphql=hasura -o name | sed s:pod/::)
+     HASURA_PORT=$(kubectl get pod $HASURA_POD --template='{{(index (index .spec.containers 0).ports 0).containerPort}}{{"\n"}}')
+     kubectl port-forward $HASURA_POD --address 0.0.0.0 8080:$HASURA_PORT
+   #+END_SRC
+** DONE Connect Org to our apisnoop db
+   #+NAME: ReConnect org to postgres
+   #+BEGIN_SRC emacs-lisp :results silent
+     (if (get-buffer "*SQL: postgres:none*")
+         (with-current-buffer "*SQL: postgres:none*"
+           (kill-buffer)))
+     (sql-connect "apisnoop" (concat "*SQL: postgres:none*"))
+   #+END_SRC
+** DONE Check it all worked
+
+   Once the postgres pod has been up for at least three minutes, you can check if it all works.
+
+   Running ~\d+~ will list all the tables and views in your db, and their size.
+   First,you want to ensure that relations _are_ found.  IF not, something happened with postgres and you should check the logs (check out [[#footnotes]] for more info.)
+
+   There should be about a dozen views, and two tables.  The table ~bucket_job_swagger~ should be about 3712kb.  The table ~raw_audit_event~ should be about 416mb.  If either show as 8192 bytes, it means no data loaded.  Check the Hasura logs in this case, to see if there was an issue with the migration.
+
+   #+begin_src sql-mode :results replace
+     \d+
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+   Did not find any relations.
+   #+end_SRC
+
+** DONE Check current coverage
+   It can be useful to see the current level of testing according to your baseline audit log (by default the last successful test run on master).
+
+   You can view this with the query:
+   #+NAME: stable endpoint stats
+   #+begin_src sql-mode
+     select * from stable_endpoint_stats where job != 'live';
+   #+end_src
+
+   #+RESULTS: stable endpoint stats
+   #+begin_src sql-mode
+            job         |    date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ---------------------+------------+-----------------+-----------+-----------+----------------+---------------------
+    1203778996630720516 | 2019-12-08 |             438 |       183 |       129 |          41.78 |               29.45
+   (1 row)
+
+   #+end_src
+
+** TODO Stand up, Stretch, and get a glass of water
+   You did it! By hydration and pauses are important.  Take some you time, and drink a full glass of water!
+* Identify an untested feature Using APISnoop                        :export:
+
+According to this APIsnoop query, there are still some remaining ConfigMap endpoints which are untested.
+
+  #+NAME: untested_stable_core_endpoints
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    SELECT
+      operation_id,
+      -- k8s_action,
+      path,
+      description
+      FROM untested_stable_core_endpoints
+      where path not like '%volume%'
+      -- and operation_id ilike '%%'
+     ORDER BY operation_id desc
+     LIMIT 150
+           ;
+  #+end_src
+
+
+* Use API Reference to Lightly Document the Feature                  :export:
+- [[https://kubernetes.io/docs/reference/kubernetes-api/][Kubernetes API Reference Docs]]
+- [client-go - MyResourceReplaceMe](https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/resourcename.go)
+
+* The mock test                                                      :export:
+** Test outline
+1. Create a ConfigMap with a static label
+
+2. Patch the ConfigMap with a new Label and updated data
+
+3. Get the ConfigMap to ensure it's patched
+
+4. List all ConfigMaps in all Namespaces
+   find the ConfigMap(1)
+   ensure that the ConfigMap is found and is patched
+
+5. Delete Namespaced ConfigMap(1) via a Collection with a LabelSelector
+
+** Example in Go
+#+begin_src shell
+go mod download 
+#+end_src
+   #+begin_src shell
+     go get -v -u k8s.io/apimachinery/pkg/apis/meta/v1
+     go get -v -u k8s.io/client-go/kubernetes
+     go get -v -u k8s.io/client-go/tools/clientcmd
+   #+end_src
+
+This mock test uses client-go's standard functions for talking to the Event area of the API. 
+   #+begin_src go
+     package main
+
+     import (
+       "fmt"
+       "flag"
+       "os"
+       //v1 "k8s.io/api/core/v1"
+       metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+       "k8s.io/client-go/kubernetes"
+       //"k8s.io/apimachinery/pkg/types"
+       "k8s.io/client-go/tools/clientcmd"
+     )
+
+     func main() {
+       // uses the current context in kubeconfig
+       kubeconfig := flag.String("kubeconfig", fmt.Sprintf("%v/%v/%v", os.Getenv("HOME"), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+       flag.Parse()
+       config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+       if err != nil {
+         fmt.Println(err)
+       }
+       // make our work easier to find in the audit_event queries
+       config.UserAgent = "live-test-writing"
+       // creates the clientset
+       ClientSet, _ := kubernetes.NewForConfig(config)
+
+       list, _ := ClientSet.CoreV1().Pods("").List(metav1.ListOptions{})
+       fmt.Println(list)
+       // write test here
+
+       fmt.Println("[status] complete")
+
+     }
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src go
+   &PodList{ListMeta:{/api/v1/pods 507540  <nil>},Items:[]Pod{Pod{ObjectMeta:{apisnoop-auditlogger-5fd98b8dbf-f4rfk apisnoop-auditlogger-5fd98b8dbf- default /api/v1/namespaces/default/pods/apisnoop-auditlogger-5fd98b8dbf-f4rfk 4fad2c12-efbc-4544-8717-7aba7c1ed129 2892 0 2020-01-20 14:58:08 +1300 NZDT <nil> <nil> map[io.apisnoop.auditlogger:apisnoop-auditlogger pod-template-hash:5fd98b8dbf] map[] [{apps/v1 ReplicaSet apisnoop-auditlogger-5fd98b8dbf 35292c37-fe3d-4005-89a5-b793af930ec8 0xc000305b97 0xc000305b98}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:default-token-hshmr,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:default-token-hshmr,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:apisnoop-auditlogger,Image:raiinbow/auditlogger:2020-01-20-14-30,Command:[],Args:[],WorkingDir:,Ports:[]ContainerPort{ContainerPort{Name:,HostPort:0,ContainerPort:9900,Protocol:TCP,HostIP:,},},Env:[]EnvVar{},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{},},VolumeMounts:[]VolumeMount{VolumeMount{Name:default-token-hshmr,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:nil,ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:nil,Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:default,DeprecatedServiceAccount:default,NodeName:kind-worker,HostNetwork:false,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},},HostAliases:[]HostAlias{},PriorityClassName:,Priority:*0,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:08 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:41 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:41 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:08 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.2,PodIP:10.244.1.13,StartTime:2020-01-20 14:58:08 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:apisnoop-auditlogger,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:58:41 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:&ContainerStateTerminated{ExitCode:1,Signal:0,Reason:Error,Message:,StartedAt:2020-01-20 14:58:10 +1300 NZDT,FinishedAt:2020-01-20 14:58:40 +1300 NZDT,ContainerID:containerd://5cbb358dd71910070bb5a30253fffb7981f2fcbbc8c5742b566be1e73e7ed02f,},},Ready:true,RestartCount:1,Image:docker.io/raiinbow/auditlogger:2020-01-20-14-30,ImageID:docker.io/raiinbow/auditlogger@sha256:4d6937de2a7584c939012aaa31869cd43f1593edde300dd1743495f8473f57b8,ContainerID:containerd://f11a1eea4a53e369a5169848d3b372591fb28f9351427d5f508c87ca48eb4b62,Started:*true,},},QOSClass:BestEffort,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:10.244.1.13,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{hasura-777765b7d4-fl2vv hasura-777765b7d4- default /api/v1/namespaces/default/pods/hasura-777765b7d4-fl2vv 38f91f20-bf16-47d7-9d4d-fd48ea1792ab 2896 0 2020-01-20 14:58:08 +1300 NZDT <nil> <nil> map[io.apisnoop.graphql:hasura pod-template-hash:777765b7d4] map[] [{apps/v1 ReplicaSet hasura-777765b7d4 d0bf9914-ca7e-482b-9614-b4a9244c8eb0 0xc000305e47 0xc000305e48}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:default-token-hshmr,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:default-token-hshmr,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:hasura,Image:raiinbow/hasura:2020-01-09-09-01,Command:[],Args:[],WorkingDir:,Ports:[]ContainerPort{ContainerPort{Name:,HostPort:0,ContainerPort:8080,Protocol:TCP,HostIP:,},},Env:[]EnvVar{EnvVar{Name:HASURA_GRAPHQL_DATABASE_URL,Value:postgres://apisnoop:s3cretsauc3@postgres:5432/apisnoop,ValueFrom:nil,},EnvVar{Name:HASURA_GRAPHQL_ENABLE_CONSOLE,Value:true,ValueFrom:nil,},},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{},},VolumeMounts:[]VolumeMount{VolumeMount{Name:default-token-hshmr,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:nil,ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:nil,Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:default,DeprecatedServiceAccount:default,NodeName:kind-worker,HostNetwork:false,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},},HostAliases:[]HostAlias{},PriorityClassName:,Priority:*0,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:08 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:41 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:41 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:08 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.2,PodIP:10.244.1.11,StartTime:2020-01-20 14:58:08 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:hasura,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:58:41 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:&ContainerStateTerminated{ExitCode:1,Signal:0,Reason:Error,Message:,StartedAt:2020-01-20 14:58:09 +1300 NZDT,FinishedAt:2020-01-20 14:58:40 +1300 NZDT,ContainerID:containerd://527eea41991c07c94ce89f7a2f015d67d9faada9a8c8d2b7282b41ea9aec93cc,},},Ready:true,RestartCount:1,Image:docker.io/raiinbow/hasura:2020-01-09-09-01,ImageID:docker.io/raiinbow/hasura@sha256:5e3349d566d52934b9a783d4dee262afecf9240ed19e466e5bea62b6f78b3537,ContainerID:containerd://f6384f40f724116a5f0c0280a91349e13efe6b728c2f7a8c83dfc72cc8cc862e,Started:*true,},},QOSClass:BestEffort,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:10.244.1.11,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{orgmacs  default /api/v1/namespaces/default/pods/orgmacs 8544960e-ad98-4c3e-9086-2743b72734d2 443296 0 2020-01-22 10:27:59 +1300 NZDT <nil> <nil> map[run:orgmacs] map[] [] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:admin-iimacs-token-6z9qk,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:admin-iimacs-token-6z9qk,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:orgmacs,Image:gcr.io/apisnoop/iimacs:0.9.4,Command:[],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{},},VolumeMounts:[]VolumeMount{VolumeMount{Name:admin-iimacs-token-6z9qk,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:nil,ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:nil,Stdin:true,StdinOnce:true,TTY:true,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:admin-iimacs,DeprecatedServiceAccount:admin-iimacs,NodeName:kind-worker,HostNetwork:false,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},},HostAliases:[]HostAlias{},PriorityClassName:,Priority:*0,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 10:27:59 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 10:36:54 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 10:36:54 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 10:27:59 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.2,PodIP:10.244.1.27,StartTime:2020-01-22 10:27:59 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:orgmacs,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-22 10:36:53 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:&ContainerStateTerminated{ExitCode:0,Signal:0,Reason:Completed,Message:,StartedAt:2020-01-22 10:28:00 +1300 NZDT,FinishedAt:2020-01-22 10:36:52 +1300 NZDT,ContainerID:containerd://63cea0ea349d01aed82811fa2358dbcacb7ed93d4ea5d13a32590d04c7c2b023,},},Ready:true,RestartCount:1,Image:gcr.io/apisnoop/iimacs:0.9.4,ImageID:gcr.io/apisnoop/iimacs@sha256:5f9b3030bec2be9f3d5ceb296a794bbe8341c6c263b9acc068a1a04fa13adb3f,ContainerID:containerd://2b601c25f476fb39ff97a5eaeda3d131372d075af3f7ee6720e131717fd7ef82,Started:*true,},},QOSClass:BestEffort,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:10.244.1.27,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{orgmacs096  default /api/v1/namespaces/default/pods/orgmacs096 efda5df4-9f2e-4d92-a557-fd6b258eda54 500779 0 2020-01-22 16:08:28 +1300 NZDT <nil> <nil> map[run:orgmacs096] map[] [] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:admin-iimacs-token-6z9qk,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:admin-iimacs-token-6z9qk,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:orgmacs096,Image:gcr.io/apisnoop/iimacs:0.9.6,Command:[],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{},},VolumeMounts:[]VolumeMount{VolumeMount{Name:admin-iimacs-token-6z9qk,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:nil,ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:nil,Stdin:true,StdinOnce:true,TTY:true,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:admin-iimacs,DeprecatedServiceAccount:admin-iimacs,NodeName:kind-worker,HostNetwork:false,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},},HostAliases:[]HostAlias{},PriorityClassName:,Priority:*0,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 16:08:28 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 16:21:15 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 16:21:15 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 16:08:28 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.2,PodIP:10.244.1.31,StartTime:2020-01-22 16:08:28 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:orgmacs096,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-22 16:21:14 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:&ContainerStateTerminated{ExitCode:0,Signal:0,Reason:Completed,Message:,StartedAt:2020-01-22 16:15:18 +1300 NZDT,FinishedAt:2020-01-22 16:21:01 +1300 NZDT,ContainerID:containerd://6fd87dd387d3f061f67038eb84af5ca7b6babae9fd1c21a91f78707617a464d9,},},Ready:true,RestartCount:2,Image:gcr.io/apisnoop/iimacs:0.9.6,ImageID:sha256:9456a828ab8622d63042c4bfbb10f860b2ec5dd2a9dc2e8d195ea0efac220abc,ContainerID:containerd://3d45a158768a9b737b773b87c452a67142bcf42ef321e83d593aabc12e9665f5,Started:*true,},},QOSClass:BestEffort,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:10.244.1.31,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{postgres-b59f6c9c4-f7nxl postgres-b59f6c9c4- default /api/v1/namespaces/default/pods/postgres-b59f6c9c4-f7nxl 21057aaf-9060-4555-80cf-0aab8608df7a 2763 0 2020-01-20 14:58:08 +1300 NZDT <nil> <nil> map[io.apisnoop.db:postgres pod-template-hash:b59f6c9c4] map[] [{apps/v1 ReplicaSet postgres-b59f6c9c4 5638cddc-04d2-400d-89ce-d59176eaf325 0xc0004fc6fa 0xc0004fc6fb}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:default-token-hshmr,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:default-token-hshmr,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:postgres,Image:raiinbow/postgres:2019-12-03-14-19,Command:[],Args:[],WorkingDir:,Ports:[]ContainerPort{ContainerPort{Name:,HostPort:0,ContainerPort:5432,Protocol:TCP,HostIP:,},},Env:[]EnvVar{EnvVar{Name:POSTGRES_DB,Value:apisnoop,ValueFrom:nil,},EnvVar{Name:POSTGRES_USER,Value:apisnoop,ValueFrom:nil,},EnvVar{Name:POSTGRES_PASSWORD,Value:s3cretsauc3,ValueFrom:nil,},EnvVar{Name:PGDATABASE,Value:apisnoop,ValueFrom:nil,},EnvVar{Name:PGUSER,Value:apisnoop,ValueFrom:nil,},EnvVar{Name:APISNOOP_BASELINE_BUCKET,Value:ci-kubernetes-e2e-gci-gce,ValueFrom:nil,},EnvVar{Name:APISNOOP_BASELINE_JOB,Value:1201280603970867200,ValueFrom:nil,},},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{},},VolumeMounts:[]VolumeMount{VolumeMount{Name:default-token-hshmr,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:&Probe{Handler:Handler{Exec:&ExecAction{Command:[pg_isready -U apisnoop],},HTTPGet:nil,TCPSocket:nil,},InitialDelaySeconds:0,TimeoutSeconds:5,PeriodSeconds:10,SuccessThreshold:1,FailureThreshold:5,},ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:nil,Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:default,DeprecatedServiceAccount:default,NodeName:kind-worker,HostNetwork:false,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},},HostAliases:[]HostAlias{},PriorityClassName:,Priority:*0,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:08 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:10 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:10 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:58:08 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.2,PodIP:10.244.1.12,StartTime:2020-01-20 14:58:08 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:postgres,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:58:10 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:nil,},Ready:true,RestartCount:0,Image:docker.io/raiinbow/postgres:2019-12-03-14-19,ImageID:docker.io/raiinbow/postgres@sha256:45d56529b17e9814eb467d9f73d7c1f05dbcc857e5014e47383136960fe3d1ba,ContainerID:containerd://9e3694e8ea1c33df0d49250a3e415284dc141c00da62e0c92188ab21f0e60daf,Started:*true,},},QOSClass:BestEffort,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:10.244.1.12,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{coredns-6955765f44-4ww42 coredns-6955765f44- kube-system /api/v1/namespaces/kube-system/pods/coredns-6955765f44-4ww42 2faadcea-c13f-4c0a-b382-144e99a964ea 568 0 2020-01-20 14:47:31 +1300 NZDT <nil> <nil> map[k8s-app:kube-dns pod-template-hash:6955765f44] map[] [{apps/v1 ReplicaSet coredns-6955765f44 7ea1b110-bdef-444e-94f6-626b515aecb1 0xc0004fca8a 0xc0004fca8b}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:config-volume,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:&ConfigMapVolumeSource{LocalObjectReference:LocalObjectReference{Name:coredns,},Items:[]KeyToPath{KeyToPath{Key:Corefile,Path:Corefile,Mode:nil,},},DefaultMode:*420,Optional:nil,},VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:coredns-token-2g64x,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:coredns-token-2g64x,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:coredns,Image:k8s.gcr.io/coredns:1.6.5,Command:[],Args:[-conf /etc/coredns/Corefile],WorkingDir:,Ports:[]ContainerPort{ContainerPort{Name:dns,HostPort:0,ContainerPort:53,Protocol:UDP,HostIP:,},ContainerPort{Name:dns-tcp,HostPort:0,ContainerPort:53,Protocol:TCP,HostIP:,},ContainerPort{Name:metrics,HostPort:0,ContainerPort:9153,Protocol:TCP,HostIP:,},},Env:[]EnvVar{},Resources:ResourceRequirements{Limits:ResourceList{memory: {{178257920 0} {<nil>} 170Mi BinarySI},},Requests:ResourceList{cpu: {{100 -3} {<nil>} 100m DecimalSI},memory: {{73400320 0} {<nil>} 70Mi BinarySI},},},VolumeMounts:[]VolumeMount{VolumeMount{Name:config-volume,ReadOnly:true,MountPath:/etc/coredns,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:coredns-token-2g64x,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:&Probe{Handler:Handler{Exec:nil,HTTPGet:&HTTPGetAction{Path:/health,Port:{0 8080 },Host:,Scheme:HTTP,HTTPHeaders:[]HTTPHeader{},},TCPSocket:nil,},InitialDelaySeconds:60,TimeoutSeconds:5,PeriodSeconds:10,SuccessThreshold:1,FailureThreshold:5,},ReadinessProbe:&Probe{Handler:Handler{Exec:nil,HTTPGet:&HTTPGetAction{Path:/ready,Port:{0 8181 },Host:,Scheme:HTTP,HTTPHeaders:[]HTTPHeader{},},TCPSocket:nil,},InitialDelaySeconds:0,TimeoutSeconds:1,PeriodSeconds:10,SuccessThreshold:1,FailureThreshold:3,},Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:&SecurityContext{Capabilities:&Capabilities{Add:[NET_BIND_SERVICE],Drop:[all],},Privileged:nil,SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,ReadOnlyRootFilesystem:*true,AllowPrivilegeEscalation:*false,RunAsGroup:nil,ProcMount:nil,WindowsOptions:nil,},Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:Default,NodeSelector:map[string]string{beta.kubernetes.io/os: linux,},ServiceAccountName:coredns,DeprecatedServiceAccount:coredns,NodeName:kind-control-plane,HostNetwork:false,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:CriticalAddonsOnly,Operator:Exists,Value:,Effect:,TolerationSeconds:nil,},Toleration{Key:node-role.kubernetes.io/master,Operator:,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},},HostAliases:[]HostAlias{},PriorityClassName:system-cluster-critical,Priority:*2000000000,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:48 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:48:00 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:48:00 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:48 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.3,PodIP:10.244.0.4,StartTime:2020-01-20 14:47:48 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:coredns,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:47:50 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:nil,},Ready:true,RestartCount:0,Image:k8s.gcr.io/coredns:1.6.5,ImageID:sha256:70f311871ae12c14bd0e02028f249f933f925e4370744e4e35f706da773a8f61,ContainerID:containerd://d489c86a7035a7b98597b8a11bd92341b14d92cc91003899eee2a7279fd5eef5,Started:*true,},},QOSClass:Burstable,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:10.244.0.4,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{coredns-6955765f44-qqlfm coredns-6955765f44- kube-system /api/v1/namespaces/kube-system/pods/coredns-6955765f44-qqlfm 1299cffd-b182-4929-897d-04afc661bd13 561 0 2020-01-20 14:47:31 +1300 NZDT <nil> <nil> map[k8s-app:kube-dns pod-template-hash:6955765f44] map[] [{apps/v1 ReplicaSet coredns-6955765f44 7ea1b110-bdef-444e-94f6-626b515aecb1 0xc0004fce7a 0xc0004fce7b}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:config-volume,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:&ConfigMapVolumeSource{LocalObjectReference:LocalObjectReference{Name:coredns,},Items:[]KeyToPath{KeyToPath{Key:Corefile,Path:Corefile,Mode:nil,},},DefaultMode:*420,Optional:nil,},VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:coredns-token-2g64x,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:coredns-token-2g64x,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:coredns,Image:k8s.gcr.io/coredns:1.6.5,Command:[],Args:[-conf /etc/coredns/Corefile],WorkingDir:,Ports:[]ContainerPort{ContainerPort{Name:dns,HostPort:0,ContainerPort:53,Protocol:UDP,HostIP:,},ContainerPort{Name:dns-tcp,HostPort:0,ContainerPort:53,Protocol:TCP,HostIP:,},ContainerPort{Name:metrics,HostPort:0,ContainerPort:9153,Protocol:TCP,HostIP:,},},Env:[]EnvVar{},Resources:ResourceRequirements{Limits:ResourceList{memory: {{178257920 0} {<nil>} 170Mi BinarySI},},Requests:ResourceList{cpu: {{100 -3} {<nil>} 100m DecimalSI},memory: {{73400320 0} {<nil>} 70Mi BinarySI},},},VolumeMounts:[]VolumeMount{VolumeMount{Name:config-volume,ReadOnly:true,MountPath:/etc/coredns,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:coredns-token-2g64x,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:&Probe{Handler:Handler{Exec:nil,HTTPGet:&HTTPGetAction{Path:/health,Port:{0 8080 },Host:,Scheme:HTTP,HTTPHeaders:[]HTTPHeader{},},TCPSocket:nil,},InitialDelaySeconds:60,TimeoutSeconds:5,PeriodSeconds:10,SuccessThreshold:1,FailureThreshold:5,},ReadinessProbe:&Probe{Handler:Handler{Exec:nil,HTTPGet:&HTTPGetAction{Path:/ready,Port:{0 8181 },Host:,Scheme:HTTP,HTTPHeaders:[]HTTPHeader{},},TCPSocket:nil,},InitialDelaySeconds:0,TimeoutSeconds:1,PeriodSeconds:10,SuccessThreshold:1,FailureThreshold:3,},Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:&SecurityContext{Capabilities:&Capabilities{Add:[NET_BIND_SERVICE],Drop:[all],},Privileged:nil,SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,ReadOnlyRootFilesystem:*true,AllowPrivilegeEscalation:*false,RunAsGroup:nil,ProcMount:nil,WindowsOptions:nil,},Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:Default,NodeSelector:map[string]string{beta.kubernetes.io/os: linux,},ServiceAccountName:coredns,DeprecatedServiceAccount:coredns,NodeName:kind-control-plane,HostNetwork:false,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:CriticalAddonsOnly,Operator:Exists,Value:,Effect:,TolerationSeconds:nil,},Toleration{Key:node-role.kubernetes.io/master,Operator:,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},},HostAliases:[]HostAlias{},PriorityClassName:system-cluster-critical,Priority:*2000000000,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:48 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:59 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:59 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:48 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.3,PodIP:10.244.0.2,StartTime:2020-01-20 14:47:48 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:coredns,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:47:50 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:nil,},Ready:true,RestartCount:0,Image:k8s.gcr.io/coredns:1.6.5,ImageID:sha256:70f311871ae12c14bd0e02028f249f933f925e4370744e4e35f706da773a8f61,ContainerID:containerd://387bb42aa78779430009c008c29cc1492c5fd37a883543eed4a2a5f69bb4362c,Started:*true,},},QOSClass:Burstable,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:10.244.0.2,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{etcd-kind-control-plane  kube-system /api/v1/namespaces/kube-system/pods/etcd-kind-control-plane 8e96ef7e-9ef8-4d89-a24e-e26e11327f6c 438 0 2020-01-20 14:47:36 +1300 NZDT <nil> <nil> map[component:etcd tier:control-plane] map[kubernetes.io/config.hash:28ba3ba0264772641c791ff01a5eecff kubernetes.io/config.mirror:28ba3ba0264772641c791ff01a5eecff kubernetes.io/config.seen:2020-01-20T01:47:16.106544205Z kubernetes.io/config.source:file] [{v1 Node kind-control-plane c959c7f1-a0f6-4df9-853d-1943bceb8bb0 0xc0004fd264 <nil>}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:etcd-certs,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/kubernetes/pki/etcd,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:etcd-data,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/var/lib/etcd,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:etcd,Image:k8s.gcr.io/etcd:3.4.3-0,Command:[etcd --advertise-client-urls=https://172.17.0.3:2379 --cert-file=/etc/kubernetes/pki/etcd/server.crt --client-cert-auth=true --data-dir=/var/lib/etcd --initial-advertise-peer-urls=https://172.17.0.3:2380 --initial-cluster=kind-control-plane=https://172.17.0.3:2380 --key-file=/etc/kubernetes/pki/etcd/server.key --listen-client-urls=https://127.0.0.1:2379,https://172.17.0.3:2379 --listen-metrics-urls=http://127.0.0.1:2381 --listen-peer-urls=https://172.17.0.3:2380 --name=kind-control-plane --peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt --peer-client-cert-auth=true --peer-key-file=/etc/kubernetes/pki/etcd/peer.key --peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt --snapshot-count=10000 --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{},},VolumeMounts:[]VolumeMount{VolumeMount{Name:etcd-data,ReadOnly:false,MountPath:/var/lib/etcd,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:etcd-certs,ReadOnly:false,MountPath:/etc/kubernetes/pki/etcd,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:&Probe{Handler:Handler{Exec:nil,HTTPGet:&HTTPGetAction{Path:/health,Port:{0 2381 },Host:127.0.0.1,Scheme:HTTP,HTTPHeaders:[]HTTPHeader{},},TCPSocket:nil,},InitialDelaySeconds:15,TimeoutSeconds:15,PeriodSeconds:10,SuccessThreshold:1,FailureThreshold:8,},ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:nil,Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:,DeprecatedServiceAccount:,NodeName:kind-control-plane,HostNetwork:true,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},},HostAliases:[]HostAlias{},PriorityClassName:system-cluster-critical,Priority:*2000000000,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.3,PodIP:172.17.0.3,StartTime:2020-01-20 14:47:36 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:etcd,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:47:09 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:nil,},Ready:true,RestartCount:0,Image:k8s.gcr.io/etcd:3.4.3-0,ImageID:sha256:303ce5db0e90dab1c5728ec70d21091201a23cdf8aeca70ab54943bbaaf0833f,ContainerID:containerd://1f4bd7b1bee01ebfda8a7c0339b7bafbd8e8e648183a28e8adbabef9918531c9,Started:*true,},},QOSClass:BestEffort,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:172.17.0.3,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{kindnet-cw729 kindnet- kube-system /api/v1/namespaces/kube-system/pods/kindnet-cw729 5c2f7f6d-3d19-4b84-ab70-3e1afa54d2bd 554 0 2020-01-20 14:47:54 +1300 NZDT <nil> <nil> map[app:kindnet controller-revision-hash:5b955bbc76 k8s-app:kindnet pod-template-generation:1 tier:node] map[] [{apps/v1 DaemonSet kindnet 7a8cd7b6-9468-41b4-8f80-15ccdfe421e1 0xc0004fd5a7 0xc0004fd5a8}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:cni-cfg,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/cni/net.d,Type:*,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:xtables-lock,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/run/xtables.lock,Type:*FileOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:lib-modules,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/lib/modules,Type:*,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:kindnet-token-5m7k9,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:kindnet-token-5m7k9,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:kindnet-cni,Image:kindest/kindnetd:0.5.4,Command:[],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{EnvVar{Name:HOST_IP,Value:,ValueFrom:&EnvVarSource{FieldRef:&ObjectFieldSelector{APIVersion:v1,FieldPath:status.hostIP,},ResourceFieldRef:nil,ConfigMapKeyRef:nil,SecretKeyRef:nil,},},EnvVar{Name:POD_IP,Value:,ValueFrom:&EnvVarSource{FieldRef:&ObjectFieldSelector{APIVersion:v1,FieldPath:status.podIP,},ResourceFieldRef:nil,ConfigMapKeyRef:nil,SecretKeyRef:nil,},},EnvVar{Name:POD_SUBNET,Value:10.244.0.0/16,ValueFrom:nil,},},Resources:ResourceRequirements{Limits:ResourceList{cpu: {{100 -3} {<nil>} 100m DecimalSI},memory: {{52428800 0} {<nil>} 50Mi BinarySI},},Requests:ResourceList{cpu: {{100 -3} {<nil>} 100m DecimalSI},memory: {{52428800 0} {<nil>} 50Mi BinarySI},},},VolumeMounts:[]VolumeMount{VolumeMount{Name:cni-cfg,ReadOnly:false,MountPath:/etc/cni/net.d,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:xtables-lock,ReadOnly:false,MountPath:/run/xtables.lock,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:lib-modules,ReadOnly:true,MountPath:/lib/modules,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:kindnet-token-5m7k9,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:nil,ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:&SecurityContext{Capabilities:&Capabilities{Add:[NET_RAW NET_ADMIN],Drop:[],},Privileged:*false,SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,ReadOnlyRootFilesystem:nil,AllowPrivilegeEscalation:nil,RunAsGroup:nil,ProcMount:nil,WindowsOptions:nil,},Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:kindnet,DeprecatedServiceAccount:kindnet,NodeName:kind-worker,HostNetwork:true,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:&Affinity{NodeAffinity:&NodeAffinity{RequiredDuringSchedulingIgnoredDuringExecution:&NodeSelector{NodeSelectorTerms:[]NodeSelectorTerm{NodeSelectorTerm{MatchExpressions:[]NodeSelectorRequirement{},MatchFields:[]NodeSelectorRequirement{NodeSelectorRequirement{Key:metadata.name,Operator:In,Values:[kind-worker],},},},},},PreferredDuringSchedulingIgnoredDuringExecution:[]PreferredSchedulingTerm{},},PodAffinity:nil,PodAntiAffinity:nil,},SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/disk-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/memory-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/pid-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/unschedulable,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/network-unavailable,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},},HostAliases:[]HostAlias{},PriorityClassName:,Priority:*0,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:54 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:57 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:57 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:54 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.2,PodIP:172.17.0.2,StartTime:2020-01-20 14:47:54 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:kindnet-cni,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:47:57 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:nil,},Ready:true,RestartCount:0,Image:docker.io/kindest/kindnetd:0.5.4,ImageID:sha256:2186a1a396deb58f1ea5eaf20193a518ca05049b46ccd754ec83366b5c8c13d5,ContainerID:containerd://9df6c5f4ba1ccea489ed5f725ad6a4b97506dd4c2bce3cc2060559ad70216000,Started:*true,},},QOSClass:Guaranteed,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:172.17.0.2,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{kindnet-k8968 kindnet- kube-system /api/v1/namespaces/kube-system/pods/kindnet-k8968 863a777c-6793-497f-8f05-23e22470f49d 439 0 2020-01-20 14:47:32 +1300 NZDT <nil> <nil> map[app:kindnet controller-revision-hash:5b955bbc76 k8s-app:kindnet pod-template-generation:1 tier:node] map[] [{apps/v1 DaemonSet kindnet 7a8cd7b6-9468-41b4-8f80-15ccdfe421e1 0xc0004fdaa7 0xc0004fdaa8}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:cni-cfg,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/cni/net.d,Type:*,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:xtables-lock,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/run/xtables.lock,Type:*FileOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:lib-modules,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/lib/modules,Type:*,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:kindnet-token-5m7k9,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:kindnet-token-5m7k9,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:kindnet-cni,Image:kindest/kindnetd:0.5.4,Command:[],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{EnvVar{Name:HOST_IP,Value:,ValueFrom:&EnvVarSource{FieldRef:&ObjectFieldSelector{APIVersion:v1,FieldPath:status.hostIP,},ResourceFieldRef:nil,ConfigMapKeyRef:nil,SecretKeyRef:nil,},},EnvVar{Name:POD_IP,Value:,ValueFrom:&EnvVarSource{FieldRef:&ObjectFieldSelector{APIVersion:v1,FieldPath:status.podIP,},ResourceFieldRef:nil,ConfigMapKeyRef:nil,SecretKeyRef:nil,},},EnvVar{Name:POD_SUBNET,Value:10.244.0.0/16,ValueFrom:nil,},},Resources:ResourceRequirements{Limits:ResourceList{cpu: {{100 -3} {<nil>} 100m DecimalSI},memory: {{52428800 0} {<nil>} 50Mi BinarySI},},Requests:ResourceList{cpu: {{100 -3} {<nil>} 100m DecimalSI},memory: {{52428800 0} {<nil>} 50Mi BinarySI},},},VolumeMounts:[]VolumeMount{VolumeMount{Name:cni-cfg,ReadOnly:false,MountPath:/etc/cni/net.d,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:xtables-lock,ReadOnly:false,MountPath:/run/xtables.lock,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:lib-modules,ReadOnly:true,MountPath:/lib/modules,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:kindnet-token-5m7k9,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:nil,ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:&SecurityContext{Capabilities:&Capabilities{Add:[NET_RAW NET_ADMIN],Drop:[],},Privileged:*false,SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,ReadOnlyRootFilesystem:nil,AllowPrivilegeEscalation:nil,RunAsGroup:nil,ProcMount:nil,WindowsOptions:nil,},Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:kindnet,DeprecatedServiceAccount:kindnet,NodeName:kind-control-plane,HostNetwork:true,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:&Affinity{NodeAffinity:&NodeAffinity{RequiredDuringSchedulingIgnoredDuringExecution:&NodeSelector{NodeSelectorTerms:[]NodeSelectorTerm{NodeSelectorTerm{MatchExpressions:[]NodeSelectorRequirement{},MatchFields:[]NodeSelectorRequirement{NodeSelectorRequirement{Key:metadata.name,Operator:In,Values:[kind-control-plane],},},},},},PreferredDuringSchedulingIgnoredDuringExecution:[]PreferredSchedulingTerm{},},PodAffinity:nil,PodAntiAffinity:nil,},SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/disk-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/memory-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/pid-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/unschedulable,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/network-unavailable,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},},HostAliases:[]HostAlias{},PriorityClassName:,Priority:*0,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:39 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:39 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:32 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.3,PodIP:172.17.0.3,StartTime:2020-01-20 14:47:36 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:kindnet-cni,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:47:38 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:nil,},Ready:true,RestartCount:0,Image:docker.io/kindest/kindnetd:0.5.4,ImageID:sha256:2186a1a396deb58f1ea5eaf20193a518ca05049b46ccd754ec83366b5c8c13d5,ContainerID:containerd://a26d3c6343273e4769704a646ae4a3123bcc8b4170bedc6978d93a74605cc5e9,Started:*true,},},QOSClass:Guaranteed,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:172.17.0.3,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{kube-apiserver-kind-control-plane  kube-system /api/v1/namespaces/kube-system/pods/kube-apiserver-kind-control-plane 00e7f197-5961-4a61-aa2e-237713662804 437 0 2020-01-20 14:47:36 +1300 NZDT <nil> <nil> map[component:kube-apiserver tier:control-plane] map[kubernetes.io/config.hash:5fff307468a6a4c19d77f1bc34c06677 kubernetes.io/config.mirror:5fff307468a6a4c19d77f1bc34c06677 kubernetes.io/config.seen:2020-01-20T01:47:16.106548914Z kubernetes.io/config.source:file] [{v1 Node kind-control-plane c959c7f1-a0f6-4df9-853d-1943bceb8bb0 0xc0004fdf4c <nil>}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:ca-certs,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/ssl/certs,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:etc-ca-certificates,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/ca-certificates,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:k8s-certs,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/kubernetes/pki,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:usr-local-share-ca-certificates,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/usr/local/share/ca-certificates,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:usr-share-ca-certificates,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/usr/share/ca-certificates,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:kube-apiserver,Image:k8s.gcr.io/kube-apiserver:v1.17.0,Command:[kube-apiserver --advertise-address=172.17.0.3 --allow-privileged=true --audit-dynamic-configuration=true --authorization-mode=Node,RBAC --client-ca-file=/etc/kubernetes/pki/ca.crt --enable-admission-plugins=NodeRestriction --enable-bootstrap-token-auth=true --etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt --etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt --etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key --etcd-servers=https://127.0.0.1:2379 --feature-gates=DynamicAuditing=true --insecure-port=0 --kubelet-client-certificate=/etc/kubernetes/pki/apiserver-kubelet-client.crt --kubelet-client-key=/etc/kubernetes/pki/apiserver-kubelet-client.key --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname --proxy-client-cert-file=/etc/kubernetes/pki/front-proxy-client.crt --proxy-client-key-file=/etc/kubernetes/pki/front-proxy-client.key --requestheader-allowed-names=front-proxy-client --requestheader-client-ca-file=/etc/kubernetes/pki/front-proxy-ca.crt --requestheader-extra-headers-prefix=X-Remote-Extra- --requestheader-group-headers=X-Remote-Group --requestheader-username-headers=X-Remote-User --runtime-config=auditregistration.k8s.io/v1alpha1=true --secure-port=6443 --service-account-key-file=/etc/kubernetes/pki/sa.pub --service-cluster-ip-range=10.96.0.0/12 --tls-cert-file=/etc/kubernetes/pki/apiserver.crt --tls-private-key-file=/etc/kubernetes/pki/apiserver.key],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{cpu: {{250 -3} {<nil>} 250m DecimalSI},},},VolumeMounts:[]VolumeMount{VolumeMount{Name:ca-certs,ReadOnly:true,MountPath:/etc/ssl/certs,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:etc-ca-certificates,ReadOnly:true,MountPath:/etc/ca-certificates,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:k8s-certs,ReadOnly:true,MountPath:/etc/kubernetes/pki,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:usr-local-share-ca-certificates,ReadOnly:true,MountPath:/usr/local/share/ca-certificates,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:usr-share-ca-certificates,ReadOnly:true,MountPath:/usr/share/ca-certificates,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:&Probe{Handler:Handler{Exec:nil,HTTPGet:&HTTPGetAction{Path:/healthz,Port:{0 6443 },Host:172.17.0.3,Scheme:HTTPS,HTTPHeaders:[]HTTPHeader{},},TCPSocket:nil,},InitialDelaySeconds:15,TimeoutSeconds:15,PeriodSeconds:10,SuccessThreshold:1,FailureThreshold:8,},ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:nil,Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:,DeprecatedServiceAccount:,NodeName:kind-control-plane,HostNetwork:true,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},},HostAliases:[]HostAlias{},PriorityClassName:system-cluster-critical,Priority:*2000000000,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.3,PodIP:172.17.0.3,StartTime:2020-01-20 14:47:36 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:kube-apiserver,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:47:09 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:nil,},Ready:true,RestartCount:0,Image:k8s.gcr.io/kube-apiserver:v1.17.0,ImageID:sha256:134ad2332e042bc29f04b6e705265192e5a15ebffe09f4e5006bcef7fbf3baa5,ContainerID:containerd://a5b61ad379ed097580dd64e05212ef9229fc7b2d67cba36393693ef9e838d8c2,Started:*true,},},QOSClass:Burstable,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:172.17.0.3,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{kube-controller-manager-kind-control-plane  kube-system /api/v1/namespaces/kube-system/pods/kube-controller-manager-kind-control-plane bb608490-5e64-4d0c-a584-1cb9eba15170 498309 0 2020-01-20 14:47:36 +1300 NZDT <nil> <nil> map[component:kube-controller-manager tier:control-plane] map[kubernetes.io/config.hash:15e79e27a50d92dc481a5aaaad4399d8 kubernetes.io/config.mirror:15e79e27a50d92dc481a5aaaad4399d8 kubernetes.io/config.seen:2020-01-20T01:47:16.106551108Z kubernetes.io/config.source:file] [{v1 Node kind-control-plane c959c7f1-a0f6-4df9-853d-1943bceb8bb0 0xc0003f8438 <nil>}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:ca-certs,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/ssl/certs,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:etc-ca-certificates,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/ca-certificates,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:flexvolume-dir,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/usr/libexec/kubernetes/kubelet-plugins/volume/exec,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:k8s-certs,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/kubernetes/pki,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:kubeconfig,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/kubernetes/controller-manager.conf,Type:*FileOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:usr-local-share-ca-certificates,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/usr/local/share/ca-certificates,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:usr-share-ca-certificates,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/usr/share/ca-certificates,Type:*DirectoryOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:kube-controller-manager,Image:k8s.gcr.io/kube-controller-manager:v1.17.0,Command:[kube-controller-manager --allocate-node-cidrs=true --authentication-kubeconfig=/etc/kubernetes/controller-manager.conf --authorization-kubeconfig=/etc/kubernetes/controller-manager.conf --bind-address=127.0.0.1 --client-ca-file=/etc/kubernetes/pki/ca.crt --cluster-cidr=10.244.0.0/16 --cluster-signing-cert-file=/etc/kubernetes/pki/ca.crt --cluster-signing-key-file=/etc/kubernetes/pki/ca.key --controllers=*,bootstrapsigner,tokencleaner --enable-hostpath-provisioner=true --kubeconfig=/etc/kubernetes/controller-manager.conf --leader-elect=true --node-cidr-mask-size=24 --requestheader-client-ca-file=/etc/kubernetes/pki/front-proxy-ca.crt --root-ca-file=/etc/kubernetes/pki/ca.crt --service-account-private-key-file=/etc/kubernetes/pki/sa.key --service-cluster-ip-range=10.96.0.0/12 --use-service-account-credentials=true],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{cpu: {{200 -3} {<nil>} 200m DecimalSI},},},VolumeMounts:[]VolumeMount{VolumeMount{Name:ca-certs,ReadOnly:true,MountPath:/etc/ssl/certs,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:etc-ca-certificates,ReadOnly:true,MountPath:/etc/ca-certificates,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:flexvolume-dir,ReadOnly:false,MountPath:/usr/libexec/kubernetes/kubelet-plugins/volume/exec,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:k8s-certs,ReadOnly:true,MountPath:/etc/kubernetes/pki,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:kubeconfig,ReadOnly:true,MountPath:/etc/kubernetes/controller-manager.conf,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:usr-local-share-ca-certificates,ReadOnly:true,MountPath:/usr/local/share/ca-certificates,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:usr-share-ca-certificates,ReadOnly:true,MountPath:/usr/share/ca-certificates,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:&Probe{Handler:Handler{Exec:nil,HTTPGet:&HTTPGetAction{Path:/healthz,Port:{0 10257 },Host:127.0.0.1,Scheme:HTTPS,HTTPHeaders:[]HTTPHeader{},},TCPSocket:nil,},InitialDelaySeconds:15,TimeoutSeconds:15,PeriodSeconds:10,SuccessThreshold:1,FailureThreshold:8,},ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:nil,Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:,DeprecatedServiceAccount:,NodeName:kind-control-plane,HostNetwork:true,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},},HostAliases:[]HostAlias{},PriorityClassName:system-cluster-critical,Priority:*2000000000,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 16:06:18 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 16:06:18 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.3,PodIP:172.17.0.3,StartTime:2020-01-20 14:47:36 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:kube-controller-manager,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-22 16:06:18 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:&ContainerStateTerminated{ExitCode:255,Signal:0,Reason:Error,Message:,StartedAt:2020-01-22 13:35:39 +1300 NZDT,FinishedAt:2020-01-22 16:06:05 +1300 NZDT,ContainerID:containerd://dd6f11189bc0c6c12d223cea6742479896d83f2275d33d2095384366b405724c,},},Ready:true,RestartCount:3,Image:k8s.gcr.io/kube-controller-manager:v1.17.0,ImageID:sha256:7818d75a7d002a3c1bb6e9d8fe4416e75ee7df87b57585ab4f8ef01ccba1ddaa,ContainerID:containerd://eab8751b274648a39a8f5f7a3f11c71975124347b1a32870b87a9fe1ae01460e,Started:*true,},},QOSClass:Burstable,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:172.17.0.3,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{kube-proxy-wgxtr kube-proxy- kube-system /api/v1/namespaces/kube-system/pods/kube-proxy-wgxtr c76188c9-d1ce-4d03-8f03-1e6b20fa5981 552 0 2020-01-20 14:47:54 +1300 NZDT <nil> <nil> map[controller-revision-hash:68bd87b66 k8s-app:kube-proxy pod-template-generation:1] map[] [{apps/v1 DaemonSet kube-proxy a2f51267-37b5-4141-ac15-a003146d0daa 0xc0003f8819 0xc0003f881a}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:kube-proxy,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:&ConfigMapVolumeSource{LocalObjectReference:LocalObjectReference{Name:kube-proxy,},Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:xtables-lock,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/run/xtables.lock,Type:*FileOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:lib-modules,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/lib/modules,Type:*,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:kube-proxy-token-x2ldq,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:kube-proxy-token-x2ldq,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:kube-proxy,Image:k8s.gcr.io/kube-proxy:v1.17.0,Command:[/usr/local/bin/kube-proxy --config=/var/lib/kube-proxy/config.conf --hostname-override=$(NODE_NAME)],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{EnvVar{Name:NODE_NAME,Value:,ValueFrom:&EnvVarSource{FieldRef:&ObjectFieldSelector{APIVersion:v1,FieldPath:spec.nodeName,},ResourceFieldRef:nil,ConfigMapKeyRef:nil,SecretKeyRef:nil,},},},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{},},VolumeMounts:[]VolumeMount{VolumeMount{Name:kube-proxy,ReadOnly:false,MountPath:/var/lib/kube-proxy,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:xtables-lock,ReadOnly:false,MountPath:/run/xtables.lock,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:lib-modules,ReadOnly:true,MountPath:/lib/modules,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:kube-proxy-token-x2ldq,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:nil,ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:&SecurityContext{Capabilities:nil,Privileged:*true,SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,ReadOnlyRootFilesystem:nil,AllowPrivilegeEscalation:nil,RunAsGroup:nil,ProcMount:nil,WindowsOptions:nil,},Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{beta.kubernetes.io/os: linux,},ServiceAccountName:kube-proxy,DeprecatedServiceAccount:kube-proxy,NodeName:kind-worker,HostNetwork:true,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:&Affinity{NodeAffinity:&NodeAffinity{RequiredDuringSchedulingIgnoredDuringExecution:&NodeSelector{NodeSelectorTerms:[]NodeSelectorTerm{NodeSelectorTerm{MatchExpressions:[]NodeSelectorRequirement{},MatchFields:[]NodeSelectorRequirement{NodeSelectorRequirement{Key:metadata.name,Operator:In,Values:[kind-worker],},},},},},PreferredDuringSchedulingIgnoredDuringExecution:[]PreferredSchedulingTerm{},},PodAffinity:nil,PodAntiAffinity:nil,},SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:CriticalAddonsOnly,Operator:Exists,Value:,Effect:,TolerationSeconds:nil,},Toleration{Key:,Operator:Exists,Value:,Effect:,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/disk-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/memory-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/pid-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/unschedulable,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/network-unavailable,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},},HostAliases:[]HostAlias{},PriorityClassName:system-node-critical,Priority:*2000001000,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:54 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:57 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:57 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:54 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.2,PodIP:172.17.0.2,StartTime:2020-01-20 14:47:54 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:kube-proxy,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:47:57 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:nil,},Ready:true,RestartCount:0,Image:k8s.gcr.io/kube-proxy:v1.17.0,ImageID:sha256:551eaeb500fdaec537c29e7eaf6aa121d8d7e4ce16d74e670b4aec89d93da126,ContainerID:containerd://919e9bef8637566ebff67f6b2d7d0fca2834bcaf3433ba561d780635829c052d,Started:*true,},},QOSClass:BestEffort,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:172.17.0.2,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{kube-proxy-z6hkf kube-proxy- kube-system /api/v1/namespaces/kube-system/pods/kube-proxy-z6hkf 8d3d7ef8-909d-4d41-a263-1948534d8823 443 0 2020-01-20 14:47:32 +1300 NZDT <nil> <nil> map[controller-revision-hash:68bd87b66 k8s-app:kube-proxy pod-template-generation:1] map[] [{apps/v1 DaemonSet kube-proxy a2f51267-37b5-4141-ac15-a003146d0daa 0xc0003f8cd9 0xc0003f8cda}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:kube-proxy,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:&ConfigMapVolumeSource{LocalObjectReference:LocalObjectReference{Name:kube-proxy,},Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:xtables-lock,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/run/xtables.lock,Type:*FileOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:lib-modules,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/lib/modules,Type:*,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:kube-proxy-token-x2ldq,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:kube-proxy-token-x2ldq,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:kube-proxy,Image:k8s.gcr.io/kube-proxy:v1.17.0,Command:[/usr/local/bin/kube-proxy --config=/var/lib/kube-proxy/config.conf --hostname-override=$(NODE_NAME)],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{EnvVar{Name:NODE_NAME,Value:,ValueFrom:&EnvVarSource{FieldRef:&ObjectFieldSelector{APIVersion:v1,FieldPath:spec.nodeName,},ResourceFieldRef:nil,ConfigMapKeyRef:nil,SecretKeyRef:nil,},},},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{},},VolumeMounts:[]VolumeMount{VolumeMount{Name:kube-proxy,ReadOnly:false,MountPath:/var/lib/kube-proxy,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:xtables-lock,ReadOnly:false,MountPath:/run/xtables.lock,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:lib-modules,ReadOnly:true,MountPath:/lib/modules,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:kube-proxy-token-x2ldq,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:nil,ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:&SecurityContext{Capabilities:nil,Privileged:*true,SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,ReadOnlyRootFilesystem:nil,AllowPrivilegeEscalation:nil,RunAsGroup:nil,ProcMount:nil,WindowsOptions:nil,},Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{beta.kubernetes.io/os: linux,},ServiceAccountName:kube-proxy,DeprecatedServiceAccount:kube-proxy,NodeName:kind-control-plane,HostNetwork:true,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:&Affinity{NodeAffinity:&NodeAffinity{RequiredDuringSchedulingIgnoredDuringExecution:&NodeSelector{NodeSelectorTerms:[]NodeSelectorTerm{NodeSelectorTerm{MatchExpressions:[]NodeSelectorRequirement{},MatchFields:[]NodeSelectorRequirement{NodeSelectorRequirement{Key:metadata.name,Operator:In,Values:[kind-control-plane],},},},},},PreferredDuringSchedulingIgnoredDuringExecution:[]PreferredSchedulingTerm{},},PodAffinity:nil,PodAntiAffinity:nil,},SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:CriticalAddonsOnly,Operator:Exists,Value:,Effect:,TolerationSeconds:nil,},Toleration{Key:,Operator:Exists,Value:,Effect:,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/disk-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/memory-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/pid-pressure,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/unschedulable,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/network-unavailable,Operator:Exists,Value:,Effect:NoSchedule,TolerationSeconds:nil,},},HostAliases:[]HostAlias{},PriorityClassName:system-node-critical,Priority:*2000001000,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:39 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:39 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:32 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.3,PodIP:172.17.0.3,StartTime:2020-01-20 14:47:36 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:kube-proxy,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-20 14:47:38 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:nil,},Ready:true,RestartCount:0,Image:k8s.gcr.io/kube-proxy:v1.17.0,ImageID:sha256:551eaeb500fdaec537c29e7eaf6aa121d8d7e4ce16d74e670b4aec89d93da126,ContainerID:containerd://b1a6c89aa135ca18cc089002f3043395d8c4eb0ffc463348de8c4f3d846c199b,Started:*true,},},QOSClass:BestEffort,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:172.17.0.3,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{kube-scheduler-kind-control-plane  kube-system /api/v1/namespaces/kube-system/pods/kube-scheduler-kind-control-plane 8a96ea65-7cb1-4d04-8621-bea3e0bf047c 498310 0 2020-01-20 14:47:37 +1300 NZDT <nil> <nil> map[component:kube-scheduler tier:control-plane] map[kubernetes.io/config.hash:ff67867321338ffd885039e188f6b424 kubernetes.io/config.mirror:ff67867321338ffd885039e188f6b424 kubernetes.io/config.seen:2020-01-20T01:47:16.106553603Z kubernetes.io/config.source:file] [{v1 Node kind-control-plane c959c7f1-a0f6-4df9-853d-1943bceb8bb0 0xc0003f9168 <nil>}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:kubeconfig,VolumeSource:VolumeSource{HostPath:&HostPathVolumeSource{Path:/etc/kubernetes/scheduler.conf,Type:*FileOrCreate,},EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:kube-scheduler,Image:k8s.gcr.io/kube-scheduler:v1.17.0,Command:[kube-scheduler --authentication-kubeconfig=/etc/kubernetes/scheduler.conf --authorization-kubeconfig=/etc/kubernetes/scheduler.conf --bind-address=127.0.0.1 --kubeconfig=/etc/kubernetes/scheduler.conf --leader-elect=true],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{cpu: {{100 -3} {<nil>} 100m DecimalSI},},},VolumeMounts:[]VolumeMount{VolumeMount{Name:kubeconfig,ReadOnly:true,MountPath:/etc/kubernetes/scheduler.conf,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:&Probe{Handler:Handler{Exec:nil,HTTPGet:&HTTPGetAction{Path:/healthz,Port:{0 10259 },Host:127.0.0.1,Scheme:HTTPS,HTTPHeaders:[]HTTPHeader{},},TCPSocket:nil,},InitialDelaySeconds:15,TimeoutSeconds:15,PeriodSeconds:10,SuccessThreshold:1,FailureThreshold:8,},ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:nil,Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{},ServiceAccountName:,DeprecatedServiceAccount:,NodeName:kind-control-plane,HostNetwork:true,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:nil,},},HostAliases:[]HostAlias{},PriorityClassName:system-cluster-critical,Priority:*2000000000,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 16:06:18 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 16:06:18 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:36 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.3,PodIP:172.17.0.3,StartTime:2020-01-20 14:47:36 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:kube-scheduler,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-22 16:06:18 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:&ContainerStateTerminated{ExitCode:255,Signal:0,Reason:Error,Message:,StartedAt:2020-01-22 13:35:39 +1300 NZDT,FinishedAt:2020-01-22 16:06:04 +1300 NZDT,ContainerID:containerd://c8d34c85377576824a0ef818fc4a6fa91b1bf2aae5078896c5959a47c82e28b0,},},Ready:true,RestartCount:3,Image:k8s.gcr.io/kube-scheduler:v1.17.0,ImageID:sha256:09a204f38b41d064525714a9cb87782dc74442fb648ff40c85264c2e96f431e1,ContainerID:containerd://b3a7f39603765c836800731dec156e79046ec9d9d3d3a3c5474a3654503bcfef,Started:*true,},},QOSClass:Burstable,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:172.17.0.3,},},EphemeralContainerStatuses:[]ContainerStatus{},},},Pod{ObjectMeta:{local-path-provisioner-7745554f7f-z2dms local-path-provisioner-7745554f7f- local-path-storage /api/v1/namespaces/local-path-storage/pods/local-path-provisioner-7745554f7f-z2dms b6320929-13a1-4018-9672-d1cdc0bd97b1 498311 0 2020-01-20 14:47:31 +1300 NZDT <nil> <nil> map[app:local-path-provisioner pod-template-hash:7745554f7f] map[] [{apps/v1 ReplicaSet local-path-provisioner-7745554f7f 1ec5f80b-bf70-4b3f-97f9-e46ce323220a 0xc0003f9457 0xc0003f9458}] []  []},Spec:PodSpec{Volumes:[]Volume{Volume{Name:config-volume,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:nil,NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:&ConfigMapVolumeSource{LocalObjectReference:LocalObjectReference{Name:local-path-config,},Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},Volume{Name:local-path-provisioner-service-account-token-df622,VolumeSource:VolumeSource{HostPath:nil,EmptyDir:nil,GCEPersistentDisk:nil,AWSElasticBlockStore:nil,GitRepo:nil,Secret:&SecretVolumeSource{SecretName:local-path-provisioner-service-account-token-df622,Items:[]KeyToPath{},DefaultMode:*420,Optional:nil,},NFS:nil,ISCSI:nil,Glusterfs:nil,PersistentVolumeClaim:nil,RBD:nil,FlexVolume:nil,Cinder:nil,CephFS:nil,Flocker:nil,DownwardAPI:nil,FC:nil,AzureFile:nil,ConfigMap:nil,VsphereVolume:nil,Quobyte:nil,AzureDisk:nil,PhotonPersistentDisk:nil,PortworxVolume:nil,ScaleIO:nil,Projected:nil,StorageOS:nil,CSI:nil,},},},Containers:[]Container{Container{Name:local-path-provisioner,Image:rancher/local-path-provisioner:v0.0.11,Command:[local-path-provisioner --debug start --helper-image k8s.gcr.io/debian-base:v2.0.0 --config /etc/config/config.json],Args:[],WorkingDir:,Ports:[]ContainerPort{},Env:[]EnvVar{EnvVar{Name:POD_NAMESPACE,Value:,ValueFrom:&EnvVarSource{FieldRef:&ObjectFieldSelector{APIVersion:v1,FieldPath:metadata.namespace,},ResourceFieldRef:nil,ConfigMapKeyRef:nil,SecretKeyRef:nil,},},},Resources:ResourceRequirements{Limits:ResourceList{},Requests:ResourceList{},},VolumeMounts:[]VolumeMount{VolumeMount{Name:config-volume,ReadOnly:false,MountPath:/etc/config/,SubPath:,MountPropagation:nil,SubPathExpr:,},VolumeMount{Name:local-path-provisioner-service-account-token-df622,ReadOnly:true,MountPath:/var/run/secrets/kubernetes.io/serviceaccount,SubPath:,MountPropagation:nil,SubPathExpr:,},},LivenessProbe:nil,ReadinessProbe:nil,Lifecycle:nil,TerminationMessagePath:/dev/termination-log,ImagePullPolicy:IfNotPresent,SecurityContext:nil,Stdin:false,StdinOnce:false,TTY:false,EnvFrom:[]EnvFromSource{},TerminationMessagePolicy:File,VolumeDevices:[]VolumeDevice{},StartupProbe:nil,},},RestartPolicy:Always,TerminationGracePeriodSeconds:*30,ActiveDeadlineSeconds:nil,DNSPolicy:ClusterFirst,NodeSelector:map[string]string{node-role.kubernetes.io/master: ,},ServiceAccountName:local-path-provisioner-service-account,DeprecatedServiceAccount:local-path-provisioner-service-account,NodeName:kind-control-plane,HostNetwork:false,HostPID:false,HostIPC:false,SecurityContext:&PodSecurityContext{SELinuxOptions:nil,RunAsUser:nil,RunAsNonRoot:nil,SupplementalGroups:[],FSGroup:nil,RunAsGroup:nil,Sysctls:[]Sysctl{},WindowsOptions:nil,},ImagePullSecrets:[]LocalObjectReference{},Hostname:,Subdomain:,Affinity:nil,SchedulerName:default-scheduler,InitContainers:[]Container{},AutomountServiceAccountToken:nil,Tolerations:[]Toleration{Toleration{Key:node-role.kubernetes.io/master,Operator:Equal,Value:,Effect:NoSchedule,TolerationSeconds:nil,},Toleration{Key:node.kubernetes.io/not-ready,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},Toleration{Key:node.kubernetes.io/unreachable,Operator:Exists,Value:,Effect:NoExecute,TolerationSeconds:*300,},},HostAliases:[]HostAlias{},PriorityClassName:,Priority:*0,DNSConfig:nil,ShareProcessNamespace:nil,ReadinessGates:[]PodReadinessGate{},RuntimeClassName:nil,EnableServiceLinks:*true,PreemptionPolicy:nil,Overhead:ResourceList{},TopologySpreadConstraints:[]TopologySpreadConstraint{},EphemeralContainers:[]EphemeralContainer{},},Status:PodStatus{Phase:Running,Conditions:[]PodCondition{PodCondition{Type:Initialized,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:48 +1300 NZDT,Reason:,Message:,},PodCondition{Type:Ready,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 16:06:18 +1300 NZDT,Reason:,Message:,},PodCondition{Type:ContainersReady,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-22 16:06:18 +1300 NZDT,Reason:,Message:,},PodCondition{Type:PodScheduled,Status:True,LastProbeTime:0001-01-01 00:00:00 +0000 UTC,LastTransitionTime:2020-01-20 14:47:48 +1300 NZDT,Reason:,Message:,},},Message:,Reason:,HostIP:172.17.0.3,PodIP:10.244.0.3,StartTime:2020-01-20 14:47:48 +1300 NZDT,ContainerStatuses:[]ContainerStatus{ContainerStatus{Name:local-path-provisioner,State:ContainerState{Waiting:nil,Running:&ContainerStateRunning{StartedAt:2020-01-22 16:06:18 +1300 NZDT,},Terminated:nil,},LastTerminationState:ContainerState{Waiting:nil,Running:nil,Terminated:&ContainerStateTerminated{ExitCode:255,Signal:0,Reason:Error,Message:,StartedAt:2020-01-22 13:35:39 +1300 NZDT,FinishedAt:2020-01-22 16:06:06 +1300 NZDT,ContainerID:containerd://cffbbd4aac241dd968916afcfba211c9712534f9b0fee34557f2124ce230f8d7,},},Ready:true,RestartCount:3,Image:docker.io/rancher/local-path-provisioner:v0.0.11,ImageID:sha256:9d12f9848b99f4e5f5271b7cac02790de44ec12014762a83987cfff7f3c26106,ContainerID:containerd://d3f0a3ab175ce15425e09e93033b9c19776626346cb5d4aaabab79229783bfcc,Started:*true,},},QOSClass:BestEffort,InitContainerStatuses:[]ContainerStatus{},NominatedNodeName:,PodIPs:[]PodIP{PodIP{IP:10.244.0.3,},},EphemeralContainerStatuses:[]ContainerStatus{},},},},}
+   [status] complete
+   #+end_src
+
+* Verify with APISnoop                                               :export:
+Discover useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent from audit_event where bucket='apisnoop' and useragent not like 'kube%' and useragent not like 'coredns%' and useragent not like 'kindnetd%' and useragent like 'live%';
+  #+end_src
+
+Display endpoints hit by the test:
+#+begin_src sql-mode :exports both :session none
+select * from endpoints_hit_by_new_test where useragent like 'live%'; 
+#+end_src
+
+Show the change in coverage after the mock test:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select * from projected_change_in_coverage;
+  #+end_src
+
+* Final notes :export:
+If a test with these calls gets merged, **Conformance coverage will go up by 2 points**
+
+-----  
+/sig testing
+ 
+/sig architecture  
+
+/area conformance  
+
+
+* Open Tasks
+  Set any open tasks here, using org-todo
+** DONE Live Your Best Life
+** Comments
+   #+begin_src sql-mode
+COMMENT ON TABLE bucket_job_swagger IS 'raw data taken from audit events relevant swagger.json';
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src sql-mode
+   COMMENT
+   #+end_src
+   
+   #+begin_src sql-mode
+   \d+ 
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src sql-mode
+                                                                 List of relations
+    Schema |               Name               |       Type        |  Owner   |  Size   |                      Description                       
+   --------+----------------------------------+-------------------+----------+---------+--------------------------------------------------------
+    public | api_operation_material           | materialized view | apisnoop | 3688 kB | 
+    public | api_operation_parameter_material | materialized view | apisnoop | 6016 kB | 
+    public | audit_event                      | view              | apisnoop | 0 bytes | 
+    public | bucket_job_swagger               | table             | apisnoop | 3712 kB | raw data taken from audit events relevant swagger.json
+    public | change_in_coverage               | view              | apisnoop | 0 bytes | 
+    public | change_in_tests                  | view              | apisnoop | 0 bytes | 
+    public | endpoint_coverage                | view              | apisnoop | 0 bytes | 
+    public | endpoints_hit_by_new_test        | view              | apisnoop | 0 bytes | 
+    public | projected_change_in_coverage     | view              | apisnoop | 0 bytes | 
+    public | raw_audit_event                  | table             | apisnoop | 407 MB  | 
+    public | stable_endpoint_stats            | view              | apisnoop | 0 bytes | 
+    public | untested_stable_core_endpoints   | view              | apisnoop | 0 bytes | 
+   (12 rows)
+
+   #+end_src
+
+* Footnotes :neverexport:
+  :PROPERTIES:
+  :CUSTOM_ID: footnotes
+  :END:
+** Load Logs to Help Debug Cluster
+   #:PROPERTIES:
+   #:header-args:tmate+: :prologue (concat "cd " (file-name-directory buffer-file-name) "../../apisnoop/apps\n. .loadenv\n")
+   #:END:
+*** hasura logs
+
+    #+BEGIN_SRC tmate :eval never-export :session foo:hasura_logs
+      HASURA_POD=$(\
+                   kubectl get pod --selector=io.apisnoop.graphql=hasura -o name \
+                       | sed s:pod/::)
+      kubectl logs $HASURA_POD -f
+    #+END_SRC
+
+*** postgres logs
+
+    #+BEGIN_SRC tmate :eval never-export :session foo:postgres_logs
+      POSTGRES_POD=$(\
+                     kubectl get pod --selector=io.apisnoop.db=postgres -o name \
+                         | sed s:pod/::)
+      kubectl logs $POSTGRES_POD -f
+    #+END_SRC
+
+*** auditlogger logs
+
+    #+BEGIN_SRC tmate :eval never-export :session foo:postgres_logs
+      AUDITLOGGER_POD=$(\
+                     kubectl get pod --selector=app=apisnoop-auditlogger -o name \
+                         | sed s:pod/::)
+      kubectl logs $AUDITLOGGER_POD -f
+    #+END_SRC
+
+** Manually load swagger or audit events
+   If you ran through the full setup, but were getting 0's in the stable_endpint_stats, it means the table migrations were successful, but no data was loaded.
+
+   You can verify data loaded with the below query.  ~bucket_job_swagger~ should have a size around 3600kb and raw_audit_event should have a size around 412mb.
+
+   #+NAME: Verify Data Loaded
+   #+begin_src sql-mode
+     \dt+
+   #+end_src
+
+   #+RESULTS:
+   #+begin_src sql-mode
+     List of relations
+       Schema |        Name        | Type  |  Owner   |  Size   | Description
+       --------+--------------------+-------+----------+---------+-------------
+       public | bucket_job_swagger | table | apisnoop | 3600 kB |
+       public | raw_audit_event    | table | apisnoop | 412 MB  |
+       (2 rows)
+
+   #+end_src
+
+   If either shows a size of ~8192 bytes~, you'll want to manually load it, refresh materialized views, then check again.
+
+   if you want to load a particular bucket or job, you can name them as the first and second argument of these functions.
+   e.g
+   : select * from load)swagger('ci-kubernetes-beta', 1122334344);
+   will load that specific bucket/job combo.
+   : select * from load_swagger('ci-kubernetes-beta');
+   will load the latest successful test run for ~ci-kubernetes-beta~
+   : select * from load_swagger('ci-kubernetes-beta', null, true);
+   will load the latest successful test run for ~ci-kubernetes-beta~, but with bucket and job set to 'apisnoop/live' (used for testing).
+   #+NAME: Manually load swaggers
+   #+begin_src sql-mode
+     select * from load_swagger();
+     select * from load_swagger(null, null, true);
+   #+end_src
+
+   #+NAME: Manually load audit events
+   #+begin_src sql-mode
+     select * from load_audit_events();
+   #+end_src
+
+   #+NAME: Refresh Materialized Views
+   #+begin_src sql-mode
+     REFRESH MATERIALIZED VIEW api_operation_material;
+     REFRESH MATERIALIZED VIEW api_operation_parameter_material;
+   #+end_src
+** 200: stuff
+*** 250: api_schema view
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/250_view_api_schema.up.sql
+    :END:
+**** Create
+
+  #+NAME: api_schema view
+  #+BEGIN_SRC sql-mode 
+    CREATE OR REPLACE VIEW "public"."api_schema" AS 
+     SELECT 
+        bjs.bucket,
+        bjs.job,
+        d.key AS schema_name,
+        (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'kind'::text) AS k8s_kind,
+        (d.value ->> 'type'::text) AS resource_type,
+        (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'version'::text) AS k8s_version,
+        (((d.value -> 'x-kubernetes-group-version-kind'::text) -> 0) ->> 'group'::text) AS k8s_group,
+        ARRAY(SELECT jsonb_array_elements_text(d.value -> 'required')) as required_fields,
+        (d.value -> 'properties'::text) AS properties,
+        d.value
+       FROM bucket_job_swagger bjs
+         , jsonb_each((bjs.swagger -> 'definitions'::text)) d(key, value)
+       GROUP BY bjs.bucket, bjs.job, d.key, d.value;
+
+  #+END_SRC
+
+  #+RESULTS: api_schema view
+  #+begin_src sql-mode
+  CREATE VIEW
+  #+end_src
+
+*** 260: api_schema_field view
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/260_view_api_schema_field.up.sql
+    :END:
+**** Create
+ #+NAME: api_schema_field view
+ #+BEGIN_SRC sql-mode 
+   CREATE OR REPLACE VIEW "public"."api_schema_field" AS 
+     SELECT api_schema.schema_name as field_schema,
+            d.key AS field_name,
+            replace(
+              CASE
+              WHEN d.value->>'type' = 'string' THEN 'string'
+              WHEN d.value->>'type' IS NULL THEN d.value->>'$ref'
+              WHEN d.value->>'type' = 'array'
+               AND d.value->'items'->> 'type' IS NULL
+                THEN d.value->'items'->>'$ref'
+              WHEN d.value->>'type' = 'array'
+               AND d.value->'items'->>'$ref' IS NULL
+                THEN d.value->'items'->>'type'
+              ELSE 'integer'::text
+              END, '#/definitions/','') AS field_kind,
+            CASE
+            WHEN d.value->>'type' IS NULL THEN 'subtype'
+            ELSE d.value->>'type'
+              END AS field_type,
+            d.value->>'description' AS description,
+            CASE
+            WHEN d.key = ANY(api_schema.required_fields) THEN true
+            ELSE false
+              END AS required,
+            CASE
+            WHEN (   d.value->>'description' ilike '%This field is alpha-level%'
+                  or d.value->>'description' ilike '%This is an alpha field%'
+                  or d.value->>'description' ilike '%This is an alpha feature%') THEN 'alpha'
+            WHEN (   d.value->>'description' ilike '%This field is beta-level%'
+                  or d.value->>'description' ilike '%This field is beta%'
+                  or d.value->>'description' ilike '%This is a beta feature%'
+                  or d.value->>'description' ilike '%This is an beta feature%'
+                  or d.value->>'description' ilike '%This is an beta field%') THEN 'beta'
+            ELSE 'ga'
+              END AS release,
+            CASE
+            WHEN  d.value->>'description' ilike '%deprecated%' THEN true
+             ELSE false
+             END AS deprecated,
+            CASE
+            WHEN ( d.value->>'description' ilike '%requires the % feature gate to be enabled%'
+                  or d.value->>'description' ilike '%depends on the % feature gate being enabled%'
+                  or d.value->>'description' ilike '%requires the % feature flag to be enabled%'
+                  or d.value->>'description' ilike '%honored if the API server enables the % feature gate%'
+                  or d.value->>'description' ilike '%honored by servers that enable the % feature%'
+                  or d.value->>'description' ilike '%requires enabling % feature gate%'
+                  or d.value->>'description' ilike '%honored by clusters that enables the % feature%'
+                  or d.value->>'description' ilike '%only if the % feature gate is enabled%'
+                  ) THEN true
+            ELSE false
+              END AS feature_gated,
+            d.value->>'format' AS format,
+            d.value->>'x-kubernetes-patch-merge-key' AS merge_key,
+            d.value->>'x-kubernetes-patch-strategy' AS patch_strategy,
+            api_schema.bucket,
+            api_schema.job,
+            d.value
+       FROM (api_schema
+             JOIN LATERAL jsonb_each(api_schema.properties) d(key, value) ON (true));
+ #+END_SRC
+
+ #+RESULTS: api_schema_field view
+ #+begin_src sql-mode
+ CREATE VIEW
+ #+end_src
+
+** 300: grkrv
+
+*** 310: Audit Events By GVKRV(Group, Version, Kind, Resource(s),Verb)
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/310_view_audit_event_by_gvkrv.up.sql
+    :END:
+  
+   This is a slim view, and will need to be updated to contain all useful info if/when we phase out operationID across reports.
+     #+NAME: events by gvkrv
+     #+BEGIN_SRC sql-mode :results silent
+       CREATE OR REPLACE VIEW "public"."audit_events_by_gvkrv" AS
+         SELECT
+           CASE
+           WHEN ((a.data -> 'objectRef' ->> 'apiGroup') IS NULL) THEN ''
+           ELSE (a.data -> 'objectRef' ->> 'apiGroup')
+                 END as api_group,
+           (a.data -> 'objectRef' ->>'apiVersion') as api_version,
+           (a.data -> 'requestObject'->>'kind') as kind,
+           a.param_schema as body_schema,
+           (a.data -> 'objectRef'->>'resource') as resource,
+             (a.data -> 'objectRef'->>'subresource') as sub_resource,
+           (a.data->>'verb') as event_verb,
+           operation_id,
+           audit_id,
+           split_part(a.useragent, '--', 2) as test,
+           split_part(a.useragent, '--', 1) as useragent,
+           (a.data -> 'requestObject') as request_object,
+           bucket,
+           job
+           FROM audit_event as a
+          where data->'requestObject' is not null;
+     #+END_SRC
+  
+** 400: Podspec Field Views
+   :PROPERTIES:
+   :header-args:sql-mode+: :results silent
+   :END:
+*** 400: kind_field_path_recursion
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/400_view_kind_field_recursion.up.sql
+    :END:
+ #+NAME: Recursive kind_field_path view
+ #+BEGIN_SRC sql-mode
+   create or replace recursive view kind_field_path_recursion(
+     kind,
+     field_path,
+     field_kind,
+     field_type,
+     sub_kind,
+     release,
+     deprecated,
+     gated,
+     required,
+     bucket,
+     job
+   ) AS
+    SELECT DISTINCT
+    sf.field_schema AS kind,
+    sf.field_name AS field_path, -- this becomes a path
+    sf.field_kind AS field_kind,
+    sf.field_type AS field_type,
+    sf.field_schema AS sub_kind, -- this is the kind at this level
+    sf.release AS release,
+    sf.deprecated AS deprecated, 
+    sf.feature_gated AS feature_gated,
+    sf.required AS required,
+    sf.bucket as bucket,
+    sf.job as job
+    from api_schema_field sf
+    UNION
+    SELECT
+     kfpr.kind AS kind,
+     ( kfpr.field_path || '.' || f.field_name ) AS field_path,
+     f.field_kind AS field_kind,
+     f.field_type AS field_type,
+     CASE
+     WHEN f.field_kind = 'string' OR f.field_kind = 'integer' THEN f.field_schema
+     ELSE f.field_kind
+      END as sub_kind,
+     f.release AS release,
+     f.deprecated AS deprecated,
+     f.feature_gated AS feature_gated,
+     f.required AS required,
+     kfpr.bucket,
+     kfpr.job
+     FROM api_schema_field f
+     INNER JOIN kind_field_path_recursion kfpr ON
+     f.field_schema = kfpr.field_kind
+     AND f.field_kind not like 'io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.%.JSONSchemaProps';
+   ;
+ #+END_SRC
+*** 410: kind_field_path_material
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/410_view_kind_field_path_material.up.sql
+    :END:
+ #+NAME: kind_field_path material
+ #+BEGIN_SRC sql-mode
+    create materialized view kind_field_path_material AS
+    select
+      kind,
+      field_path AS field_path,
+      field_kind AS field_kind,
+      field_type,
+      sub_kind,
+      release,
+      deprecated,
+      gated,
+      required,
+      bucket,
+      job
+     from kind_field_path_recursion;
+   -- drop materialized view kind_field_path_material cascade;
+ #+END_SRC
+**** kind_field_path_material indexes
+ #+NAME: kind_field_path_material indexs
+ #+BEGIN_SRC sql-mode
+ CREATE INDEX kfpm_kind_idx       ON kind_field_path_material (kind);
+ CREATE INDEX kfpm_field_path_idx ON kind_field_path_material (field_path);
+ CREATE INDEX kfpm_field_type_idx ON kind_field_path_material (field_type);
+ CREATE INDEX kfpm_sub_kind_idx   ON kind_field_path_material (sub_kind);
+ -- GIST requires ltree
+ -- CREATE INDEX kfpm_kind_idx       ON kind_field_path_material USING GIST (kind);
+ -- CREATE INDEX kfpm_field_path_idx ON kind_field_path_material USING GIST (field_path);
+ -- CREATE INDEX kfpm_field_type_idx ON kind_field_type_material USING GIST (field_type);
+ -- CREATE INDEX kfpm_sub_kind_idx   ON kind_field_path_material USING GIST (sub_kind);
+ #+END_SRC
+
+*** 420: kind_field_path view
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/420_view_kind_field_path.up.sql
+    :END:
+ #+NAME: kind_field_path view
+ #+BEGIN_SRC sql-mode
+   create or replace view kind_field_path AS
+   select
+     kind,
+     field_path,
+     field_kind,
+     field_type,
+     sub_kind,
+     release,
+     deprecated,
+     gated,
+     required,
+     bucket,
+     job
+    from kind_field_path_material where field_kind not like 'io%';
+ #+END_SRC
+
+*** 430: PodSpec Materialized View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/430_podspec_field_coverage_material.up.sql
+    :END:
+    
+    #+NAME: view podspec_field_coverage_material
+    #+BEGIN_SRC sql-mode :results silent
+      CREATE MATERIALIZED VIEW "public"."podspec_field_coverage_material" AS 
+      SELECT DISTINCT
+        bucket,
+        job,
+        api_group,
+        api_version,
+        kind,
+        event_verb,
+        resource,
+        sub_resource,
+        test,
+        useragent,
+        jsonb_object_keys(request_object -> 'spec'::text) AS podspec_field,
+        count(event_field.event_field) AS hits
+        FROM audit_events_by_gvkrv,
+             LATERAL
+               jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'spec'::text) event_field(event_field)
+       WHERE kind = 'Pod'
+         AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}')) -- api_version doesn't contain alpha or beta;
+       GROUP BY bucket, job, api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field
+            UNION
+      SELECT DISTINCT
+        bucket,
+        job,
+        api_group,
+        api_version,
+        kind,
+        event_verb,
+        resource,
+        sub_resource,
+        test,
+        useragent,
+        jsonb_object_keys(request_object -> 'template' -> 'spec'::text) AS podspec_field,
+        count(event_field.event_field) AS hits
+        FROM audit_events_by_gvkrv,
+             LATERAL
+               jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'template'-> 'spec'::text) event_field(event_field)
+       WHERE kind = 'PodTemplate'
+         AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+       GROUP BY bucket, job, api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field
+            UNION
+      SELECT DISTINCT
+        bucket,
+        job,
+        api_group,
+        api_version,
+        kind,
+        event_verb,
+        resource,
+        sub_resource,
+        test,
+        useragent,
+        jsonb_object_keys(request_object -> 'spec' -> 'template' -> 'spec'::text) AS podspec_field,
+        count(event_field.event_field) AS hits
+        FROM audit_events_by_gvkrv,
+             LATERAL
+               jsonb_object_keys(audit_events_by_gvkrv.request_object -> 'spec' -> 'template'-> 'spec'::text) event_field(event_field)
+       WHERE kind = ANY('{DaemonSet, Deployment, ReplicationController, StatefulSet, Job,ReplicaSet}')
+         AND NOT (lower(api_version) ~~ ANY('{%alpha%, %beta%}'))
+       GROUP BY bucket, job, api_group, api_version, kind, event_verb, resource, sub_resource, test, useragent, podspec_field; 
+   #+END_SRC
+  
+   #+BEGIN_SRC sql-mode
+ select distinct bucket, job from podspec_field_coverage_material;
+   #+END_SRC
+
+*** 440: PodSpec Field Coverage View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/440_view_podspec_field_coverage.up.sql
+    :END:
+ #+NAME: view podspec_field_coverage
+ #+BEGIN_SRC sql-mode
+ create view podspec_field_coverage as select * from podspec_field_coverage_material;
+ #+END_SRC
+ 
+*** 450: PodSpec Field Summary View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/450_view_podspec_field_summary.up.sql
+    :END:
+ #+NAME: view podspec_field_summary
+ #+BEGIN_SRC sql-mode
+   create view podspec_field_summary as
+     select distinct field_name as podspec_field,
+                     0 as other_hits,
+                     0 as e2e_hits,
+                     0 as conf_hits,
+                     bucket,
+                     job
+       from api_schema_field
+      where field_schema like '%PodSpec%'
+      UNION
+     select
+       podspec_field,
+       sum(hits) as other_hits,
+       0 as e2e_hits,
+       0 as conf_hits,
+       bucket,
+       job
+       from podspec_field_coverage
+      where useragent not like 'e2e.test%'
+      group by podspec_field, bucket, job
+      UNION
+     select
+       podspec_field,
+       0 as other_hits,
+       sum(hits) as e2e_hits,
+       0 as conf_hits,
+       bucket,
+       job
+       from podspec_field_coverage
+      where useragent like 'e2e.test%'
+        and test not like '%Conformance%'
+      group by podspec_field, bucket, job
+      UNION
+     select
+       podspec_field,
+       0 as other_hits,
+       0 as e2e_hits,
+       sum(hits) as conf_hits,
+       bucket,
+       job
+       from podspec_field_coverage
+      where useragent like 'e2e.test%'
+        and test like '%Conformance%'
+      group by podspec_field, bucket, job;
+ #+END_SRC
+*** 460: PodSpec Field mid Report View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/460_view_podspec_field_mid_report.up.sql
+    :END:
+  #+NAME: podspec_field_mid_report
+  #+BEGIN_SRC sql-mode :results silent
+    create or replace view podspec_field_mid_report as
+    select distinct podspec_field,
+          sum(other_hits) as other_hits,
+          sum(e2e_hits) as e2e_hits,
+          sum(conf_hits) as conf_hits,
+          kfp.release,
+          kfp.deprecated,
+          kfp.gated,
+          kfp.required,
+          kfp.field_kind,
+          kfp.field_type,
+          pfs.bucket, 
+          pfs.job
+    from podspec_field_summary pfs, kind_field_path_recursion kfp
+    where 
+      kfp.kind = 'io.k8s.api.core.v1.PodSpec'
+      and pfs.podspec_field = kfp.field_path
+    group by podspec_field, kfp.release, kfp.deprecated, kfp.gated, kfp.required, kfp.field_kind, kfp.field_type, pfs.bucket, pfs.job
+    order by conf_hits, e2e_hits, other_hits;
+  #+END_SRC
+
+*** 470: PodSpec Field Report View
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/470_view_podspec_field_report.up.sql
+    :END:
+ #+NAME: podspec_field_hits
+ #+BEGIN_SRC sql-mode
+   create or replace view podspec_field_report as
+   select distinct podspec_field,
+         sum(other_hits) as other_hits,
+         sum(e2e_hits) as e2e_hits,
+         sum(conf_hits) as conf_hits,
+         release,
+         deprecated,
+         gated,
+         required,
+         field_kind,
+         field_type,
+         bucket,
+         job
+   from podspec_field_mid_report
+   group by podspec_field, release, deprecated, gated, required, field_kind, field_type, bucket, job
+   order by conf_hits, e2e_hits, other_hits;
+ #+END_SRC
+ 
+ #+BEGIN_SRC sql-mode :results replace drawer
+   select
+     podspec_field, e2e_hits, pfr.job, bjs.job_timestamp
+     from podspec_field_report pfr
+     JOIN bucket_job_swagger bjs on(bjs.bucket = pfr.bucket AND bjs.job = pfr.job) 
+    order by podspec_field;
+ #+END_SRC
+
+ #+RESULTS:
+ :results:
+          podspec_field         | e2e_hits |         job         |    job_timestamp    
+ -------------------------------+----------+---------------------+---------------------
+  activeDeadlineSeconds         |        0 | 1202311785298792448 | 2019-12-04 20:14:50
+  activeDeadlineSeconds         |        0 | live                | 2019-12-04 20:14:50
+  affinity                      |        0 | live                | 2019-12-04 20:14:50
+  affinity                      |     2264 | 1202311785298792448 | 2019-12-04 20:14:50
+  automountServiceAccountToken  |      184 | 1202311785298792448 | 2019-12-04 20:14:50
+  automountServiceAccountToken  |        0 | live                | 2019-12-04 20:14:50
+  containers                    |        0 | live                | 2019-12-04 20:14:50
+  containers                    |    44772 | 1202311785298792448 | 2019-12-04 20:14:50
+  dnsConfig                     |        0 | live                | 2019-12-04 20:14:50
+  dnsConfig                     |       32 | 1202311785298792448 | 2019-12-04 20:14:50
+  dnsPolicy                     |    44772 | 1202311785298792448 | 2019-12-04 20:14:50
+  dnsPolicy                     |        0 | live                | 2019-12-04 20:14:50
+  enableServiceLinks            |    26592 | 1202311785298792448 | 2019-12-04 20:14:50
+  enableServiceLinks            |        0 | live                | 2019-12-04 20:14:50
+  ephemeralContainers           |        0 | 1202311785298792448 | 2019-12-04 20:14:50
+  ephemeralContainers           |        0 | live                | 2019-12-04 20:14:50
+  hostAliases                   |        0 | 1202311785298792448 | 2019-12-04 20:14:50
+  hostAliases                   |        0 | live                | 2019-12-04 20:14:50
+  hostIPC                       |        0 | live                | 2019-12-04 20:14:50
+  hostIPC                       |       64 | 1202311785298792448 | 2019-12-04 20:14:50
+  hostname                      |      260 | 1202311785298792448 | 2019-12-04 20:14:50
+  hostname                      |        0 | live                | 2019-12-04 20:14:50
+  hostNetwork                   |     6296 | 1202311785298792448 | 2019-12-04 20:14:50
+  hostNetwork                   |        0 | live                | 2019-12-04 20:14:50
+  hostPID                       |        0 | live                | 2019-12-04 20:14:50
+  hostPID                       |       64 | 1202311785298792448 | 2019-12-04 20:14:50
+  imagePullSecrets              |        0 | 1202311785298792448 | 2019-12-04 20:14:50
+  imagePullSecrets              |        0 | live                | 2019-12-04 20:14:50
+  initContainers                |     3944 | 1202311785298792448 | 2019-12-04 20:14:50
+  initContainers                |        0 | live                | 2019-12-04 20:14:50
+  nodeName                      |    18476 | 1202311785298792448 | 2019-12-04 20:14:50
+  nodeName                      |        0 | live                | 2019-12-04 20:14:50
+  nodeSelector                  |     2252 | 1202311785298792448 | 2019-12-04 20:14:50
+  nodeSelector                  |        0 | live                | 2019-12-04 20:14:50
+  overhead                      |        0 | 1202311785298792448 | 2019-12-04 20:14:50
+  overhead                      |        0 | live                | 2019-12-04 20:14:50
+  preemptionPolicy              |        0 | 1202311785298792448 | 2019-12-04 20:14:50
+  preemptionPolicy              |        0 | live                | 2019-12-04 20:14:50
+  priority                      |      180 | 1202311785298792448 | 2019-12-04 20:14:50
+  priority                      |        0 | live                | 2019-12-04 20:14:50
+  priorityClassName             |        0 | live                | 2019-12-04 20:14:50
+  priorityClassName             |      128 | 1202311785298792448 | 2019-12-04 20:14:50
+  readinessGates                |        0 | live                | 2019-12-04 20:14:50
+  readinessGates                |       32 | 1202311785298792448 | 2019-12-04 20:14:50
+  restartPolicy                 |    44772 | 1202311785298792448 | 2019-12-04 20:14:50
+  restartPolicy                 |        0 | live                | 2019-12-04 20:14:50
+  runtimeClassName              |        0 | live                | 2019-12-04 20:14:50
+  runtimeClassName              |      184 | 1202311785298792448 | 2019-12-04 20:14:50
+  schedulerName                 |    44772 | 1202311785298792448 | 2019-12-04 20:14:50
+  schedulerName                 |        0 | live                | 2019-12-04 20:14:50
+  securityContext               |        0 | live                | 2019-12-04 20:14:50
+  securityContext               |    44772 | 1202311785298792448 | 2019-12-04 20:14:50
+  serviceAccount                |     5244 | 1202311785298792448 | 2019-12-04 20:14:50
+  serviceAccount                |        0 | live                | 2019-12-04 20:14:50
+  serviceAccountName            |     5244 | 1202311785298792448 | 2019-12-04 20:14:50
+  serviceAccountName            |        0 | live                | 2019-12-04 20:14:50
+  shareProcessNamespace         |        0 | 1202311785298792448 | 2019-12-04 20:14:50
+  shareProcessNamespace         |        0 | live                | 2019-12-04 20:14:50
+  subdomain                     |        0 | live                | 2019-12-04 20:14:50
+  subdomain                     |      260 | 1202311785298792448 | 2019-12-04 20:14:50
+  terminationGracePeriodSeconds |    44772 | 1202311785298792448 | 2019-12-04 20:14:50
+  terminationGracePeriodSeconds |        0 | live                | 2019-12-04 20:14:50
+  tolerations                   |      180 | 1202311785298792448 | 2019-12-04 20:14:50
+  tolerations                   |        0 | live                | 2019-12-04 20:14:50
+  topologySpreadConstraints     |        0 | live                | 2019-12-04 20:14:50
+  topologySpreadConstraints     |        0 | 1202311785298792448 | 2019-12-04 20:14:50
+  volumes                       |    27044 | 1202311785298792448 | 2019-12-04 20:14:50
+  volumes                       |        0 | live                | 2019-12-04 20:14:50
+ (68 rows)
+
+ :end:
+
+*** 480: materialized kind_field_path_coverage
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/480_kind_field_path_coverage_material.up.sql
+    :END:
+    This is the base view we use to traverse the paths later.  It grabs all relevant fields from our kind_field_path_recursion and joins it to our audit_events based on where the request_object of the event includes the relevant fieldpath.
+   
+    #+NAME: kind_field_path_coverage_material_improved
+    #+BEGIN_SRC sql-mode
+      CREATE MATERIALIZED VIEW "public"."kind_field_path_coverage_material" AS
+      SELECT
+        kfpr.bucket,
+        kfpr.job,
+        kfpr.kind,
+        kfpr.field_path,
+        kfpr.field_kind,
+        kfpr.sub_kind,
+        (array_length(string_to_array(kfpr.field_path, '.'),1) - 1) as distance,
+        ae.audit_id as audit_event_id,
+        ae.useragent as useragent,
+        ae.operation_id
+        FROM kind_field_path_recursion kfpr
+            LEFT JOIN LATERAL (select * from audit_event WHERE param_schema = kfpr.kind AND jsonb_path_exists(request_object, ('$.'||kfpr.field_path)::jsonpath)) ae ON true
+        GROUP BY kfpr.kind, kfpr.field_path, kfpr.field_kind, kfpr.bucket, kfpr.job, kfpr.sub_kind, ae.audit_id, ae.useragent, ae.operation_id; 
+    #+END_SRC
+    #+begin_src sql-mode
+     refresh materialized view kind_field_path_coverage_material; 
+    #+end_src
+   
+*** 485: kind_field_path_coverage
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/485_kind_field_path_coverage.up.sql
+    :END:
+    A view into our material,  so hasura can track it.
+    #+NAME: kind_field_path_coverage
+    #+BEGIN_SRC sql-mode
+      CREATE OR REPLACE VIEW "public"."kind_field_path_coverage" AS
+       select * from kind_field_path_coverage_material;
+    #+END_SRC
+*** 490: materialized full_podspec_field_coverage
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/490_full_podspec_field_coverage_material.up.sql
+    :END:
+    We want a subset of this grand field_coverage view, looking only for fields that come from Podspec.    
+    This is going to look across all our buckets and jobs, so it will take a bit of time to materialize.
+   
+    We are only looking at the stable, core kinds or the GA kinds.
+   
+    #+NAME: full_podspec_field_coverage_material
+    #+BEGIN_SRC sql-mode
+      CREATE MATERIALIZED VIEW "public"."full_podspec_field_coverage_material" AS
+        WITH podspec_kinds AS (
+              SELECT DISTINCT kind, field_path
+                FROM kind_field_path_coverage
+                 WHERE field_kind = 'io.k8s.api.core.v1.PodSpec'
+                 AND kind not like '%alpha%'
+                 AND kind not like '%beta%'
+                 AND operation_id is not null
+        )
+        SELECT DISTINCT
+          trim(leading 'io.k8s.api.' from c.kind) as kind,
+          trim(leading 'io.k8s.api.' from c.sub_kind) as  sub_kind,
+          c.field_path,
+          distance,
+          count(*) FILTER(WHERE c.useragent like 'e2e.test%') as test_hits,
+          count(*) FILTER(WHERE c.useragent like '%[Conformance]%') as conf_hits,
+          c.field_kind,
+          c.job,
+          c.bucket
+          FROM kind_field_path_coverage c
+            INNER JOIN podspec_kinds pk ON (c.kind = pk.kind AND c.field_path like  pk.field_path || '%')
+            and sub_kind not like '%VolumeSource'
+            GROUP BY c.sub_kind, c.kind, c.field_path, c.field_kind, c.distance, pk.field_path, c.job, c.bucket
+            ORDER BY field_path;
+    #+END_SRC
+
+    #+begin_src sql-mode
+    drop materialized view full_podspec_field_coverage_material cascade;
+
+    #+end_src
+*** 495: full_podspec_field_coverage
+    :PROPERTIES:
+    :header-args:sql-mode+: :tangle ../apps/hasura/migrations/495_full_podspec_field_coverage.up.sql
+    :END:
+    And we can create a view from this
+    #+NAME: full_podspec_field_coverage
+    #+BEGIN_SRC sql-mode
+     CREATE OR REPLACE VIEW "public"."full_podspec_field_coverage" AS
+      select * from full_podspec_field_coverage_material;
+    #+END_SRC
+   
+   
+    When using the view, you will want ot make sure to limit it by a job, otherwise you'll get massive results.
+   
+    for example
+
+
+     #+begin_src sql-mode :results replace code :wrap EXAMPLE
+     \d+ full_podspec_field_coverage;
+     #+end_src
+
+     #+RESULTS:
+     #+begin_EXAMPLE
+                        View "public.full_podspec_field_coverage"
+        Column   |  Type   | Collation | Nullable | Default | Storage  | Description 
+     ------------+---------+-----------+----------+---------+----------+-------------
+      kind       | text    |           |          |         | extended | 
+      sub_kind   | text    |           |          |         | extended | 
+      field_path | text    |           |          |         | extended | 
+      distance   | integer |           |          |         | plain    | 
+      test_hits  | bigint  |           |          |         | plain    | 
+      conf_hits  | bigint  |           |          |         | plain    | 
+      field_kind | text    |           |          |         | extended | 
+      job        | text    |           |          |         | extended | 
+      bucket     | text    |           |          |         | extended | 
+     View definition:
+      SELECT full_podspec_field_coverage_material.kind,
+         full_podspec_field_coverage_material.sub_kind,
+         full_podspec_field_coverage_material.field_path,
+         full_podspec_field_coverage_material.distance,
+         full_podspec_field_coverage_material.test_hits,
+         full_podspec_field_coverage_material.conf_hits,
+         full_podspec_field_coverage_material.field_kind,
+         full_podspec_field_coverage_material.job,
+         full_podspec_field_coverage_material.bucket
+        FROM full_podspec_field_coverage_material;
+
+     #+end_EXAMPLE
+    #+name: kind_field_coverage_nolive
+    #+begin_src sql-mode
+      CREATE OR REPLACE VIEW "public"."kind_field_path_coverage" AS
+       select * from kind_field_path_coverage_material where job != 'live';
+      refresh materialized view kind_field_path_coverage_material; 
+    #+end_src
+    #+name: full_podspec_field_coverage_nolive
+    #+begin_src sql-mode
+      CREATE OR REPLACE VIEW "public"."full_podspec_field_path_coverage" AS
+       select * from kind_field_path_coverage_material where job != 'live';
+      refresh materialized view full_podspec_field_path_coverage_material; 
+    #+end_src
+
+   
+** for aaron                                                         :export:
+    #+begin_src sql-mode :results replace :tangle no :eval never-export :exports both :file results.txt
+    select kind, sub_kind, field_path, test_hits, distance from full_podspec_field_coverage where job != 'live';
+    #+end_src
+
+    #+RESULTS:
+    #+begin_src sql-mode
+    [[file:results.txt]]
+    #+end_src
+
+** ASKS
+*** kindnet-image pull.... requires internet makes sad
+*** remove latest tag on auditlogger, replace with date
+*** auditlogger depend on hasura (similar to hasura -> pg)
+*** :eval ask for kind cluster delete
+    or move to code block eval :never or move to own block
+*** put the kind image pull stuff in footnotes
+ with not to look at [[#footnotes]]
+*** fix namespace stuf... maybe use default instead of kube-system
+*** kindnetd old
+   #+BEGIN_SRC tmate :eval never-export
+     kind load image-archive            kindnetd:aa67fec7d7ef7.docker-image \
+       || docker pull docker.io/kindest/kindnetd:aa67fec7d7ef7 \
+       && docker save docker.io/kindest/kindnetd:aa67fec7d7ef7 -o kindnetd:aa67fec7d7ef7.docker-image
+   #+END_SRC
+*** kind load via registry
+   #+BEGIN_SRC tmate :eval never-export
+     # Seems a bit slow... loads from image-archives are much faster
+     # kind load docker-image --name=kind-$USER raiinbow/hasura:2019-12-03-16-31 
+     # kind load docker-image --name=kind-$USER raiinbow/postgres:2019-12-03-14-19
+     # kind load docker-image --name=kind-$USER raiinbow/auditlogger:latest
+   #+END_SRC
+
+
+# Local Variables:
+# ii: enabled
+# End:

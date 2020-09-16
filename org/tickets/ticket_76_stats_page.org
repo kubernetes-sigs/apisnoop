@@ -1,0 +1,420 @@
+#+TITLE: Ticket 75: Stats Page
+#+AUTHOR: Zach Mandeville
+
+* Ticket
+  [[https://gitlab.ii.coop/apisnoop/apisnoop_v3/issues/76][Gitlab Link]]
+  #+BEGIN_QUOTE
+This is an exploratory project, that will help us build the replacement frontend for apisnoop_v2.
+One of the simplest metrics we look for is percentage of coverage from last run to this run.  About every two weeks we put in a new audit event then manually compare its tests and conformance test coverage to the previous run.
+If we had this as a pre-made viz, it would reduce our manual work while also presenting a useful stats page for the community.
+Basic Viz:
+
+Shows last three months, as x axis
+y axis is number from 0 to 10 + highest hit count.
+line chart for test_hits and conformance_hits with nodes for each run.
+a query that grabs stats for all runs happening in the last 3 months.
+
+Advanced Viz:
+
+click on a node to see the tests and endpoints that have changed since the previous run.
+  #+END_QUOTE
+* Process
+** Add add'l job bucket to test limits
+   I have one job for 16/9.  There is also a job for 30/9 and Chris added one for 7/10.  I'll need all three for the coverage, so let's add them now.
+
+   #+BEGIN_SRC sql-mode
+     select * from load_bucket_job_swagger_via_curl('ci-kubernetes-e2e-gci-gce', '1181584183475048448');
+   #+END_SRC
+   #+BEGIN_SRC sql-mode
+     select * from load_audit_events('ci-kubernetes-e2e-gci-gce', '1178464478988079104');
+   #+END_SRC
+
+   Then refresh our views
+
+   #+BEGIN_SRC sql-mode :results silent
+   REFRESH MATERIALIZED VIEW api_operation_material;
+   REFRESH MATERIALIZED VIEW kind_field_path_material;
+   REFRESH MATERIALIZED VIEW podspec_field_coverage_material;
+   #+END_SRC
+
+   We should see three results of numbers in our endpoint stats.
+   
+   #+NAME: Endpoint Stats
+   #+BEGIN_SRC sql-mode
+   select * from endpoint_stats;
+   #+END_SRC
+
+   #+RESULTS: Endpoint Stats
+   #+begin_src sql-mode
+       date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ------------+-----------------+-----------+-----------+----------------+---------------------
+    2019-09-16 |             910 |       224 |       147 |          24.62 |               16.15
+    2019-09-30 |             910 |       224 |       153 |          24.62 |               16.81
+    2019-10-08 |             910 |       213 |       137 |          23.41 |               15.05
+   (3 rows)
+
+   #+end_src
+   
+   We are good to go!  Now, we'll limit it to just our stable endpoints.
+** Create View for Last Three Months of Endpoint Stats
+   I want to limit the results to the last three months, ultimately, but to test the concept I'll do two weeks.  This shoudl return us records for just ~2019-10-08~ and ~2019-9-30~
+   and joy, someone asked the exact same question [[https://stackoverflow.com/questions/45093912/how-to-get-data-from-last-x-months-postgres-sql-query-where-date-field-is-a-time][on stack overflow]]:
+
+   #+NAME: Stats for Last Two Weeks
+   #+BEGIN_SRC sql-mode
+     select
+       ,*
+       FROM
+           endpoint_stats
+      WHERE
+        date >= date_trunc('week', now()) - interval '2 week';
+   #+END_SRC
+
+   #+RESULTS: Stats for Last Two Weeks
+   #+begin_src sql-mode
+       date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ------------+-----------------+-----------+-----------+----------------+---------------------
+    2019-09-30 |             910 |       224 |       153 |          24.62 |               16.81
+    2019-10-08 |             910 |       213 |       137 |          23.41 |               15.05
+   (2 rows)
+
+   #+end_src
+
+   That's....super easy.
+   
+** Create View for stable endpoints
+   We already have a level field in our api_operation, so we just need to create a new stats view that limits to where level = 'stable'.
+   
+   #+NAME: Create Stable Endpoint Stats
+   #+BEGIN_SRC sql-mode
+     CREATE OR REPLACE VIEW "public"."stable_endpoint_stats" AS
+     SELECT
+       date,
+       COUNT(1) as total_endpoints,
+       COUNT(1) filter(WHERE test_hits > 0) as test_hits,
+       COUNT(1) filter(WHERE conf_hits > 0) as conf_hits,
+       ROUND(((count(*) filter(WHERE test_hits > 0)) * 100 )::numeric / count(*), 2) as percent_tested,
+       ROUND(((count(*) filter(WHERE conf_hits > 0)) * 100 )::numeric / count(*), 2) as percent_conf_tested
+       FROM endpoint_coverage 
+              WHERE level = 'stable'
+      GROUP BY date;
+   #+END_SRC
+
+   #+RESULTS: Create Stable Endpoint Stats
+   #+begin_src sql-mode
+   CREATE VIEW
+   #+end_src
+
+   This should give us 430 or so endpoints
+   
+   #+NAME: Stable Endpoint Stats
+   #+BEGIN_SRC sql-mode
+   select * from stable_endpoint_stats;
+   #+END_SRC
+
+   #+RESULTS: Stable Endpoint Stats
+   #+begin_src sql-mode
+       date    | total_endpoints | test_hits | conf_hits | percent_tested | percent_conf_tested 
+   ------------+-----------------+-----------+-----------+----------------+---------------------
+    2019-09-16 |             430 |       171 |       118 |          39.77 |               27.44
+    2019-09-30 |             430 |       171 |       124 |          39.77 |               28.84
+    2019-10-08 |             430 |       165 |       114 |          38.37 |               26.51
+   (3 rows)
+
+   #+end_src
+   
+   Golden.
+** Create Multiline-Chart function
+   #+name: MultiLineChart
+   #+BEGIN_SRC js :tangle ~/ii/apisnoop/notebooks/multiline-chart.js
+     // Undefine chart
+     require.undef('multiLineChart')
+
+     define('multiLineChart', ['d3'], function (d3 ) {
+         function draw (container, data) {
+             var margin = {
+                 top: 20,
+                 right: 80,
+                 bottom: 30,
+                 left: 50
+             },
+                 width = 900 - margin.left - margin.right,
+                 height = 900 - margin.top - margin.bottom;
+
+             var parseDate = d3.time.format("%Y-%m-%d").parse;
+
+             var x = d3.time.scale()
+                 .range([0, width]);
+
+             var y = d3.scale.linear()
+                 .range([height, 0]);
+
+             var color = d3.scale.category10();
+
+             var xAxis = d3.svg.axis()
+                 .scale(x)
+                 .orient("bottom");
+
+             var yAxis = d3.svg.axis()
+                 .scale(y)
+                 .orient("left");
+
+             var line = d3.svg.line()
+                 .interpolate("basis")
+                 .x(function(d) {
+                     return x(d.date);
+                 })
+                 .y(function(d) {
+                     return y(d.temperature);
+                 });
+
+             var svg = d3.select(container).append("svg")
+                 .attr("width", width + margin.left + margin.right)
+                 .attr("height", height + margin.top + margin.bottom)
+                 .append("g")
+                 .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+
+             color.domain(d3.keys(data[0]).filter(function(key) {
+                 return key !== "date";
+             }));
+
+             data.forEach(function(d) {
+                 d.date = parseDate(d.date);
+             });
+
+             var counts = color.domain().map(function(name) {
+                 return {
+                     name: name,
+                     values: data.map(function(d) {
+                         return {
+                             date: d.date,
+                             temperature: +d[name]
+                         };
+                     })
+                 };
+             });
+
+             x.domain(d3.extent(data, function(d) {
+                 return d.date;
+             }));
+
+             y.domain([
+                 d3.min(counts, function(c) {
+                     return d3.min(c.values, function(v) {
+                         return v.temperature;
+                     });
+                 }),
+                 d3.max(counts, function(c) {
+                     return d3.max(c.values, function(v) {
+                         return v.temperature;
+                     });
+                 })
+             ]);
+
+             var legend = svg.selectAll('g')
+                 .data(counts)
+                 .enter()
+                 .append('g')
+                 .attr('class', 'legend');
+
+             legend.append('rect')
+                 .attr('x', width - 20)
+                 .attr('y', function(d, i) {
+                     return i * 20;
+                 })
+                 .attr('width', 10)
+                 .attr('height', 10)
+                 .style('fill', function(d) {
+                     return color(d.name);
+                 });
+
+             legend.append('text')
+                 .attr('x', width - 8)
+                 .attr('y', function(d, i) {
+                     return (i * 20) + 9;
+                 })
+                 .text(function(d) {
+                     return d.name;
+                 });
+
+             svg.append("g")
+                 .attr("class", "x axis")
+                 .attr("transform", "translate(0," + height + ")")
+                 .call(xAxis);
+
+             svg.append("g")
+                 .attr("class", "y axis")
+                 .call(yAxis)
+                 .append("text")
+                 .attr("transform", "rotate(-90)")
+                 .attr("y", 6)
+                 .attr("dy", ".71em")
+                 .style("text-anchor", "end")
+                 .text("# of endpoints");
+
+             var city = svg.selectAll(".city")
+                 .data(counts)
+                 .enter().append("g")
+                 .attr("class", "city");
+
+             city.append("path")
+                 .attr("class", "line")
+                 .attr("d", function(d) {
+                     return line(d.values);
+                 })
+                 .style("stroke", function(d) {
+                     return color(d.name);
+                 });
+          console.log({counts})
+
+             city.append("text")
+                 .datum(function(d) {
+                     return {
+                         name: d.name,
+                         value: d.values[d.values.length - 1]
+                     };
+                 })
+                 .attr("transform", function(d) {
+                     return "translate(" + x(d.value.date) + "," + y(d.value.temperature) + ")";
+                 })
+                 .attr("x", 3)
+                 .attr("dy", ".35em")
+                 .text(function(d) {
+                     return d.name;
+                 });
+
+             var mouseG = svg.append("g")
+                 .attr("class", "mouse-over-effects");
+
+             mouseG.append("path") // this is the black vertical line to follow mouse
+                 .attr("class", "mouse-line")
+                 .style("stroke", "black")
+                 .style("stroke-width", "1px")
+                 .style("opacity", "0");
+
+             var lines = document.getElementsByClassName('line');
+
+             var mousePerLine = mouseG.selectAll('.mouse-per-line')
+                 .data(counts)
+                 .enter()
+                 .append("g")
+                 .attr("class", "mouse-per-line");
+
+             mousePerLine.append("circle")
+                 .attr("r", 7)
+                 .style("stroke", function(d) {
+                     return color(d.name);
+                 })
+                 .style("fill", "none")
+                 .style("stroke-width", "1px")
+                 .style("opacity", "0");
+
+             mousePerLine.append("text")
+                 .attr("transform", "translate(10,3)");
+
+             mouseG.append('svg:rect') // append a rect to catch mouse movements on canvas
+                 .attr('width', width) // can't catch mouse events on a g element
+                 .attr('height', height)
+                 .attr('fill', 'none')
+                 .attr('pointer-events', 'all')
+                 .on('mouseout', function() { // on mouse out hide line, circles and text
+                     d3.select(".mouse-line")
+                         .style("opacity", "0");
+                     d3.selectAll(".mouse-per-line circle")
+                         .style("opacity", "0");
+                     d3.selectAll(".mouse-per-line text")
+                         .style("opacity", "0");
+                 })
+                 .on('mouseover', function() { // on mouse in show line, circles and text
+                     d3.select(".mouse-line")
+                         .style("opacity", "1");
+                     d3.selectAll(".mouse-per-line circle")
+                         .style("opacity", "1");
+                     d3.selectAll(".mouse-per-line text")
+                         .style("opacity", "1");
+                 })
+                 .on('mousemove', function() { // mouse moving over canvas
+                     var mouse = d3.mouse(this);
+                     d3.select(".mouse-line")
+                         .attr("d", function() {
+                             var d = "M" + mouse[0] + "," + height;
+                             d += " " + mouse[0] + "," + 0;
+                             return d;
+                         });
+
+                     d3.selectAll(".mouse-per-line")
+                         .attr("transform", function(d, i) {
+                             console.log(width/mouse[0])
+                             var xDate = x.invert(mouse[0]),
+                                 bisect = d3.bisector(function(d) { return d.date; }).right;
+                             idx = bisect(d.values, xDate);
+
+                             var beginning = 0,
+                                 end = lines[i].getTotalLength(),
+                                 target = null;
+
+                             while (true){
+                                 target = Math.floor((beginning + end) / 2);
+                                 pos = lines[i].getPointAtLength(target);
+                                 if ((target === end || target === beginning) && pos.x !== mouse[0]) {
+                                     break;
+                                 }
+                                 if (pos.x > mouse[0])      end = target;
+                                 else if (pos.x < mouse[0]) beginning = target;
+                                 else break; //position found
+                             }
+
+                             d3.select(this).select('text')
+                                 .text(y.invert(pos.y).toFixed(2));
+
+                             return "translate(" + mouse[0] + "," + pos.y +")";
+                         });
+                 });
+         }
+         return draw;
+     })
+
+     element.append('<small>&#x25C9; &#x25CB; &#x25EF; Loaded multiline-chart.js successfully! &#x25CC; &#x25CE; &#x25CF;</small>');
+
+
+
+
+   #+END_SRC
+
+   
+
+** Build out Visualization in jupyter notebook
+   I think a line chart will be best, and this is a nice one: https://bl.ocks.org/larsenmtl/e3b8b7c2ca4787f77d78f58d41c3da91
+   
+   I'll use our jupyter notebook python/d3 template to build out the rest.
+   The notebook you want to open is ~coverage-over-time.ipynb~
+   
+   To get it working, we'll first want to ensure we have everything installed.  We'll do this all in a virtual environment.
+   
+   #+NAME: Start up Virtual Environment and install dependencies
+  #+BEGIN_SRC tmate :noweb eval :session apisnoop:jupyter
+     cd ~/ii/apisnoop/notebooks
+     source .venv/bin/activate
+     pip install gql pandas jupyter requests
+   #+END_SRC
+   
+   Then we start up jupyter, using no browser and set to port 8899
+   #+NAME: Start up jupyter
+   #+BEGIN_SRC tmate :noweb eval :session apisnoop:jupyter
+   jupyter notebook --no-browser --port=8899
+   #+END_SRC
+
+   On our local machine, we'll run this command to log into our remote notebook.
+   : ssh -N -n -L 127.0.0.1:8889:127.0.0.1:8889 $USER@sharing.io
+* Conclusion||Next Steps
+* Footnotes
+  #+NAME: Connect org to postgres
+  #+BEGIN_SRC emacs-lisp :results silent
+    (sql-connect "apisnoop" (concat "*SQL: postgres:data*"))
+  #+END_SRC
+  : You are connected to database "apisnoop" as user "apisnoop" on host "localhost" at port "10041".
+  #+NAME: Test Connection
+  #+BEGIN_SRC sql-mode :results silent
+  \conninfo
+  #+END_SRC
