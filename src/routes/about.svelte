@@ -77,6 +77,8 @@ As Conformance is concerned with stable(or generally available) endpoints, we fo
 </p>
 <h2>Additional Resources</h2>
 <ul>
+    <li><a href="https://docs.google.com/document/d/1W31nXh9RYAb_VaYkwuPLd1hFxuRX3iU0DmaQ4lkCsX8/edit?pli=1" target="_blank" rel="noreferrer noopener">Conformance Office Hours Meeting Notes</a></li>
+    <li><a href="https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/writing-good-e2e-tests.md">Writing good e2e tests for Kubernetes</a></li>
   <li>
     <a href="https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md"> Kubernetes Documentation on Conformance Testing</a></li>
   <li><a href="https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md#conformance-test-requirements">The Conformance Test  Requirements</a></li>
