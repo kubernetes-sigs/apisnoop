@@ -581,6 +581,112 @@ create or replace view conformance.coverage_per_release as
      select 'conformance.new_endpoint defined and commented' as "build log";
    #+end_src
 
+** Testing
+*** untested_stable_endpoints
+   :PROPERTIES:
+   :header-args: :tangle ./postgres/initdb/208_untested_stable_endpoint.sql
+   :END:
+#+NAME: untested_stable_endpoints
+#+BEGIN_SRC  sql-mode
+CREATE OR REPLACE VIEW "testing"."untested_stable_endpoint" AS
+  with latest_release as (
+  select release::semver as release
+    from open_api
+   order by release::semver desc
+   limit 1
+  )
+  select ec.*,
+         exists(select * from conformance.eligible_endpoint ee where ee.endpoint = ec.endpoint) as eligible
+    from endpoint_coverage  ec
+    join latest_release on(ec.release::semver = latest_release.release)
+   where level = 'stable'
+     and tested is false
+   ORDER BY endpoint desc;
+#+END_SRC
+
+*** endpoint_hit_by_new_test
+   :PROPERTIES:
+   :header-args: :tangle ./postgres/initdb/209_endpoint_hit_by_new_test.sql
+   :END:
+#+BEGIN_SRC sql-mode
+create or replace view "testing"."endpoint_hit_by_new_test" AS
+  with live_testing_endpoints AS (
+    SELECT endpoint, useragent,
+           count(*) as hits
+      from testing.audit_event
+      where useragent like 'live%'
+     group by endpoint, useragent
+  ), baseline as  (
+    select distinct
+      ec.endpoint,
+      ec.tested,
+      ec.conf_tested,
+      release
+      from endpoint_coverage ec
+      where ec.release = (
+      select release
+      from open_api
+      order by release::semver desc
+      limit 1
+     )
+  )
+  select distinct
+    lte.useragent,
+    lte.endpoint,
+    b.tested as hit_by_ete,
+    lte.hits as hit_by_new_test
+    from live_testing_endpoints lte
+    join baseline b using(endpoint);
+#+END_SRC
+
+*** projected_change_in_coverage
+   :PROPERTIES:
+   :header-args: :tangle ./postgres/initdb/210_projected_change_in_coverage.sql
+   :END:
+#+BEGIN_SRC sql-mode
+CREATE OR REPLACE VIEW "testing"."projected_change_in_coverage" AS
+ with latest_release as (
+ select release
+   from open_api
+   order by release::semver desc
+   limit 1
+), baseline AS (
+   SELECT count(*) as total_endpoints,
+          count(*) filter(where tested is true) as tested_endpoints
+     FROM
+         endpoint_coverage
+         join latest_release using(release)
+ ), test AS (
+   SELECT
+     COUNT(1) AS endpoints_hit
+     FROM
+         (
+           SELECT
+             endpoint
+     FROM testing.audit_event
+
+      WHERE useragent like 'live%'
+     EXCEPT
+     SELECT
+      endpoint
+     FROM
+         endpoint_coverage
+         WHERE tested is true
+               ) tested_endpoints
+ ), coverage AS (
+   SELECT
+   baseline.tested_endpoints as old_coverage,
+   (baseline.tested_endpoints::int + test.endpoints_hit::int) AS new_coverage
+   FROM baseline, test
+ )
+ SELECT
+   'test_coverage' AS category,
+   baseline.total_endpoints,
+   coverage.old_coverage,
+   coverage.new_coverage,
+   (coverage.new_coverage - coverage.old_coverage) AS change_in_number
+   FROM baseline, coverage ;
+#+END_SRC
 * Functions
 ** Public
 *** load_open_api
@@ -1236,3 +1342,4 @@ commit;
    commit;
  #+end_src
 * Scratch
+
