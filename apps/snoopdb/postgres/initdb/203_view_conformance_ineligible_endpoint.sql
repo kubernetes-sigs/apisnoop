@@ -61,6 +61,16 @@ create or replace view conformance.ineligible_endpoint as
     from current_stable_endpoints
     where endpoint = 'getFlowcontrolApiserverAPIGroup'
     )
+    union
+    (
+    -- Not eligible for conformance yet
+    select endpoint,
+    'Not eligible for conformance yet' as reason,
+    'endpoint = ' || endpoint as "sql logic",
+    'https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190802-dynamic-coordinated-storage-version.md' as link
+    from current_stable_endpoints
+    where endpoint =  'getInternalApiserverAPIGroup'
+    )
     order by reason;
 
     comment on view conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing and the reason for ineligibility.';
