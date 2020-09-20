@@ -45,7 +45,7 @@ begin;
    )) filter (where testname is not null) as tests
    from           conformance.eligible_endpoint_coverage ec
    left join audit_event using(endpoint)
-   left join test on (test.codename = audit_event.test)
+   left join conformance.test test on (test.codename = audit_event.test)
    group by endpoint, first_release, first_conformance_test
    order by first_release::semver desc) ce;
 \o
