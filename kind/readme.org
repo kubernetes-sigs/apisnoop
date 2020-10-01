@@ -1,0 +1,67 @@
+#+TITLE: kind + apisnoop
+* Setup
+
+Feel free to modify **kind+apisnoop.yaml** to your needs.
+
+It may take a while for snoopdb to download and process the *~900MB~* or so of audit logs from the most recent conformance runs.
+
+This will allow you to compare the API operations your application or test hits to the existing conformance test coverage.
+
+#+begin_src shell
+  git clone https://github.com/cncf/apisnoop
+  cd apisnoop/kind
+  kind create cluster --config=kind+apisnoop.yaml
+  # can take a while, but will ensure your are working against fresh data
+  kubectl wait --for=condition=Ready --selector=app.kubernetes.io/name=auditlogger --timeout=600s pod
+  export PGUSER=apisnoop
+  export PGHOST=localhost
+  psql -c "select distinct useragent from testing.audit_event;"
+#+end_src
+
+Any software hitting the kubernetes apiserver will show up in the audit_event table.
+
+This includes tests as they are being written, and to study software that is hitting API Operations that are as of yet, untested.
+
+* Envoy
+
+Let's see if we can get envoy to trigger some untested endpoints.
+It may be that Envoy itself doesn't hit any k8s endpoints.
+
+#+begin_src shell
+helm repo add stable https://kubernetes-charts.storage.googleapis.com/
+helm install stable/envoy --name my-release
+psql -c "select distinct useragent from testing.audit_event where useragent not like 'kube%' and useragent not like 'local-path%' and useragent not like 'coredns%' and useragent not like 'kindnetd%'"
+#+end_src
+
+#+begin_src sql-mode
+  select distinct useragent
+    from testing.audit_event
+   where useragent not like 'kube%'
+     and useragent not like 'local-path%'
+     and useragent not like 'coredns%'
+     and useragent not like 'kindnetd%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                   useragent
+-----------------------------------------------
+ helm/v0.0.0 (darwin/amd64) kubernetes/$Format
+ Go-http-client/2.0
+(2 rows)
+
+#+end_SRC
+
+* Logs
+
+Not necessary, but may help in debugging.
+
+** Snoop DB
+#+begin_src shell
+kubectl logs  --selector=app.kubernetes.io/name=auditlogger -c snoopdb -f
+#+end_src
+
+** Auditlogger
+#+begin_src shell
+kubectl logs  --selector=app.kubernetes.io/name=auditlogger -c auditlogger -f
+#+end_src

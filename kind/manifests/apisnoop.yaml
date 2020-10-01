@@ -1,0 +1,100 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "apisnoop"
+  labels:
+    app.kubernetes.io/name: auditlogger
+    app.kubernetes.io/instance: auditlogger
+    app.kubernetes.io/version: "v20200923-v2020.09.23-1-gb3afc41"
+spec:
+  hostname: snoopdb
+  hostNetwork: true
+  # a mirror pod may not reference service accounts
+  # serviceAccountName: default
+  securityContext:
+    {}
+  volumes:
+    - name: tmp
+      emptyDir: {}
+    - name: var-lib-postgresql
+      emptyDir: {}
+    - name: var-run-postgresql
+      emptyDir: {}
+  containers:
+    - name: snoopdb
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        fsGroup: 70
+        runAsGroup: 70
+        runAsUser: 70
+      image: "gcr.io/k8s-staging-apisnoop/snoopdb:v20200923-v2020.09.23-1-gb3afc41"
+      imagePullPolicy: IfNotPresent
+      ports:
+        - containerPort: 5432
+      env:
+        - name: POSTGRES_DB
+          value: apisnoop
+        - name: POSTGRES_USER
+          value: apisnoop
+        - name: PGDATABASE
+          value: apisnoop
+        - name: PGUSER
+          value: apisnoop
+        # - name: PGPASSWORD
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: trust
+      livenessProbe:
+        exec:
+          command:
+            - "sh"
+            - "-c"
+            - "pg_isready"
+            - "-U"
+            - "$POSTGRES_USER"
+        failureThreshold: 5
+        periodSeconds: 10
+        timeoutSeconds: 5
+      resources:
+        {}
+      volumeMounts:
+      - name: tmp
+        mountPath: /tmp
+      - name: var-lib-postgresql
+        mountPath: /var/lib/postgresql
+      - name: var-run-postgresql
+        mountPath: /var/run/postgresql
+    - name: auditlogger
+      image: "gcr.io/k8s-staging-apisnoop/auditlogger:v20200923-v2020.09.23-1-gb3afc41"
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsGroup: 1000
+        runAsUser: 1000
+      env:
+        - name: APP_DB_CONNECTION_STRING
+          value: postgres://apisnoop:apisnoop@localhost/apisnoop?sslmode=disable
+        - name: APP_DB_AUDIT_EVENT_TABLE
+          value: testing.audit_event
+        - name: APP_PORT
+          value: "9900"
+        - name: APP_DISABLE_LOGS
+          value: "false"
+      ports:
+        - name: http
+          containerPort: 9900
+          protocol: TCP
+      livenessProbe:
+        httpGet:
+          path: /
+          port: http
+      readinessProbe:
+        httpGet:
+          path: /
+          port: http
+      resources:
+        {}
