@@ -4,6 +4,10 @@ set -x
 # Deploy APISnoop in kind
 
 kind create cluster --config kind+apisnoop.yaml
+# ensure auditlogger is ready to apisnoop on k8s
+kubectl wait --for=condition=Ready --selector=app.kubernetes.io/name=auditlogger --timeout=600s pod
+export PGUSER=apisnoop
+export PGHOST=localhost
 
 # install gateway
 
@@ -18,16 +22,24 @@ gatewayProxies:
       httpsNodePort: 32500
 EOF
 
+# wait for gloo deployment to be Available
+
+
+kubectl wait deployment -n gloo-system --for=condition=Available --selector=gloo=gateway
+kubectl wait deployment -n gloo-system --for=condition=Available --selector=gloo=gateway-proxy
+kubectl wait deployment -n gloo-system --for=condition=Available --selector=gloo=discovery
+kubectl wait deployment -n gloo-system --for=condition=Available --selector=gloo=gloo
+
 # deploy petstore
 
 kubectl apply -f https://raw.githubusercontent.com/solo-io/gloo/v1.2.9/example/petstore/petstore.yaml
 
-kubectl label namespace default  discovery.solo.io/function_discovery=enabled
+kubectl label namespace default  discovery.solo.io/function_discovery=enabled  --overwrite
 
-# Ensure gateway-proxy Deployment is Available
+# wait for petstore deployment to be Available
 
 
-kubectl wait --for=condition=Available --selector=gloo=gateway-proxy -n gloo-system deployment
+kubectl wait deployment --for=condition=Available --selector=app=petstore
 
 # Add route
 
@@ -46,9 +58,24 @@ echo !
 glooctl get virtualservice  default
 echo -n Waiting for upstream default-petstore-8080 to be Accepted...
 while [ $(glooctl get upstream default-petstore-8080 -o json | jq -r '.[0].status.state') != "Accepted" ] ; do echo -n . ; sleep 1 ; done
+echo !
 glooctl get upstream default-petstore-8080
 set -x
 
 # Connect to route
 
 curl $(glooctl proxy url)/all-pets
+
+# psql
+
+PGUSER='apisnoop'
+PGHOST='localhost'
+psql -U apisnoop -h localhost -c "select useragent from testing.audit_event where useragent like 'gloo%' group by useragent;"
+psql -U apisnoop -h localhost -c "select useragent, endpoint, tested, conf_tested
+  from        testing.audit_event
+         join endpoint_coverage ec using(endpoint)
+ where useragent like 'gloo%'
+   and ec.release = '1.20.0'
+   and conf_tested = false
+ group by endpoint, ec.release, tested, conf_tested, useragent
+ order by conf_tested asc;"

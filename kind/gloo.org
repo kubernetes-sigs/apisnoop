@@ -8,6 +8,10 @@
 ** Deploy APISnoop in kind
 #+begin_src tmate :window kind :tangle gloo.sh :tangle-mode (identity #o755)
   kind create cluster --config kind+apisnoop.yaml
+  # ensure auditlogger is ready to apisnoop on k8s
+  kubectl wait --for=condition=Ready --selector=app.kubernetes.io/name=auditlogger --timeout=600s pod
+  export PGUSER=apisnoop
+  export PGHOST=localhost
 #+end_src
 ** install gloo
 #+begin_src tmate :window gloo
@@ -38,9 +42,23 @@ Server: {"type":"Gateway","kubernetes":{"containers":[{"Tag":"1.3.17","Name":"di
   EOF
 #+end_src
 
+** wait for gloo deployment to be Available
+
+#+begin_src shell :tangle gloo.sh :tangle-mode (identity #o755)
+  kubectl wait deployment -n gloo-system --for=condition=Available --selector=gloo=gateway
+  kubectl wait deployment -n gloo-system --for=condition=Available --selector=gloo=gateway-proxy
+  kubectl wait deployment -n gloo-system --for=condition=Available --selector=gloo=discovery
+  kubectl wait deployment -n gloo-system --for=condition=Available --selector=gloo=gloo
+#+end_src
+
 #+RESULTS:
 #+begin_example
+deployment.apps/gateway condition met
+deployment.apps/gateway-proxy condition met
+deployment.apps/discovery condition met
+deployment.apps/gloo condition met
 #+end_example
+
 ** deploy petstore
 #+begin_src shell :tangle gloo.sh :tangle-mode (identity #o755)
  kubectl apply -f https://raw.githubusercontent.com/solo-io/gloo/v1.2.9/example/petstore/petstore.yaml
@@ -205,11 +223,12 @@ status:
 #+end_SRC
 
 #+begin_src shell :tangle gloo.sh :tangle-mode (identity #o755)
-  kubectl label namespace default  discovery.solo.io/function_discovery=enabled
+  kubectl label namespace default  discovery.solo.io/function_discovery=enabled  --overwrite
 #+end_src
 
 #+RESULTS:
 #+begin_example
+namespace/default not labeled
 #+end_example
 #+begin_src shell
  glooctl get upstream default-petstore-8080
@@ -313,16 +332,17 @@ status:
   state: 1
 
 #+end_SRC
-** Ensure gateway-proxy Deployment is Available
+** wait for petstore deployment to be Available
 
 #+begin_src shell :tangle gloo.sh :tangle-mode (identity #o755)
-  kubectl wait --for=condition=Available --selector=gloo=gateway-proxy -n gloo-system deployment
+  kubectl wait deployment --for=condition=Available --selector=app=petstore
 #+end_src
 
 #+RESULTS:
 #+begin_example
-deployment.apps/gateway-proxy condition met
+deployment.apps/petstore condition met
 #+end_example
+
 ** Add route
 
 #+begin_src shell :tangle gloo.sh :tangle-mode (identity #o755)
@@ -530,6 +550,29 @@ http://172.18.0.2:31407
 (56 rows)
 
 #+end_SRC
+** psql
+#+begin_src shell :tangle gloo.sh :tangle-mode (identity #o755) :var PGUSER="apisnoop" :var PGHOST="localhost"
+  psql -U apisnoop -h localhost -c "select useragent from testing.audit_event where useragent like 'gloo%' group by useragent;"
+  psql -U apisnoop -h localhost -c "select useragent, endpoint, tested, conf_tested
+    from        testing.audit_event
+           join endpoint_coverage ec using(endpoint)
+   where useragent like 'gloo%'
+     and ec.release = '1.20.0'
+     and conf_tested = false
+   group by endpoint, ec.release, tested, conf_tested, useragent
+   order by conf_tested asc;"
+#+end_src
+
+#+RESULTS:
+#+begin_example
+                    useragent
+--------------------------------------------------
+ glooctl/v0.0.0 (darwin/amd64) kubernetes/$Format
+ gloo/v0.0.0 (linux/amd64) kubernetes/$Format
+(2 rows)
+
+#+end_example
+
 ** untested
    #+begin_src sql-mode
 select * from describe_columns('public','endpoint_coverage');
@@ -557,74 +600,21 @@ select * from describe_columns('public','endpoint_coverage');
    #+end_SRC
 
 #+begin_src sql-mode
-  select endpoint, tested, conf_tested
+  select useragent, endpoint, tested, conf_tested
     from        testing.audit_event
            join endpoint_coverage ec using(endpoint)
    where useragent like 'gloo%'
      and ec.release = '1.20.0'
-   group by endpoint, ec.release, tested, conf_tested
+     and conf_tested = false
+   group by endpoint, ec.release, tested, conf_tested, useragent
    order by conf_tested asc;
 #+end_src
 
 #+RESULTS:
 #+begin_SRC example
-                  endpoint                   | tested | conf_tested
----------------------------------------------+--------+-------------
- getCodeVersion                              | f      | f
- createCoreV1Namespace                       | t      | t
- createCoreV1NamespacedSecret                | t      | t
- getAdmissionregistrationV1APIResources      | t      | t
- getAdmissionregistrationV1beta1APIResources | t      | t
- getApiextensionsV1APIResources              | t      | t
- getApiextensionsV1beta1APIResources         | t      | t
- getApiregistrationV1APIResources            | t      | t
- getApiregistrationV1beta1APIResources       | t      | t
- getAPIVersions                              | t      | t
- getAppsV1APIResources                       | t      | t
- getAuthenticationV1APIResources             | t      | t
- getAuthenticationV1beta1APIResources        | t      | t
- getAuthorizationV1APIResources              | t      | t
- getAuthorizationV1beta1APIResources         | t      | t
- getAutoscalingV1APIResources                | t      | t
- getAutoscalingV2beta1APIResources           | t      | t
- getAutoscalingV2beta2APIResources           | t      | t
- getBatchV1APIResources                      | t      | t
- getBatchV1beta1APIResources                 | t      | t
- getCertificatesV1APIResources               | t      | t
- getCertificatesV1beta1APIResources          | t      | t
- getCoordinationV1APIResources               | t      | t
- getCoordinationV1beta1APIResources          | t      | t
- getCoreAPIVersions                          | t      | t
- getCoreV1APIResources                       | t      | t
- getDiscoveryV1beta1APIResources             | t      | t
- getEventsV1APIResources                     | t      | t
- getEventsV1beta1APIResources                | t      | t
- getExtensionsV1beta1APIResources            | t      | t
- getNetworkingV1APIResources                 | t      | t
- getNetworkingV1beta1APIResources            | t      | t
- getNodeV1beta1APIResources                  | t      | t
- getPolicyV1beta1APIResources                | t      | t
- getRbacAuthorizationV1APIResources          | t      | t
- getRbacAuthorizationV1beta1APIResources     | t      | t
- getSchedulingV1APIResources                 | t      | t
- getSchedulingV1beta1APIResources            | t      | t
- getStorageV1APIResources                    | t      | t
- getStorageV1beta1APIResources               | t      | t
- listAppsV1NamespacedDeployment              | t      | t
- listCoreV1ConfigMapForAllNamespaces         | t      | t
- listCoreV1EndpointsForAllNamespaces         | t      | t
- listCoreV1Namespace                         | t      | t
- listCoreV1NamespacedPod                     | t      | t
- listCoreV1NamespacedSecret                  | t      | t
- listCoreV1PodForAllNamespaces               | t      | t
- listCoreV1SecretForAllNamespaces            | t      | t
- listCoreV1ServiceForAllNamespaces           | t      | t
- readCoreV1Namespace                         | t      | t
- readCoreV1NamespacedConfigMap               | t      | t
- readCoreV1NamespacedService                 | t      | t
- readCoreV1Node                              | t      | t
- replaceCoreV1NamespacedConfigMap            | t      | t
- replaceCoreV1NamespacedSecret               | t      | t
-(55 rows)
+                    useragent                     |    endpoint    | tested | conf_tested
+--------------------------------------------------+----------------+--------+-------------
+ glooctl/v0.0.0 (darwin/amd64) kubernetes/$Format | getCodeVersion | f      | f
+(1 row)
 
 #+end_SRC
