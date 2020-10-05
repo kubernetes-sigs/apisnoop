@@ -1,4 +1,5 @@
 #+TITLE: kind + apisnoop
+#+PROPERTY: header-args:sql-mode+ :product postgres
 * Setup
 
 Feel free to modify **kind+apisnoop.yaml** to your needs.
@@ -21,6 +22,262 @@ This will allow you to compare the API operations your application or test hits 
 Any software hitting the kubernetes apiserver will show up in the audit_event table.
 
 This includes tests as they are being written, and to study software that is hitting API Operations that are as of yet, untested.
+* Sample queries
+** Info about an endpoint
+APISnoop loads in kubernetes endpoint data from the  open api spec, which gives a quick way to get info about any particular endpoint.
+#+NAME: Info on an endpoint
+#+BEGIN_SRC sql-mode
+select endpoint, description, path
+  from open_api
+ where endpoint = 'getApiextensionsAPIGroup'
+ -- get information from latest spec
+   and release = (
+    select release
+      from open_api
+     order by release::semver desc
+     limit 1
+    );
+#+END_SRC
+
+#+RESULTS: Info on an endpoint
+:          endpoint         |        description         |            path
+: --------------------------+----------------------------+-----------------------------
+:  getApiextensionsAPIGroup | get information of a group | /apis/apiextensions.k8s.io/
+: (1 row)
+:
+
+
+Or group, like all stable endpoints that are a part of networking
+
+#+BEGIN_SRC sql-mode
+select endpoint, description
+  from open_api
+ where level = 'stable'
+   and category =  'networking'
+ -- get information from latest spec
+   and release = (
+    select release
+      from open_api
+     order by release::semver desc
+     limit 1
+    );
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+                      endpoint                       |                                                                                     description
+-----------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ getNetworkingAPIGroup                               | get information of a group
+ getNetworkingV1APIResources                         | get available resources
+ listNetworkingV1IngressClass                        | list or watch objects of kind IngressClass
+ deleteNetworkingV1CollectionIngressClass            | delete collection of IngressClass
+ createNetworkingV1IngressClass                      | create an IngressClass
+ replaceNetworkingV1IngressClass                     | replace the specified IngressClass
+ deleteNetworkingV1IngressClass                      | delete an IngressClass
+ patchNetworkingV1IngressClass                       | partially update the specified IngressClass
+ readNetworkingV1IngressClass                        | read the specified IngressClass
+ listNetworkingV1IngressForAllNamespaces             | list or watch objects of kind Ingress
+ listNetworkingV1NamespacedIngress                   | list or watch objects of kind Ingress
+ createNetworkingV1NamespacedIngress                 | create an Ingress
+ deleteNetworkingV1CollectionNamespacedIngress       | delete collection of Ingress
+ deleteNetworkingV1NamespacedIngress                 | delete an Ingress
+ replaceNetworkingV1NamespacedIngress                | replace the specified Ingress
+ readNetworkingV1NamespacedIngress                   | read the specified Ingress
+ patchNetworkingV1NamespacedIngress                  | partially update the specified Ingress
+ replaceNetworkingV1NamespacedIngressStatus          | replace status of the specified Ingress
+ readNetworkingV1NamespacedIngressStatus             | read status of the specified Ingress
+ patchNetworkingV1NamespacedIngressStatus            | partially update status of the specified Ingress
+ listNetworkingV1NamespacedNetworkPolicy             | list or watch objects of kind NetworkPolicy
+ createNetworkingV1NamespacedNetworkPolicy           | create a NetworkPolicy
+ deleteNetworkingV1CollectionNamespacedNetworkPolicy | delete collection of NetworkPolicy
+ deleteNetworkingV1NamespacedNetworkPolicy           | delete a NetworkPolicy
+ replaceNetworkingV1NamespacedNetworkPolicy          | replace the specified NetworkPolicy
+ readNetworkingV1NamespacedNetworkPolicy             | read the specified NetworkPolicy
+ patchNetworkingV1NamespacedNetworkPolicy            | partially update the specified NetworkPolicy
+ listNetworkingV1NetworkPolicyForAllNamespaces       | list or watch objects of kind NetworkPolicy
+ watchNetworkingV1IngressClassList                   | watch individual changes to a list of IngressClass. deprecated: use the 'watch' parameter with a list operation instead.
+ watchNetworkingV1IngressClass                       | watch changes to an object of kind IngressClass. deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter.
+ watchNetworkingV1IngressListForAllNamespaces        | watch individual changes to a list of Ingress. deprecated: use the 'watch' parameter with a list operation instead.
+ watchNetworkingV1NamespacedIngressList              | watch individual changes to a list of Ingress. deprecated: use the 'watch' parameter with a list operation instead.
+ watchNetworkingV1NamespacedIngress                  | watch changes to an object of kind Ingress. deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter.
+ watchNetworkingV1NamespacedNetworkPolicyList        | watch individual changes to a list of NetworkPolicy. deprecated: use the 'watch' parameter with a list operation instead.
+ watchNetworkingV1NamespacedNetworkPolicy            | watch changes to an object of kind NetworkPolicy. deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter.
+ watchNetworkingV1NetworkPolicyListForAllNamespaces  | watch individual changes to a list of NetworkPolicy. deprecated: use the 'watch' parameter with a list operation instead.
+(36 rows)
+
+#+end_example
+
+** Coverage Information
+APISnoop also loads in data from the most recent end-to-end test runs, which lets us see which endpoints in the api are conformance tested.
+
+As an example, we can see those same GA networking endpoints, but now whether they are tested.
+#+BEGIN_SRC  sql-mode
+select endpoint,
+       conf_tested as "conformance tested"
+  from endpoint_coverage
+ where level = 'stable'
+    and category = 'networking'
+   and release = (
+    select release
+      from open_api
+     order by release::semver desc
+     limit 1
+    )
+order by "conformance tested" desc;
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+                      endpoint                       | conformance tested
+-----------------------------------------------------+--------------------
+ readNetworkingV1IngressClass                        | t
+ readNetworkingV1NamespacedIngress                   | t
+ readNetworkingV1NamespacedIngressStatus             | t
+ deleteNetworkingV1NamespacedIngress                 | t
+ replaceNetworkingV1IngressClass                     | t
+ replaceNetworkingV1NamespacedIngress                | t
+ replaceNetworkingV1NamespacedIngressStatus          | t
+ createNetworkingV1IngressClass                      | t
+ deleteNetworkingV1CollectionIngressClass            | t
+ getNetworkingAPIGroup                               | t
+ getNetworkingV1APIResources                         | t
+ listNetworkingV1IngressClass                        | t
+ listNetworkingV1IngressForAllNamespaces             | t
+ listNetworkingV1NamespacedIngress                   | t
+ deleteNetworkingV1CollectionNamespacedIngress       | t
+ createNetworkingV1NamespacedIngress                 | t
+ patchNetworkingV1IngressClass                       | t
+ patchNetworkingV1NamespacedIngress                  | t
+ patchNetworkingV1NamespacedIngressStatus            | t
+ deleteNetworkingV1IngressClass                      | t
+ replaceNetworkingV1NamespacedNetworkPolicy          | f
+ createNetworkingV1NamespacedNetworkPolicy           | f
+ deleteNetworkingV1CollectionNamespacedNetworkPolicy | f
+ deleteNetworkingV1NamespacedNetworkPolicy           | f
+ listNetworkingV1NamespacedNetworkPolicy             | f
+ listNetworkingV1NetworkPolicyForAllNamespaces       | f
+ patchNetworkingV1NamespacedNetworkPolicy            | f
+ readNetworkingV1NamespacedNetworkPolicy             | f
+(28 rows)
+
+#+end_example
+
+** Coverage information for your endpoints
+Lastly, our auditlogger is tracking all interactions happening on the cluster you brought up and mapping it to the endpoints being hit.  This lets us see whether an application running on our cluster is hitting untested endpoints.
+
+A simple way to do this is to take a look at the useragents hitting the cluster (excluding the kubelet api itself)
+#+begin_src sql-mode
+  select distinct useragent
+    from testing.audit_event
+    where useragent not like 'kube-%'
+   group by useragent;
+#+end_src
+
+#+RESULTS:
+:                            useragent
+: ----------------------------------------------------------------
+:  coredns/v0.0.0 (linux/amd64) kubernetes/$Format
+:  kindnetd/v0.0.0 (linux/amd64) kubernetes/$Format
+:  kubectl/v1.18.8 (linux/amd64) kubernetes/9f2892a
+:  kubelet/v1.18.2 (linux/amd64) kubernetes/52c56ce
+:  local-path-provisioner/v0.0.0 (linux/amd64) kubernetes/$Format
+: (5 rows)
+:
+
+We can then combine some tables to see whether our useragent is hitting anything untested.
+
+#+BEGIN_SRC sql-mode
+    select live.endpoint, conf_tested
+      from testing.audit_event live
+      join endpoint_coverage using(endpoint)
+     where useragent like 'coredns%'
+       and endpoint_coverage.release = (
+            select release
+            from open_api
+            order by release::semver desc
+            limit 1
+           )
+     group by live.endpoint, conf_tested
+     order by live.endpoint, conf_tested asc;
+#+END_SRC
+
+#+RESULTS:
+:               endpoint               | conf_tested
+: -------------------------------------+-------------
+:  listCoreV1EndpointsForAllNamespaces | t
+:  listCoreV1Namespace                 | t
+:  listCoreV1ServiceForAllNamespaces   | t
+: (3 rows)
+:
+
+
+** Helper queries
+*** Reset the live audit events
+Since the logger is tracking everyting, its audit_event table can get pretty big pretty fast.  To delete everyting from it, you want to run
+#+BEGIN_SRC sql-mode
+delete from testing.audit_event;
+#+END_SRC
+
+#+RESULTS:
+: DELETE 364800
+
+This will delete all events, while keeping all other relevant info and the auditlogger will continue to run.  It can be useful if you are wanting to test something on the cluster to reset the list, run the test, check the events, and repeat.
+*** Get info on our tables and views
+We have a couple helper functions in the db, that are basically a wrapper on psql's existing functions
+
+To see a description of all the relations in the db, you can run
+#+BEGIN_SRC sql-mode
+select * from describe_relations();
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+   schema    |             name             |                                                description
+-------------+------------------------------+------------------------------------------------------------------------------------------------------------
+ testing     | audit_event                  | every event from an e2e test run, or multiple test runs.
+ testing     | endpoint_hit_by_new_test     |
+ testing     | projected_change_in_coverage |
+ testing     | untested_stable_endpoint     |
+ public      | audit_event                  | every event from an e2e test run, or multiple test runs.
+ public      | audit_event_test             | every test in the audit_log of a release
+ public      | endpoint_coverage            | Coverage info for every endpoint in a release, taken from audit events for that release
+ public      | open_api                     | endpoint details from openAPI spec
+ conformance | coverage_per_release         | How many endopoints from a release are tested today?
+ conformance | eligible_endpoint            | all current stable endpoints for which conformant tests could be written, following conformance guidelines
+ conformance | ineligible_endpoint          | endpoints ineligible for conformance testing and the reason for ineligibility.
+ conformance | new_endpoint                 | eligible endpoints sorted by release and whether they are tested
+ conformance | progress                     | per release, the # of new, eligible endpoints and coverage ratios
+ conformance | test                         | info for each conformance test, from latest conformance.yaml
+(14 rows)
+
+#+end_example
+
+And to see all the columns, and their definition, for a given relation you can run
+#+BEGIN_SRC sql-mode
+select * from describe_columns('public', 'endpoint_coverage');
+-- first arg is the schema, second is the relation name
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+   column    |                                 description
+-------------+-----------------------------------------------------------------------------
+ release     | the open api release, date of endpoint details
+ endpoint    | a kubernetes endpoint, the operation_id in the spec
+ level       | alpha, beta, or stable
+ category    | endpoint category, roughly its group, taken from the first tag in the spec.
+ path        | the http path of the endpoint
+ description |
+ kind        | k8s kind  for endpoint
+ version     | k8s version for endpoint
+ group       | k8s group for endpoint
+ action      | endpoint action, roughly related to an http method
+ tested      | was endpoint hit at least once by a test useragent
+ conf_tested | was endpoint hit at least once by a conformance test useragent
+ tests       | array of codenames of all tests that hit this endpoint
+(13 rows)
+
+#+end_example
 
 * Envoy
 
