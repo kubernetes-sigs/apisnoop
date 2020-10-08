@@ -1,0 +1,495 @@
+#+TITLE: Checking Whether We Are hitting Intended Namespace
+
+* Background
+  There is a e2e conformance test to test whether an event can be created, read, patched, and deleted(https://github.com/kubernetes/kubernetes/blob/master/test/e2e/apimachinery/events.go)
+  In this test, it seems as if it should hit namespaced events(https://github.com/kubernetes/kubernetes/blob/master/test/e2e/apimachinery/events.go#L101), for example the endpoint
+  ~readCoreV1NamespacedEvent~.
+
+  However, according to apisnoop, this endpoint is not hit by any test.  When we look through the raw logs apisnoop consumes, it also appears that this endpoint is not hit.  We are uncertain why this test is not hitting an endpoint it seems to clearly be written to it.
+
+* Checking our work in apisnoop
+**  Does this test exist in our database?
+   The description of the test in question is "should ensure that an event can be fetched, patched, deleted, and listed"
+   this string ends up in the useragent that hits the cluster during the test run.  We parse these useragents to grab the test.
+   We will look specifically at events from this test run: https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1313553049469325312
+
+
+   #+begin_src sql-mode :exports both
+          select distinct test
+            from audit_event
+           where useragent like '%[sig-api-machinery]%should ensure that an event can be fetched, patched, deleted, and listed%'
+            and source = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1313553049469325312' ;
+   #+end_src
+
+   #+RESULTS:
+   #+begin_SRC example
+                                                          test
+   -------------------------------------------------------------------------------------------------------------------
+    [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+   (1 row)
+
+   #+end_SRC
+
+   The test is in the audit events from that test run, and in our snoop database.
+
+** What endpoints does this test hit?
+
+   We can look at the endpoints and the exact request uri being hit by this test.  Our endpoint in question does not appear in the db.
+  #+begin_src sql-mode :exports both
+    select distinct endpoint, (data->>'requestURI') as request
+      from audit_event
+     where useragent like '%[sig-api-machinery]%should ensure that an event can be fetched, patched, deleted, and listed%'
+       and source = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1313553049469325312' ;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                      endpoint                    |                                                                                     request
+  ------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+   createAuthorizationV1SubjectAccessReview       | /apis/authorization.k8s.io/v1/subjectaccessreviews
+   createCoreV1Namespace                          | /api/v1/namespaces
+   createRbacAuthorizationV1NamespacedRoleBinding | /apis/rbac.authorization.k8s.io/v1/namespaces/events-3086/rolebindings
+   deleteCoreV1Namespace                          | /api/v1/namespaces/events-3086
+   listCoreV1NamespacedServiceAccount             | /api/v1/namespaces/events-3086/serviceaccounts?allowWatchBookmarks=true&fieldSelector=metadata.name%3Ddefault&resourceVersion=23730&timeout=6m34s&timeoutSeconds=394&watch=true
+   listCoreV1NamespacedServiceAccount             | /api/v1/namespaces/events-3086/serviceaccounts?allowWatchBookmarks=true&fieldSelector=metadata.name%3Ddefault&resourceVersion=23752&timeout=8m12s&timeoutSeconds=492&watch=true
+   listCoreV1NamespacedServiceAccount             | /api/v1/namespaces/events-3086/serviceaccounts?fieldSelector=metadata.name%3Ddefault&limit=500&resourceVersion=0
+   listCoreV1Node                                 | /api/v1/nodes
+  (8 rows)
+
+  #+end_SRC
+
+* Checking our work using jq
+  As a sanity check, we parsed the raw logs using jq to see if there were any uri's this test was hitting that weren't showing in our db.
+
+  If we look at the build log for the logs, the test seems to go through all its steps succesffully:
+
+  #+begin_src shell :exports both
+  curl -L https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1313553049469325312/build-log.txt \
+  | grep -A32 19:06:01.175
+  #+end_src
+
+  #+RESULTS:
+  #+begin_example
+  I1006 19:06:01.175] [36mS[0m
+  I1006 19:06:01.176] [90m------------------------------[0m
+  I1006 19:06:01.176] [BeforeEach] [sig-instrumentation] Events API
+  I1006 19:06:01.176]   /go/src/k8s.io/kubernetes/_output/dockerized/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:174
+  I1006 19:06:01.176] [1mSTEP[0m: Creating a kubernetes client
+  I1006 19:06:01.177] Oct  6 19:06:00.017: INFO: >>> kubeConfig: /workspace/.kube/config
+  I1006 19:06:01.177] [1mSTEP[0m: Building a namespace api object, basename events
+  I1006 19:06:01.177] [1mSTEP[0m: Binding the e2e-test-privileged-psp PodSecurityPolicy to the default service account in events-5348
+  I1006 19:06:01.177] [1mSTEP[0m: Waiting for a default service account to be provisioned in namespace
+  I1006 19:06:01.177] [BeforeEach] [sig-instrumentation] Events API
+  I1006 19:06:01.177]   /go/src/k8s.io/kubernetes/_output/dockerized/go/src/k8s.io/kubernetes/test/e2e/instrumentation/events.go:81
+  I1006 19:06:01.178] [It] should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+  I1006 19:06:01.178]   /go/src/k8s.io/kubernetes/_output/dockerized/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:629
+  I1006 19:06:01.178] [1mSTEP[0m: creating a test event
+  I1006 19:06:01.178] [1mSTEP[0m: listing events in all namespaces
+  I1006 19:06:01.178] [1mSTEP[0m: listing events in test namespace
+  I1006 19:06:01.178] [1mSTEP[0m: listing events with field selection filtering on source
+  I1006 19:06:01.179] [1mSTEP[0m: listing events with field selection filtering on reportingController
+  I1006 19:06:01.179] [1mSTEP[0m: getting the test event
+  I1006 19:06:01.179] [1mSTEP[0m: patching the test event
+  I1006 19:06:01.179] [1mSTEP[0m: getting the test event
+  I1006 19:06:01.179] [1mSTEP[0m: updating the test event
+  I1006 19:06:01.179] [1mSTEP[0m: getting the test event
+  I1006 19:06:01.179] [1mSTEP[0m: deleting the test event
+  I1006 19:06:01.180] [1mSTEP[0m: listing events in all namespaces
+  I1006 19:06:01.180] [1mSTEP[0m: listing events in test namespace
+  I1006 19:06:01.180] [AfterEach] [sig-instrumentation] Events API
+  I1006 19:06:01.180]   /go/src/k8s.io/kubernetes/_output/dockerized/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:175
+  I1006 19:06:01.180] Oct  6 19:06:01.086: INFO: Waiting up to 3m0s for all (but 0) nodes to be ready
+  I1006 19:06:01.180] [1mSTEP[0m: Destroying namespace "events-5348" for this suite.
+  I1006 19:06:01.180]
+  I1006 19:06:01.679] [32m•[0m
+  I1006 19:06:01.679] [90m------------------------------[0m
+  #+end_example
+
+  So downloaded the raw log
+
+#+begin_src shell
+curl -L https://storage.googleapis.com/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1313553049469325312/artifacts/bootstrap-e2e-master/kube-apiserver-audit.log -o audit.log
+#+end_src
+
+filtered its events to those related to our test.
+
+#+begin_src shell
+cat audit.log \
+  | jq -c '. | select( .userAgent == "e2e.test/v1.20.0 (linux/amd64) kubernetes/f30d6a4 -- [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]" )' \
+  > ourtest.json
+#+end_src
+
+then filtered this list to just show the requestURI.
+
+#+begin_src shell :exports both
+cat ourtest.json | jq .requestURI | sort | uniq
+#+end_src
+
+#+RESULTS:
+#+begin_example
+"/apis/authorization.k8s.io/v1/subjectaccessreviews"
+"/apis/rbac.authorization.k8s.io/v1/namespaces/events-3086/rolebindings"
+"/api/v1/namespaces"
+"/api/v1/namespaces/events-3086"
+"/api/v1/namespaces/events-3086/serviceaccounts?allowWatchBookmarks=true&fieldSelector=metadata.name%3Ddefault&resourceVersion=23730&timeout=6m34s&timeoutSeconds=394&watch=true"
+"/api/v1/namespaces/events-3086/serviceaccounts?allowWatchBookmarks=true&fieldSelector=metadata.name%3Ddefault&resourceVersion=23752&timeout=8m12s&timeoutSeconds=492&watch=true"
+"/api/v1/namespaces/events-3086/serviceaccounts?fieldSelector=metadata.name%3Ddefault&limit=500&resourceVersion=0"
+"/api/v1/nodes"
+#+end_example
+
+While the operation_id's (what we call the endpoint in apisnoop) is not included in the raw log, we can compare these uri's to those in the database, to see if there's any missing.
+#+begin_src sql-mode :exports both
+  select distinct (data->>'requestURI') as requestURI
+    from audit_event
+   where useragent like '%[sig-api-machinery]%should ensure that an event can be fetched, patched, deleted, and listed%'
+     and source = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1313553049469325312'
+   order by requestURI;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                                                                                   requesturi
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ /apis/authorization.k8s.io/v1/subjectaccessreviews
+ /apis/rbac.authorization.k8s.io/v1/namespaces/events-3086/rolebindings
+ /api/v1/namespaces
+ /api/v1/namespaces/events-3086
+ /api/v1/namespaces/events-3086/serviceaccounts?allowWatchBookmarks=true&fieldSelector=metadata.name%3Ddefault&resourceVersion=23730&timeout=6m34s&timeoutSeconds=394&watch=true
+ /api/v1/namespaces/events-3086/serviceaccounts?allowWatchBookmarks=true&fieldSelector=metadata.name%3Ddefault&resourceVersion=23752&timeout=8m12s&timeoutSeconds=492&watch=true
+ /api/v1/namespaces/events-3086/serviceaccounts?fieldSelector=metadata.name%3Ddefault&limit=500&resourceVersion=0
+ /api/v1/nodes
+(8 rows)
+#+end_SRC
+
+The same uri's are being hit in the raw logs as in the database, which we'd expect.
+
+If we take a look at the endpoints that are hit.
+
+#+begin_src sql-mode :exports both
+  select distinct endpoint
+    from audit_event
+   where useragent like '%[sig-api-machinery]%should ensure that an event can be fetched, patched, deleted, and listed%'
+     and source = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1313553049469325312';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                    endpoint
+------------------------------------------------
+ createAuthorizationV1SubjectAccessReview
+ createCoreV1Namespace
+ createRbacAuthorizationV1NamespacedRoleBinding
+ deleteCoreV1Namespace
+ listCoreV1NamespacedServiceAccount
+ listCoreV1Node
+(6 rows)
+
+#+end_SRC
+
+there are none related to reading or patching, and our endpoint in question does not appear.
+* Track e2e test run w/ apisnoop
+** Create a view to track endpoints hit by an e2e test run
+
+#+begin_src sql-mode :exports both :session none
+create or replace view "testing"."endpoint_hit_by_e2e_test" AS
+  with live_testing_endpoints AS (
+    SELECT endpoint, useragent,
+           count(*) as hits
+      from testing.audit_event
+      where useragent like 'e2e%'
+     group by endpoint, useragent
+  ), baseline as  (
+    select distinct
+      ec.endpoint,
+      ec.tested,
+      ec.conf_tested,
+      release
+      from endpoint_coverage ec
+      where ec.release = (
+      select release
+      from open_api
+      order by release::semver desc
+      limit 1
+     )
+  )
+  select distinct
+    lte.useragent,
+    lte.endpoint,
+    b.tested as hit_by_ete,
+    lte.hits as hit_by_new_test
+    from live_testing_endpoints lte
+    join baseline b using(endpoint);
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+CREATE VIEW
+#+end_SRC
+
+** make e2e.test
+
+#+begin_src shell  :async yes  :eval never-export
+  cd $HOME/go/src/k8s.io/kubernetes
+  make WHAT=test/e2e/e2e.test
+#+end_src
+
+#+RESULTS:
+#+begin_example
++++ [1008 13:10:13] Building go targets for linux/amd64:
+    test/e2e/e2e.test
+#+end_example
+
+** Reset stats
+
+#+begin_src sql-mode :eval never-export :exports both :session none
+delete from testing.audit_event;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+DELETE 956706
+#+end_SRC
+
+** Confirm no current e2e useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent
+     from testing.audit_event
+      where useragent like 'e2e.test%';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   useragent
+  -----------
+  (0 rows)
+
+  #+end_SRC
+** Run e2e.test
+
+#+begin_src shell  :async yes :exports both  :eval never-export
+  cd $HOME/go/src/k8s.io/kubernetes
+  TEST_NAME="Events.should.ensure.that.an.event.can.be.fetched,.patched,.deleted,.and.listed"
+  s=$(date +%s)
+  go test ./test/e2e/ -v -timeout=0  --report-dir=/tmp/ARTIFACTS -ginkgo.focus=$TEST_NAME  -ginkgo.noColor
+  e=$(date +%s)
+  echo "Total time: $(( e - s )) seconds"
+#+end_src
+
+#+RESULTS:
+#+begin_example
+I1008 13:34:36.916402   88640 test_context.go:416] Using a temporary kubeconfig file from in-cluster config : /tmp/kubeconfig-623618684
+I1008 13:34:36.916411   88640 test_context.go:429] Tolerating taints "node-role.kubernetes.io/master" when considering if nodes are ready
+Oct  8 13:34:36.916: INFO: The --provider flag is not set. Continuing as if --provider=skeleton had been used.
+=== RUN   TestE2E
+I1008 13:34:36.916451   88640 e2e.go:129] Starting e2e run "39159f56-7ea3-47bc-98ea-24b575eda4ce" on Ginkgo node 1
+{"msg":"Test Suite starting","total":1,"completed":0,"skipped":0,"failed":0}
+Running Suite: Kubernetes e2e suite
+===================================
+Random Seed: 1602117276 - Will randomize all specs
+Will run 1 of 5226 specs
+
+Oct  8 13:34:36.923: INFO: >>> kubeConfig: /tmp/kubeconfig-623618684
+Oct  8 13:34:36.924: INFO: Waiting up to 30m0s for all (but 0) nodes to be schedulable
+Oct  8 13:34:36.929: INFO: Waiting up to 10m0s for all pods (need at least 0) in namespace 'kube-system' to be running and ready
+Oct  8 13:34:36.943: INFO: 11 / 11 pods in namespace 'kube-system' are running and ready (0 seconds elapsed)
+Oct  8 13:34:36.943: INFO: expected 3 pod replicas in namespace 'kube-system', 3 are Running and Ready.
+Oct  8 13:34:36.943: INFO: Waiting up to 5m0s for all daemonsets in namespace 'kube-system' to start
+Oct  8 13:34:36.946: INFO: 1 / 1 pods ready in namespace 'kube-system' in daemonset 'csi-node' (0 seconds elapsed)
+Oct  8 13:34:36.946: INFO: 1 / 1 pods ready in namespace 'kube-system' in daemonset 'kube-proxy' (0 seconds elapsed)
+Oct  8 13:34:36.946: INFO: 1 / 1 pods ready in namespace 'kube-system' in daemonset 'weave-net' (0 seconds elapsed)
+Oct  8 13:34:36.946: INFO: e2e test version: v0.0.0-master+$Format:%h$
+Oct  8 13:34:36.947: INFO: kube-apiserver version: v1.19.0
+Oct  8 13:34:36.947: INFO: >>> kubeConfig: /tmp/kubeconfig-623618684
+Oct  8 13:34:36.948: INFO: Cluster IP family: ipv4
+SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+------------------------------
+[sig-api-machinery] Events
+  should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+  /home/ii/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:629
+[BeforeEach] [sig-api-machinery] Events
+  /home/ii/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:174
+STEP: Creating a kubernetes client
+Oct  8 13:34:36.955: INFO: >>> kubeConfig: /tmp/kubeconfig-623618684
+STEP: Building a namespace api object, basename events
+Oct  8 13:34:36.964: INFO: Found PodSecurityPolicies; testing pod creation to see if PodSecurityPolicy is enabled
+Oct  8 13:34:36.967: INFO: No PSP annotation exists on dry run pod; assuming PodSecurityPolicy is disabled
+STEP: Waiting for a default service account to be provisioned in namespace
+[It] should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+  /home/ii/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:629
+STEP: creating a test event
+STEP: listing all events in all namespaces
+STEP: patching the test event
+STEP: fetching the test event
+STEP: deleting the test event
+STEP: listing all events in all namespaces
+[AfterEach] [sig-api-machinery] Events
+  /home/ii/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:175
+Oct  8 13:34:36.973: INFO: Waiting up to 3m0s for all (but 0) nodes to be ready
+STEP: Destroying namespace "events-4795" for this suite.
+•{"msg":"PASSED [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]","total":1,"completed":1,"skipped":3115,"failed":0}
+SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSOct  8 13:34:36.981: INFO: Running AfterSuite actions on all nodes
+Oct  8 13:34:36.981: INFO: Running AfterSuite actions on node 1
+Oct  8 13:34:36.981: INFO: Dumping logs locally to: /tmp/ARTIFACTS
+Checking for custom logdump instances, if any
+Sourcing kube-util.sh
+../../cluster/log-dump/../../cluster/../cluster/gce/../../cluster/gce/config-test.sh: line 132: USER: unbound variable
+Oct  8 13:34:36.991: INFO: Error running cluster/log-dump/log-dump.sh: exit status 1
+
+JUnit report was created: /tmp/ARTIFACTS/junit_01.xml
+{"msg":"Test Suite completed","total":1,"completed":1,"skipped":5225,"failed":0}
+
+Ran 1 of 5226 Specs in 0.070 seconds
+SUCCESS! -- 1 Passed | 0 Failed | 0 Pending | 5225 Skipped
+--- PASS: TestE2E (0.09s)
+=== RUN   TestViperConfig
+--- PASS: TestViperConfig (0.00s)
+PASS
+ok  	k8s.io/kubernetes/test/e2e	0.649s
+Total time: 6 seconds
+#+end_example
+
+** Confirm current e2e useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent
+     from testing.audit_event
+      where useragent like 'e2e.test%';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                                                                                 useragent
+  -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+   e2e.test/v0.0.0 (linux/amd64) kubernetes/$Format
+   e2e.test/v0.0.0 (linux/amd64) kubernetes/$Format -- [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+  (2 rows)
+
+  #+end_SRC
+** Endpoints used by the e2e framework & hit by the e2e test
+
+#+begin_src sql-mode :exports both :session none
+select endpoint,
+       hit_by_ete,
+       hit_by_new_test
+from testing.endpoint_hit_by_e2e_test
+where useragent like '%sig%'
+;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+              endpoint              | hit_by_ete | hit_by_new_test
+------------------------------------+------------+-----------------
+ createCoreV1Namespace              | t          |               3
+ createCoreV1NamespacedEvent        | f          |               3
+ createCoreV1NamespacedPod          | t          |               3
+ deleteCoreV1Namespace              | t          |               3
+ deleteCoreV1NamespacedEvent        | f          |               3
+ listCoreV1EventForAllNamespaces    | f          |               6
+ listCoreV1NamespacedServiceAccount | t          |              16
+ listCoreV1Node                     | t          |               3
+ listPolicyV1beta1PodSecurityPolicy | t          |               3
+ patchCoreV1NamespacedEvent         | f          |               3
+ readCoreV1NamespacedEvent          | f          |               3
+(11 rows)
+
+#+end_SRC
+
+* Track full Sonobouy  run w/ apisnoop
+** Endpoints hit by Conformance Tests during Sonobouy Run
+
+getCodeVersion and *Event* releated endpoints seem to be hit when we run sonobuoy.
+
+#+begin_src sql-mode :exports both :session none
+select distinct endpoint
+from testing.endpoint_hit_by_e2e_test
+where useragent like 'e2e.test%'
+and useragent like '%Conformance%'
+and not hit_by_ete
+order by endpoint
+;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+               endpoint
+---------------------------------------
+ createCoreV1NamespacedEvent
+ deleteCoreV1CollectionNamespacedEvent
+ deleteCoreV1NamespacedEvent
+ getCodeVersion
+ listCoreV1EventForAllNamespaces
+ listCoreV1NamespacedEvent
+ patchCoreV1NamespacedEvent
+ readCoreV1NamespacedEvent
+(8 rows)
+
+#+end_SRC
+** Endpoints used by the e2e framework & hit by Sonobouy
+
+If we dig a bit further, we can see couple of tests are responsible for the majority of the uncounted coverage increase.
+
+#+begin_src sql-mode :exports both :session none
+select distinct endpoint, useragent
+from testing.endpoint_hit_by_e2e_test
+where useragent like 'e2e.test%'
+
+and not hit_by_ete
+order by useragent
+;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+               endpoint                |                                                                                                useragent
+---------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ getCodeVersion                        | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641
+ listCoreV1NamespacedEvent             | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [k8s.io] [sig-node] Events should be sent by kubelets and the scheduler about pods scheduling and running  [Conformance]
+ getCodeVersion                        | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] Discovery should validate PreferredVersion for each APIGroup [Conformance]
+ createCoreV1NamespacedEvent           | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] Events should delete a collection of events [Conformance]
+ deleteCoreV1CollectionNamespacedEvent | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] Events should delete a collection of events [Conformance]
+ listCoreV1NamespacedEvent             | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] Events should delete a collection of events [Conformance]
+ createCoreV1NamespacedEvent           | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+ deleteCoreV1NamespacedEvent           | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+ listCoreV1EventForAllNamespaces       | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+ patchCoreV1NamespacedEvent            | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+ readCoreV1NamespacedEvent             | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+ getCodeVersion                        | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] Servers with support for Table transformation should return a 406 for a backend which does not implement metadata [Conformance]
+ getCodeVersion                        | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-api-machinery] server version should find the server version [Conformance]
+ listCoreV1NamespacedEvent             | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-apps] Daemon set [Serial] should rollback without unnecessary restarts [Conformance]
+ listCoreV1NamespacedEvent             | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-instrumentation] Events API should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+ listCoreV1NamespacedEvent             | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-network] Ingress API should support creating Ingress API operations [Conformance]
+ listCoreV1NamespacedEvent             | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-scheduling] SchedulerPredicates [Serial] validates resource limits of pods that are allowed to run  [Conformance]
+ listCoreV1NamespacedEvent             | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-scheduling] SchedulerPredicates [Serial] validates that NodeSelector is respected if not matching  [Conformance]
+ listCoreV1NamespacedEvent             | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-scheduling] SchedulerPreemption [Serial] validates basic preemption works [Conformance]
+ listCoreV1NamespacedEvent             | e2e.test/v1.19.0 (linux/amd64) kubernetes/e199641 -- [sig-scheduling] SchedulerPreemption [Serial] validates lower priority pod preemption by critical pod [Conformance]
+(20 rows)
+
+#+end_SRC
+
+* GCE/GCI Audit Policy
+After a point in the right direction from @liggit, we discovered the location of the Audit Policy used by our upstream CI runs.
+In [[https://github.com/kubernetes/kubernetes/blob/master/cluster/gce/gci/configure-helper.sh#L1178-L1182][cluster/gce/gci/configure-helper.sh]] :
+#+begin_src yaml
+  # Don't log events requests.
+  - level: None
+    resources:
+      - group: "" # core
+        resources: ["events"]
+#+end_src
+
+Since these prow jobs are configured to not log any event related requests, the event releated tests results don't show up in our coverage.
+
+* Closing Thoughts and Next Steps
+  This was difficult bug to track down!
+** Next Steps
+
+Possibly one of the following:
+- update the policy so that we capture our missing endpoints
+- create a new policy and update the two jobs we depend on to use it
+- create a new job that runs all the e2e tests using a new policy alowing everything through
+
+** Thanks
+
+- to @johnbelamaric for pointing out that we had a test didn't seem to be counting.
+- to @liggit for showing where the gci/gce audit policy is provided
+- to @heyste for patience when we couldn't figure out why his test wasn't increasing coverage
