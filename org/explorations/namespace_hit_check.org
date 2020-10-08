@@ -191,3 +191,205 @@ there are none related to reading or patching, and our endpoint in question does
   We are fairly certain that this test, as it appears in the apiserver raw logs used by apisnoop, does not hit all the endpoints one would expect it to hit.
 
   It's unclear why this would be, or if there are different logs that should be used.  Could we be reading the test function incorrectly, or is it possible not all endpoint hits are being picked up for the audit events?
+
+* Track e2e test run w/ apisnoop
+** Create a view to track endpoints hit by an e2e test run
+
+#+begin_src sql-mode :exports both :session none
+create or replace view "testing"."endpoint_hit_by_e2e_test" AS
+  with live_testing_endpoints AS (
+    SELECT endpoint, useragent,
+           count(*) as hits
+      from testing.audit_event
+      where useragent like 'e2e%'
+     group by endpoint, useragent
+  ), baseline as  (
+    select distinct
+      ec.endpoint,
+      ec.tested,
+      ec.conf_tested,
+      release
+      from endpoint_coverage ec
+      where ec.release = (
+      select release
+      from open_api
+      order by release::semver desc
+      limit 1
+     )
+  )
+  select distinct
+    lte.useragent,
+    lte.endpoint,
+    b.tested as hit_by_ete,
+    lte.hits as hit_by_new_test
+    from live_testing_endpoints lte
+    join baseline b using(endpoint);
+#+end_src
+
+** make e2e.test
+
+#+begin_src shell  :async yes  :eval never-export
+  cd $HOME/go/src/k8s.io/kubernetes
+  make WHAT=test/e2e/e2e.test
+#+end_src
+
+#+RESULTS:
+#+begin_example
++++ [1008 13:10:13] Building go targets for linux/amd64:
+    test/e2e/e2e.test
+#+end_example
+
+** Reset stats
+
+#+begin_src sql-mode :eval never-export :exports both :session none
+delete from testing.audit_event;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+DELETE 956706
+#+end_SRC
+
+** Confirm no current e2e useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent
+     from testing.audit_event
+      where useragent like 'e2e.test%';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   useragent
+  -----------
+  (0 rows)
+
+  #+end_SRC
+** Run e2e.test
+
+#+begin_src shell  :async yes  :eval never-export
+  cd $HOME/go/src/k8s.io/kubernetes
+  TEST_NAME="Events.should.ensure.that.an.event.can.be.fetched,.patched,.deleted,.and.listed"
+  s=$(date +%s)
+  go test ./test/e2e/ -v -timeout=0  --report-dir=/tmp/ARTIFACTS -ginkgo.focus=$TEST_NAME  -ginkgo.noColor
+  e=$(date +%s)
+  echo "Total time: $(( e - s )) seconds"
+#+end_src
+
+#+RESULTS:
+#+begin_example
+I1008 13:34:36.916402   88640 test_context.go:416] Using a temporary kubeconfig file from in-cluster config : /tmp/kubeconfig-623618684
+I1008 13:34:36.916411   88640 test_context.go:429] Tolerating taints "node-role.kubernetes.io/master" when considering if nodes are ready
+Oct  8 13:34:36.916: INFO: The --provider flag is not set. Continuing as if --provider=skeleton had been used.
+=== RUN   TestE2E
+I1008 13:34:36.916451   88640 e2e.go:129] Starting e2e run "39159f56-7ea3-47bc-98ea-24b575eda4ce" on Ginkgo node 1
+{"msg":"Test Suite starting","total":1,"completed":0,"skipped":0,"failed":0}
+Running Suite: Kubernetes e2e suite
+===================================
+Random Seed: 1602117276 - Will randomize all specs
+Will run 1 of 5226 specs
+
+Oct  8 13:34:36.923: INFO: >>> kubeConfig: /tmp/kubeconfig-623618684
+Oct  8 13:34:36.924: INFO: Waiting up to 30m0s for all (but 0) nodes to be schedulable
+Oct  8 13:34:36.929: INFO: Waiting up to 10m0s for all pods (need at least 0) in namespace 'kube-system' to be running and ready
+Oct  8 13:34:36.943: INFO: 11 / 11 pods in namespace 'kube-system' are running and ready (0 seconds elapsed)
+Oct  8 13:34:36.943: INFO: expected 3 pod replicas in namespace 'kube-system', 3 are Running and Ready.
+Oct  8 13:34:36.943: INFO: Waiting up to 5m0s for all daemonsets in namespace 'kube-system' to start
+Oct  8 13:34:36.946: INFO: 1 / 1 pods ready in namespace 'kube-system' in daemonset 'csi-node' (0 seconds elapsed)
+Oct  8 13:34:36.946: INFO: 1 / 1 pods ready in namespace 'kube-system' in daemonset 'kube-proxy' (0 seconds elapsed)
+Oct  8 13:34:36.946: INFO: 1 / 1 pods ready in namespace 'kube-system' in daemonset 'weave-net' (0 seconds elapsed)
+Oct  8 13:34:36.946: INFO: e2e test version: v0.0.0-master+$Format:%h$
+Oct  8 13:34:36.947: INFO: kube-apiserver version: v1.19.0
+Oct  8 13:34:36.947: INFO: >>> kubeConfig: /tmp/kubeconfig-623618684
+Oct  8 13:34:36.948: INFO: Cluster IP family: ipv4
+SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+------------------------------
+[sig-api-machinery] Events
+  should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+  /home/ii/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:629
+[BeforeEach] [sig-api-machinery] Events
+  /home/ii/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:174
+STEP: Creating a kubernetes client
+Oct  8 13:34:36.955: INFO: >>> kubeConfig: /tmp/kubeconfig-623618684
+STEP: Building a namespace api object, basename events
+Oct  8 13:34:36.964: INFO: Found PodSecurityPolicies; testing pod creation to see if PodSecurityPolicy is enabled
+Oct  8 13:34:36.967: INFO: No PSP annotation exists on dry run pod; assuming PodSecurityPolicy is disabled
+STEP: Waiting for a default service account to be provisioned in namespace
+[It] should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+  /home/ii/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:629
+STEP: creating a test event
+STEP: listing all events in all namespaces
+STEP: patching the test event
+STEP: fetching the test event
+STEP: deleting the test event
+STEP: listing all events in all namespaces
+[AfterEach] [sig-api-machinery] Events
+  /home/ii/go/src/k8s.io/kubernetes/test/e2e/framework/framework.go:175
+Oct  8 13:34:36.973: INFO: Waiting up to 3m0s for all (but 0) nodes to be ready
+STEP: Destroying namespace "events-4795" for this suite.
+•{"msg":"PASSED [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]","total":1,"completed":1,"skipped":3115,"failed":0}
+SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSOct  8 13:34:36.981: INFO: Running AfterSuite actions on all nodes
+Oct  8 13:34:36.981: INFO: Running AfterSuite actions on node 1
+Oct  8 13:34:36.981: INFO: Dumping logs locally to: /tmp/ARTIFACTS
+Checking for custom logdump instances, if any
+Sourcing kube-util.sh
+../../cluster/log-dump/../../cluster/../cluster/gce/../../cluster/gce/config-test.sh: line 132: USER: unbound variable
+Oct  8 13:34:36.991: INFO: Error running cluster/log-dump/log-dump.sh: exit status 1
+
+JUnit report was created: /tmp/ARTIFACTS/junit_01.xml
+{"msg":"Test Suite completed","total":1,"completed":1,"skipped":5225,"failed":0}
+
+Ran 1 of 5226 Specs in 0.070 seconds
+SUCCESS! -- 1 Passed | 0 Failed | 0 Pending | 5225 Skipped
+--- PASS: TestE2E (0.09s)
+=== RUN   TestViperConfig
+--- PASS: TestViperConfig (0.00s)
+PASS
+ok  	k8s.io/kubernetes/test/e2e	0.649s
+Total time: 6 seconds
+#+end_example
+
+** Confirm current e2e useragents:
+  #+begin_src sql-mode :eval never-export :exports both :session none
+    select distinct useragent
+     from testing.audit_event
+      where useragent like 'e2e.test%';
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                                                                                 useragent
+  -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+   e2e.test/v0.0.0 (linux/amd64) kubernetes/$Format
+   e2e.test/v0.0.0 (linux/amd64) kubernetes/$Format -- [sig-api-machinery] Events should ensure that an event can be fetched, patched, deleted, and listed [Conformance]
+  (2 rows)
+
+  #+end_SRC
+** Endpoints used by the e2e framework & hit by the e2e test
+
+#+begin_src sql-mode :exports both :session none
+select endpoint,
+       hit_by_ete,
+       hit_by_new_test
+from testing.endpoint_hit_by_e2e_test
+where useragent like '%sig%'
+;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+              endpoint              | hit_by_ete | hit_by_new_test
+------------------------------------+------------+-----------------
+ createCoreV1Namespace              | t          |               3
+ createCoreV1NamespacedEvent        | f          |               3
+ createCoreV1NamespacedPod          | t          |               3
+ deleteCoreV1Namespace              | t          |               3
+ deleteCoreV1NamespacedEvent        | f          |               3
+ listCoreV1EventForAllNamespaces    | f          |               6
+ listCoreV1NamespacedServiceAccount | t          |              16
+ listCoreV1Node                     | t          |               3
+ listPolicyV1beta1PodSecurityPolicy | t          |               3
+ patchCoreV1NamespacedEvent         | f          |               3
+ readCoreV1NamespacedEvent          | f          |               3
+(11 rows)
+
+#+end_SRC
