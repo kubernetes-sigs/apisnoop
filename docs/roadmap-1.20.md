@@ -10,39 +10,71 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 ### ****KR1 increase new conformant stable endpoints****
 
 -   Goal: 30 - Stretch Goal: 40
--   Current Status:
-    -   Test write:
-        -   PR of 7 Endpoint form the "Proxy" group
-        -   3 PR's for 17 Endpoints with intermittend flakes being reviewed
+-   Current Status +19 (written):
+    -   [+7 ReplicationController (testgrid)](https://testgrid.k8s.io/google-gce#gci-gce-flaky&include-filter-by-regex=should%20test%20the%20lifecycle%20of%20a%20ReplicationController)
+    -   [+12 {Pod,Service}ProxyWithPath](https://github.com/kubernetes/kubernetes/pull/95503)
+    -   [+4 NodeProxyWithPath](https://github.com/kubernetes/kubernetes/issues/95524) (in progress)
+
+### Intermittent Flakes
+
+Refactoring / Revisiting Flakey Tests
+
+-   [+4 Pod+PodStatus Lifecycle](https://github.com/kubernetes/kubernetes/pull/93459)
+-   [+6 AppV1Deployment Lifecycle](https://github.com/kubernetes/kubernetes/pull/93458)
+
++17 being reviewed maybe 1.20
+
+### "missing" Conformance tests
+
+Default audit policy filters **Event** endpoints
+
+-   [Override audit policy for conformance informing jobs #19502](https://github.com/kubernetes/test-infra/pull/19502)
+-   [Support patching default **ADVANCED AUDIT POLICY** #19613](https://github.com/kubernetes/test-infra/issues/19613#issuecomment-711723310)
+
++7 endpoints: Once the policy is updated
+
+### Proxy Redirect: Bugs Discovered
+
+[Limit Apiserver Proxy Redirects](https://github.com/kubernetes/kubernetes/pull/95128) fix bugs
+
+-   [PodProxy redirect test +7 Endpoint coverage](https://github.com/kubernetes/kubernetes/issues/92950)
+-   [NodeProxy Redirect Test +7 endpoint coverage](https://github.com/kubernetes/kubernetes/issues/92950)
+
++14 endpoints unlikely for 1.20
+
+### Conclusion
+
+Still looking on target, even as our testing hit edge cases via flakes, policies, and redirects.
+
+-   Flakes are difficult
+-   Policy changes are slow
+-   Proxy Redirect has bugs
 
 ### ****KR2 clean-up technical debt****
 
--   Goal: Clean technical debt back to 1.15 [Technical Debt](https://apisnoop.cncf.io/conformance-progress?relchart=number) has been cleared with the last inligible endpoints identified
--   Stretch Goal: 6 of 18 Endpoints of 1.14
+-   Goal: [Cleared](https://apisnoop.cncf.io/conformance-progress#coverage-by-release) debt back to 1.15
+-   Stretch Goal: Clear debt to 1.14
+-   5 endpoints remain for 1.14
+-   Promoting in a week [Priority Lifecycle](https://github.com/kubernetes/kubernetes/pull/95340#issuecomment-708034855)
+-   Would clean techical debt back to 1.11
 
-## ****Release Blocking k/k Jobs touching test/e2e or API****
-
-Moved to Release Blocking Job instead of PR blocking Job by community agreement.
+## ****Release Blocking k/k Job****
 
 ### ****Progress****
 
 -   The job within [k/test-infra#19173](https://github.com/kubernetes/test-infra/pull/19173) is runnig on [prow.cncf.io](https://prow.cncf.io/)
 -   Caught new untested endpoint
--   SIG Network responed with [k/test-infra/#19160](https://github.com/kubernetes/test-infra/issues/19160)
-    -   to take responsibility for the Conformance of their API's
-    -   APISnoop also seem to gain more traction in the community in this way
+-   SIG Network wants one [k/test-infra/#19160](https://github.com/kubernetes/test-infra/issues/19160)
+    -   to own Conformance of their API's
+    -   APISnoop gains community traction
 
-### ****APISnoop landing page****
+### ****Status update****
 
-Updates made:
-
--   Improved color to better contrast the work done
--   Graph Legend improved
--   About page information improved with more documentation links
--   List documents:
-    -   Conformance Testing in Kubernetes
-    -   Writing good e2e tests for Kubernetes
-    -   Link to Conformance Office Hours Meeting Notes
+-   prow.k8s.io job failing:
+    -   [apisnoop-conformance-gate](https://prow.k8s.io/?job=apisnoop-conformance-gate)
+-   prow.cncf.io job succeeds:
+    -   [apisnoop-conformance-gate](https://prow.cncf.io/?job=apisnoop-conformance-gate)
+-   engaging with SIG-Testing
 
 ## ****Other Important News****
 
@@ -55,16 +87,13 @@ Updates made:
 
 ### ****Conformance Gate****
 
--   CNCF Conformance gate is running
-    -   Next steps must be discussed
+-   cncf/k8s-conformance gate is running
 
 ### ****KubeCon + CloudNativeCon North America 2020 Virtual****
 
-ii Recieved an invitation to speak at the Maintainer Track Sessions
+ii speaking at the Maintainer Track Sessions
 
--   The Conference take place November 17–20
--   ii will present a 35 minute slot
--   K8s Conformance Intro
--   APISnoop & Tooling developed to improve conformance
+-   Contributing to Kubernetes Conformance Coverage
+-   November 19th - <https://sched.co/ekHw>
 
 ## ****Questions / Feedback****
