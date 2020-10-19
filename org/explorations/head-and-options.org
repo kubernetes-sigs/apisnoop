@@ -1,0 +1,127 @@
+#+TITLE: head+options
+* HEAD and OPTIONS
+
+These http verbs don't seem to show up in the apiserver audit logs when we hit
+*proxy* endpoints.
+
+* k8s proxy verbs
+** download openapi spec
+#+name: download k8s json
+#+begin_src shell :results none
+  curl -LO https://raw.githubusercontent.com/kubernetes/kubernetes/master/api/openapi-spec/swagger.json
+#+end_src
+** Find head and options within the spec
+
+For all of these paths, we get the same http methods:
+
+- "/api/v1/namespaces/{namespace}/services/{name}/proxy"
+- "/api/v1/namespaces/{namespace}/services/{name}/proxy/{path}"
+- "/api/v1/namespaces/{namespace}/pods/{name}/proxy"
+- "/api/v1/namespaces/{namespace}/pods/{name}/proxy/{path}"
+- "/api/v1/nodes/{name}/proxy"
+- "/api/v1/nodes/{name}/proxy/{path}"
+
+#+name: download k8s json
+#+begin_src bash
+  cat swagger.json | jq '.paths["/api/v1/namespaces/{namespace}/pods/{name}/proxy"]' | jq keys | jq -r .[]
+#+end_src
+
+#+RESULTS: download k8s json
+#+begin_src bash
+delete
+get
+head
+options
+parameters
+patch
+post
+put
+#+end_src
+
+* http.Method(HEAD) -> RestquestInfo.Verb(get)
+
+[[https://github.com/kubernetes/kubernetes/blob/b46612a74224b0871a97dae819f5fb3a1763d0b9/staging/src/k8s.io/apiserver/pkg/endpoints/request/requestinfo.go#L117-L123][apiserver/pkg/endpoints/request/requestinfo.go#L117-L123]]
+
+Not here we start with *ToLower* on the http *req.Method*:
+
+#+begin_src go
+  func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, error) {
+    // start with a non-resource request until proven otherwise
+    requestInfo := RequestInfo{
+      IsResourceRequest: false,
+      Path:              req.URL.Path,
+      Verb:              strings.ToLower(req.Method),
+    }
+#+end_src
+
+[[https://github.com/kubernetes/kubernetes/blob/b46612a74224b0871a97dae819f5fb3a1763d0b9/staging/src/k8s.io/apiserver/pkg/endpoints/request/requestinfo.go#L41-L49][apiserver/pkg/endpoints/request/requestinfo.go#L41-L49]]
+
+This is now *RequestInfo.Verb*
+
+#+begin_src go
+  // RequestInfo holds information parsed from the http.Request
+  type RequestInfo struct {
+    // IsResourceRequest indicates whether or not the request is for an API resource or subresource
+    IsResourceRequest bool
+    // Path is the URL path of the request
+    Path string
+    // Verb is the kube verb associated with the request for API requests, not the http verb.  This includes things like list and watch.
+    // for non-resource requests, this is the lowercase http verb
+    Verb string
+#+end_src
+
+[[https://github.com/kubernetes/kubernetes/blob/b46612a74224b0871a97dae819f5fb3a1763d0b9/staging/src/k8s.io/apiserver/pkg/endpoints/request/requestinfo.go#L67-L74][apiserver/pkg/endpoints/request/requestinfo.go#L67-L74]]
+
+#+begin_src go
+// specialVerbs contains just strings which are used in REST paths for special actions that don't fall under the normal
+// CRUDdy GET/POST/PUT/DELETE actions on REST objects.
+// TODO: find a way to keep this up to date automatically.  Maybe dynamically populate list as handlers added to
+// master's Mux.
+var specialVerbs = sets.NewString("proxy", "watch")
+
+// specialVerbsNoSubresources contains root verbs which do not allow subresources
+var specialVerbsNoSubresources = sets.NewString("proxy")
+#+end_src
+
+[[https://github.com/kubernetes/kubernetes/blob/b46612a74224b0871a97dae819f5fb3a1763d0b9/staging/src/k8s.io/apiserver/pkg/endpoints/request/requestinfo.go#L153-L160][apiserver/pkg/endpoints/request/requestinfo.go#L153-L160]]
+
+It seems that if we have proxy in the first part of *currentParts* we use that
+as the verb, pretty much means ignoring the any other HTTP methods.
+
+#+begin_src go
+	// handle input of form /{specialVerb}/*
+	if specialVerbs.Has(currentParts[0]) {
+		if len(currentParts) < 2 {
+			return &requestInfo, fmt.Errorf("unable to determine kind and namespace from url, %v", req.URL)
+		}
+
+		requestInfo.Verb = currentParts[0]
+		currentParts = currentParts[1:]
+#+end_src
+* Logs
+
+When running our test, we know that the *http.Method* is set to *HEAD*, but shows up in the audit logs as *get*.
+
+#+begin_src json
+  {
+    "verb": "get",
+    "level": "RequestResponse",
+    "stage": "ResponseComplete",
+    "auditID": "166475a4-1bdd-444c-833d-3519f8c8f7fc",
+    "objectRef": {
+      "name": "agnhost",
+      "resource": "pods",
+      "namespace": "default",
+      "apiVersion": "v1",
+      "subresource": "proxy"
+    },
+    "userAgent": "live-test-writing",
+    "requestURI": "/api/v1/namespaces/default/pods/agnhost/proxy/curl/some/path/with/HEAD",
+    "responseStatus": {
+      "code": 200,
+      "metadata": {}
+    },
+    "stageTimestamp": "2020-10-11T22:50:24.132428Z",
+    "requestReceivedTimestamp": "2020-10-11T22:50:24.131430Z"
+  }
+#+end_src
