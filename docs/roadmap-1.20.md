@@ -11,9 +11,9 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 -   Goal: 30 - Stretch Goal: 40
 -   Current Status +19 (written):
-    -   [+7 ReplicationController (testgrid)](https://testgrid.k8s.io/google-gce#gci-gce-flaky&include-filter-by-regex=should%20test%20the%20lifecycle%20of%20a%20ReplicationController)
-    -   [+12 {Pod,Service}ProxyWithPath](https://github.com/kubernetes/kubernetes/pull/95503)
-    -   [+4 NodeProxyWithPath](https://github.com/kubernetes/kubernetes/issues/95524) (in progress)
+    -   [+7 ReplicationController (Prome PR)](https://github.com/kubernetes/kubernetes/pull/95713)
+    -   [+12 {Pod,Service}ProxyW/Path (Test PR)](https://github.com/kubernetes/kubernetes/pull/95503)
+    -   [+4 NodeProxyWithPath (Issue)](https://github.com/kubernetes/kubernetes/issues/95524)
 
 ### Intermittent Flakes
 
@@ -28,10 +28,13 @@ Refactoring / Revisiting Flakey Tests
 
 Default audit policy filters **Event** endpoints
 
--   [Override audit policy for conformance informing jobs #19502](https://github.com/kubernetes/test-infra/pull/19502)
 -   [Support patching default **ADVANCED AUDIT POLICY** #19613](https://github.com/kubernetes/test-infra/issues/19613#issuecomment-711723310)
 
 +7 endpoints: Once the policy is updated
+
+**Pivot:** new ci-audit-conformance
+
+-   based on ci-kind-conformance
 
 ### Proxy Redirect: Bugs Discovered
 
