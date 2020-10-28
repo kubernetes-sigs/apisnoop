@@ -16,18 +16,20 @@
         latest_release = releases[0]
 
         bucket, job = determine_bucket_job(custom_bucket, custom_job)
-        auditlog_file = download_and_process_auditlogs(bucket, job)
-
+        plpy.log("our bucket and job", detail=[bucket,job])
         metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
         metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+        plpy.log("our finished json", detail=urlopen(metadata_url).read().decode('utf-8'))
+        auditlog_file = download_and_process_auditlogs(bucket, job)
 
         release_date = int(metadata['timestamp'])
-        release = metadata["version"].split('-')[0].replace('v','')
-
-        num = release.replace('.','')
-
-        if int(release.split('.')[1]) > int(latest_release.split('.')[1]):
-          release = latest_release
+        if bucket == 'ci-audit-kind-conformance':
+            release = latest_release
+        else:
+            release = metadata["version"].split('-')[0].replace('v','')
+            num = release.replace('.','')
+            if int(release.split('.')[1]) > int(latest_release.split('.')[1]):
+                release = latest_release
         # if we are grabbing latest release, and it's on cusp of new release,
         # then test runs will show their version as the next release...which is confusing,
         # this period is a code freeze, where tests can still be added, and so the logs we are

@@ -65,12 +65,16 @@ def determine_bucket_job(custom_bucket=None, custom_job=None):
     #establish bucket we'll draw test results from.
     baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
     bucket =  baseline_bucket if custom_bucket is None else custom_bucket
-    #grab the latest successful test run for our chosen bucket.
-    testgrid_history = get_json(GCS_LOGS + bucket + "/jobResultsCache.json")
-    latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
-    #establish job
-    baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
-    job = baseline_job if custom_job is None else custom_job
+    if bucket == 'ci-audit-kind-conformance':
+        job = custom_job
+    else:
+        #grab the latest successful test run for our chosen bucket.
+        testgrid_history = get_json(GCS_LOGS + bucket + "/jobResultsCache.json")
+        latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
+        print("LATEST JOB IS: ", latest_success)
+        #establish job
+        baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
+        job = baseline_job if custom_job is None else custom_job
     return (bucket, job)
 
 def merge_into(d1, d2):
@@ -115,6 +119,15 @@ def get_all_auditlog_links(au):
     master_link = soup.find(href=re.compile("master"))
     master_soup = get_html("https://gcsweb.k8s.io" + master_link['href'])
     return master_soup.find_all(href=re.compile("audit.log"))
+
+def get_all_audit_kind_links(au):
+    """
+    grab all the audit logs from our ci-audit-kind-conformance bucket,
+    since their names and locations are non-standard
+    """
+    soup = get_html(au)
+    print(soup.find_all(href=re.compile(".log")))
+    return soup.find_all(href=re.compile(".log"))
 
 def load_openapi_spec(url):
     # Usually, a Python dictionary throws a KeyError if you try to get an item with a key that is not currently in the dictionary.
@@ -258,15 +271,23 @@ def download_and_process_auditlogs(bucket,job):
     K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
     downloads = {}
     # bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
-    artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
     download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
-    combined_log_file = download_path + 'audit.log'
-    metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
-    metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-    commit_hash = metadata["version"].split("+")[1]
+    combined_log_file = download_path + 'combined-audit.log'
+    if bucket == 'ci-audit-kind-conformance':
+        commit_hash = 'master'
+    else: 
+        metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
+        print('FINISHED.JSON: ', urlopen(metadata_url).read().decode('utf-8'))
+        metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
+        commit_hash = metadata["version"].split("+")[1]
 
     # download all logs
-    log_links = get_all_auditlog_links(artifacts_url)
+    if bucket == 'ci-audit-kind-conformance':
+        artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts/audit'
+        log_links = get_all_audit_kind_links(artifacts_url)
+    else:
+        artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
+        log_links = get_all_auditlog_links(artifacts_url)
     for link in log_links:
         log_url = link['href']
         log_file = download_path + os.path.basename(log_url)
@@ -280,8 +301,8 @@ def download_and_process_auditlogs(bucket,job):
 
     # Loop through the files, (z)cat them into a combined audit.log
     with open(combined_log_file, 'ab') as log:
-        for logfile in sorted(
-                glob.glob(download_path + '*kube-apiserver-audit*'), reverse=True):
+        glob_pattern = 'audit*log' if bucket == 'ci-audit-kind-conformance' else '*kube-apiserver-audit*'
+        for logfile in sorted(glob.glob(download_path + glob_pattern), reverse=True):
             if logfile.endswith('z'):
                 subprocess.run(['zcat', logfile], stdout=log, check=True)
             else:
