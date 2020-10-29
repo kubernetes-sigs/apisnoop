@@ -1,7 +1,3 @@
-comment on function generate_latest_coverage_json is 'helper to create properly formatted json to be output as a  coverage/X.XX.json file';
-
-select 'generate_latest_coverage_json function defined and commented' as "build log";
-
 create function generate_latest_coverage_json()
 returns json as $$
 declare latest_release varchar;
@@ -18,3 +14,7 @@ select jsonb_pretty(row_to_json(c)::jsonb) from (
     group by release, release_date, spec) c);
 end;
 $$ language plpgsql;
+
+comment on function generate_latest_coverage_json is 'helper to create properly formatted json to be output as a  coverage/X.XX.json file';
+
+select 'generate_latest_coverage_json function defined and commented' as "build log";

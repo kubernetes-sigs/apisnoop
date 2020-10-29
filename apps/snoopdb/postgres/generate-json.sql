@@ -22,13 +22,13 @@ begin;
 ))::jsonb) from conformance.progress;
  \o
  \o './resources/coverage/conformance-coverage-per-release.json'
- select json_agg(cp) as output_json
+ select jsonb_pretty(json_agg(cp)::jsonb) as output_json
    from (
      select * from conformance.coverage_per_release
    )cp;
  \o
  \o './resources/coverage/conformance-endpoints.json'
-   select json_agg(ce) as output_json from (
+   select jsonb_pretty(json_agg(ce)::jsonb) as output_json from (
    select endpoint,
    first_release as promotion_release,
    case
