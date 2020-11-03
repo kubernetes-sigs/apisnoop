@@ -15,6 +15,7 @@ from tempfile import mkdtemp
 import time
 import glob
 
+AUDIT_KIND_CONFORMANCE_RUNS="https://prow.k8s.io/job-history/kubernetes-jenkins/logs/ci-audit-kind-conformance"
 GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
 DEFAULT_BUCKET="ci-kubernetes-gci-gce"
 K8S_GITHUB_RAW= "https://raw.githubusercontent.com/kubernetes/kubernetes/"
@@ -60,13 +61,28 @@ def get_json(url):
     data = json.loads(body)
     return data
 
+def get_html(url):
+    """return html content of given url"""
+    html = urlopen(url).read()
+    soup = BeautifulSoup(html, 'html.parser')
+    return soup
+
+def get_latest_akc_success(url):
+    """
+    determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
+    """
+    soup = get_html(url)
+    latest_success = soup.find('tr', class_="run-success").find('a').get_text()
+    return latest_success
+
 def determine_bucket_job(custom_bucket=None, custom_job=None):
     """return tuple of bucket, job, using latest succesfful job of default bucket if no custom bucket or job is given"""
     #establish bucket we'll draw test results from.
     baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
     bucket =  baseline_bucket if custom_bucket is None else custom_bucket
     if bucket == 'ci-audit-kind-conformance':
-        job = custom_job
+        latest_success = get_latest_akc_success(AUDIT_KIND_CONFORMANCE_RUNS)
+        job = latest_success if custom_job is None else custom_job
     else:
         #grab the latest successful test run for our chosen bucket.
         testgrid_history = get_json(GCS_LOGS + bucket + "/jobResultsCache.json")
@@ -91,11 +107,6 @@ def deep_merge(*dicts, update=False):
     else:
         return reduce(merge_into, dicts, {})
 
-def get_html(url):
-    """return html content of given url"""
-    html = urlopen(url).read()
-    soup = BeautifulSoup(html, 'html.parser')
-    return soup
 
 def download_url_to_path(url, local_path, dl_dict):
     """
