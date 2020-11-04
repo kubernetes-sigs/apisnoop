@@ -1306,7 +1306,13 @@ commit;
 This is like our generate-json.sql file, but outputting to a tmp folder in the container, for use with prow jobs.
 #+NAME: output coverage jsons
 #+begin_src sql
-begin;
+    begin;
+    
+    -- move this to its own block if it works
+    CREATE FUNCTION array_distinct(anyarray) RETURNS anyarray AS $f$
+  SELECT array_agg(DISTINCT x) FROM unnest($1) t(x);
+$f$ LANGUAGE SQL IMMUTABLE;
+    
  select (select release from audit_event order by release limit 1) as latest_release
  \gset
  \set output_file '/tmp/coverage/':latest_release'.json'
@@ -1345,17 +1351,24 @@ begin;
    then first_release
    else first_conformance_test
    end as tested_release,
-   array_agg(distinct jsonb_build_object(
-     'testname', testname,
-     'codename', test.codename,
-     'file', test.file,
-     'release', test.release
-   )) filter (where testname is not null) as tests
+   array_distinct(array_agg(test_json.jb order by test_json.jb->>'codename')) as tests
    from           conformance.eligible_endpoint_coverage ec
    left join audit_event using(endpoint)
    left join conformance.test test on (test.codename = audit_event.test)
+   join lateral (
+    select 
+           jsonb_build_object(
+            'testname', testname,
+            'codename', test.codename,
+            'file', test.file,
+            'release', test.release
+            ) as jb
+            group by test.codename, testname
+            order by test.codename, testname
+   ) test_json on true
+   where testname is not null
    group by endpoint, first_release, first_conformance_test
-   order by first_release::semver desc) ce;
+   order by first_release::semver desc, endpoint) ce;
 \o
 \o '/tmp/coverage/ineligible_endpoints.json'
   select jsonb_pretty(json_agg(ie)::jsonb)
@@ -1434,9 +1447,98 @@ select jsonb_pretty(row_to_json(c)::jsonb) from (
     group by release, release_date, spec) c;
 #+END_SRC
 
-** more coverage
+- more coverage
 #+begin_src sql-mode
 refresh materialized view conformance.eligible_endpoint_coverage;
 #+end_src
 
 
+
+** ordered endpoints
+#+begin_src sql-mode :results replace
+   select endpoint,
+   first_release as promotion_release,
+   array_agg(t.jb) as tests
+   from           conformance.eligible_endpoint_coverage ec
+   left join audit_event using(endpoint)
+   left join conformance.test test on (test.codename = audit_event.test)
+   join lateral  (
+     select distinct on (testname, test.release)   
+        json_build_object(
+        'testname', testname,
+        'codename', test.codename
+            ) as jb
+        order by testname
+         ) t on true 
+   where testname is not null
+   group by endpoint, first_release, first_conformance_test
+   order by first_release::semver desc, endpoint;
+#+end_src
+
+
+#+begin_src sql-mode :results replace
+select endpoint, (test->>'testname') as tjb
+from (
+select endpoint, unnest(tests) as test
+from zendpoints) tests
+group by endpoint, tjb
+limit 50;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                          endpoint                           |                                        tjb                                        
+-------------------------------------------------------------+-----------------------------------------------------------------------------------
+ connectCoreV1GetNamespacedPodExec                           | Pods, remote command execution over websocket
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, cluster
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, for ExternalName Services
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, PQDN for services
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, resolve the hostname
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, resolve the subdomain
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, services
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Kubectl, replication controller
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Kubectl, scale replication controller
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Pods, prestop hook
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Proxy, logs service endpoint
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Replica Set, run basic image
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Replication Controller, run basic image
+ connectCoreV1GetNamespacedServiceProxyWithPath              | Kubectl, guestbook application
+ connectCoreV1GetNamespacedServiceProxyWithPath              | Proxy, logs service endpoint
+ connectCoreV1PostNamespacedPodExec                          | DNS, custom dnsConfig
+ connectCoreV1PostNamespacedPodExec                          | EmptyDir, Shared volumes between containers
+ connectCoreV1PostNamespacedPodExec                          | Kubelet, managed etc hosts
+ connectCoreV1PostNamespacedPodExec                          | Networking, intra pod http
+ connectCoreV1PostNamespacedPodExec                          | Networking, intra pod http, from node
+ connectCoreV1PostNamespacedPodExec                          | Networking, intra pod udp
+ connectCoreV1PostNamespacedPodExec                          | VolumeSubpathEnvExpansion, subpath test writes
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, admission control not allowed on webhook configuration objects
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, list mutating webhooks
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, mutate custom resource
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, mutate custom resource with different stored version
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, mutate custom resource with pruning
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, mutation with defaulting
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, ordered mutation
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, update mutating webhook
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, admission control not allowed on webhook configuration objects
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, deny attach
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, deny create
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, deny custom resource create and delete
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, deny custom resource definition
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, fail closed
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, honor timeout
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, list validating webhooks
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, update validating webhook
+ createApiextensionsV1CustomResourceDefinition               | Admission webhook, deny custom resource create and delete
+ createApiextensionsV1CustomResourceDefinition               | Admission webhook, deny custom resource definition
+ createApiextensionsV1CustomResourceDefinition               | Admission webhook, mutate custom resource
+ createApiextensionsV1CustomResourceDefinition               | Admission webhook, mutate custom resource with different stored version
+ createApiextensionsV1CustomResourceDefinition               | Admission webhook, mutate custom resource with pruning
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition Conversion Webhook, conversion custom resource
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition Conversion Webhook, convert mixed version list
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition, create
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition, defaulting
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition, list
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition, status sub-resource
+(50 rows)
+
+#+end_SRC
