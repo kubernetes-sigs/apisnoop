@@ -1157,6 +1157,8 @@ $$ language plpython3u;
 :PROPERTIES:
 :header-args: :tangle ./postgres/initdb/308_fn_generate_latest_coverage_json.sql
 :END:
+
+
 #+begin_src sql-mode
 create function generate_latest_coverage_json()
 returns json as $$
@@ -1165,13 +1167,21 @@ begin
 select release into latest_release from audit_event order by release::semver limit 1;
 return(
 select jsonb_pretty(row_to_json(c)::jsonb) from (
-    select release, release_date, spec,
+    select open_api.release, open_api.release_date, open_api.spec,
+        count(distinct endpoint_coverage.endpoint)  as "total endpoints",
+        count(distinct endpoint_coverage.endpoint) filter (where endpoint_coverage.tested is true)  as "tested endpoints",
+        cpr."total endpoints" as "total conformance eligible endpoints",
+        cpr."total tested" as "tested conformance eligible endpoints",
+        cpr."new endpoints" as "new conformance eligible endpoints",
+        cpr.tested as "new tested conformance eligible endpoints",
         (select array_agg(source) from (select source from audit_event where release = latest_release group by source) s) as sources,
-        (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = latest_release) as endpoints,
+        (select array_agg(row_to_json(endpoint_coverage)) from endpoint_coverage where release = latest_release and endpoint is not null) as endpoints,
         (select array_agg(row_to_json(audit_event_test)) from audit_event_test where release = latest_release) as tests
     from open_api
-    where release = latest_release
-    group by release, release_date, spec) c);
+    join endpoint_coverage using(release)
+    left join conformance.coverage_per_release cpr on(open_api.release::semver = cpr.release::semver)
+    where open_api.release = latest_release
+    group by open_api.release, open_api.release_date, open_api.spec, cpr."total endpoints", cpr."total tested", cpr."new endpoints", cpr.tested) c);
 end;
 $$ language plpgsql;
 #+end_src
@@ -1306,7 +1316,13 @@ commit;
 This is like our generate-json.sql file, but outputting to a tmp folder in the container, for use with prow jobs.
 #+NAME: output coverage jsons
 #+begin_src sql
-begin;
+    begin;
+    
+    -- move this to its own block if it works
+    CREATE FUNCTION array_distinct(anyarray) RETURNS anyarray AS $f$
+  SELECT array_agg(DISTINCT x) FROM unnest($1) t(x);
+$f$ LANGUAGE SQL IMMUTABLE;
+    
  select (select release from audit_event order by release limit 1) as latest_release
  \gset
  \set output_file '/tmp/coverage/':latest_release'.json'
@@ -1345,17 +1361,24 @@ begin;
    then first_release
    else first_conformance_test
    end as tested_release,
-   array_agg(distinct jsonb_build_object(
-     'testname', testname,
-     'codename', test.codename,
-     'file', test.file,
-     'release', test.release
-   )) filter (where testname is not null) as tests
+   array_distinct(array_agg(test_json.jb order by test_json.jb->>'codename')) as tests
    from           conformance.eligible_endpoint_coverage ec
    left join audit_event using(endpoint)
    left join conformance.test test on (test.codename = audit_event.test)
+   join lateral (
+    select 
+           jsonb_build_object(
+            'testname', testname,
+            'codename', test.codename,
+            'file', test.file,
+            'release', test.release
+            ) as jb
+            group by test.codename, testname
+            order by test.codename, testname
+   ) test_json on true
+   where testname is not null
    group by endpoint, first_release, first_conformance_test
-   order by first_release::semver desc) ce;
+   order by first_release::semver desc, endpoint) ce;
 \o
 \o '/tmp/coverage/ineligible_endpoints.json'
   select jsonb_pretty(json_agg(ie)::jsonb)
@@ -1434,9 +1457,131 @@ select jsonb_pretty(row_to_json(c)::jsonb) from (
     group by release, release_date, spec) c;
 #+END_SRC
 
-** more coverage
+- more coverage
 #+begin_src sql-mode
 refresh materialized view conformance.eligible_endpoint_coverage;
 #+end_src
 
+
+
+** ordered endpoints
+#+begin_src sql-mode :results replace
+   select endpoint,
+   first_release as promotion_release,
+   array_agg(t.jb) as tests
+   from           conformance.eligible_endpoint_coverage ec
+   left join audit_event using(endpoint)
+   left join conformance.test test on (test.codename = audit_event.test)
+   join lateral  (
+     select distinct on (testname, test.release)   
+        json_build_object(
+        'testname', testname,
+        'codename', test.codename
+            ) as jb
+        order by testname
+         ) t on true 
+   where testname is not null
+   group by endpoint, first_release, first_conformance_test
+   order by first_release::semver desc, endpoint;
+#+end_src
+
+
+#+begin_src sql-mode :results replace
+select endpoint, (test->>'testname') as tjb
+from (
+select endpoint, unnest(tests) as test
+from zendpoints) tests
+group by endpoint, tjb
+limit 50;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                          endpoint                           |                                        tjb                                        
+-------------------------------------------------------------+-----------------------------------------------------------------------------------
+ connectCoreV1GetNamespacedPodExec                           | Pods, remote command execution over websocket
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, cluster
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, for ExternalName Services
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, PQDN for services
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, resolve the hostname
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, resolve the subdomain
+ connectCoreV1GetNamespacedPodProxyWithPath                  | DNS, services
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Kubectl, replication controller
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Kubectl, scale replication controller
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Pods, prestop hook
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Proxy, logs service endpoint
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Replica Set, run basic image
+ connectCoreV1GetNamespacedPodProxyWithPath                  | Replication Controller, run basic image
+ connectCoreV1GetNamespacedServiceProxyWithPath              | Kubectl, guestbook application
+ connectCoreV1GetNamespacedServiceProxyWithPath              | Proxy, logs service endpoint
+ connectCoreV1PostNamespacedPodExec                          | DNS, custom dnsConfig
+ connectCoreV1PostNamespacedPodExec                          | EmptyDir, Shared volumes between containers
+ connectCoreV1PostNamespacedPodExec                          | Kubelet, managed etc hosts
+ connectCoreV1PostNamespacedPodExec                          | Networking, intra pod http
+ connectCoreV1PostNamespacedPodExec                          | Networking, intra pod http, from node
+ connectCoreV1PostNamespacedPodExec                          | Networking, intra pod udp
+ connectCoreV1PostNamespacedPodExec                          | VolumeSubpathEnvExpansion, subpath test writes
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, admission control not allowed on webhook configuration objects
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, list mutating webhooks
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, mutate custom resource
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, mutate custom resource with different stored version
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, mutate custom resource with pruning
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, mutation with defaulting
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, ordered mutation
+ createAdmissionregistrationV1MutatingWebhookConfiguration   | Admission webhook, update mutating webhook
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, admission control not allowed on webhook configuration objects
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, deny attach
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, deny create
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, deny custom resource create and delete
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, deny custom resource definition
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, fail closed
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, honor timeout
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, list validating webhooks
+ createAdmissionregistrationV1ValidatingWebhookConfiguration | Admission webhook, update validating webhook
+ createApiextensionsV1CustomResourceDefinition               | Admission webhook, deny custom resource create and delete
+ createApiextensionsV1CustomResourceDefinition               | Admission webhook, deny custom resource definition
+ createApiextensionsV1CustomResourceDefinition               | Admission webhook, mutate custom resource
+ createApiextensionsV1CustomResourceDefinition               | Admission webhook, mutate custom resource with different stored version
+ createApiextensionsV1CustomResourceDefinition               | Admission webhook, mutate custom resource with pruning
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition Conversion Webhook, conversion custom resource
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition Conversion Webhook, convert mixed version list
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition, create
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition, defaulting
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition, list
+ createApiextensionsV1CustomResourceDefinition               | Custom Resource Definition, status sub-resource
+(50 rows)
+
+#+end_SRC
+* endpoints
+
+#+begin_src sql-mode
+select count(*) filter(where conf_tested is true) from public.endpoint_coverage where release = '1.20.0';
+#+end_src
+#+begin_src sql-mode :results replace
+select * from describe_columns('conformance','coverage_per_release');
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ release | new endpoints | tested | untested | total tested | total untested | total endpoints 
+---------+---------------+--------+----------+--------------+----------------+-----------------
+ 1.5.0   |           200 |    113 |       87 |          113 |             87 |             200
+ 1.6.0   |             6 |      5 |        1 |          118 |             88 |             206
+ 1.7.0   |            18 |      4 |       14 |          122 |            102 |             224
+ 1.8.0   |            39 |     11 |       28 |          133 |            130 |             263
+ 1.9.0   |            63 |     25 |       38 |          158 |            168 |             326
+ 1.10.0  |             9 |      4 |        5 |          162 |            173 |             335
+ 1.11.0  |             2 |      0 |        2 |          162 |            175 |             337
+ 1.12.0  |             1 |      1 |        0 |          163 |            175 |             338
+ 1.13.0  |             0 |      0 |        0 |          163 |            175 |             338
+ 1.14.0  |            18 |     18 |        0 |          181 |            175 |             356
+ 1.15.0  |             0 |      0 |        0 |          181 |            175 |             356
+ 1.16.0  |            27 |     27 |        0 |          208 |            175 |             383
+ 1.17.0  |             0 |      0 |        0 |          208 |            175 |             383
+ 1.18.0  |             0 |      0 |        0 |          208 |            175 |             383
+ 1.19.0  |            41 |     41 |        0 |          249 |            175 |             424
+ 1.20.0  |             2 |      0 |        2 |          249 |            177 |             426
+(16 rows)
+
+#+end_SRC
 

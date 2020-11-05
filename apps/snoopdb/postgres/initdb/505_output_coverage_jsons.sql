@@ -1,4 +1,10 @@
-begin;
+    begin;
+    
+    -- move this to its own block if it works
+    CREATE FUNCTION array_distinct(anyarray) RETURNS anyarray AS $f$
+  SELECT array_agg(DISTINCT x) FROM unnest($1) t(x);
+$f$ LANGUAGE SQL IMMUTABLE;
+    
  select (select release from audit_event order by release limit 1) as latest_release
  \gset
  \set output_file '/tmp/coverage/':latest_release'.json'
@@ -37,17 +43,24 @@ begin;
    then first_release
    else first_conformance_test
    end as tested_release,
-   array_agg(distinct jsonb_build_object(
-     'testname', testname,
-     'codename', test.codename,
-     'file', test.file,
-     'release', test.release
-   )) filter (where testname is not null) as tests
+   array_distinct(array_agg(test_json.jb order by test_json.jb->>'codename')) as tests
    from           conformance.eligible_endpoint_coverage ec
    left join audit_event using(endpoint)
    left join conformance.test test on (test.codename = audit_event.test)
+   join lateral (
+    select 
+           jsonb_build_object(
+            'testname', testname,
+            'codename', test.codename,
+            'file', test.file,
+            'release', test.release
+            ) as jb
+            group by test.codename, testname
+            order by test.codename, testname
+   ) test_json on true
+   where testname is not null
    group by endpoint, first_release, first_conformance_test
-   order by first_release::semver desc) ce;
+   order by first_release::semver desc, endpoint) ce;
 \o
 \o '/tmp/coverage/ineligible_endpoints.json'
   select jsonb_pretty(json_agg(ie)::jsonb)
