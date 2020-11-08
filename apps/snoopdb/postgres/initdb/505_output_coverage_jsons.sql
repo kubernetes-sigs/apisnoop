@@ -47,7 +47,7 @@ $f$ LANGUAGE SQL IMMUTABLE;
    from           conformance.eligible_endpoint_coverage ec
    left join audit_event using(endpoint)
    left join conformance.test test on (test.codename = audit_event.test)
-   join lateral (
+   left join lateral (
     select 
            jsonb_build_object(
             'testname', testname,
@@ -55,10 +55,10 @@ $f$ LANGUAGE SQL IMMUTABLE;
             'file', test.file,
             'release', test.release
             ) as jb
+            where testname is not null
             group by test.codename, testname
             order by test.codename, testname
    ) test_json on true
-   where testname is not null
    group by endpoint, first_release, first_conformance_test
    order by first_release::semver desc, endpoint) ce;
 \o
