@@ -281,45 +281,12 @@ Our numbering is based on the _type_ of relation, but moves across schemas.
    #+end_src
 
 ** Conformance
-*** eligible endpoint
+*** ineligible endpoint
    :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/202_view_conformance_eligible_endpoint.sql
-   :END:
-   #+begin_src sql-mode
-     create or replace view conformance.eligible_endpoint as
-          select endpoint
-            from open_api
-                   join (
-                     select release
-                       from open_api
-                      order by release::semver desc
-                      limit 1) latest using(release)
-           where level = 'stable'
-          except
-          select endpoint
-            from open_api
-           where path ~~ any('{"%volume%", "%storage%"}')
-              or deprecated is true
-              or k8s_kind = 'ComponentStatus'
-              or (k8s_kind = 'Node' and k8s_action = any('{"delete", "post"}'))
-              or endpoint = any('{"getFlowcontrolApiserverAPIGroup", "createCoreV1NamespacedServiceAccountToken", "getInternalApiserverAPIGroup"}');
-    #+end_src
-
-    #+begin_src sql-mode
-      comment on view conformance.eligible_endpoint is 'all current stable endpoints for which conformant tests could be written, following conformance guidelines';
-
-      comment on column conformance.eligible_endpoint.endpoint is 'the endpoint, as its defined in the open_api table';
-    #+end_src
-   #+begin_src sql-mode
-     select 'conformance.eligible_endpoint defined and commented' as "build log";
-   #+end_src
-
-*** ineligible endopoint
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/203_view_conformance_ineligible_endpoint.sql
+   :header-args: :tangle ./postgres/initdb/202_view_conformance_ineligible_endpoint.sql
    :END:
   #+begin_src sql-mode
-create or replace view conformance.ineligible_endpoint as
+    create or replace view conformance.ineligible_endpoint as
     with current_stable_endpoints as (
       select endpoint, path, k8s_kind, k8s_action
         from open_api
@@ -392,6 +359,16 @@ create or replace view conformance.ineligible_endpoint as
     from current_stable_endpoints
     where endpoint =  'getInternalApiserverAPIGroup'
     )
+    union
+    (
+    -- Unable to be tested, and likely to be deprecated
+    select endpoint,
+    'Unable to be tested, and likely soon deprecated' as reason,
+    'k8s_kind = "NodeProxyOptions"'  "sql logic",
+    'https://github.com/kubernetes/kubernetes/pull/96206' as link
+    from current_stable_endpoints
+    where k8s_kind = 'NodeProxyOptions'
+    )
     order by reason;
   #+end_src
 
@@ -446,6 +423,35 @@ create or replace view conformance.ineligible_endpoint as
    #+begin_src sql-mode
      select 'conformance.eligible_endpoint_coverage defined and commented' as "build log";
    #+end_src
+*** eligible endpoint
+   :PROPERTIES:
+   :header-args: :tangle ./postgres/initdb/203_view_conformance_eligible_endpoint.sql
+   :END:
+   #+begin_src sql-mode
+     create or replace view conformance.eligible_endpoint as
+          select endpoint
+            from open_api
+                   join (
+                     select release
+                       from open_api
+                      order by release::semver desc
+                      limit 1) latest using(release)
+           where level = 'stable'
+           and deprecated is not true
+          except
+          select endpoint
+            from conformance.ineligible_endpoint;
+    #+end_src
+
+    #+begin_src sql-mode
+      comment on view conformance.eligible_endpoint is 'all current stable endpoints for which conformant tests could be written, following conformance guidelines';
+
+      comment on column conformance.eligible_endpoint.endpoint is 'the endpoint, as its defined in the open_api table';
+    #+end_src
+   #+begin_src sql-mode
+     select 'conformance.eligible_endpoint defined and commented' as "build log";
+   #+end_src
+
 *** conformance progress
    :PROPERTIES:
    :header-args: :tangle ./postgres/initdb/205_view_conformance_progress.sql
@@ -793,6 +799,8 @@ CREATE OR REPLACE VIEW "testing"."projected_change_in_coverage" AS
            CASE
              WHEN paths.key ~~ '%alpha%' THEN 'alpha'
              WHEN paths.key ~~ '%beta%' THEN 'beta'
+             -- these endpoints are beta, but are not marked as such, yet, in the swagger.json
+             WHEN (d.value ->> 'operationId'::text) = any('{"getServiceAccountIssuerOpenIDConfiguration", "getServiceAccountIssuerOpenIDKeyset"}') THEN 'beta'
              ELSE 'stable'
            END AS level,
            split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
@@ -1388,60 +1396,6 @@ $f$ LANGUAGE SQL IMMUTABLE;
 \t
 commit;
 #+end_src
-* Other Scripts
-** output latest coverage to file
-   #+begin_src sql-mode
-     begin;
-     select (select release from audit_event order by release limit 1) as latest_release
-     \gset
-     \set output_file '../resources/coverage/':latest_release'.json'
-     \t
-     \a
-     \o :output_file
-       select * from generate_latest_coverage_json();
-     \o
-     \a
-     \t
-     commit;
-   #+end_src
-
-** output conformance progress to json
- #+begin_src sql-mode
-   begin;
-   \t
-   \a
-   \o ../resources/coverage/conformance-progress.json
-     select json_agg(json_build_object(
-     'release', release,
-     'total', json_build_object(
-       'endpoints', total_endpoints,
-       'tested', total_tested_endpoints,
-       'new', new_endpoints,
-       'new_with_tests', new_endpoints_promoted_with_tests,
-       'new_tested', new_endpoints_covered_by_new_tests + new_endpoints_covered_by_old_tests,
-       'still_untested', endpoints_still_untested_today
-     )
-    ))from conformance.progress;
-   \o
-   \a
-   \t
-   commit;
- #+end_src
-*** output conformance progress to file
-*** output conformance coverage per release to file
-** output conformance coverage per release to json
- #+begin_src sql-mode
-   begin;
-   \t
-   \a
-   \o '../resources/coverage/conformance-coverage-per-release.json'
-   select json_agg(cp) as output_json
-     from (
-       select * from conformance.coverage_per_release
-     )cp;
-   \o
-     \a
-   \t
-   commit;
- #+end_src
 * Scratch
+
+
