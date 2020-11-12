@@ -1,4 +1,4 @@
-create or replace view conformance.ineligible_endpoint as
+    create or replace view conformance.ineligible_endpoint as
     with current_stable_endpoints as (
       select endpoint, path, k8s_kind, k8s_action
         from open_api
@@ -70,6 +70,16 @@ create or replace view conformance.ineligible_endpoint as
     'https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190802-dynamic-coordinated-storage-version.md' as link
     from current_stable_endpoints
     where endpoint =  'getInternalApiserverAPIGroup'
+    )
+    union
+    (
+    -- Unable to be tested, and likely to be deprecated
+    select endpoint,
+    'Unable to be tested, and likely soon deprecated' as reason,
+    'k8s_kind = "NodeProxyOptions"'  "sql logic",
+    'https://github.com/kubernetes/kubernetes/pull/96206' as link
+    from current_stable_endpoints
+    where k8s_kind = 'NodeProxyOptions'
     )
     order by reason;
 
