@@ -85,6 +85,8 @@
            CASE
              WHEN paths.key ~~ '%alpha%' THEN 'alpha'
              WHEN paths.key ~~ '%beta%' THEN 'beta'
+             -- these endpoints are beta, but are not marked as such, yet, in the swagger.json
+             WHEN (d.value ->> 'operationId'::text) = any('{"getServiceAccountIssuerOpenIDConfiguration", "getServiceAccountIssuerOpenIDKeyset"}') THEN 'beta'
              ELSE 'stable'
            END AS level,
            split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
