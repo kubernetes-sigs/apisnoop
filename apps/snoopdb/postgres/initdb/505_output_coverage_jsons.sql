@@ -1,11 +1,10 @@
-    begin;
-    
+begin;
     -- move this to its own block if it works
     CREATE FUNCTION array_distinct(anyarray) RETURNS anyarray AS $f$
   SELECT array_agg(DISTINCT x) FROM unnest($1) t(x);
 $f$ LANGUAGE SQL IMMUTABLE;
-    
  select (select release from audit_event order by release limit 1) as latest_release
+ \! mkdir -p /tmp/coverage
  \gset
  \set output_file '/tmp/coverage/':latest_release'.json'
  \t
