@@ -12,9 +12,9 @@ import yaml
 
 K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
 OPEN_API_PATH = "/api/openapi-spec/swagger.json"
-RELEASES_URL = "https://raw.githubusercontent.com/apisnoop/snoopDB/master/resources/coverage/releases.yaml"
+#RELEASES_URL = "https://raw.githubusercontent.com/apisnoop/snoopDB/master/resources/coverage/releases.yaml"
 # When refactored repo is merged
-# RELEASES_URL = 'https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage/releases.yaml';
+RELEASES_URL = 'https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage/releases.yaml';
 
 # Get info about latest release from our releases.yaml
 releases = yaml.safe_load(urlopen(RELEASES_URL))
