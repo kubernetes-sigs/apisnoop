@@ -1,0 +1,298 @@
+#+TITLE: Exploring 1.21
+
+
+Why does our new apisnoop show the wrong stuff ion conformance progress?/
+* Is the db wrong?
+  #+begin_src sql-mode
+select * from describe_columns('conformance','progress');
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                 column               |                                                 description
+  ------------------------------------+--------------------------------------------------------------------------------------------------------------
+   release                            | the kubernetes release
+   new_endpoints                      | # of eligible endpoints promoted to stable in this release
+   new_tests                          | # of tests promoted to conformance this release
+   new_endpoints_promoted_with_tests  | # of new endpoints hit by a new test, meaning the test and endpoint were promoted in tandem
+   new_endpoints_covered_by_new_tests | # of new endpoints whose first test is one that was promoted this release
+   new_endpoints_covered_by_old_tests | # of new endpoints that were hit by an existing test
+   old_endpoints_covered_by_new_tests | # old endoints hit for the first time by a test from this release.  This shows the payment of technical debt
+   total_endpoints                    |
+   total_tested_endpoints             | total # of eligible endopints hit by tests
+   endpoints_still_untested_today     | # of new endopints from this release that are unhit as of the present day
+  (10 rows)
+
+  #+end_SRC
+
+
+  #+begin_src sql-mode
+select release, new_endpoints, new_tests, new_endpoints_promoted_with_tests, old_endpoints_covered_by_new_tests from conformance.progress;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   release | new_endpoints | new_tests | new_endpoints_promoted_with_tests | old_endpoints_covered_by_new_tests
+  ---------+---------------+-----------+-----------------------------------+------------------------------------
+   1.8.0   |            39 |         0 |                                 0 |                                  0
+   1.9.0   |            63 |       149 |                                11 |                                 42
+   1.10.0  |             9 |         5 |                                 0 |                                 10
+   1.11.0  |             2 |         6 |                                 0 |                                  2
+   1.12.0  |             1 |        16 |                                 0 |                                  2
+   1.13.0  |             0 |        13 |                                 0 |                                  1
+   1.14.0  |            18 |         2 |                                 0 |                                  0
+   1.15.0  |             0 |        16 |                                 0 |                                  7
+   1.16.0  |            27 |        55 |                                26 |                                 14
+   1.17.0  |             0 |         4 |                                 0 |                                  8
+   1.18.0  |             0 |         7 |                                 0 |                                 10
+   1.19.0  |            41 |        29 |                                40 |                                 39
+   1.20.0  |             8 |         8 |                                 8 |                                 24
+   1.21.0  |             3 |         3 |                                 0 |                                 22
+  (14 rows)
+
+  #+end_SRC
+
+  Yep, our export is showiong the db numbers correctly, but the db numbers seem wildly off.
+
+  #+begin_src sql-mode
+select distinct release from audit_event;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   release
+  ---------
+   1.21.0
+  (1 row)
+
+  #+end_SRC
+  our audit event is correct...what could be happening i wonder?
+* what are the new tests?
+  #+begin_src sql-mode
+select * from describe_columns('conformance','test');
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+     column    |                       description
+  -------------+----------------------------------------------------------
+   testname    | name of the test
+   codename    | How the test is displayed within a useragent
+   release     | release in which this test was promoted to conformance
+   description | description of this test
+   file        | file in kubernetes/kubernetes where this test is defined
+  (5 rows)
+
+  #+end_SRC
+
+  #+begin_src sql-mode
+select testname, release from conformance.test where release::semver = '1.21.0'::semver;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                   testname                 | release
+  ------------------------------------------+---------
+   aggregator-supports-the-sample-apiserver | 1.21.0
+   ConfigMap Volume, immutability           | 1.21.0
+   Secrets Volume, immutability             | 1.21.0
+  (3 rows)
+
+  #+end_SRC
+* Could it be right?
+  We base our notion of 'first_conformance_test' on the release given for the test in the conformance.yaml.
+  There are cases where the release has two versions, which represents a significant change to that test.
+  When we encounter a test with multiple releases, we take the last release, so '1.17,1.21' will show the first conformance test as '1.21'
+  is it possible that all the endpoints first tested in 1.21 are legitimate, either new tests or split tests modified in 1.21?
+
+  Here are our endpoints
+
+  #+NAME: newly tested endpoints
+  #+begin_src sql-mode
+    select endpoint, first_conformance_test
+      from conformance.eligible_endpoint_coverage
+     where first_conformance_test =  '1.21.0';
+  #+end_src
+
+  #+RESULTS: newly tested endpoints
+  #+begin_SRC example
+                    endpoint                   | first_conformance_test
+  ---------------------------------------------+------------------------
+   createApiregistrationV1APIService           | 1.21.0
+   createRbacAuthorizationV1ClusterRole        | 1.21.0
+   createRbacAuthorizationV1ClusterRoleBinding | 1.21.0
+   deleteApiregistrationV1APIService           | 1.21.0
+   deleteCoreV1NamespacedServiceAccount        | 1.21.0
+   deleteRbacAuthorizationV1ClusterRole        | 1.21.0
+   deleteRbacAuthorizationV1ClusterRoleBinding | 1.21.0
+   getApiregistrationV1APIResources            | 1.21.0
+   getAppsV1APIResources                       | 1.21.0
+   getAuthenticationV1APIResources             | 1.21.0
+   getAuthorizationV1APIResources              | 1.21.0
+   getAutoscalingV1APIResources                | 1.21.0
+   getBatchV1APIResources                      | 1.21.0
+   getCoordinationV1APIResources               | 1.21.0
+   getCoreV1APIResources                       | 1.21.0
+   getEventsV1APIResources                     | 1.21.0
+   getRbacAuthorizationV1APIResources          | 1.21.0
+   getSchedulingV1APIResources                 | 1.21.0
+   listApiregistrationV1APIService             | 1.21.0
+   patchApiregistrationV1APIService            | 1.21.0
+   readApiregistrationV1APIService             | 1.21.0
+   readApiregistrationV1APIServiceStatus       | 1.21.0
+  (22 rows)
+
+  #+end_SRC
+
+
+  #+begin_src sql-mode
+        select distinct eec.endpoint,
+                (array_agg(distinct test.release)) as test_releases
+            from conformance.eligible_endpoint_coverage  eec
+        left join audit_event using(endpoint)
+        left join conformance.test test on (test.codename = audit_event.test)
+    where first_conformance_test = '1.21.0'
+      group by eec.endpoint
+      limit 30;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                    endpoint                   | test_releases
+  ---------------------------------------------+---------------
+   createApiregistrationV1APIService           | {1.21.0}
+   createRbacAuthorizationV1ClusterRole        | {1.21.0}
+   createRbacAuthorizationV1ClusterRoleBinding | {1.21.0}
+   deleteApiregistrationV1APIService           | {1.21.0}
+   deleteCoreV1NamespacedServiceAccount        | {1.21.0}
+   deleteRbacAuthorizationV1ClusterRole        | {1.21.0}
+   deleteRbacAuthorizationV1ClusterRoleBinding | {1.21.0}
+   getApiregistrationV1APIResources            | {1.21.0}
+   getAppsV1APIResources                       | {1.21.0}
+   getAuthenticationV1APIResources             | {1.21.0}
+   getAuthorizationV1APIResources              | {1.21.0}
+   getAutoscalingV1APIResources                | {1.21.0}
+   getBatchV1APIResources                      | {1.21.0}
+   getCoordinationV1APIResources               | {1.21.0}
+   getCoreV1APIResources                       | {1.21.0}
+   getEventsV1APIResources                     | {1.21.0}
+   getRbacAuthorizationV1APIResources          | {1.21.0}
+   getSchedulingV1APIResources                 | {1.21.0}
+   listApiregistrationV1APIService             | {1.21.0}
+   patchApiregistrationV1APIService            | {1.21.0}
+   readApiregistrationV1APIService             | {1.21.0}
+   readApiregistrationV1APIServiceStatus       | {1.21.0}
+  (22 rows)
+
+  #+end_SRC
+
+are these 22 only hit by one test that is from 1.21 ? that seems way off.
+
+Do we have all the test releases in conformance.test? We should, as it's just string parsing to get them, but maybe something's off...
+
+  #+begin_src sql-mode
+select distinct release from conformance.test;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+   release
+  ---------
+   1.9.0
+   1.10.0
+   1.19.0
+   1.14.0
+   1.15.0
+   1.20.0
+   1.17.0
+   1.11.0
+   1.13.0
+   1.12.0
+   1.21.0
+   1.16.0
+   1.18.0
+  (13 rows)
+
+  #+end_SRC
+They are all there.
+
+what conformance tests are hitting these endpoints?
+
+  #+begin_src sql-mode
+    select testname
+      from audit_event ae
+         join conformance.test test on (ae.test = test.codename)
+      join conformance.eligible_endpoint_coverage using(endpoint)
+     where first_conformance_test = '1.21.0'
+     group by testname;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                   testname
+  ------------------------------------------
+   aggregator-supports-the-sample-apiserver
+  (1 row)
+
+  #+end_SRC
+
+All being hit by one conformance test.  and this one has a release of '1.17,1.21' which will show up as 1.21
+
+* Check with old json file.
+
+  We can double check with the 1.20.json, as the endpoint entries include the tests that hit it.
+  I would expect that these endpoints are not hit by multiple conformance tests in that previous json.
+
+  If they're valid, I will mark them with an x
+
+- [x]   createApiregistrationV1APIService
+- [x]   createRbacAuthorizationV1ClusterRole
+- [x]   createRbacAuthorizationV1ClusterRoleBinding
+- [x]   deleteApiregistrationV1APIService
+- [x]   deleteCoreV1NamespacedServiceAccount
+- [x]   deleteRbacAuthorizationV1ClusterRole
+- [x]   deleteRbacAuthorizationV1ClusterRoleBinding
+- [x]   getApiregistrationV1APIResources
+- [x]   getAppsV1APIResources
+- [x]   getAuthenticationV1APIResources
+- [x]   getAuthorizationV1APIResources
+- [x]   getAutoscalingV1APIResources
+- [x]   getBatchV1APIResources
+- [x]   getCoordinationV1APIResources
+- [x]   getCoreV1APIResources
+- [x]   getEventsV1APIResources
+- [x]   getRbacAuthorizationV1APIResources
+- [x]   getSchedulingV1APIResources
+- [ ]   listApiregistrationV1APIService
+- [ ]   patchApiregistrationV1APIService
+- [x]   readApiregistrationV1APIService
+- [ ]   readApiregistrationV1APIServiceStatus
+
+  the three not checked show null tests in 1.20.  what tests are they hit by now?
+
+  #+begin_src sql-mode
+select endpoint, testname, test.release
+from audit_event
+join conformance.test test on(test = codename)
+where endpoint = any('{listApiregistrationV1APIService, patchApiregistrationV1APIService, readApiregistrationV1APIServiceStatus}')
+limit 5;
+  #+end_src
+
+  #+RESULTS:
+  #+begin_SRC example
+                 endpoint                |                 testname                 | release
+  ---------------------------------------+------------------------------------------+---------
+   patchApiregistrationV1APIService      | aggregator-supports-the-sample-apiserver | 1.21.0
+   readApiregistrationV1APIServiceStatus | aggregator-supports-the-sample-apiserver | 1.21.0
+   listApiregistrationV1APIService       | aggregator-supports-the-sample-apiserver | 1.21.0
+   readApiregistrationV1APIServiceStatus | aggregator-supports-the-sample-apiserver | 1.21.0
+   patchApiregistrationV1APIService      | aggregator-supports-the-sample-apiserver | 1.21.0
+  (5 rows)
+
+  #+end_SRC
+
+
+  They are all hit by the same test, and so likely the work done in 1.21 made it so they now get hit.
+
+* conclusion
+  For the old endpoints now tested that shows in our conformance progress page, it looks like the data is technically correct.  All of the endopints either used to be tested by a conformance test released in 1.17, or are now hit when that test was modified in 1.21.  Because of the modification, we show the test's release as 1.21, which basically transferred some of the work in 1.17 to this release.
