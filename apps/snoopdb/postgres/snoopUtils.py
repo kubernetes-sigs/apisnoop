@@ -196,7 +196,10 @@ def format_uri_parts_for_proxy(uri_parts):
     return formatted_parts
 
 def find_operation_id(openapi_spec, event):
-  method=VERB_TO_METHOD[event['verb']]
+  try:
+    method=VERB_TO_METHOD[event['verb']]
+  except:
+    return 'bugNoVerb'
   url = urlparse(event['requestURI'])
   # 1) Cached seen before results
   # Is the URL in the hit_cache?
@@ -329,5 +332,8 @@ def download_and_process_auditlogs(bucket,job):
             for line in infile.readlines():
                 event = json.loads(line)
                 event['operationId']=find_operation_id(openapi_spec,event)
-                output.write(json.dumps(event)+'\n')
+                if event['operationId'] == 'bugNoVerb':
+                    print('skipping event, no verb: ' + event['requestURI'])
+                else:
+                    output.write(json.dumps(event)+'\n')
     return outfilepath
