@@ -199,7 +199,8 @@ def find_operation_id(openapi_spec, event):
   try:
     method=VERB_TO_METHOD[event['verb']]
   except:
-    return 'bugNoVerb'
+    method='options'
+    #return 'bugNoVerb'
   url = urlparse(event['requestURI'])
   # 1) Cached seen before results
   # Is the URL in the hit_cache?
@@ -332,8 +333,5 @@ def download_and_process_auditlogs(bucket,job):
             for line in infile.readlines():
                 event = json.loads(line)
                 event['operationId']=find_operation_id(openapi_spec,event)
-                if event['operationId'] == 'bugNoVerb':
-                    print('skipping event, no verb: ' + event['requestURI'])
-                else:
-                    output.write(json.dumps(event)+'\n')
+                output.write(json.dumps(event)+'\n')
     return outfilepath
