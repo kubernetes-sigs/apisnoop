@@ -81,6 +81,16 @@ select endpoint,
 from current_stable_endpoints
 where k8s_kind = 'NodeProxyOptions'
 )
+union
+(
+--  In support of alpha endpoints
+select endpoint,
+'Not eligible for conformance yet' as reason,
+'endpoint like '||'%Ephemeralcontainers'  as "sql logic",
+'https://github.com/kubernetes/kubernetes/pull/97276' as link
+from current_stable_endpoints
+where endpoint like  '%Ephemeralcontainers'
+)
 order by reason;
 
 comment on view conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing and the reason for ineligibility.';
