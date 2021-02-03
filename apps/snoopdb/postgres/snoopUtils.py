@@ -26,6 +26,7 @@ VERB_TO_METHOD={
     'get': 'get',
     'list': 'get',
     'proxy': 'proxy',
+    '': 'options',
     'create': 'post',
     'post':'post',
     'put':'post',
@@ -60,13 +61,8 @@ def assign_verb_to_method (event):
        Accounts for irregular behaviour with head and option verbs."""
     verb = event.get('verb')
     ruri = event.get('requestURI')
-    if verb and ruri and ruri.endswith('HEAD'):
-        print('HEAD!')
+    if verb == 'get' and ruri.endswith('HEAD'):
         return 'head'
-    elif verb == '':
-        print('OPTION!')
-        print(event)
-        return 'options'
     else:
         return VERB_TO_METHOD[verb]
 
