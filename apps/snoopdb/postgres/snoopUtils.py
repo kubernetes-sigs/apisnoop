@@ -55,6 +55,21 @@ DUMMY_URL_PATHS =[
     'wardle.k8s.io'
 ]
 
+def assign_verb_to_method (event):
+    """Assigns audit event verb to apropriate method for generating opID later.
+       Accounts for irregular behaviour with head and option verbs."""
+    verb = event.get('verb')
+    ruri = event.get('requestURI')
+    if verb and ruri and ruri.endswith('HEAD'):
+        print('HEAD!')
+        return 'head'
+    elif verb == '':
+        print('OPTION!')
+        print(event)
+        return 'options'
+    else:
+        return VERB_TO_METHOD[verb]
+
 def get_json(url):
     """Given a json url path, return json as dict"""
     body = urlopen(url).read()
@@ -196,11 +211,7 @@ def format_uri_parts_for_proxy(uri_parts):
     return formatted_parts
 
 def find_operation_id(openapi_spec, event):
-  try:
-    method=VERB_TO_METHOD[event['verb']]
-  except:
-    method='options'
-    #return 'bugNoVerb'
+  method=assign_verb_to_method(event)
   url = urlparse(event['requestURI'])
   # 1) Cached seen before results
   # Is the URL in the hit_cache?
