@@ -17,51 +17,68 @@ In spite of increasing technical challenges:
 
 -   Goal: Clear [debt back to 1.9](https://apisnoop.cncf.io/conformance-progress#coverage-by-release)
 
-6 months of debt to erase!
+6 months of debt to erase! 1.11 +2: {read,patch}ApiregistrationStatus
 
--   1.11 +2: {read,patch}ApiregistrationStatus
 -   1.10 +5: {replace,patch,list,&#x2026;}Apiregistration
--   3 of 7 endpoints are coved by our first merged test for 1.21
--   4 Endpoints to go, looking good!
+-   4 Endpoints to go
+-   Still in progress, but not there yet.
 
 ### What is in the pipeline
 
--   [PodProxyWithPath & ServiceProxyWithPath test - + 12](https://github.com/kubernetes/kubernetes/pull/95503) Dependent on [Image build](https://prow.k8s.io/job-history/gs/kubernetes-jenkins/logs/post-kubernetes-push-e2e-test-images) to be updated
--   [AppsV1DaemonSet resource lifecycle test - +6](https://github.com/kubernetes/kubernetes/issues/90877)
--   [Service Status Life Cycle test - +2](https://github.com/kubernetes/kubernetes/pull/98018)
+-   [PodProxyWithPath & ServiceProxyWithPath + 12](https://github.com/kubernetes/kubernetes/pull/95503) Promotion PR to merge next week
+-   [Service Status Life Cycle +2](https://github.com/kubernetes/kubernetes/pull/98018) Ready for approval
+-   [Update: StatefulSet Replica scaling- Patch Scale +1](https://github.com/kubernetes/kubernetes/pull/98126) Ready of approval to merge into conformance
+-   [AppsV1DaemonSet resource lifecycle +5](https://github.com/kubernetes/kubernetes/issues/90877) a work in progress
+-   [Write Read, Replace and Patch ReplicaSetScale +3](https://github.com/kubernetes/kubernetes/issues/98920) New issue to address Apps endpoints in 1.9
+
+### Apps endpoints
+
 -   All the 1.9 Technical debt is in the Apps API group
--   We are working with SIG App to erase that debt
+-   An [Umbrella Issue](https://github.com/kubernetes/kubernetes/issues/98640) was created and we are working with SIG App to erase that debt
 
 ## ****Release Blocking k/k Job****
 
 ### ****Progress****
 
--   Our job [k/test-infra#19173](https://github.com/kubernetes/test-infra/pull/19173)
-    -   is running on [prow.k8s.io](https://prow.k8s.io/?job=apisnoop-conformance-gate)
-    -   is catching untested new endpoints
+-   Gate keeping for new untested endpoints are working
     -   3 New untested endpoints detected in 1.21
-    -   We are engaging the community ensure promotion with conformance tests
-    -   further automation is in progress
+    -   These were promoted to [support Alpha features](https://github.com/kubernetes/kubernetes/pull/97276)
+    -   The endpoints was mark as "Not eligible for conformance yet"
+
+### Taking ownership to the community
+
+-   ii currently manage the Ineligible endpoints list
+-   This is done via SQL queries in APISnoop
+-   We proposed in SIG Architecture to move it to the community
+-   [PR #98677](https://github.com/kubernetes/kubernetes/pull/98677) will make it happen
 
 ## ****Other Important News****
 
 ### ****Timelines****
 
--   1.21 [still under discussion](https://hackmd.io/@1ZEI8TYqTDWogQGLAiExjw/ry-m4YYcP)
--   Consideration between 3 or 4 releases per year ongoing
--   Should be agreed shortly
+-   1.21 [Time line is out](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.21#timeline)
+-   14 week cycle with Test freeze on 24 March
 
 ### ****Conformance Gate****
 
--   cncf/k8s-conformance gate is running
-    -   Looks [like it's working](https://github.com/cncf/k8s-conformance/pulls?q=is%3Apr+is%3Aclosed)
-    -   Discussion point: Labels and removing labels
+-   We confirmed that Taylor can remove labels
+-   Removing labels trigger automatic relabel of the PR
 
-## ****Looking forward to 1.21****
+### The Conformance goal for 2021
 
--   No radical changes
+-   Increase Stable Test Coverage for Kubernetes for 2021
+    -   Less than 75 untested eligible stable GA endpoints remaining.
+    -   Ensure no new technical debt is incurred.
+
+### KubeCon + CloudNativeCon Europe
+
+We have again submitted a proposal to present a Maintainer Track Sessions on Conformance progress and it's importance.
+
+## **\* Blockers for 1.21\***
+
 -   Keep same goals as 1.20
 -   Know that Endpoints get tougher
+-   Status endpoints is currently a big community topic
 
 ## ****Questions / Feedback****
 
