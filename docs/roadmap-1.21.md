@@ -9,9 +9,8 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 In spite of increasing technical challenges:
 
--   Goal: 3/30 - Stretch Goal: 40
--   Status: +3 (Merged):
-    -   [Read Status, Patch & List APIService +3](https://github.com/kubernetes/kubernetes/pull/97327)
+-   Goal: 15/30 - Stretch Goal: 40
+-   Status Merged: -[ #97327](https://github.com/kubernetes/kubernetes/pull/97327) + 3 -[ #98897](https://github.com/kubernetes/kubernetes/pull/98897) +12
 
 ### ****KR2 clean-up technical debt****
 
@@ -25,11 +24,11 @@ In spite of increasing technical challenges:
 
 ### What is in the pipeline
 
--   [PodProxyWithPath & ServiceProxyWithPath + 12](https://github.com/kubernetes/kubernetes/pull/95503) Promotion PR to merge next week
 -   [Service Status Life Cycle +2](https://github.com/kubernetes/kubernetes/pull/98018) Ready for approval
 -   [Update: StatefulSet Replica scaling- Patch Scale +1](https://github.com/kubernetes/kubernetes/pull/98126) Ready of approval to merge into conformance
 -   [AppsV1DaemonSet resource lifecycle +5](https://github.com/kubernetes/kubernetes/issues/90877) a work in progress
--   [Write Read, Replace and Patch ReplicaSetScale +3](https://github.com/kubernetes/kubernetes/issues/98920) New issue to address Apps endpoints in 1.9
+-   [Write Read, Replace and Patch ReplicaSetScale +3](https://github.com/kubernetes/kubernetes/issues/98920)
+-   [Write Read, Replace and Patch DeploymentScale +3](https://github.com/kubernetes/kubernetes/issues/98936) Two new issue 2 to address Apps endpoints in 1.9
 
 ### Apps endpoints
 
@@ -74,7 +73,7 @@ In spite of increasing technical challenges:
 
 We have again submitted a proposal to present a Maintainer Track Sessions on Conformance progress and it's importance.
 
-## **\* Blockers for 1.21\***
+## ****Blockers for 1.21****
 
 -   Keep same goals as 1.20
 -   Know that Endpoints get tougher
