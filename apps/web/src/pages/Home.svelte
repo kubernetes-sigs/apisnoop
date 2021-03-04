@@ -24,6 +24,9 @@
      } = params);
 
  afterUpdate(async() => {
+   if (version === 'latest' || version == null) {
+    version = $latestVersion;
+   };
    activeFilters.update(af => ({
      ...af,
      version,
@@ -47,11 +50,6 @@
      olderNewEndpointsRaw.set(older);
    }
  });
- afterUpdate(async() => {
-   console.log({params, version, filters: $activeFilters});
-   console.log("yhah!!")
-
- })
   </script>
 
   {#if $activeRelease && $activeRelease.endpoints.length > 0}
