@@ -9,7 +9,6 @@
 
  router("/about", ()=> page = About);
  router('/:version?/:level?/:category?/:endpoint?', (ctx, next) => {
-   console.log({ctx})
    params = ctx.params;
    next()},  () => page = Home);
 
