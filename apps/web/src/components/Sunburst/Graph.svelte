@@ -1,5 +1,6 @@
 <script>
  import * as d3 from 'd3';
+ import page from "page";
  import {
    compact,
    join
@@ -57,12 +58,8 @@
      $activeFilters[activeDepth] = '';
    }
    let {level, category, endpoint} = $activeFilters;
-   let newPath = compact([version,level,category,endpoint]).join('/');
-   let x = window.pageXOffset;
-   let y = window.pageYOffset;
-   // goto(newPath).then(()=>window.scrollTo(x,y));
-   // TODO replace goto
-   consol.log({newPath})
+   let newPath = "/" + compact([version,level,category,endpoint]).join('/');
+   page.redirect(newPath);
  };
 
  function labelVisible(d) {
@@ -94,11 +91,8 @@
      endpoint
    } = node.data;
    activeFilters.update(af=> ({...af, version, level, category, endpoint}));
-   let newPath = compact([version,level,category,endpoint]).join('/');
-   let x = window.pageXOffset;
-   let y = window.pageYOffset;
-   // goto(newPath).then(()=> window.scrollTo(x,y));
-   console.log({newPath})
+   let newPath = "/" + compact([version,level,category,endpoint]).join('/');
+   page.redirect(newPath);
  };
 
  $: partition = data => {
