@@ -2,37 +2,39 @@
  import router from "page";
  import Home from './pages/Home.svelte';
  import About from './pages/About.svelte';
- export let name;
- let page;
+ import Nav from './components/Nav.svelte';
 
- router("/", ()=> page = Home);
+ let page;
+ let params;
+
  router("/about", ()=> page = About);
+ router('/:version?/:level?/:category?/:endpoint?', (ctx, next) => {
+   console.log({ctx})
+   params = ctx.params;
+   next()},  () => page = Home);
+
  router.start();
 </script>
 
+<Nav segment={page.name}/>
 <main>
-  <h1>Hello {name}!</h1>
-  <svelte:component this={page} />
+  <svelte:component this={page} {params} />
 </main>
 
 <style>
- main {
-   text-align: center;
-   padding: 1em;
-   max-width: 240px;
-   margin: 0 auto;
- }
 
- h1 {
-   color: #ff3e00;
-   text-transform: uppercase;
-   font-size: 4em;
-   font-weight: 100;
+ main {
+   position: relative;
+   font-size: 16px;
+   background-color: white;
+   padding: 2em;
+   box-sizing: border-box;
+   max-width: 1100px;
  }
 
  @media (min-width: 640px) {
    main {
-	 max-width: none;
+     max-width: none;
    }
  }
 </style>

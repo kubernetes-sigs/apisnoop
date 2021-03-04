@@ -1,53 +1,62 @@
 <script>
- import { afterUpdate } from 'svelte';
+ import { onMount, afterUpdate } from 'svelte';
  import { RELEASES, RELEASES_URL } from '../lib/constants.js';
  import {isEmpty} from 'lodash-es';
  import {
-   releases,
    activeFilters,
    activeRelease,
-   previousRelease,
+   latestVersion,
    newEndpoints,
-   latestVersion
+   olderNewEndpointsRaw,
+   previousRelease,
+   releases
  } from '../store';
- // import Sunburst from '../components/sunburst/Wrapper.svelte'
- // import NewEndpoints from '../components/new-endpoints.svelte';
+ import Sunburst from '../components/sunburst/Wrapper.svelte'
+ import NewEndpoints from '../components/new-endpoints.svelte';
 
- activeFilters.update(af => ({
-   ...af,
-   version: $latestVersion
- }))
+ export let params;
+
+ $: ({
+   version,
+   level,
+   category,
+   endpoint
+     } = params);
 
  afterUpdate(async() => {
    activeFilters.update(af => ({
      ...af,
-     version: $latestVersion,
-     level: '',
-     category: '',
-     endpoint: ''
+     version,
+     level: level || '',
+     category: category || '',
+     endpoint: endpoint || ''
    }))
-   if (isEmpty($activeRelease.endpoints)) {
-     let rel = await fetch(`${RELEASES_URL}/${$latestVersion}.json`).then(res => res.json());
-     releases.update(rels => {
-       rels[$latestVersion] = rel;
-       return rels;
-     });
+   if ($activeRelease !== 'older' && isEmpty($activeRelease.endpoints)) {
+     let rel = await fetch(`${RELEASES_URL}/${$activeRelease.release}.json`)
+       .then(res => res.json());
+     releases.update(rels => ({...rels, [$activeRelease.release]: rel}));
    }
-   if (isEmpty($previousRelease.endpoints)) {
-     let rel = await fetch(`${RELEASES_URL}/${$previousRelease.release}.json`).then(res => res.json());
-     releases.update(rels => {
-       rels[$previousRelease.release] = rel;
-       return rels;
-     });
+   if ($previousRelease !== 'older' && !isEmpty($previousRelease) && isEmpty($previousRelease.endpoints)) {
+     let rel = await fetch(`${RELEASES_URL}/${$previousRelease.release}.json`)
+       .then(res => res.json());
+     releases.update(rels => ({...rels, [$previousRelease.release]: rel}));
+   }
+   if ($olderNewEndpointsRaw.length === 0) {
+     let older = await fetch(`${RELEASES_URL}/new-endpoints.json`)
+     .then(res=>res.json());
+     olderNewEndpointsRaw.set(older);
    }
  });
+ afterUpdate(async() => {
+   console.log({params, version, filters: $activeFilters});
+   console.log("yhah!!")
 
+ })
   </script>
 
   {#if $activeRelease && $activeRelease.endpoints.length > 0}
-    <h1>ACTIVE RELEASE GO!</h1>
-    <!-- <Sunburst />
-         <NewEndpoints /> -->
+    <Sunburst />
+    <NewEndpoints />
   {:else}
   <em>loading data...</em>
   {/if}
