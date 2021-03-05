@@ -49,6 +49,9 @@
  router.start();
 </script>
 
+<svelte:head>
+	<title>APISnoop</title>
+</svelte:head>
 <Nav segment={page.name}/>
 <main>
   <svelte:component this={page} {params} {query}/>
