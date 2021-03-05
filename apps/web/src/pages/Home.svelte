@@ -52,6 +52,9 @@
  });
   </script>
 
+<svelte:head>
+    <title>APISnoop | {$activeRelease.release}</title>
+</svelte:head>
   {#if $activeRelease && $activeRelease.endpoints.length > 0}
     <Sunburst />
     <NewEndpoints />
