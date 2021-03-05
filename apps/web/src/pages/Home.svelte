@@ -11,7 +11,7 @@
    previousRelease,
    releases
  } from '../store';
- import Sunburst from '../components/sunburst/Wrapper.svelte'
+ import Sunburst from '../components/Sunburst/Wrapper.svelte'
  import NewEndpoints from '../components/new-endpoints.svelte';
 
  export let params;
