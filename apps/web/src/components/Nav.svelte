@@ -7,7 +7,7 @@
     <li> <img src='/logo.png' alt="apisnoop logo, a magnifying glass with a 3 color pie chart inside."/></li>
     <li><a aria-current="{segment === 'Home' ? 'page' : undefined}" href=".">home</a></li>
     <li><a aria-current="{segment === 'About' ? 'page' : undefined}" href="about">about</a></li>
-    <!-- <li><a rel=prefetch aria-current="{segment === 'conformance-progress' ? 'page' : undefined}" href="conformance-progress">conformance progress</a></li> -->
+    <li><a rel=prefetch aria-current="{segment === 'ConformanceProgress' ? 'page' : undefined}" href="conformance-progress">conformance progress</a></li>
   </ul>
 </nav>
 
