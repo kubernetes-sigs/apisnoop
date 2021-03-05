@@ -7,10 +7,16 @@
  import IneligibleEndpoints from './pages/conformance-progress/IneligibleEndpoints.svelte';
  import Nav from './components/Nav.svelte';
  import { flatten } from 'lodash-es';
+ import {afterUpdate} from 'svelte';
 
  let page;
  let params;
  let query;
+ $: segment = window.location.pathname.split('/')[1];
+
+ afterUpdate(()=> {
+   segment = window.location.pathname.split('/')[1];
+ });
 
  function queryObj (qs) {
    // convert query string to object.
@@ -52,7 +58,7 @@
 <svelte:head>
 	<title>APISnoop</title>
 </svelte:head>
-<Nav segment={page.name}/>
+<Nav {segment}/>
 <main>
   <svelte:component this={page} {params} {query}/>
 </main>
