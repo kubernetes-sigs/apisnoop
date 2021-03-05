@@ -32,7 +32,6 @@
        return rels;
      });
    }
-   console.log({copy});
  });
 
  $: lastUpdate = $activeRelease
