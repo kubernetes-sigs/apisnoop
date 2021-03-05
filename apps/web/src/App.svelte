@@ -4,6 +4,7 @@
  import About from './pages/About.svelte';
  import ConformanceProgress from './pages/conformance-progress/Index.svelte';
  import ConformanceEndpoints from './pages/conformance-progress/Endpoints.svelte';
+ import IneligibleEndpoints from './pages/conformance-progress/IneligibleEndpoints.svelte';
  import Nav from './components/Nav.svelte';
  import { flatten } from 'lodash-es';
 
@@ -39,6 +40,7 @@
    params = ctx.params;
    query = {...queryObj(ctx.querystring)};
    next()}, () => page = ConformanceEndpoints);
+ router("/conformance-progress/ineligible-endpoints", () => page = IneligibleEndpoints);
 
  router('/:version?/:level?/:category?/:endpoint?', (ctx, next) => {
    params = ctx.params;
