@@ -9,6 +9,8 @@ import replace from '@rollup/plugin-replace';
 
 const production = !process.env.ROLLUP_WATCH;
 const branch = process.env.BRANCH;
+const commit = process.env.COMMIT_REF;
+const head = process.env.HEAD;
 
 function serve() {
 	let server;
@@ -62,7 +64,9 @@ export default {
 		commonjs(),
 		json(),
 		replace({
-			'process.env.BRANCH': JSON.stringify(branch)
+			'process.env.BRANCH': JSON.stringify(branch),
+			'process.env.COMMIT': JSON.stringify(commit),
+			'process.env.HEAD': JSON.stringify(head)
 		}),
 		// In dev mode, call `npm run start` once
 		// the bundle has been generated
