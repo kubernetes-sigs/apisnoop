@@ -1,4 +1,3 @@
-console.log({ branch: process.env.BRANCH });
 export const RELEASES_URL = process.env.BRANCH
   ? `https://raw.githubusercontent.com/cncf/apisnoop/${process.env.BRANCH}/resources/coverage`
   : 'https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage';
