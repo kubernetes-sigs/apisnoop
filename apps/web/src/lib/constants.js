@@ -1,8 +1,8 @@
 const branch = process.env.BRANCH;
 
-console.log({ branch: 'https://raw.githubusercontent.com/cncf/apisnoop/${branch}/resources/coverage'});
+console.log({ branch: `https://raw.githubusercontent.com/cncf/apisnoop/${branch}/resources/coverage`});
 export const RELEASES_URL = branch
-  ? 'https://raw.githubusercontent.com/cncf/apisnoop/${branch}/resources/coverage'
+  ? `https://raw.githubusercontent.com/cncf/apisnoop/${branch}/resources/coverage`
   : 'https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage';
 export const RELEASES = [
   '1.21.0',
