@@ -5,8 +5,10 @@ import livereload from 'rollup-plugin-livereload';
 import { terser } from 'rollup-plugin-terser';
 import css from 'rollup-plugin-css-only';
 import json from '@rollup/plugin-json';
+import replace from '@rollup/plugin-replace';
 
 const production = !process.env.ROLLUP_WATCH;
+const branch = process.env.BRANCH;
 
 function serve() {
 	let server;
@@ -59,7 +61,9 @@ export default {
 		}),
 		commonjs(),
 		json(),
-
+		replace({
+			'process.env.BRANCH': JSON.stringify(branch)
+		}),
 		// In dev mode, call `npm run start` once
 		// the bundle has been generated
 		!production && serve(),
