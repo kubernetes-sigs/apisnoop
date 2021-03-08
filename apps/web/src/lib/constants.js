@@ -1,4 +1,7 @@
-export const RELEASES_URL = 'https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage';
+const head = process.env.HEAD;
+export const RELEASES_URL = head
+  ? `https://raw.githubusercontent.com/cncf/apisnoop/${head}/resources/coverage`
+  : 'https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage';
 export const RELEASES = [
   '1.21.0',
   '1.20.0',
