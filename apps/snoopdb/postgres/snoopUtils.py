@@ -51,7 +51,7 @@ DUMMY_URL_PATHS =[
     'example.com',
     'kope.io',
     'snapshot.storage.k8s.io',
-    'discovery.k8s.io',
+    # 'discovery.k8s.io',  # this is part of spec now with endpoint slices
     'metrics.k8s.io',
     'wardle.k8s.io'
 ]
@@ -242,7 +242,7 @@ def find_operation_id(openapi_spec, event):
     if part in current_level:
       current_level = current_level[part] # part in current_level
     elif idx == part_count-1:
-      if part in IGNORED_ENDPOINTS or 'discovery.k8s.io' in uri_parts:
+      if part in IGNORED_ENDPOINTS:
         return None
       variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
       # If at some point in the future we have more than one... this will let un know
