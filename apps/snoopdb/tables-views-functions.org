@@ -156,10 +156,29 @@ Our numbering is based on the _type_ of relation, but moves across schemas.
     comment on column conformance.test.description is 'description of this test';
     comment on column conformance.test.file is 'file in kubernetes/kubernetes where this test is defined';
   #+end_src
+*** ineligible_endpoint
+   :PROPERTIES:
+   :header-args: :tangle ./postgres/initdb/103_table_ineligible_endpoint.sql
+   :END:
+#+BEGIN_SRC sql-mode
+create table conformance.ineligible_endpoint(
+      endpoint text not null,
+      reason text,
+      link text,
+      primary key (endpoint)
+);
+#+END_SRC
+
+#+begin_src sql-mode
+comment on view conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing';
+comment on column conformance.ineligible_endpoint.endpoint is 'the ineligible endpoint';
+comment on column conformance.ineligible_endpoint.reason is 'reason, from conformance guidelines, for ineligibility';
+comment on column conformance.ineligible_endpoint.link is 'url source for reason';
+#+end_src
 ** Testing
 *** audit_event
    :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/103_table_audit_event.sql
+   :header-args: :tangle ./postgres/initdb/104_table_audit_event.sql
    :END:
 
    #+NAME: audit event definition
@@ -281,119 +300,35 @@ Our numbering is based on the _type_ of relation, but moves across schemas.
    #+end_src
 
 ** Conformance
-*** ineligible endpoint
+*** eligible endpoint
    :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/202_view_conformance_ineligible_endpoint.sql
+   :header-args: :tangle ./postgres/initdb/203_view_conformance_eligible_endpoint.sql
    :END:
-  #+begin_src sql-mode
-    create or replace view conformance.ineligible_endpoint as
-    with current_stable_endpoints as (
-      select endpoint, path, k8s_kind, k8s_action
-        from open_api
-       where deprecated is false
-         and level = 'stable'
-         and release = (
-           select release
-             from open_api
-            order by release::semver desc
-            limit 1
-         )
-    )
-    (
-        -- vendor specific features
-        select endpoint,
-                'vendor specific feature' as reason,
-                'path includes "volume" or "storage"' as "sql logic",
-            'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L64' as link
-        from current_stable_endpoints
-        where path ~~ any('{"%volume%", "%storage%"}')
-    )
-    union
-    (
-        -- endpoint is pending deprecation
-        select endpoint,
-                'pending deprecation' as reason,
-                'kind equals ComponentStatus' as "sql logic",
-            'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L69' as link
-        from current_stable_endpoints
-        where k8s_kind = 'ComponentStatus'
-    )
-    union
-    (
-        -- Uses the kubelet api
-        select endpoint,
-                'uses kubelet api' as reason,
-                'kind equals Node and action equals delete or post' as "sql logic",
-            'https://github.com/kubernetes/community/blame/master/contributors/devel/sig-architecture/conformance-tests.md#L36' as link
-        from current_stable_endpoints
-        where k8s_kind = 'Node'
-            and k8s_action = any('{"delete", "post"}')
-    )
-    union
-    (
-    -- Optional feature
-    select endpoint,
-    'optional feature' as reason,
-    'endpoint = ' || endpoint as "sql logic",
-    'https://github.com/kubernetes/kubernetes/issues/80770' as link
-    from current_stable_endpoints
-    where endpoint = 'createCoreV1NamespacedServiceAccountToken'
-    )
-    union
-    (
-    -- Dependent on Alpha Feature
-    select endpoint,
-    'depends on alpha feature' as reason,
-    'endpoint = ' || endpoint as "sql logic",
-    'https://github.com/kubernetes/enhancements/blob/f16c4c7f1c9e28a3cc4bb4d0e6503efea2ae7987/keps/sig-api-machinery/20190228-priority-and-fairness.md' as link
-    from current_stable_endpoints
-    where endpoint = 'getFlowcontrolApiserverAPIGroup'
-    )
-    union
-    (
-    -- Not eligible for conformance yet
-    select endpoint,
-    'Not eligible for conformance yet' as reason,
-    'endpoint = ' || endpoint as "sql logic",
-    'https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190802-dynamic-coordinated-storage-version.md' as link
-    from current_stable_endpoints
-    where endpoint =  'getInternalApiserverAPIGroup'
-    )
-    union
-    (
-    -- Unable to be tested, and likely to be deprecated
-    select endpoint,
-    'Unable to be tested, and likely soon deprecated' as reason,
-    'k8s_kind = "NodeProxyOptions"'  "sql logic",
-    'https://github.com/kubernetes/kubernetes/issues/95930' as link
-    from current_stable_endpoints
-    where k8s_kind = 'NodeProxyOptions'
-    )
-union
-(
---  In support of alpha endpoints
-select endpoint,
-'Not eligible for conformance yet' as reason,
-'endpoint like '||'%Ephemeralcontainers'  as "sql logic",
-'https://github.com/kubernetes/kubernetes/pull/97276' as link
-from current_stable_endpoints
-where endpoint like  '%Ephemeralcontainers'
-)
-    order by reason;
-  #+end_src
-
-  #+begin_src sql-mode
-    comment on view conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing and the reason for ineligibility.';
-
-    comment on column conformance.ineligible_endpoint.endpoint is 'the ineligible endpoint';
-    comment on column conformance.ineligible_endpoint.reason is 'reason, from conformance guidelines, for ineligibility';
-    comment on column conformance.ineligible_endpoint."sql logic" is 'how we tested reason using sql';
-    comment on column conformance.ineligible_endpoint.link is 'url source for reason';
-  #+end_src
-
    #+begin_src sql-mode
-     select 'conformance.ineligible_endpoint defined and commented' as "build log";
+     create or replace view conformance.eligible_endpoint as
+          select endpoint
+            from open_api
+                   join (
+                     select release
+                       from open_api
+                      order by release::semver desc
+                      limit 1) latest using(release)
+           where level = 'stable'
+           and deprecated is not true
+          except
+          select endpoint
+            from conformance.ineligible_endpoint;
+    #+end_src
+
+    #+begin_src sql-mode
+      comment on view conformance.eligible_endpoint is 'all current stable endpoints for which conformant tests could be written, following conformance guidelines';
+
+      comment on column conformance.eligible_endpoint.endpoint is 'the endpoint, as its defined in the open_api table';
+    #+end_src
+   #+begin_src sql-mode
+     select 'conformance.eligible_endpoint defined and commented' as "build log";
    #+end_src
+
 *** eligible endpoint coverage
    :PROPERTIES:
    :header-args: :tangle ./postgres/initdb/204_view_conformance_eligible_endpoint_coverage.sql
@@ -433,35 +368,6 @@ where endpoint like  '%Ephemeralcontainers'
    #+begin_src sql-mode
      select 'conformance.eligible_endpoint_coverage defined and commented' as "build log";
    #+end_src
-*** eligible endpoint
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/203_view_conformance_eligible_endpoint.sql
-   :END:
-   #+begin_src sql-mode
-     create or replace view conformance.eligible_endpoint as
-          select endpoint
-            from open_api
-                   join (
-                     select release
-                       from open_api
-                      order by release::semver desc
-                      limit 1) latest using(release)
-           where level = 'stable'
-           and deprecated is not true
-          except
-          select endpoint
-            from conformance.ineligible_endpoint;
-    #+end_src
-
-    #+begin_src sql-mode
-      comment on view conformance.eligible_endpoint is 'all current stable endpoints for which conformant tests could be written, following conformance guidelines';
-
-      comment on column conformance.eligible_endpoint.endpoint is 'the endpoint, as its defined in the open_api table';
-    #+end_src
-   #+begin_src sql-mode
-     select 'conformance.eligible_endpoint defined and commented' as "build log";
-   #+end_src
-
 *** conformance progress
    :PROPERTIES:
    :header-args: :tangle ./postgres/initdb/205_view_conformance_progress.sql
@@ -1005,9 +911,58 @@ CREATE OR REPLACE VIEW "testing"."projected_change_in_coverage" AS
      select 'load_tests function defined and commented' as "build log";
    #+end_src
 
+*** load_ineligible_endpoints
+   :PROPERTIES:
+   :header-args: :tangle ./postgres/initdb/303_fn_load_ineligible_endpoints.sql
+   :END:
+   #+NAME: load_ineligible_endpoints definition
+   #+begin_src sql-mode
+      create or replace function load_ineligible_endpoints (
+        custom_release text default null
+        )
+      returns text AS $$
+      from string import Template
+      import json
+      from urllib.request import urlopen, urlretrieve
+      import urllib
+      import yaml
+
+      K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
+      MAIN_BRANCH = "master"
+      INELIGIBLE_ENDPOINTS = "/test/conformance/testdata/ineligible_endpoints.yaml"
+      INELIGIBLE_URL = K8S_REPO_URL + MAIN_BRANCH + INELIGIBLE_ENDPOINTS
+
+      ineligible_endpoints = json.dumps(yaml.safe_load(urlopen(INELIGIBLE_URL)))
+      sql = Template("""
+                   with jsonb_array AS (
+                   select jsonb_array_elements('${ineligible_endpoints}'::jsonb) as endpoint_data)
+                   insert into conformance.ineligible_endpoint(endpoint, reason, link)
+                      select
+                      (endpoint_data->>'endpoint') as endpoint,
+                      (endpoint_data->>'reason') as reason,
+                      (endpoint_data->>'link') as link
+                      from jsonb_array;
+                   """).substitute(ineligible_endpoints = ineligible_endpoints.replace("'","''"))
+      try:
+          plpy.execute(sql)
+          return 'ineligible endpoints loaded!'
+      except Exception as e:
+          return 'error occured: ', e
+     $$ LANGUAGE plpython3u;
+    #+end_src
+
+   #+NAME: load_tests comment
+   #+begin_src sql-mode
+     comment on function load_ineligible_endpoints is 'loads ineligible endpoints from k8s/k8s/test/conformance/testdata';
+   #+end_src
+
+   #+begin_src sql-mode
+     select 'load_ineligible_endpoints function defined and commented' as "build log";
+   #+end_src
+
 *** describe_relations
    :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/303_fn_describe_relations.sql
+   :header-args: :tangle ./postgres/initdb/304_fn_describe_relations.sql
    :END:
    #+begin_src sql-mode
      create or replace function describe_relations(
@@ -1068,7 +1023,7 @@ CREATE OR REPLACE VIEW "testing"."projected_change_in_coverage" AS
    #+end_src
 *** describe_relation
    :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/304_fn_describe_relation.sql
+   :header-args: :tangle ./postgres/initdb/305_fn_describe_relation.sql
    :END:
    #+begin_src sql-mode
      create or replace function describe_relation(
@@ -1092,7 +1047,7 @@ CREATE OR REPLACE VIEW "testing"."projected_change_in_coverage" AS
    #+end_src
 *** describe_columns
    :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/305_fn_describe_columns.sql
+   :header-args: :tangle ./postgres/initdb/306_fn_describe_columns.sql
    :END:
      #+begin_src sql-mode
        create or replace function describe_columns(
@@ -1122,7 +1077,7 @@ CREATE OR REPLACE VIEW "testing"."projected_change_in_coverage" AS
    #+end_src
 *** describe_column
    :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/306_fn_describe_column.sql
+   :header-args: :tangle ./postgres/initdb/307_fn_describe_column.sql
    :END:
 
      #+begin_src sql-mode
@@ -1156,7 +1111,7 @@ CREATE OR REPLACE VIEW "testing"."projected_change_in_coverage" AS
    #+end_src
 *** determine_endpoint
    :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/307_fn_determine_endpoint.sql
+   :header-args: :tangle ./postgres/initdb/308_fn_determine_endpoint.sql
    :END:
 #+BEGIN_SRC sql-mode
 create or replace function determine_endpoint() RETURNS TRIGGER as $$
@@ -1174,9 +1129,8 @@ $$ language plpython3u;
 #+END_SRC
 *** Generate latest coverage json
 :PROPERTIES:
-:header-args: :tangle ./postgres/initdb/308_fn_generate_latest_coverage_json.sql
+:header-args: :tangle ./postgres/initdb/309_fn_generate_latest_coverage_json.sql
 :END:
-
 
 #+begin_src sql-mode
 create function generate_latest_coverage_json()
