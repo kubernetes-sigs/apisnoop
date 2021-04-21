@@ -2,8 +2,7 @@
  import dayjs from 'dayjs';
  import { takeRight } from 'lodash-es';
  import SectionHeader from '../SectionHeader.svelte';
- import { activeRelease } from '../../store';
- import { RELEASES } from '../../lib/constants.js';
+ import { activeRelease, releases, versions } from '../../store';
 
  const SPYGLASS_URL = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs'
  let releaseSwitch = false;
@@ -30,7 +29,7 @@
     </h2>
     {#if releaseSwitch}
       <ul class='releases'>
-      {#each RELEASES as rel}
+      {#each $versions as rel}
         <li><a href={'/'+rel+'/'} on:click={() => releaseSwitch = false}>{rel}</a></li>
       {/each}
       </ul>
