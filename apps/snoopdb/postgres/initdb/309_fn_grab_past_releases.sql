@@ -16,6 +16,6 @@ versions_with_openapi = [release["version"] for release in past_releases if has_
 return versions_with_openapi
 $$;
 
-comment on function grab_past_releases is 'return list of versions (X.XX.X) that aren't latest and have a swagger.json';
+comment on function grab_past_releases is 'return list of versions (X.XX.X) sans latest that have a swagger.json';
 
 select 'grab_past_releases function defined and commented' as "build log";
