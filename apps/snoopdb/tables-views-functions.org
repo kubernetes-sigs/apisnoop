@@ -170,7 +170,7 @@ create table conformance.ineligible_endpoint(
 #+END_SRC
 
 #+begin_src sql-mode
-comment on view conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing';
+comment on table conformance.ineligible_endpoint is 'endpoints ineligible for conformance testing';
 comment on column conformance.ineligible_endpoint.endpoint is 'the ineligible endpoint';
 comment on column conformance.ineligible_endpoint.reason is 'reason, from conformance guidelines, for ineligibility';
 comment on column conformance.ineligible_endpoint.link is 'url source for reason';
@@ -625,140 +625,116 @@ CREATE OR REPLACE VIEW "testing"."projected_change_in_coverage" AS
    :PROPERTIES:
    :header-args: :tangle ./postgres/initdb/300_fn_load_open_api.sql
    :END:
+#+NAME: updated load_open_api
+#+begin_src sql-mode
+create or replace function load_open_api (
+  custom_release text default null
+  )
+returns text AS $$
+from string import Template
+import json
+import time
+import datetime
+from urllib.request import urlopen, urlretrieve
+import urllib
+import yaml
 
-    #+NAME: load_open_api definition
-    #+begin_src sql-mode
-      create or replace function load_open_api (
-        custom_release text default null
-        )
-      returns text AS $$
-      from string import Template
-      import json
-      import time
-      import datetime
-      from urllib.request import urlopen, urlretrieve
-      import urllib
-      import yaml
+K8S_REPO_URL = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
+OPEN_API_PATH = '/api/openapi-spec/swagger.json'
+RELEASES_URL = 'https://raw.githubusercontent.com/cncf/apisnoop/main/resources/coverage/releases.yaml'
 
-      K8S_REPO_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/"
-      OPEN_API_PATH = "/api/openapi-spec/swagger.json"
-      RELEASES_URL = "https://raw.githubusercontent.com/apisnoop/snoopDB/master/resources/coverage/releases.yaml"
-      # When refactored repo is merged
-      # RELEASES_URL = 'https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage/releases.yaml';
+# Get info about latest release from our releases.yaml
+releases = yaml.safe_load(urlopen(RELEASES_URL))
+latest_release = releases[0]
 
-      # Get info about latest release from our releases.yaml
-      releases = yaml.safe_load(urlopen(RELEASES_URL))
-      latest_release = releases[0]
-      latest_release_date = datetime.datetime.now()
+# Set values for sql template  based on if custom_release argument was passed
+if custom_release is not None:
+  open_api_url = K8S_REPO_URL + 'v' + custom_release  + OPEN_API_PATH
+# check to see if we can load this custom_release url
+  try:
+    open_api = json.loads(urlopen(open_api_url).read().decode('utf-8'))
+    release = custom_release
+    rd = [r for r in releases if r['version'] == release][0]['release_date']
+    release_date = time.mktime(datetime.datetime.strptime(str(rd), "%Y-%m-%d").timetuple())
+  except urllib.error.HTTPError as e:
+    raise ValueError('http error with', custom_release)
+else:
+  open_api_url = K8S_REPO_URL + 'master' + OPEN_API_PATH
+  open_api = json.loads(urlopen(open_api_url).read().decode('utf-8'))
+  release = latest_release['version']
+  release_date = time.mktime(datetime.datetime.now().timetuple())
+sql = Template("""
+   WITH open AS (
+     SELECT '${open_api}'::jsonb as api_data
+     )
+       INSERT INTO open_api(
+         release,
+         release_date,
+         endpoint,
+         level,
+         category,
+         path,
+         k8s_group,
+         k8s_version,
+         k8s_kind,
+         k8s_action,
+         deprecated,
+         description,
+         spec
+       )
+   SELECT
+     '${release}' as release,
+     to_timestamp(${release_date}) as release_date,
+     (d.value ->> 'operationId'::text) as endpoint,
+     CASE
+       WHEN paths.key ~~ '%alpha%' THEN 'alpha'
+       WHEN paths.key ~~ '%beta%' THEN 'beta'
+       -- these endpoints are beta, but are not marked as such, yet, in the swagger.json
+       WHEN (d.value ->> 'operationId'::text) = any('{"getServiceAccountIssuerOpenIDConfiguration", "getServiceAccountIssuerOpenIDKeyset"}') THEN 'beta'
+       ELSE 'stable'
+     END AS level,
+     split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+     paths.key AS path,
+     ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+     ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+     ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+     (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+     CASE
+       WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
+       ELSE false
+     END AS deprecated,
+                 (d.value ->> 'description'::text) AS description,
+                 '${open_api_url}' as spec
+     FROM
+         open
+          , jsonb_each((open.api_data -> 'paths'::text)) paths(key, value)
+          , jsonb_each(paths.value) d(key, value)
+          , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+    ORDER BY paths.key;
+              """).substitute(release = release,
+                              release_date = str(release_date),
+                              open_api = json.dumps(open_api).replace("'","''"),
+                              open_api_url = open_api_url)
+try:
+  plpy.execute((sql))
+  return "{} open api is loaded".format(release)
+except Exception as e:
+  return "an error occurred: " + str(e) + "\nrelease: " + release
+$$ LANGUAGE plpython3u ;
+reset role;
 
-      release_dates = {
-        "v1.0.0": "2015-07-10",
-        "v1.1.0": "2015-11-09",
-        "v1.2.0": "2016-03-16",
-        "v1.3.0": "2016-07-01",
-        "v1.4.0": "2016-09-26",
-        "v1.5.0": "2016-12-12",
-        "v1.6.0": "2017-03-28",
-        "v1.7.0": "2017-06-30",
-        "v1.8.0": "2017-08-28",
-        "v1.9.0": "2017-12-15",
-        "v1.10.0": "2018-03-26",
-        "v1.11.0":  "2018-06-27",
-        "v1.12.0": "2018-09-27",
-        "v1.13.0": "2018-12-03" ,
-        "v1.14.0": "2019-03-25",
-        "v1.15.0": "2019-06-19",
-        "v1.16.0": "2019-09-18",
-        "v1.17.0": "2019-12-07",
-        "v1.18.0": "2020-03-25",
-        "v1.19.0": "2020-08-25",
-        "v1.20.0": "2020-12-08"
-      }
+#+end_src
 
-      # Set values for sql template  based on if custom_release argument was passed
-      if custom_release is not None:
-        open_api_url = K8S_REPO_URL + custom_release + OPEN_API_PATH
-      # check to see if we can load this custom_release url
-        try:
-          open_api = json.loads(urlopen(open_api_url).read().decode('utf-8'))
-          release = custom_release
-          rd = release_dates[release]
-          release_date = time.mktime(datetime.datetime.strptime(rd, "%Y-%m-%d").timetuple())
-        except urllib.error.HTTPError as e:
-          raise ValueError('http error with', e)
-      else:
-        open_api_url = K8S_REPO_URL + 'master' + OPEN_API_PATH
-        open_api = json.loads(urlopen(open_api_url).read().decode('utf-8'))
-        release = latest_release
-        release_date = time.mktime(datetime.datetime.now().timetuple())
-      sql = Template("""
-         WITH open AS (
-           SELECT '${open_api}'::jsonb as api_data)
-             INSERT INTO open_api(
-               release,
-               release_date,
-               endpoint,
-               level,
-               category,
-               path,
-               k8s_group,
-               k8s_version,
-               k8s_kind,
-               k8s_action,
-               deprecated,
-               description,
-               spec
-             )
-         SELECT
-           trim(leading 'v' from '${release}') as release,
-           to_timestamp(${release_date}) as release_date,
-           (d.value ->> 'operationId'::text) as endpoint,
-           CASE
-             WHEN paths.key ~~ '%alpha%' THEN 'alpha'
-             WHEN paths.key ~~ '%beta%' THEN 'beta'
-             -- these endpoints are beta, but are not marked as such, yet, in the swagger.json
-             WHEN (d.value ->> 'operationId'::text) = any('{"getServiceAccountIssuerOpenIDConfiguration", "getServiceAccountIssuerOpenIDKeyset"}') THEN 'beta'
-             ELSE 'stable'
-           END AS level,
-           split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
-           paths.key AS path,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-           ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-           (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
-           CASE
-             WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
-             ELSE false
-           END AS deprecated,
-                       (d.value ->> 'description'::text) AS description,
-                       '${open_api_url}' as spec
-           FROM
-               open
-                , jsonb_each((open.api_data -> 'paths'::text)) paths(key, value)
-                , jsonb_each(paths.value) d(key, value)
-                , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
-          ORDER BY paths.key;
-                    """).substitute(release = release,
-                                    release_date = release_date,
-                                    open_api = json.dumps(open_api).replace("'","''"),
-                                    open_api_url = open_api_url)
-      try:
-        plpy.execute((sql))
-        return "{} open api is loaded".format(release)
-      except Exception as e:
-        return "an error occurred: " + e
-      $$ LANGUAGE plpython3u ;
-      reset role;
-    #+end_src
 
-    #+NAME: load_open_api comments
-    #+begin_src sql-mode
-      comment on function load_open_api is 'loads given release to open_api table.  Pass release (as "v.X.XX.X") to load specific release, otherwise loads latest';
-    #+end_src
+#+NAME: load_open_api comments
+#+begin_src sql-mode
+comment on function load_open_api is 'loads given release to open_api table.  Pass release (as "X.XX.X") to load specific release, otherwise loads latest';
 
-   #+begin_src sql-mode
-     select 'load_open_api function defined and commented' as "build log";
-   #+end_src
+#+end_src
+
+#+begin_src sql-mode
+select 'load_open_api function defined and commented' as "build log";
+#+end_src
 
 *** load_audit_events
    :PROPERTIES:
@@ -781,7 +757,7 @@ CREATE OR REPLACE VIEW "testing"."projected_change_in_coverage" AS
         RELEASES_URL = "https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage/releases.yaml"
 
         releases = yaml.safe_load(urlopen(RELEASES_URL))
-        latest_release = releases[0]
+        latest_release = releases[0]['version']
 
         bucket, job = determine_bucket_job(custom_bucket, custom_job)
         plpy.log("our bucket and job", detail=[bucket,job])
@@ -798,7 +774,7 @@ CREATE OR REPLACE VIEW "testing"."projected_change_in_coverage" AS
             num = release.replace('.','')
             if int(release.split('.')[1]) > int(latest_release.split('.')[1]):
                 release = latest_release
-        # if we are grabbing latest release, and it's on cusp of new release,
+        # if we are grabbing latest release, and it is on cusp of new release,
         # then test runs will show their version as the next release...which is confusing,
         # this period is a code freeze, where tests can still be added, and so the logs we are
         # seeing still shows coverage for the version just about to be released.
@@ -1127,9 +1103,45 @@ create or replace function determine_endpoint() RETURNS TRIGGER as $$
    return "modify";
 $$ language plpython3u;
 #+END_SRC
+*** Grab Past Releases
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/309_fn_grab_past_releases.sql
+:END:
+
+#+NAME: grab_past_releases
+#+begin_src sql-mode
+create function grab_past_releases ()
+returns setof text
+language plpython3u as $$
+
+import json
+import yaml
+from urllib.request import urlopen, urlretrieve
+
+def has_open_api (version):
+    major = version.split('.')[1]
+    return int(major) >= 5 # open api wasn't established until 1.5.0
+
+RELEASES_URL = 'https://raw.githubusercontent.com/cncf/apisnoop/main/resources/coverage/releases.yaml'
+past_releases = yaml.safe_load(urlopen(RELEASES_URL))[1:]
+versions_with_openapi = [release["version"] for release in past_releases if has_open_api(release["version"])]
+return versions_with_openapi
+$$;
+#+end_src
+
+#+NAME: grab past releases comment
+#+begin_src sql-mode
+comment on function grab_past_releases is 'return list of versions (X.XX.X) sans latest that have a swagger.json';
+#+end_src
+
+#+name: grab past releases build log
+#+begin_src sql-mode
+select 'grab_past_releases function defined and commented' as "build log";
+#+end_src
+
 *** Generate latest coverage json
 :PROPERTIES:
-:header-args: :tangle ./postgres/initdb/309_fn_generate_latest_coverage_json.sql
+:header-args: :tangle ./postgres/initdb/310_fn_generate_latest_coverage_json.sql
 :END:
 
 #+begin_src sql-mode
@@ -1181,69 +1193,47 @@ execute procedure determine_endpoint();
 #+END_SRC
 * Bootstrap Scripts
 ** Load all our open_api
-   :PROPERTIES:
+:PROPERTIES:
    :header-args: :tangle ./postgres/initdb/500_load_all_open_api.sql
    :END:
-   #+NAME: Load all open api
-   #+begin_src sql-mode
-     begin;
-     with releases as (
-       select column1 as release
-         from (values
-         ('v1.5.0'),
-         ('v1.6.0'),
-         ('v1.7.0'),
-         ('v1.8.0'),
-         ('v1.9.0'),
-         ('v1.10.0'),
-         ('v1.11.0'),
-         ('v1.12.0'),
-         ('v1.13.0'),
-         ('v1.14.0'),
-         ('v1.15.0'),
-         ('v1.16.0'),
-         ('v1.17.0'),
-         ('v1.18.0'),
-         ('v1.19.0'),
-         ('v1.20.0')
-         ) as rlist
-     )
-     select f.*
-       from
-       releases r
-       , lateral load_open_api(r.release) f("build log");
-     select * from load_open_api() f("build log");
-     commit;
-
-   #+end_src
+#+NAME: Load all open api
+#+begin_src sql-mode
+begin;
+select f.*
+    from
+    (select release from grab_past_releases() as release) r
+    , lateral load_open_api(r.release::text) f("build log");
+select * from load_open_api() f("build log");
+commit;
+#+end_src
 
 ** Load tests
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/501_load_all_tests.sql
-   :END:
-   #+NAME: load tests
-   #+begin_src sql-mode
-     begin;
-     select * from load_tests() f("build log");
-     commit;
-   #+end_src
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/501_load_all_tests.sql
+:END:
+#+NAME: load tests
+#+begin_src sql-mode
+begin;
+select * from load_tests() f("build log");
+commit;
+#+end_src
 
 ** Load latest audit_events
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/502_load_all_audit_events.sql
-   :END:
-   #+NAME: load latest audit events
-  #+begin_src sql-mode
-     begin;
-     select * from load_audit_events() f("build log");
-     select * from load_audit_events('ci-kubernetes-gce-conformance-latest') f("build log");
-     select * from load_audit_events('ci-audit-kind-conformance') f("build log");
-     commit;
-  #+end_src
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/502_load_all_audit_events.sql
+:END:
+#+NAME: load latest audit events
+#+begin_src sql-mode
+begin;
+select * from load_audit_events() f("build log");
+select * from load_audit_events('ci-kubernetes-gce-conformance-latest') f("build log");
+select * from load_audit_events('ci-audit-kind-conformance') f("build log");
+commit;
+#+end_src
 ** Refresh Materialized Views
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/503_refresh_eligible_endpoint_coverage.sql
-   :END:
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/503_refresh_eligible_endpoint_coverage.sql
+:END:
 #+BEGIN_SRC sql-mode
 begin;
 refresh materialized view conformance.eligible_endpoint_coverage;
@@ -1251,10 +1241,10 @@ select 'conformance.eligible_endpoint_coverage re-materialized' as "build log";
 commit;
 #+END_SRC
 ** Output untested endpoints
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/504_output_untested_endpoints.sql
-   :END:
-  #+BEGIN_SRC sql-mode
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/504_output_untested_endpoints.sql
+:END:
+#+BEGIN_SRC sql-mode
 begin;
 
 
@@ -1262,38 +1252,38 @@ begin;
 \a
 \o '/tmp/untested-endpoints.txt'
 
-  with latest_release as (
-  select release::semver as release
-    from open_api
-   order by release::semver desc
-   limit 1
-  )
+with latest_release as (
+select release::semver as release
+from open_api
+order by release::semver desc
+limit 1
+)
 
-  select endpoint
-    from conformance.new_endpoint ne
-           join latest_release on ne.release::semver = latest_release.release
+select endpoint
+from conformance.new_endpoint ne
+        join latest_release on ne.release::semver = latest_release.release
 where tested is false;
 \o
 \a
 \t
 select 'untested endpoints for '||release||' written to /tmp/untested-endpoints.txt' as "build log"
-  from open_api
- order by release::semver desc
- limit 1;
+from open_api
+order by release::semver desc
+limit 1;
 commit;
-  #+END_SRC
+#+END_SRC
 
 ** Output coverage jsons
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/505_output_coverage_jsons.sql
-   :END:
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/505_output_coverage_jsons.sql
+:END:
 This is like our generate-json.sql file, but outputting to a tmp folder in the container, for use with prow jobs.
 #+NAME: output coverage jsons
 #+begin_src sql
-    begin;
+begin;
     
-    -- move this to its own block if it works
-    CREATE FUNCTION array_distinct(anyarray) RETURNS anyarray AS $f$
+-- move this to its own block if it works
+CREATE FUNCTION array_distinct(anyarray) RETURNS anyarray AS $f$
   SELECT array_agg(DISTINCT x) FROM unnest($1) t(x);
 $f$ LANGUAGE SQL IMMUTABLE;
     

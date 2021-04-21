@@ -37,7 +37,10 @@
    }
  }
 
- router("/about", ()=> page = About);
+ router("/about", (ctx, next)=> {
+     params = ctx.params;
+     query = {...queryObj(ctx.querystring)};
+     next()}, () => page = About);
  router("/conformance-progress", (ctx, next) => {
    params = ctx.params;
    query = {...queryObj(ctx.querystring)};

@@ -13,7 +13,7 @@ create or replace function load_audit_events(
   RELEASES_URL = "https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage/releases.yaml"
 
   releases = yaml.safe_load(urlopen(RELEASES_URL))
-  latest_release = releases[0]
+  latest_release = releases[0]['version']
 
   bucket, job = determine_bucket_job(custom_bucket, custom_job)
   plpy.log("our bucket and job", detail=[bucket,job])
@@ -30,7 +30,7 @@ create or replace function load_audit_events(
       num = release.replace('.','')
       if int(release.split('.')[1]) > int(latest_release.split('.')[1]):
           release = latest_release
-  # if we are grabbing latest release, and it's on cusp of new release,
+  # if we are grabbing latest release, and it is on the cusp of  anew release,
   # then test runs will show their version as the next release...which is confusing,
   # this period is a code freeze, where tests can still be added, and so the logs we are
   # seeing still shows coverage for the version just about to be released.

@@ -1,23 +1,51 @@
 <script>
- import { RELEASES, RELEASES_URL } from '../lib/constants.js';
+ import { RELEASES_URL, EARLIEST_VERSION } from '../lib/constants.js';
  import { onMount, afterUpdate } from 'svelte';
- import { isEmpty} from 'lodash-es';
+ import { isEmpty, mapValues, groupBy } from 'lodash-es';
  import dayjs from 'dayjs';
+ import yaml from 'js-yaml';
+ import {gte} from 'semver';
  import {
    activeFilters,
    activeRelease,
-   releases
+     releases,
+     latestVersion
  } from '../store';
 
- let version = RELEASES.sort((a,b) => b.split('.')[1] - a.split('.')[1])[0];
- let copy;
+ export let params;
+ export let query;
 
- activeFilters.update(af => ({
-   ...af,
-   version
- }))
+ $: ({
+     version,
+     level,
+     category,
+     endpoint
+ } = params);
 
  afterUpdate(async() => {
+     if ($releases && isEmpty($releases)) {
+         let releasesData = await
+         fetch(`${RELEASES_URL}/releases.yaml`)
+             .then(res => res.blob())
+             .then(blob => blob.text())
+             .then(yamlString => yaml.load(yamlString))
+             .then(releases => releases.filter(({version}) => gte(version, EARLIEST_VERSION)))
+             .then(releases => {
+                 return mapValues(groupBy(releases, 'version'),
+                                  ([{version, release_date}]) => ({
+                                      release: version,
+                                      release_date: release_date == '' ? new Date() : release_date,
+                                      spec: '',
+                                      source: '',
+                                      endpoints: [],
+                                      tests: []
+                 }))
+             });
+         releases.update(rel => releasesData);
+     }
+     if (version === 'latest' || version == null) {
+         version = $latestVersion;
+     };
    activeFilters.update(af => ({
      ...af,
      version,
