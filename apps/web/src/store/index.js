@@ -1,10 +1,12 @@
 import { readable, writable, derived } from 'svelte/store';
+import semver from 'semver';
 import {
   compact,
   differenceBy,
   flatten,
   groupBy,
   keyBy,
+  last,
   isEmpty,
   map,
   mapValues,
@@ -21,30 +23,32 @@ import {
   levelColours
 } from '../lib/colours.js';
 
-import { RELEASES } from '../lib/constants.js';
+import { EARLIEST_VERSION } from '../lib/constants.js';
 
-export const versions = readable(
-  // sort RELEASES by minor release in the semver.
-  RELEASES.sort((a, b) => b.split('.')[1] - a.split('.')[1])
-);
+export const releases = writable([])
+
+export const versions = derived(releases, ($releases, set) => {
+  // shorthand of the versions we have available, sorted by newest.
+  if (!isEmpty($releases)) {
+    const versions = sortBy($releases, 'release_date')
+          .map(r=>r.release)
+          .sort((a,b) => semver.gt(b,a));
+    set(versions);
+  } else {
+    set([])
+  }
+});
 
 export const latestVersion = derived(
-  versions,
-  ($ver, set) => {
-    set($ver[0]);
+  releases,
+  ($releases, set) => {
+    if ($releases && !isEmpty($releases)) {
+      const latest = last(sortBy($releases, 'release_date'));
+      set(latest.release);
+    } else {
+      set('')
+    }
   }
-);
-
-export const releases = writable(
-  // Our list of RELEASES converted to object, with each release as key to empty object.
-  mapValues(groupBy(RELEASES), ([release]) => ({
-    release,
-    spec: '',
-    source: '',
-    release_date: new Date(),
-    endpoints: [],
-    tests: []
-  }))
 );
 
 // Based on url query params, any filters being set.
@@ -62,22 +66,28 @@ export const activeRelease = derived(
   // (which will be set by our url)
   [releases, latestVersion, activeFilters],
   ([$r, $v, $a], set) => {
+    if (isEmpty($r)) {
+      set({});
+    }
     if (!$a.version || $a.version === '') {
       set($r[$v]);
-    } else if (!RELEASES.includes($a.version)){
+    } else if (semver.lt($a.version, EARLIEST_VERSION)){
       set('older');
     } else {
-      set($r[$a.version]);
+      set($r[$a.version])
     }
   }
 );
 
 export const previousRelease = derived(
-  [releases, versions, activeRelease],
-  ([$rels, $versions, $active], set) => {
-    if ($active) {
-      const activeIdx = $versions.indexOf($active.release);
-      const prevVersion = $versions[activeIdx + 1];
+  // according to semver, the previous release from active one.
+  // used to fetch the next release when someone is visiting a page.
+  [releases, activeRelease],
+  ([$rels, $active], set) => {
+    if ($active && $active.release) {
+      const versions = (sortBy($rels, 'release_date')).map(r => r.release);
+      const activeIdx = versions.indexOf($active.release);
+      const prevVersion = versions[activeIdx + 1];
       const prevRelease = prevVersion
             ? $rels[prevVersion]
             : {};
@@ -108,9 +118,15 @@ export const breadcrumb = derived(
   }
 );
 
-export const endpoints = derived(activeRelease, ($rel, set) => {
+export const endpoints = derived(
+  activeRelease,
+  ($rel, set) => {
   if ($rel) {
-    set($rel.endpoints);
+    if (!$rel.endpoints) {
+      set($rel.endpoints)
+    } else {
+      set($rel.endpoints);
+    }
   } else {
     set([]);
   }
@@ -181,8 +197,8 @@ export const newCoverage = derived(
   }
 );
 
-export const groupedEndpoints = derived(endpoints, ($eps, set) => {
-  if ($eps.length > 0) {
+export const groupedEndpoints = derived([activeRelease, endpoints], ([$ar, $eps], set) => {
+  if ($eps && $eps.length > 0) {
     const epsByLevel = groupBy($eps, 'level');
     set(mapValues(epsByLevel, epsInLevel => {
       const epsByCategory = groupBy(epsInLevel, 'category');
