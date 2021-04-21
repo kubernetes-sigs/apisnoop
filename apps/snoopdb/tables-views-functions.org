@@ -1193,69 +1193,47 @@ execute procedure determine_endpoint();
 #+END_SRC
 * Bootstrap Scripts
 ** Load all our open_api
-   :PROPERTIES:
+:PROPERTIES:
    :header-args: :tangle ./postgres/initdb/500_load_all_open_api.sql
    :END:
-   #+NAME: Load all open api
-   #+begin_src sql-mode
-     begin;
-     with releases as (
-       select column1 as release
-         from (values
-         ('v1.5.0'),
-         ('v1.6.0'),
-         ('v1.7.0'),
-         ('v1.8.0'),
-         ('v1.9.0'),
-         ('v1.10.0'),
-         ('v1.11.0'),
-         ('v1.12.0'),
-         ('v1.13.0'),
-         ('v1.14.0'),
-         ('v1.15.0'),
-         ('v1.16.0'),
-         ('v1.17.0'),
-         ('v1.18.0'),
-         ('v1.19.0'),
-         ('v1.20.0')
-         ) as rlist
-     )
-     select f.*
-       from
-       releases r
-       , lateral load_open_api(r.release) f("build log");
-     select * from load_open_api() f("build log");
-     commit;
-
-   #+end_src
+#+NAME: Load all open api
+#+begin_src sql-mode
+begin;
+select f.*
+    from
+    (select release from grab_past_releases() as release) r
+    , lateral load_open_api(r.release::text) f("build log");
+select * from load_open_api() f("build log");
+commit;
+#+end_src
 
 ** Load tests
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/501_load_all_tests.sql
-   :END:
-   #+NAME: load tests
-   #+begin_src sql-mode
-     begin;
-     select * from load_tests() f("build log");
-     commit;
-   #+end_src
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/501_load_all_tests.sql
+:END:
+#+NAME: load tests
+#+begin_src sql-mode
+begin;
+select * from load_tests() f("build log");
+commit;
+#+end_src
 
 ** Load latest audit_events
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/502_load_all_audit_events.sql
-   :END:
-   #+NAME: load latest audit events
-  #+begin_src sql-mode
-     begin;
-     select * from load_audit_events() f("build log");
-     select * from load_audit_events('ci-kubernetes-gce-conformance-latest') f("build log");
-     select * from load_audit_events('ci-audit-kind-conformance') f("build log");
-     commit;
-  #+end_src
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/502_load_all_audit_events.sql
+:END:
+#+NAME: load latest audit events
+#+begin_src sql-mode
+begin;
+select * from load_audit_events() f("build log");
+select * from load_audit_events('ci-kubernetes-gce-conformance-latest') f("build log");
+select * from load_audit_events('ci-audit-kind-conformance') f("build log");
+commit;
+#+end_src
 ** Refresh Materialized Views
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/503_refresh_eligible_endpoint_coverage.sql
-   :END:
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/503_refresh_eligible_endpoint_coverage.sql
+:END:
 #+BEGIN_SRC sql-mode
 begin;
 refresh materialized view conformance.eligible_endpoint_coverage;
@@ -1263,10 +1241,10 @@ select 'conformance.eligible_endpoint_coverage re-materialized' as "build log";
 commit;
 #+END_SRC
 ** Output untested endpoints
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/504_output_untested_endpoints.sql
-   :END:
-  #+BEGIN_SRC sql-mode
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/504_output_untested_endpoints.sql
+:END:
+#+BEGIN_SRC sql-mode
 begin;
 
 
@@ -1274,38 +1252,38 @@ begin;
 \a
 \o '/tmp/untested-endpoints.txt'
 
-  with latest_release as (
-  select release::semver as release
-    from open_api
-   order by release::semver desc
-   limit 1
-  )
+with latest_release as (
+select release::semver as release
+from open_api
+order by release::semver desc
+limit 1
+)
 
-  select endpoint
-    from conformance.new_endpoint ne
-           join latest_release on ne.release::semver = latest_release.release
+select endpoint
+from conformance.new_endpoint ne
+        join latest_release on ne.release::semver = latest_release.release
 where tested is false;
 \o
 \a
 \t
 select 'untested endpoints for '||release||' written to /tmp/untested-endpoints.txt' as "build log"
-  from open_api
- order by release::semver desc
- limit 1;
+from open_api
+order by release::semver desc
+limit 1;
 commit;
-  #+END_SRC
+#+END_SRC
 
 ** Output coverage jsons
-   :PROPERTIES:
-   :header-args: :tangle ./postgres/initdb/505_output_coverage_jsons.sql
-   :END:
+:PROPERTIES:
+:header-args: :tangle ./postgres/initdb/505_output_coverage_jsons.sql
+:END:
 This is like our generate-json.sql file, but outputting to a tmp folder in the container, for use with prow jobs.
 #+NAME: output coverage jsons
 #+begin_src sql
-    begin;
+begin;
     
-    -- move this to its own block if it works
-    CREATE FUNCTION array_distinct(anyarray) RETURNS anyarray AS $f$
+-- move this to its own block if it works
+CREATE FUNCTION array_distinct(anyarray) RETURNS anyarray AS $f$
   SELECT array_agg(DISTINCT x) FROM unnest($1) t(x);
 $f$ LANGUAGE SQL IMMUTABLE;
     
