@@ -53,6 +53,7 @@
 
  router('/:version?/:level?/:category?/:endpoint?', (ctx, next) => {
    params = ctx.params;
+   query = {...queryObj(ctx.querystring)};
    next()},  () => page = Home);
 
  router.start();

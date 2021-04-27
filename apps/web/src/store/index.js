@@ -25,6 +25,10 @@ import {
 
 import { EARLIEST_VERSION } from '../lib/constants.js';
 
+import {
+  confEndpointsRaw
+} from './conformance.js';
+
 export const releases = writable([])
 
 export const versions = derived(releases, ($releases, set) => {
@@ -58,7 +62,8 @@ export const activeFilters = writable({
   level: '',
   category: '',
   endpoint: '',
-  version: ''
+  version: '',
+  conformanceOnly: true
 });
 
 export const activeRelease = derived(
@@ -119,11 +124,13 @@ export const breadcrumb = derived(
 );
 
 export const endpoints = derived(
-  activeRelease,
-  ($rel, set) => {
+  [activeRelease, confEndpointsRaw, activeFilters],
+  ([$rel, $conformanceEndpoints, $filters], set) => {
   if ($rel) {
-    if (!$rel.endpoints) {
-      set($rel.endpoints)
+    if ($filters.conformanceOnly) {
+      const conformanceEndpoints = $conformanceEndpoints.map(c=>c.endpoint);
+      const eligibleEndpoints = $rel.endpoints.filter(e => conformanceEndpoints.includes(e.endpoint));
+      set(eligibleEndpoints);
     } else {
       set($rel.endpoints);
     }

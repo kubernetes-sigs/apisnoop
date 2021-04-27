@@ -7,6 +7,7 @@
      isEmpty,
      mapValues,
  } from 'lodash-es';
+
  import { EARLIEST_VERSION, RELEASES_URL } from '../lib/constants.js';
  import {
      activeFilters,
@@ -17,12 +18,16 @@
      previousRelease,
      releases
  } from '../store';
+ import {
+     confEndpointsRaw
+ } from '../store/conformance.js';
  import Sunburst from '../components/Sunburst/Wrapper.svelte'
  import NewEndpoints from '../components/new-endpoints.svelte';
 
  export let params;
  export let query;
 
+ console.log({query})
  $: ({
      version,
      level,
@@ -59,20 +64,26 @@
          version,
          level: level || '',
          category: category || '',
-         endpoint: endpoint || ''
+         endpoint: endpoint || '',
+         conformanceOnly: query["conformance-only"]
+                        ? query["conformance-only"].toLowerCase() === "true"
+                        : false
      }))
 
-     if (!isEmpty($activeRelease) && $activeRelease !== 'older' && isEmpty($activeRelease.endpoints)) {
+     if ($activeRelease !== 'older' && isEmpty($activeRelease.endpoints)) {
          let rel = await fetch(`${RELEASES_URL}/${$activeRelease.release}.json`)
              .then(res => res.json());
          releases.update(rels => ({...rels, [$activeRelease.release]: rel}));
      }
-
+     if ($confEndpointsRaw && isEmpty($confEndpointsRaw)) {
+         const conformanceEndpoints = await fetch(`${RELEASES_URL}/conformance-endpoints.json`)
+             .then(res => res.json());
+         confEndpointsRaw.set(conformanceEndpoints);
+     }
      if ($previousRelease !== 'older' && !isEmpty($previousRelease) && isEmpty($previousRelease.endpoints)) {
          let rel = await fetch(`${RELEASES_URL}/${$previousRelease.release}.json`)
              .then(res => res.json());
-         // todo why is this being called at certaint imes?
-         // releases.update(rels => ({...rels, [$previousRelease.release]: rel}));
+         releases.update(rels => ({...rels, [$previousRelease.release]: rel}));
      }
      if ($olderNewEndpointsRaw.length === 0) {
          let older = await fetch(`${RELEASES_URL}/new-endpoints.json`)

@@ -57,8 +57,11 @@
    } else {
      $activeFilters[activeDepth] = '';
    }
-   let {level, category, endpoint} = $activeFilters;
+   let {level, category, endpoint, conformanceOnly} = $activeFilters;
    let newPath = "/" + compact([version,level,category,endpoint]).join('/');
+   if (conformanceOnly) {
+     newPath = newPath + "?conformance-only=true"
+   }
    page.redirect(newPath);
  };
 
@@ -90,8 +93,12 @@
      category,
      endpoint
    } = node.data;
+   let { conformanceOnly } = $activeFilters;
    activeFilters.update(af=> ({...af, version, level, category, endpoint}));
    let newPath = "/" + compact([version,level,category,endpoint]).join('/');
+   if (conformanceOnly) {
+     newPath = newPath + "?conformance-only=true";
+   }
    page.redirect(newPath);
  };
 
