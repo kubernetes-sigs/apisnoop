@@ -70,7 +70,6 @@
     <title>APISnoop | {$activeRelease.release}</title>
 </svelte:head>
 {#if $activeRelease && $activeRelease.endpoints.length > 0}
-    <input type='checkbox' checked='false' on:click={(e)=>console.log({e: e.target.checked})} />
     <Sunburst />
     <NewEndpoints />
 {:else}
