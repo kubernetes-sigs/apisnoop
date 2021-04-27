@@ -14,7 +14,6 @@
 
 <div>
     <input type='checkbox'
-           checked='false'
            id='conformance-only-toggle'
            name='conformance-only'
            on:click={toggleConformanceFilter}
