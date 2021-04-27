@@ -10,12 +10,14 @@ Our goal is to not make radical changes to process or approach, but iterate on o
 
 In spite of increasing technical challenges:
 
--   Goal: 22/30 - Stretch Goal: 40
+-   Goal: 28/30 - Stretch Goal: 40
     -   [Read Status, Patch & List APIService +3](https://github.com/kubernetes/kubernetes/pull/97327)
-    -   [PodProxyWithPath & ServiceProxyWithPath + 12](https://github.com/kubernetes/kubernetes/pull/95503)
-    -   [Update: StatefulSet Replica scaling- Patch Scale +1](https://github.com/kubernetes/kubernetes/pull/98126)
-    -   [ReplicaSetScale test to Conformance +3](https://github.com/kubernetes/kubernetes/pull/99282)
-    -   [DeploymentScale test to Conformance +3](https://github.com/kubernetes/kubernetes/pull/99281)
+    -   [Pod- & ServiceProxyWithPath + 12](https://github.com/kubernetes/kubernetes/pull/95503)
+    -   [StatefulSet Replica scaling +1](https://github.com/kubernetes/kubernetes/pull/98126)
+    -   [ReplicaSetScale test +3](https://github.com/kubernetes/kubernetes/pull/99282)
+    -   [DeploymentScale test +3](https://github.com/kubernetes/kubernetes/pull/99281)
+    -   [Service Status Life Cycle +4](https://github.com/kubernetes/kubernetes/pull/98018)
+    -   [ReplicaSet Replace and Patch Test +2](https://github.com/kubernetes/kubernetes/pull/99380)
 
 
 ### ****KR2 clean-up technical debt****
@@ -31,11 +33,8 @@ In spite of increasing technical challenges:
 
 ### What is in the pipeline
 
-Promotion PR to merge next week
-
--   [Service Status Life Cycle +4](https://github.com/kubernetes/kubernetes/pull/98018) Ready for approval
--   [Write ReplicaSet Replace and Patch Test +2](https://github.com/kubernetes/kubernetes/pull/99380) Ready for promotion on 11 March
--   [AppsV1DaemonSet resource lifecycle +5](https://github.com/kubernetes/kubernetes/issues/90877) a work in progress
+-   [Write AppsV1DaemonSetStatus test - +3 endpoints #100507](https://github.com/kubernetes/kubernetes/pull/94786)
+-   [Write PodProxy Redirect Test - +7 endpoint coverage #94786](https://github.com/kubernetes/kubernetes/pull/94786)
 
 
 ### Apps endpoints
@@ -49,8 +48,18 @@ Promotion PR to merge next week
 
 -   ii currently manage the Ineligible endpoints list
 -   This is done via SQL queries in APISnoop
--   We proposed in SIG Architecture to move it to the community
+-   SIG Architecture agreed to move it to the community
 -   [PR #98677](https://github.com/kubernetes/kubernetes/pull/98677) will make it happen
+-   APISnoop functionallity will be updated in 1.22
+
+
+### Beta Endpoints graduation to GA
+
+-   32 new endpoints to GA
+-   Endpoints for:
+    -   CronJob
+    -   EndpointSlice
+    -   PodDisruptionBudget
 
 
 ## ****Other Important News****
@@ -58,8 +67,8 @@ Promotion PR to merge next week
 
 ### ****Timelines****
 
--   1.21 [Time line is out](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.21#timeline)
--   14 week cycle with Test freeze on 24 March
+-   1.22 timeline is not avalble yet
+-   It should be another 14 week cycle
 
 
 ### ****Conformance Gate****
@@ -69,7 +78,8 @@ Promotion PR to merge next week
 after the release was cut.
 
 -   It was fixed with [PR99081](https://github.com/kubernetes/kubernetes/pull/99081/)
--   The community is currenly looking at ways to protect release branches in Github
+-   Block conformance changes on release branches in k/k [#21082](https://github.com/kubernetes/test-infra/pull/21082) was intruduced to protect release branches
+-   [#21092](https://github.com/kubernetes/test-infra/pull/21092) reverted the change an must be revisited in 1.22
 
 
 ### The Conformance goal for 2021
@@ -77,16 +87,21 @@ after the release was cut.
 -   Increase Stable Test Coverage for Kubernetes for 2021
     -   Less than 75 untested eligible stable GA endpoints remaining.
     -   Ensure no new technical debt is incurred.
+    -   At the end of 1.22 there is 123 endpoints remaining
 
 
 ### KubeCon + CloudNativeCon Europe
 
-We will present a Maintainer Track Sessions on Conformance progress and it&rsquo;s importance. Wednesday May 5, 2021 12:20 CEST
+ii will present a Maintainer Track Sessions on Conformance progress and it&rsquo;s importance. Wednesday May 5, 2021 12:20 CEST
 
 
-## ****Blockers for 1.21****
+## ****Traget for 1.22****
 
--   Keep same goals as 1.20
+-   Conformance tests for 20 previously untested endpoints
+
+
+## ****Blockers for 1.22****
+
 -   Know that Endpoints get tougher
 -   Status endpoints is currently a big community topic
 
