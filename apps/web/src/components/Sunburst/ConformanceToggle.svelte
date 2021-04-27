@@ -31,4 +31,5 @@
             conformance eligible endpoints
         </a>
     </label>
+        <p>(<em><a href='/conformance-progress/ineligible-endpoints'>which ones are removed?</a></em>)</p>
 </div>
