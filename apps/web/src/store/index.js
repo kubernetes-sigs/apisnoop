@@ -21,6 +21,10 @@ import {
   levelColours
 } from '../lib/colours.js';
 
+import {
+  confEndpointsRaw
+} from './conformance.js';
+
 import { RELEASES } from '../lib/constants.js';
 
 export const versions = readable(
@@ -54,7 +58,8 @@ export const activeFilters = writable({
   level: '',
   category: '',
   endpoint: '',
-  version: ''
+  version: '',
+  conformanceOnly: true
 });
 
 export const activeRelease = derived(
@@ -108,9 +113,17 @@ export const breadcrumb = derived(
   }
 );
 
-export const endpoints = derived(activeRelease, ($rel, set) => {
+export const endpoints = derived(
+  [activeRelease, confEndpointsRaw, activeFilters],
+  ([$rel, $conformanceEndpoints, $filters], set) => {
   if ($rel) {
-    set($rel.endpoints);
+    if ($filters.conformanceOnly) {
+      const conformanceEndpoints = $conformanceEndpoints.map(c=>c.endpoint);
+      const eligibleEndpoints = $rel.endpoints.filter(e => conformanceEndpoints.includes(e.endpoint));
+      set(eligibleEndpoints);
+    } else {
+      set($rel.endpoints);
+    }
   } else {
     set([]);
   }

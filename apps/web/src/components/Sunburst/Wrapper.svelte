@@ -3,6 +3,7 @@
  import Breadcrumb from './Breadcrumb.svelte';
  import Graph from './Graph.svelte';
  import Stats from './Stats.svelte';
+ import ConformanceToggle from './ConformanceToggle.svelte';
 </script>
 
 <section id='sunburst'>
@@ -10,6 +11,7 @@
   <Breadcrumb />
   <Graph />
   <Stats />
+  <ConformanceToggle />
 </section>
 
 <style>
