@@ -23,7 +23,8 @@ v1.11.10@sha256:e6f3dade95b7cb74081c5b9f3291aaaa6026a90a977e0b990778b6adc9ea6248
 
 v_tag="$( echo "${image_tags}" | grep "${v_k8s}" )"
 
-pushd ../../kind
+GIT_ROOT=$(git rev-parse --show-toplevel)
+pushd $GIT_ROOT/kind
 kind create cluster \
      --name "${v_k8s}-conformance" \
      --image="kindest/node:${v_tag}" \
