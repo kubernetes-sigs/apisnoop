@@ -25,7 +25,7 @@
            on:click={toggleConformanceFilter}
     />
     <label for='conformance-only'>Only show
-        <a href=
+        <a href={conformanceLink}
            target="_blank"
            rel='nofollower noreferrer'>
             conformance eligible endpoints
