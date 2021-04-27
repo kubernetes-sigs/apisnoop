@@ -1,7 +1,9 @@
 <script>
  import page from 'page';
 
- const toggleInQuery = () =>
+ const conformanceLink = 'https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md#conformance-test-requirements';
+
+ const isToggleInQuery = () =>
      window.location.search.toLowerCase().includes("conformance-only=true");
 
  function toggleConformanceFilter ({target}) {
@@ -11,17 +13,22 @@
      } else {
          page(path);
      }
-     console.log({loc: window.location.search, toggleInQuery: toggleInQuery()})
  }
 
 </script>
 
 <div>
     <input type='checkbox'
-           checked={toggleInQuery()}
-           id='conformance-only-toggle'
+           checked={isToggleInQuery()}
+                 id='conformance-only-toggle'
            name='conformance-only'
            on:click={toggleConformanceFilter}
     />
-<label for='conformance-only'>Only show conformance eligible endpoints</label>
+    <label for='conformance-only'>Only show
+        <a href=
+           target="_blank"
+           rel='nofollower noreferrer'>
+            conformance eligible endpoints
+        </a>
+    </label>
 </div>
