@@ -35,11 +35,9 @@ export const releases = writable([])
 export const versions = derived(releases, ($releases, set) => {
   // shorthand of the versions we have available, sorted by newest.
   if (!isEmpty($releases)) {
-    console.log({versionreleases: $releases})
     const versions = sortBy($releases, 'release_date')
           .map(r=>r.release)
           .sort((a,b) => semver.gt(b,a) ? 1 : 0);
-    console.log({sorted: versions})
     set(versions);
   } else {
     set([])

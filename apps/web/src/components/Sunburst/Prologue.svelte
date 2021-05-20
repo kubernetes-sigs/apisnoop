@@ -20,7 +20,6 @@
    return numbers[Number(num)];
  }
 
- console.log({davers: $versions})
 </script>
 
 {#if release}
