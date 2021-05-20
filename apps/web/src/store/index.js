@@ -11,6 +11,7 @@ import {
   map,
   mapValues,
   orderBy,
+  reverse,
   sortBy,
   take,
   uniq,
@@ -34,9 +35,11 @@ export const releases = writable([])
 export const versions = derived(releases, ($releases, set) => {
   // shorthand of the versions we have available, sorted by newest.
   if (!isEmpty($releases)) {
+    console.log({versionreleases: $releases})
     const versions = sortBy($releases, 'release_date')
           .map(r=>r.release)
-          .sort((a,b) => semver.gt(b,a));
+          .sort((a,b) => semver.gt(b,a) ? 1 : 0);
+    console.log({sorted: versions})
     set(versions);
   } else {
     set([])
@@ -90,13 +93,14 @@ export const previousRelease = derived(
   [releases, activeRelease],
   ([$rels, $active], set) => {
     if ($active && $active.release) {
-      const versions = (sortBy($rels, 'release_date')).map(r => r.release);
+      const versions = reverse(sortBy($rels, 'release_date')).map(r => r.release);
       const activeIdx = versions.indexOf($active.release);
       const prevVersion = versions[activeIdx + 1];
-      const prevRelease = prevVersion
-            ? $rels[prevVersion]
-            : {};
-      set(prevRelease);
+      if (prevVersion) {
+        set(prevVersion)
+      } else {
+        set('older')
+      }
     } else {
       set('older');
     }

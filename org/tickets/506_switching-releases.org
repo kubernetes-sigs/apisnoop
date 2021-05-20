@@ -1,0 +1,47 @@
+#+TITLE: 506 Switching Releases
+
+* The Ticket
+[[https://github.com/cncf/apisnoop/issues/506]]
+#+begin_quote
+What did you expect to happen?
+
+After clicking on the switch release button the site should display a list of releases to choose from 1.15 to the current release.
+
+What actually happened?
+
+The site is displaying multiple links for 1.15 release when using either Chrome or Firefox other than the order of the links.
+#+end_quote
+* Process
+** Reproduce Locally
+I can reproduce this locally, so it is an issue with the code.
+** Get Some context
+*** What are we seeing?
+ - 9 releases
+ - 1.22, 1.21, 7 versions of 1.15
+ - clicking on 1.21 actually shows us 1.15
+ - all the results, save the first one, are 1.15
+ - going to the url directly loads the data as we'd expect
+ - so the issue is not with the data, it is with the release component that shows the data.
+*** How did it get there?
+- the release switcher is part of our sunbusrt/prologue component([[file:~/Projects/apisnoop/apps/web/src/components/Sunburst/Prologue.svelte::<h2>{release} Testing Coverage][source]])
+- this is pulling from the versions store, which is derived from the releases store
+- releases is created on loading the page, and checking it out in the  console, looks to be right.
+- looking at the console.log, the initial sort is correct but then switches at some point in the dom loading.
+- we traced it to when we are updating "previousRelease"
+** Investigate previous release
+we saw that the issue was caused in our Home.svelte file, when we update our previousRelease, as it updates the releases object our versions array draws from.
+
+We had bad logic for how PreviousRelease was defined, where it was iterating through an array, but did not stop properly upon reaching the end of the array.  Adjusting this logic to account for an end fixed our release switcher.
+
+We had a new problem though, that the releases were out of order in firefox vs. chrome
+** Fixing the out of order releases
+the releases were being sorted with a oneline of
+: releases.sort((a,b)=> semver.gt(a,b))
+in other words, sorted by which one had the greater semver.
+The issue is that this function returns a true/false value, which doesn't conform to the ecmaScript standard.  the ecmaScript expects the array to return a number.
+
+if you dont' conform to spec, then it is the client's responsibility to figure out how to sort it and chrome and firefox have different opinions on this.
+
+To fix it we put in a ternary that says :"if greater than, return 1, else return 0".  This lets the array sort mathematically and makes it consistent across browsers.
+* Conclusion
+there were multiple issues causing the releases switcher to malfunction, mostly doing to how we were figuring out what the previous release of an arbitrary item in the releases array would be.  We fixed up this logic and the ui is now working as expected.

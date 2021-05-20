@@ -20,6 +20,7 @@
    return numbers[Number(num)];
  }
 
+ console.log({davers: $versions})
 </script>
 
 {#if release}
@@ -29,8 +30,8 @@
     </h2>
     {#if releaseSwitch}
       <ul class='releases'>
-      {#each $versions as rel}
-        <li><a href={'/'+rel+'/'} on:click={() => releaseSwitch = false}>{rel}</a></li>
+      {#each $versions as version}
+        <li><a href={'/'+version+'/'} on:click={() => releaseSwitch = false}>{version}</a></li>
       {/each}
       </ul>
     {:else}

@@ -83,6 +83,7 @@
      if ($previousRelease !== 'older' && !isEmpty($previousRelease) && isEmpty($previousRelease.endpoints)) {
          let rel = await fetch(`${RELEASES_URL}/${$previousRelease.release}.json`)
              .then(res => res.json());
+         console.log({previous: rel})
          releases.update(rels => ({...rels, [$previousRelease.release]: rel}));
      }
      if ($olderNewEndpointsRaw.length === 0) {
