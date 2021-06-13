@@ -27,7 +27,6 @@
  export let params;
  export let query;
 
- console.log({query})
  $: ({
      version,
      level,
