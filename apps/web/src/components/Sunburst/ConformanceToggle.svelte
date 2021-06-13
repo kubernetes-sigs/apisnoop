@@ -7,7 +7,6 @@
      window.location.search.toLowerCase().includes("conformance-only=true");
 
  function toggleConformanceFilter ({target}) {
-     console.log({target})
      const path = window.location.pathname;
      if (target.checked) {
          page(`${path}?conformance-only=true`);
