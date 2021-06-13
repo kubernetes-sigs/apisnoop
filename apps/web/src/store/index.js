@@ -45,13 +45,12 @@ export const versions = derived(releases, ($releases, set) => {
 });
 
 export const latestVersion = derived(
-  releases,
-  ($releases, set) => {
-    if ($releases && !isEmpty($releases)) {
-      const latest = last(sortBy($releases, 'release_date'));
-      set(latest.release);
+  versions,
+  ($v, set) => {
+    if (!isEmpty($v)) {
+      set($v[0]);
     } else {
-      set('')
+      set('');
     }
   }
 );
@@ -64,7 +63,7 @@ export const activeFilters = writable({
   category: '',
   endpoint: '',
   version: '',
-  conformanceOnly: true
+  conformanceOnly: false
 });
 
 export const activeRelease = derived(
