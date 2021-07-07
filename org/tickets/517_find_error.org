@@ -1,0 +1,133 @@
+#+TITLE: 517 Find Error
+
+* Summary
+SnoopDB is unable to build due to an error when loading audit events from
+'ci-audit-kind-conformance'. We have been getting the job by scraping the
+bucket's job page for a particular style tag that tells us the latest successful
+job. The issue came when this page moved from being statically rendered to
+dynamically rendered. Our webscaper cannot do dynamic content, and so cannot
+find the tag it needs.
+
+The question is how to update our tool for this bucket. We can update the web
+scraper, but this moment highlights how fragile that method is. Is there a more
+direct way we can get the latest job for this bucket?
+
+The rest of this org file gives a background to the problem, and our path of
+debugging it.
+
+* Loading Buckets and Jobs
+When snoopdb starts up, it pulls in the latest audit events from three job
+runners, or 'buckets'. These buckets represent a set of tests run on a specific
+kubernetes environment at a regular interval. For each bucket, we want the
+latest run of tests, i.e the latest _job_.
+
+So, when snoopdb tries to load audit events, it first determines the latest job
+and then downloads the events for that bucket/job.
+
+You can see this in the migration files for snoopdb, specifically [[https://github.com/cncf/apisnoop/blob/main/apps/snoopdb/postgres/initdb/502_load_all_audit_events.sql#L1][502: load all
+audit events]] which calls a function defined in[[https://github.com/cncf/apisnoop/blob/main/apps/snoopdb/postgres/initdb/301_fn_load_audit_events.sql#L1][ 301: load_audit_events]]
+
+** Loading three buckets and jobs
+We want to track coverage for the entire conformance suite, and for the set of
+tests not yet promoted to conformance. There's a default bucket we used for
+this, then discovered not all conformance tests can run in this bucket's test
+environment. So while it is good to get a look at the general test coverage, we
+needed to pull in runs from two other environments setup to run particular kinds
+of conformance tests.
+
+The newest bucket is [[https://prow.k8s.io/job-history/gs/kubernetes-jenkins/logs/ci-audit-kind-conformance][ci-audit-kind-conformance]] , which I believe was created
+specifically to run only conformance tests, but all of them. It is this bucket
+that is causing issues for us.
+
+* Loading audit events
+Our ~load_audit_events~ function is written in a combo of python and sql. For the
+python processing, we have some utility functions defined in a [[https://github.com/cncf/apisnoop/blob/main/apps/snoopdb/postgres/snoopUtils.py#L1][snoopUtils.py
+file.]]
+
+The error can be traced to the utility function [[https://github.com/cncf/apisnoop/blob/main/apps/snoopdb/postgres/snoopUtils.py#L89][determine_bucket_job]] , which is defined as:
+#+begin_src python
+def determine_bucket_job(custom_bucket=None, custom_job=None):
+    """return tuple of bucket, job, using latest succesfful job of default bucket if no custom bucket or job is given"""
+    #establish bucket we'll draw test results from.
+    baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
+    bucket =  baseline_bucket if custom_bucket is None else custom_bucket
+    if bucket == 'ci-audit-kind-conformance':
+        latest_success = get_latest_akc_success(AUDIT_KIND_CONFORMANCE_RUNS)
+        job = latest_success if custom_job is None else custom_job
+    else:
+        #grab the latest successful test run for our chosen bucket.
+        testgrid_history = get_json(GCS_LOGS + bucket + "/jobResultsCache.json")
+        latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
+        print("LATEST JOB IS: ", latest_success)
+        #establish job
+        baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
+        job = baseline_job if custom_job is None else custom_job
+    return (bucket, job)
+
+#+end_src
+
+This function checks whether we are using the ci-audit-kind-conformance bucket,
+and if so uses different logic to grab the latest job. For the two others, we
+just grab the jobResultsCache.json file and pull the latest job from this data.
+For whatever reason, we get a 404 when trying to get this file for
+~ci-audit-kind-conformance~.
+** Loading events for ci-audit-kind-conformance
+A few months back, we tried to figure out a clean way to get the latest job for
+this bucket, but could not find any equivalent to ~jobResultsCache.json~
+([[https://kubernetes.slack.com/archives/CDECRSC5U/p1603915345118300][relevant k8s slack thread]]).
+
+As an interim fix, we web-scrape the [[https://prow.k8s.io/job-history/kubernetes-jenkins/logs/ci-audit-kind-conformance][prow page that holds all the job results]],
+looking for the first one with the class ~run-success~.
+
+#+NAME:  get_latest_akc_success
+#+begin_example
+def get_latest_akc_success(url):
+    """
+    determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
+    """
+    soup = get_html(url)
+    latest_success = soup.find('tr', class_="run-success").find('a').get_text()
+    return latest_success
+
+#+end_example
+
+In other words, to get the latest job we must have a working webpage, with this
+style tag, and with all the job results statically written on the page.
+
+ *Recently (sometime after 1st July), the page was updated so that its content*
+ *was rendered dynamically through javascript. Because of this, our webscraper*
+ *cannot find the tag, and so the find method we try to call on the result of the*
+ *search returns a Nonetype error. This causes snoopdb to fail.*
+* Fixing the problem
+There are three ways, I can see, to fix the problem.
+1. *Update our scraper to find our content in the script tag*
+
+   All the jobs we want are hardcoded into the script tag, set to the variable
+   ~allBuilds~. We could update our function to find this tag and var, then
+   convert the right part of the string to json and traverse that to get the one
+   we want. This would require some non-obvious code to get the right regex
+   pattern, and its matching is v. fragile. If the page gets updated again, this
+   will fail again.
+
+2. *Add tool for scraping dynamic pages*
+
+   Once populated by javascript, the structure of the page is identical to as it
+   was before. This means that if we could scrape the fully loaded page, we
+   could use the same logic in the above function to get what we want.
+
+   There are a few python libraries for doing this, and so we would add a
+   dependency, update how the scrape happens in the function, and should be good
+   to go. This would probably be the simplest method, but is overall fragile as
+   it depends on the page staying consistent, which we have found is not the
+   case. This will likely be something we have to continually catch and update.
+
+3. *Update the job results page to include latest job data*
+
+   This option would likely be the best long-term fix. Somehow adjust the job
+   results to include a json file, or some other call, we can use to grab the
+   latest job. This would make the function obvious, and would require no
+   web-scraping. IT is unknown at the moment how to do this though, and would
+   require reaching out to someone in the k8s community that could adjust the
+   code or point us to the right, existing method of getting the job.
+
+I would like to solve this using option 3, but we may have to do option 2 for now.
