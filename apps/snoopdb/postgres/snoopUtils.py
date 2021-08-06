@@ -8,6 +8,9 @@ from copy import deepcopy
 from functools import reduce
 from collections import defaultdict
 from urllib.parse import urlparse
+import selenium
+from selenium import webdriver
+from webdriver_manager.firefox import GeckoDriverManager
 from bs4 import BeautifulSoup
 import subprocess
 import warnings
@@ -82,7 +85,13 @@ def get_latest_akc_success(url):
     """
     determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
     """
-    soup = get_html(url)
+    opts = webdriver.FirefoxOptions()
+    opts.headless = True
+    driver = webdriver.Firefox(executable_path=GeckoDriverManager().install(), options=opts)
+    driver.get(url)
+    source = driver.page_source
+    driver.close()
+    soup = BeautifulSoup(source,"html.parser")
     latest_success = soup.find('tr', class_="run-success").find('a').get_text()
     return latest_success
 
