@@ -2,7 +2,7 @@
     -- move this to its own block if it works
  select (select release from audit_event order by release limit 1) as latest_release
  \gset
- \set output_file 'resources/coverage/1.22.0.json'
+ \set output_file 'resources/coverage/1.23.0.json'
  \t
  \a
  \o :output_file
