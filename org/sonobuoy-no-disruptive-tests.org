@@ -1,0 +1,94 @@
+#+TITLE: Sonobuoy no disruptive tests
+
+* Purpose
+There have been recent issues with Conformance submissions not returning all required tests.
+The issue appears to be a tooling one.
+It seems as though the disruptive tests are being skipped, this isn't great since they're required.
+
+* Investigation
+
+Configure Kind
+#+begin_src yaml :tangle ~/kind-config.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  # WARNING: It is _strongly_ recommended that you keep this the default
+  # (127.0.0.1) for security reasons. However it is possible to change this.
+  apiServerAddress: "${KIND_APISERVER_ADDRESS}"
+  apiServerPort: 61443
+#+end_src
+
+Create a Kind cluster on v1.20.7, v1.21.2, v1.22.0 and generate Sonobuoy data locally
+#+begin_src tmate :window yeeahbuoy
+set -x
+kind delete cluster
+mkdir -p ~/sonobuoy
+cd $_
+export KIND_APISERVER_ADDRESS=$(kubectl -n nginx-ingress get svc nginx-ingress-ingress-nginx-controller -o=jsonpath='{.spec.externalIPs[0]}')
+VERSIONS=(
+    v1.20.7
+    v1.21.2
+    v1.22.0
+)
+for VERSION in ${VERSIONS[*]}; do
+    VERSION_SHORT=${VERSION/@*}
+    mkdir -p $VERSION_SHORT/results
+    (
+        cd $VERSION_SHORT/results
+        kind create cluster --config ~/kind-config.yaml --image=kindest/node:$VERSION
+        until kubectl -n kube-system wait pod --for=condition=Ready --selector=k8s-app=kube-dns; do
+            sleep 1s
+        done
+        # sonobuoy run --mode=certified-conformance --wait --plugin-env e2e.E2E_DRYRUN=true --plugin-env e2e.E2E_SKIP=NoExecuteTaintManager
+        sonobuoy run --mode=certified-conformance --wait --plugin-env e2e.E2E_DRYRUN=true --e2e-skip=''
+        until kubectl -n sonobuoy get pod sonobuoy; do
+            sleep 1s
+        done
+        kubectl -n sonobuoy get pod sonobuoy -o yaml > ../sonobuoy.yaml
+        kubectl -n sonobuoy get pod sonobuoy -o=jsonpath='{.spec.containers[*].command} {.spec.containers[*].args}' > ../sonobuoy-command-args.txt
+        kubectl -n sonobuoy get cm sonobuoy-plugins-cm -o=jsonpath='{.data.plugin-0\.yaml}' > ../sonobuoy-plugins-cm.yaml
+        results=$(sonobuoy retrieve)
+        sonobuoy results $results
+        sonobuoy status
+        sonobuoy retrieve
+        tar xvf *_sonobuoy_*.tar.gz
+        ls -alh
+        pwd
+        cp -R plugins/e2e/results/global/ ..
+    )
+    kind delete cluster
+done
+set +x
+#+end_src
+
+Remove public_html symlink and create folder
+#+begin_src shell :results silent
+rm ~/public_html
+mkdir -p ~/public_html
+#+end_src
+
+Copy results into public_html
+#+begin_src shell
+set -x
+cd ~/sonobuoy
+for VERSION in *; do
+    echo $VERSION
+    mkdir -p ~/public_html/$VERSION/
+    ls ~/sonobuoy/$VERSION/results/plugins/e2e/results/global/{junit_01.xml,e2e.log}
+    cp -R ~/sonobuoy/$VERSION/results/plugins/e2e/results/global/{junit_01.xml,e2e.log} ~/public_html/$VERSION/
+done
+set +x
+#+end_src
+
+#+RESULTS:
+#+begin_example
+v1.20.7
+/home/ii/sonobuoy/v1.20.7/results/plugins/e2e/results/global/e2e.log
+/home/ii/sonobuoy/v1.20.7/results/plugins/e2e/results/global/junit_01.xml
+v1.21.2
+/home/ii/sonobuoy/v1.21.2/results/plugins/e2e/results/global/e2e.log
+/home/ii/sonobuoy/v1.21.2/results/plugins/e2e/results/global/junit_01.xml
+v1.22.0
+/home/ii/sonobuoy/v1.22.0/results/plugins/e2e/results/global/e2e.log
+/home/ii/sonobuoy/v1.22.0/results/plugins/e2e/results/global/junit_01.xml
+#+end_example
