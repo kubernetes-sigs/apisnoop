@@ -211,8 +211,9 @@ def load_openapi_spec(url):
 def format_uri_parts_for_proxy(uri_parts):
     formatted_parts=uri_parts[0:uri_parts.index('proxy')]
     formatted_parts.append('proxy')
-    formatted_parts.append('/'.join(
-        uri_parts[uri_parts.index('proxy')+1:]))
+    proxy_tail = uri_parts[uri_parts.index('proxy')+1:]
+    if len(proxy_tail):
+        formatted_parts.append('/'.join(proxy_tail))
     return formatted_parts
 
 def find_operation_id(openapi_spec, event):
