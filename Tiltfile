@@ -33,3 +33,4 @@ else:
     docker_build(containerRepoAuditLogger, 'apps/auditlogger', dockerfile="apps/auditlogger/Dockerfile")
 
 allow_k8s_contexts('in-cluster')
+allow_k8s_contexts('kubernetes-admin@' + os.getenv('SHARINGIO_PAIR_NAME'))
