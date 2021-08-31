@@ -1,0 +1,554 @@
+#+TITLE: Contributing to Kubernetes Conformance Coverage
+#+AUTHOR: ii
+
+* doc notes                                                        :noexport:
+ii @ Kubecon 2021 North-America
+
+This presentation should be available as:
+
+https://docs.apisnoop.io/presentations/kubecon-2021-north-america.html
+
+This presentation should be run locally for OBS to work correctly.
+
+
+
+
+CHECK THE TODOs
+
+* Recording Checklist :noexport:
+** Everything Installed
+** ssh-agent setup (won't ask for password on push)
+* About ii
+#+BEGIN_NOTES
+- hello and welcome to "contributing to kubernetes conformance coverage"
+- We are with ii, a group in NZ with a focus on cooperative coding.
+- pairing is sharing for us
+- you can find us at ii.nz
+#+END_NOTES
+
+Technical Folks in New Zealand
+- Focus on Cooperative Coding
+- Pairing is Sharing
+- [[https://ii.nz][ii.nz]] / [[https://ii.coop][ii.coop]]
+
+** People
+#+BEGIN_NOTES
+Hi I am ____ and I am ____
+
+List of ii people
+- Caleb and Stephen, your speakers
+- Berno, helps with the ProwJobs
+- Brenda, ensures that all of us can actually function
+- Hippie Hacker, founder of ii
+- Riaan, project manager
+- Stephen, test writer
+#+END_NOTES
+
+- Berno Kleinhans
+- Brenda Peel
+- Caleb Woodbine
+- Hippie Hacker
+- Riaan Kleinhans
+- Stephen Heywood
+- Zach Mandeville
+
+* Kubernetes Conformance
+** What is Kubernetes Conformance?
+#+begin_notes
+Conformance ensures (as said on cncf.io) that...
+
+CALEB: It's valuable for all to have consistency of the Kubernetes API where ever it's run.
+#+end_notes
+
+CNCF Kubernetes Conformance ensures
+#+begin_quote
+... that every vendor’s version of Kubernetes supports the required APIs, as do open source community versions
+#+end_quote
+** Why is Kubernetes Conformance important?
+- portability of workloads
+- stable APIs behave the same everywhere
+- freedom from vendor lock-in
+- consistency with APIs
+
+#+begin_notes
+I expect my workloads to be able run the same anywhere k8s does, regardless of vendor.
+#+end_notes
+
+** Conformance website
+#+begin_notes
+A good background and rationale for Conformance can be found at:
+#+end_notes
+
+#+NAME: Conformance-Kubernetes
+
+[[https://cncf.io/ck][cncf.io/ck]]
+
+[[./kubecon-2021-north-america-ck.png]]
+** TODO Who can meet your k8spectations?
+#+begin_notes
+This list is taken from landscape.cncf.io.
+You can have consistent, expected, fully-conformanced behaviour across 67 different vendors.
+#+end_notes
+
+Currently, there are *67 certified distributions*.
+
+[[https://landscape.cncf.io/category=platform&format=card-mode&grouping=category][landscape.cncf.io]]
+
+[[./kubecon-2021-north-america-landscape-2.png]]
+
+Click *Certified K8s/KCSP/KTP* link on the left
+
+** k8s-conformance repo
+#+begin_notes
+- Vendors are certified, and added to that list, following an open, transparent process on the k8s-conformance repo
+- We will cover this process in this presentation shortly.
+#+end_notes
+
+https://github.com/cncf/k8s-conformance
+
+#+NAME: Kubernetes Conformance repo
+[[./kubecon-2021-north-america-conformance-repo.png]]
+
+* Conformance as Code
+#+ATTR_REVEAL: :frag roll-in
+- defined through the API and a test suite
+#+ATTR_REVEAL: :frag roll-in
+- allows for tools to be built that fit within k8s workflows
+#+ATTR_REVEAL: :frag roll-in
+- two examples: Sonobuoy and APISnoop
+
+* Certifying Distributions with Sonobuoy
+** Deploy Sonobuoy
+Build sonobuoy
+#+BEGIN_SRC shell
+go get -u -v github.com/vmware-tanzu/sonobuoy@latest
+#+END_SRC
+deploy to your cluster
+#+BEGIN_SRC shell
+sonobuoy run --mode=certified-conformance
+#+END_SRC
+
+#+begin_notes
+Make sure you're running the latest version of Sonobuoy
+#+end_notes
+
+** view test logs
+#+BEGIN_SRC shell
+sonobuoy logs
+#+END_SRC
+[[./sonobuoy-logs.png]]
+
+** Check if sonobuoy is done
+Check status, and look for ~complete~
+#+BEGIN_SRC shell
+sonobuoy status
+#+END_SRC
+[[./sonobuoy-status.png]]
+#+BEGIN_NOTES
+in this example, only one test was run and maaaany were skipped, so we did an
+incomplete test run.
+
+This will become important later, at the end of this talk.
+#+END_NOTES
+
+** Get Results
+#+BEGIN_NOTES
+- At the end of the run, you will end up with several files
+- these show the complete results of your test run
+- You can include these files in your PR to k8s-conformance
+#+END_NOTES
+    #+begin_src tmate :window results :var RUN="RESULTS"
+      outfile=$(sonobuoy retrieve)
+      mkdir ./results; tar xzf $outfile -C ./results
+    #+end_src
+
+    #+RESULTS:
+    #+begin_example
+    ./results/global
+    ./results/global/junit_01.xml
+    ./results/global/e2e.log
+    #+end_example
+** Submit PR
+- fork [[https://github.com/cncf/k8s_conformance][k8s conformance]] repo and open PR
+- In PR, include output logs and a product.yaml file
+- Complete instructions at [[https://github.com/cncf/k8s-conformance][github.com/cncf/k8s-conformance]]
+
+*** Example Pull Request
+[[./example-pr.png]]
+
+*** Files Changed
+#+BEGIN_NOTES
+- this just shows the included files
+#+END_NOTES
+
+[[./example-pr_files-changed.png]]
+
+* Tooling that makes the difference
+** Goals
+#+BEGIN_NOTES
+- For the certification to have value, its api must be reliable and consistent.
+- We can ensure this through conformance tests.
+- APISnoop is intended to help with all aspects of test coverage.
+#+END_NOTES
+APISnoop is designed to help:
+- **Identify** gaps in coverage
+- **Close** these gaps with tests
+- **Prevent** new gaps from happening
+
+* Taking Snoop for a test drive in kind
+
+#+begin_notes
+Let's demonstrate some tooling by bringing up Snoop in kind
+
+- decoupled postgres database
+- powers each form of APISnoop
+- populated with:
+  - live audit events from cluster
+  - api schema from k/k [[https://github.com/kubernetes/kubernetes/tree/master/api/openapi-spec][swagger.json]]
+  - audit events from CI job [[https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest/1319331777721929728/artifacts/bootstrap-e2e-master/][api-audit.logs]]
+
+How can I deploy snoopdb in my cluster and ask my own questions about the API shape and usage?
+#+end_notes
+
+** Launching
+#+begin_src shell :async yes :dir /tmp :prologue "(\n" :epilogue "\n) 2>&1 ; :"
+git clone https://github.com/cncf/apisnoop
+cd apisnoop/kind
+kind create cluster --image kindest/node:v1.22.1 --config kind+apisnoop.yaml
+#+end_src
+
+#+RESULTS:
+#+begin_example
+Creating cluster "kind" ...
+ • Ensuring node image (kindest/node:v1.22.1) 🖼  ...
+ ✓ Ensuring node image (kindest/node:v1.22.1) 🖼
+ • Preparing nodes 📦 📦   ...
+ ✓ Preparing nodes 📦 📦
+ • Writing configuration 📜  ...
+ ✓ Writing configuration 📜
+ • Starting control-plane 🕹️  ...
+ ✓ Starting control-plane 🕹️
+ • Installing CNI 🔌  ...
+ ✓ Installing CNI 🔌
+ • Installing StorageClass 💾  ...
+ ✓ Installing StorageClass 💾
+ • Joining worker nodes 🚜  ...
+ ✓ Joining worker nodes 🚜
+Set kubectl context to "kind-kind"
+You can now use your cluster with:
+
+kubectl cluster-info --context kind-kind
+
+Have a nice day! 👋
+#+end_example
+
+#+begin_notes
+Bringing up APISnoop on kind is easy.
+
+Clone the APISnoop repo and create a kind cluster with it's configuration.
+#+end_notes
+
+** Discovering untested endpoints
+#+begin_src shell :prologue "export HOST=snoopdb.apisnoop\n" :wrap "SRC text"
+export HOST="${HOST:-localhost}"
+psql -U apisnoop -d apisnoop -h $HOST -c "
+SELECT
+  endpoint,
+  kind
+FROM testing.untested_stable_endpoint
+WHERE
+  eligible is true
+AND
+  category = 'core'
+ORDER BY
+  kind, endpoint desc
+LIMIT 5;"
+#+end_src
+
+#+results:
+#+begin_src text
+               endpoint               |    kind
+--------------------------------------+------------
+ createcorev1namespacedpodbinding     | binding
+ createcorev1namespacedbinding        | binding
+ replacecorev1namespacedevent         | event
+ patchcorev1namespacedlimitrange      | limitrange
+ listcorev1limitrangeforallnamespaces | limitrange
+(5 rows)
+
+#+end_src
+
+** an example (1/2)
+#+begin_notes
+with the kind cluster up and apisnoop running on it, we're now able to inspect what's happening.
+#+end_notes
+
+create a namespace
+#+begin_src shell :wrap "src text"
+kubectl create ns kubecon-na-2021
+#+end_src
+
+#+results:
+#+begin_src text
+namespace/kubecon-na-2021 created
+#+end_src
+
+** an example (2/2)
+snooping on your own cluster, with postgresql!
+#+begin_src shell :prologue "export host=snoopdb.apisnoop\n" :wrap "src text"
+export host="${host:-localhost}"
+psql -u apisnoop -d apisnoop -h $host -c "
+select distinct endpoint
+from   testing.audit_event
+where  endpoint ilike '%namespace%'
+and    useragent like 'kubectl/v1.21.2%'
+order  by endpoint;"
+#+end_src
+
+#+results:
+#+begin_src text
+          endpoint
+-----------------------------
+ createcorev1namespace
+ listcorev1namespacedservice
+(4 rows)
+
+#+end_src
+
+** Why is this important?
+#+begin_notes
+- find the endpoints that your workloads use and make sure they work everywhere!
+- discover if you are relying on alpha or beta features
+#+end_notes
+
+* Identifying Gaps
+** TODO UPDATE IMAGE [[https://apisnoop.cncf.io][apisnoop.cncf.io]]
+#+begin_notes
+- Visualizes test runs as an explorable graph
+- colour coded for conformance or just tested
+- sharable links to your concern (eg latest/core/networking)
+- see conformance progress
+#+end_notes
+[[./kubecon-2021-north-america-sunburst.png]]
+
+* Closing gaps in Kubernetes Conformance Coverage
+** DEMO
+#+begin_notes
+[bring up the Pair instance with mock-template.org loaded]
+
+Our test writing flow
+- custom query to find untested endpoints
+- write go code and execute it on the cluster
+- use snoopdb to see if this code hit expected endpoints
+- see projected change in coverage
+- export as PR
+#+end_notes
+
+* Preventing gaps in Kubernetes Conformance Coverage
+#+begin_notes
+- We don't want to just fill in gaps in coverage. We want to prevent new gaps from forming
+- establish healthy baseline
+    - Any endpoint promoted to GA must have a conformance test
+    - Conformant tests should be consistent and reliable themselves
+    - The cluster certification should always include all the tests
+- automated as possible, so it's easier to follow
+#+end_notes
+** testgrid.k8s.io
+#+begin_notes
+- track tests and jobs being run for the k8s project
+- can verify the health and hardiness of new tests
+- can implement new jobs for automating processes
+#+end_notes
+[[./kubecon-2021-north-america-testgrid.png]]
+
+** sig-arch / conformance prow jobs
+[[https://github.com/kubernetes/test-infra/tree/master/config/jobs/kubernetes/sig-arch][kubernetes/test-infra config/jobs/kubernetes/sig-arch]]
+
+[[./kubecon-2021-north-america-prow-jobs.png]]
+
+** apisnoop-conformance-gate
+#+begin_notes
+- example job that will raise a notice before release of endpoints being promoted without conformance tests.
+- this job will help us notify sig-release that there is a new API that must have Conformance Tests OR be reverted before a release can happen.
+#+end_notes
+[[https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes/sig-arch/conformance-gate.yaml][Eventually Release Blocking Conformance Job]]
+
+Any new gaps in coverage are detected
+
+[[./kubecon-2021-north-america-blocking-job.png]]
+
+* Summary
+To reduce gaps in Kubernetes Conformance Coverage
+- Identify :: using apisnoop.cncf.io + snoopdb
+- Close :: Write and promote tests
+- Prevent :: Release blocking jobs
+
+* Verifying Conformance Submissons
+[[https://prow.cncf.io][prow.cncf.io]]
+** Results submitted
+[[./kubecon-2021-north-america-pr-page.png]]
+
+** CNCF CI comments
+[[./kubecon-2021-north-america-prow-comments.png]]
+
+** Informational labels
+[[./kubecon-2021-north-america-pr-labels.png]]
+
+** Certified distributions
+[[./kubecon-2021-north-america-certified-distributions.png]]
+
+** Certified Logo (tm)
+[[./kubecon-2021-north-america-certified-logo.png]]
+
+* Q&A
+* Footnotes :noexport:
+* Software used in this talk
+- Linux
+- OBS
+- Systemd
+- Kubernetes
+- Pair
+- tmate
+- Chromium
+- Firefox
+- go-http-server
+- Cert-Manager
+- External-DNS
+- PowerDNS
+- nginx-ingress
+- Humacs
+
+** reset
+**** reset branch
+     #+begin_src tmate :window PR
+     cd ~/apisnoop/docs/presentations/k8s-conformance
+     git push ii :notkind-v1.18
+     #+end_src
+
+**** delete k8s-conformance folder
+     #+begin_src tmate :window PR
+       rm -rf ~/apisnoop/docs/presentations/k8s-conformance
+     #+end_src
+**** delete k8s-conformance folder
+     #+begin_src tmate :window PR
+       rm -rf ~/apisnoop/docs/presentations/v1.*/
+     #+end_src
+**** Remove sonobuoy
+     #+begin_src tmate :window PR
+       kubectl -n sonobuoy delete pod sonobuoy
+     #+end_src
+** target tmate
+   #+name: create tmate target
+   #+begin_src bash :eval never
+     tmate -S /tmp/kubecon
+   #+end_src
+** STOW In Cluster Interfacing
+
+   #+begin_src bash :eval never
+      export PGUSER=apisnoop PGHOST=localhost
+   #+end_src
+
+   #+begin_src bash :var PGHOST="localhost" :var PGUSER="apisnoop" :prologue "export PGHOST PGUSER" :wrap example
+      psql -c "select distinct useragent \
+                 from testing.audit_event \
+                 where useragent not ilike 'kube-%';"
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+                              useragent
+   ----------------------------------------------------------------
+    kubelet/v1.18.0 (linux/amd64) kubernetes/9e99141
+    kindnetd/v0.0.0 (linux/amd64) kubernetes/$Format
+    sonobuoy/v0.0.0 (darwin/amd64) kubernetes/$Format
+    kubectl/v1.19.2 (darwin/amd64) kubernetes/f574309
+    coredns/v0.0.0 (linux/amd64) kubernetes/$Format
+    local-path-provisioner/v0.0.0 (linux/amd64) kubernetes/$Format
+   (6 rows)
+
+   #+end_example
+
+** Auditing the OpenAPI
+- APIServer can be configured to log usage
+- Combining an AuditPolicy and AuditSink
+- Usage is logged into SnoopDB in a cluster
+** SnoopDB in cluster
+- Identify in Cluster Usage
+- Focus on hitting Gaps in API
+** LOCAL VARS :noexport:
+#+REVEAL_ROOT: https://multiplex.kccncna2021.pair.sharing.io
+#+REVEAL_MULTIPLEX_URL: https://multiplex.kccncna2021.pair.sharing.io/
+#+REVEAL_MULTIPLEX_SOCKETIO_URL: https://multiplex.kccncna2021.pair.sharing.io/socket.io/socket.io.js
+#+REVEAL_VERSION: 4
+#+NOREVEAL_DEFAULT_FRAG_STYLE: YY
+#+NOREVEAL_EXTRA_CSS: YY
+#+NOREVEAL_EXTRA_JS: YY
+#+REVEAL_HLEVEL: 2
+#+REVEAL_MARGIN: 0
+#+REVEAL_WIDTH: 5000
+#+REVEAL_HEIGHT: 800
+#+REVEAL_MAX_SCALE: 1.5
+#+REVEAL_MIN_SCALE: 0.2
+#+REVEAL_PLUGINS: (markdown notes highlight multiplex)
+#+REVEAL_SLIDE_NUMBER: ""
+#+REVEAL_SPEED: 1
+#+REVEAL_THEME: night
+#+REVEAL_THEME_OPTIONS: beige|black|blood|league|moon|night|serif|simple|sky|solarized|white
+#+REVEAL_TRANS: fade
+#+REVEAL_TRANS_OPTIONS: none|cube|fade|concave|convex|page|slide|zoom
+#+REVEAL_MULTIPLEX_SECRET: 16303595814587938032
+#+REVEAL_MULTIPLEX_ID: 1ea00b34ec29b2a6
+
+#+OPTIONS: num:nil
+#+OPTIONS: toc:nil
+#+OPTIONS: mathjax:Y
+#+OPTIONS: reveal_single_file:nil
+#+OPTIONS: reveal_control:t
+#+OPTIONS: reveal-progress:t
+#+OPTIONS: reveal_history:nil
+#+OPTIONS: reveal_center:t
+#+OPTIONS: reveal_rolling_links:nil
+#+OPTIONS: reveal_keyboard:t
+#+OPTIONS: reveal_overview:t
+#+OPTIONS: reveal_width:1200
+#+OPTIONS: reveal_height:800
+#+OPTIONS: reveal_fragmentinurl:t
+
+* footer :noexport:
+Link up this folder to the web
+#+begin_src shell :results silent
+rm ~/public_html
+ln -s $PWD ~/public_html
+#+end_src
+
+Generate a token
+#+begin_src shell
+curl -s https://multiplex.kccncna2021.pair.sharing.io/token | jq .
+#+end_src
+
+#+RESULTS:
+#+begin_example
+{
+  "secret": "16303595814587938032",
+  "socketId": "1ea00b34ec29b2a6"
+}
+#+end_example
+
+Delete the Namespace
+#+begin_src shell
+kubectl delete ns kubecon-na-2021
+#+end_src
+
+#+RESULTS:
+#+begin_example
+#+end_example
+
+Clear SnoopDB
+#+begin_src shell
+psql -U apisnoop -d apisnoop -h snoopdb.apisnoop -c "DELETE FROM testing.audit_event WHERE release='live';"
+#+end_src
+
+#+RESULTS:
+#+begin_example
+DELETE 7162
+#+end_example
