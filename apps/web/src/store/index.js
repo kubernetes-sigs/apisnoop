@@ -37,7 +37,8 @@ export const versions = derived(releases, ($releases, set) => {
   if (!isEmpty($releases)) {
     const versions = sortBy($releases, 'release_date')
           .map(r=>r.release)
-          .sort((a,b) => semver.gt(b,a) ? 1 : 0);
+          .sort((a,b) => semver.gt(b,a) ? 1 : -1);
+    console.log({v: versions})
     set(versions);
   } else {
     set([])
@@ -92,7 +93,8 @@ export const previousVersion = derived(
     if ($active && $active.release) {
       const versions = sortBy($rels, 'release_date')
             .map(r=>r.release)
-            .sort((a,b) => semver.gt(b,a) ? 1 : 0);
+            .sort((a,b)=> semver.gt(b,a) ? 1 : -1);
+      console.log({versions})
       const activeIdx = versions.indexOf($active.release);
       const prevVersion = versions[activeIdx + 1];
       if (prevVersion) {
