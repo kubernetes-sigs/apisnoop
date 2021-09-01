@@ -15,7 +15,7 @@
      latestVersion,
      newEndpoints,
      olderNewEndpointsRaw,
-     previousRelease,
+     previousVersion,
      releases
  } from '../store';
  import {
@@ -79,14 +79,15 @@
              .then(res => res.json());
          confEndpointsRaw.set(conformanceEndpoints);
      }
-     if ($previousRelease !== 'older' && !isEmpty($previousRelease) && isEmpty($previousRelease.endpoints)) {
-         let rel = await fetch(`${RELEASES_URL}/${$previousRelease.release}.json`)
+     if ($previousVersion !== 'older' && !isEmpty($releases[$previousVersion]) && isEmpty($releases[$previousVersion].endpoints)) {
+         let rel = await fetch(`${RELEASES_URL}/${$previousVersion}.json`)
              .then(res => res.json());
-         releases.update(rels => ({...rels, [$previousRelease.release]: rel}));
+         releases.update(rels => ({...rels, [$previousVersion]: rel}));
      }
      if ($olderNewEndpointsRaw.length === 0) {
          let older = await fetch(`${RELEASES_URL}/new-endpoints.json`)
              .then(res=>res.json());
+       console.log({older})
          olderNewEndpointsRaw.set(older);
      }
  });

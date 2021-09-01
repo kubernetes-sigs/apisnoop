@@ -84,13 +84,15 @@ export const activeRelease = derived(
   }
 );
 
-export const previousRelease = derived(
+export const previousVersion = derived(
   // according to semver, the previous release from active one.
   // used to fetch the next release when someone is visiting a page.
   [releases, activeRelease],
   ([$rels, $active], set) => {
     if ($active && $active.release) {
-      const versions = reverse(sortBy($rels, 'release_date')).map(r => r.release);
+      const versions = sortBy($rels, 'release_date')
+            .map(r=>r.release)
+            .sort((a,b) => semver.gt(b,a) ? 1 : 0);
       const activeIdx = versions.indexOf($active.release);
       const prevVersion = versions[activeIdx + 1];
       if (prevVersion) {
@@ -142,11 +144,12 @@ export const endpoints = derived(
 
 export const newEndpoints = derived(
   // endpoints that are in active release, but not previous release, filtered to current level and or category.
-  [activeRelease, previousRelease, activeFilters],
-  ([$eps, $peps, $filters], set) => {
-    if ($peps.endpoints) {
-      const eps = $eps.endpoints;
-      const peps = $peps.endpoints;
+  [activeRelease, previousVersion, releases, activeFilters],
+  ([$active, $prev, $rels, $filters], set) => {
+    const previousRelease = $rels[$prev]
+    if (previousRelease.endpoints) {
+      const eps = $active.endpoints;
+      const peps = previousRelease.endpoints;
       let newEndpoints = differenceBy(eps, peps, 'endpoint');
       if ($filters.level !== '') {
         newEndpoints = newEndpoints.filter(ep => ep.level === $filters.level);
@@ -163,7 +166,7 @@ export const newEndpoints = derived(
 export const newCoverage = derived(
   // from active release, tested endpoints that exist in previous release
   // but were untested in that release.
-  [activeRelease, previousRelease, activeFilters],
+  [activeRelease, previousVersion, activeFilters],
   ([$eps, $peps, $filters], set) => {
     if ($peps.endpoints) {
       const eps = $eps.endpoints;
