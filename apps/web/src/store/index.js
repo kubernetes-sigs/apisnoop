@@ -149,7 +149,7 @@ export const newEndpoints = derived(
   [activeRelease, previousVersion, releases, activeFilters],
   ([$active, $prev, $rels, $filters], set) => {
     const previousRelease = $rels[$prev]
-    if (previousRelease.endpoints) {
+    if (previousRelease && previousRelease.endpoints) {
       const eps = $active.endpoints;
       const peps = previousRelease.endpoints;
       let newEndpoints = differenceBy(eps, peps, 'endpoint');
