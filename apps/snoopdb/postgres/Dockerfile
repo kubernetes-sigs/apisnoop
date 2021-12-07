@@ -13,6 +13,7 @@ RUN apt-get update \
   python3-ipdb \
   python3-requests \
   python3-yaml \
+  python3-setuptools \
   libpq-dev \
   wget \
   make \
@@ -26,6 +27,11 @@ RUN apt-get update \
 
 
 RUN python3 --version
+RUN pip3 install --upgrade pip
+# RUN pip3 install cffi
+RUN pip3 install --upgrade requests
+# RUN pip3 install xcffib
+# RUN pip3 install --upgrade cffi xcffib
 RUN pip3 install selenium webdriver-manager
 RUN wget "https://github.com/mozilla/geckodriver/releases/download/v0.29.1/geckodriver-v0.29.1-linux64.tar.gz" \
     && tar xvf geckodriver* \
