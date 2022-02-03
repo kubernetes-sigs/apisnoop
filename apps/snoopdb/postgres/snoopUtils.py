@@ -67,7 +67,10 @@ def assign_verb_to_method (event):
     if verb == 'get' and ruri.endswith('HEAD'):
         return 'head'
     else:
-        return VERB_TO_METHOD[verb]
+        if verb in VERB_TO_METHOD:
+            return VERB_TO_METHOD[verb]
+        else:
+            return None
 
 def get_json(url):
     """Given a json url path, return json as dict"""
@@ -218,6 +221,9 @@ def format_uri_parts_for_proxy(uri_parts):
 
 def find_operation_id(openapi_spec, event):
   method=assign_verb_to_method(event)
+  if method is None:
+      # we won't ever find an operation ID, get out.
+      return None
   url = urlparse(event['requestURI'])
   # 1) Cached seen before results
   # Is the URL in the hit_cache?
@@ -352,3 +358,9 @@ def download_and_process_auditlogs(bucket,job):
                 event['operationId']=find_operation_id(openapi_spec,event)
                 output.write(json.dumps(event)+'\n')
     return outfilepath
+
+def cool():
+    print("Caleb and Zach are Very Cool")
+
+def sums(a,b):
+    return a+b
