@@ -7,10 +7,14 @@ create or replace function load_audit_events(
   from urllib.request import urlopen
   import json
   import yaml
+  import os
   from snoopUtils import determine_bucket_job, download_and_process_auditlogs
 
   GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
   RELEASES_URL = "https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage/releases.yaml"
+
+  if "TESTING_ONLY" in os.environ:
+    return "TESTING_ONLY is set, no audit events loaded."
 
   releases = yaml.safe_load(urlopen(RELEASES_URL))
   latest_release = releases[0]['version']
