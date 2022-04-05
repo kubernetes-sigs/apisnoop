@@ -217,6 +217,8 @@ def format_uri_parts_for_proxy(uri_parts):
     return formatted_parts
 
 def is_namespace_status(uri_parts):
+    if len(uri_parts) < 4:
+        return false
     return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'status'
 
 def format_uri_parts_for_namespace_status(uri_parts):
