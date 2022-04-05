@@ -216,6 +216,33 @@ def format_uri_parts_for_proxy(uri_parts):
         formatted_parts.append('/'.join(proxy_tail))
     return formatted_parts
 
+def is_namespace_status(uri_parts):
+    return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'status'
+
+def format_uri_parts_for_namespace_status(uri_parts):
+    # in the open api spec, the namespace endpoints
+    # are listed differently from other endpoitns.
+    # it abstracts the specific namespac to just {name}
+    # so if you hit /api/v1/namespaces/something/cool/status
+    # it shows in the spec as api.v1.namespaces.{name}.status
+    uri_first_half = uri_parts[:3]
+    if 'default' in uri_parts:
+        uri_second_half =['{name}','status']
+    else:
+        uri_second_half= ['{namespace}','services','{name}','status']
+    return uri_first_half + uri_second_half
+
+def is_namespace_finalize(uri_parts):
+    return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'finalize'
+
+def format_uri_parts_for_namespace_finalize(uri_parts):
+    # Using the same logic as status, but I am uncertain
+    # all the various finalize endpoints, so this may not
+    # pick them all up.  Revisit if so!
+    uri_first_half = uri_parts[:3]
+    uri_second_half =['{name}','finalize']
+    return uri_first_half + uri_second_half
+
 def find_operation_id(openapi_spec, event):
   method=assign_verb_to_method(event)
   url = urlparse(event['requestURI'])
@@ -231,7 +258,11 @@ def find_operation_id(openapi_spec, event):
   # IF we git a proxy component, the rest of this is just parameters and we don't "count" them
   if 'proxy' in uri_parts:
     uri_parts = format_uri_parts_for_proxy(uri_parts)
-    # We index our cache primarily on part_count
+  # namespace status and finalize endpoints are also a lil different
+  if is_namespace_status(uri_parts):
+      uri_parts = format_uri_parts_for_namespace_status(uri_parts)
+  if is_namespace_finalize(uri_parts):
+      uri_parts = format_uri_parts_for_namespace_finalize(uri_parts)
   part_count = len(uri_parts)
   # INSTEAD of try: except: maybe look into if cache has part count and complain explicitely with a good error
   try: # may have more parts... so no match
