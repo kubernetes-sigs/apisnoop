@@ -233,6 +233,8 @@ def format_uri_parts_for_namespace_status(uri_parts):
     return uri_first_half + uri_second_half
 
 def is_namespace_finalize(uri_parts):
+    if len(uri_parts) < 4:
+        return false
     return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'finalize'
 
 def format_uri_parts_for_namespace_finalize(uri_parts):
