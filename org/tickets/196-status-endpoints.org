@@ -1,0 +1,86 @@
+#+TITLE: 196 Status Endpoints
+
+* Goal
+Certain status endpoints are not being picked up by APISnoop, based on the logic
+that snooputils.py uses for assigning endpoints. Stephen wrote up a good
+diagnosis [[https://kanban.ii.coop/project/3/task/196#comment-222][on our ticket details.]]
+
+I want to make the endpoint assignment testable in isolation, if it is not
+already, and then iterate on it until an endpoint is assigned appropriately.
+
+* The issue
+Working off Stephen's fantastic write-up and error logs, I could see that the
+traversal of the uri parts was not working for namespaced status uri's because
+they have a different naming conventions in the api spec. Essentially, the
+specific namespace is abstracted out to just ~{namespace}/{name}~.
+
+So if the event log has ~/api/v1/namespaces/default/status~ we will look for
+an operationId in the spec at ~api.v1.namespaces.default.status~, but it will actually
+be located at ~api.v1.namespaces.{name}.status~
+
+I think the simplest way to fix this is to adjust the uri parts that we make, similar
+to how we do proxy parts now.
+* The fix
+
+I wrote up some helper functions in our snoopUtils.py.  One to check if it is a namespace
+status request, and then another to format the uri parts for it correctly.
+They can be found in our [[https://github.com/cncf/apisnoop/blob/task-196/apps/snoopdb/postgres/snoopUtils.py#L219][snooputils.py]]
+
+The check looks like so:
+#+begin_src python
+def is_namespace_status(uri_parts):
+    if len(uri_parts) < 4:
+        return False
+    return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'status'
+#+end_src
+
+and the formatting like so:
+#+begin_src python
+def format_uri_parts_for_namespace_status(uri_parts):
+    # in the open api spec, the namespace endpoints
+    # are listed differently from other endpoitns.
+    # it abstracts the specific namespac to just {name}
+    # so if you hit /api/v1/namespaces/something/cool/status
+    # it shows in the spec as api.v1.namespaces.{name}.status
+    uri_first_half = uri_parts[:3]
+    # default statuses are handled just a little differently.
+    if 'default' in uri_parts:
+        uri_second_half =['{name}','status']
+    else:
+        uri_second_half= ['{namespace}','services','{name}','status']
+    return uri_first_half + uri_second_half
+#+end_src
+
+With this, I adjusted the find_operation_id to format the uri parts before we do the depth traversal:
+
+#+begin_src python
+...
+  if is_namespace_status(uri_parts):
+      uri_parts = format_uri_parts_for_namespace_status(uri_parts)
+  if is_namespace_finalize(uri_parts):
+      uri_parts = format_uri_parts_for_namespace_finalize(uri_parts)
+...
+#+end_src
+
+
+* Testing
+I brought up a snoop instance on a pair box with these changes, then ran a query for
+namespace/status and namespace/finalize request uris.  We got back the endpoint, where
+before it was null.  Success!!
+
+#+begin_src sql-mode
+  select distinct endpoint from audit_event
+  where data->>'requestURI' like any(array['/api/v1/namespaces/%/finalize','/api/v1/namespaces/%/status']);
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                endpoint
+--------------------------------------
+patchCoreV1NamespacedServiceStatus
+patchCoreV1NamespaceStatus
+readCoreV1NamespacedServiceStatus
+replaceCoreV1NamespacedServiceStatus
+replaceCoreV1NamespaceFinalize
+(5 rows)
+#+end_SRC
