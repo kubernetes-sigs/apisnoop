@@ -27,11 +27,6 @@ RUN apt-get update \
 RUN python3 --version
 RUN pip3 install --upgrade pip
 RUN pip3 install --upgrade requests
-RUN pip3 install selenium webdriver-manager
-RUN wget "https://github.com/mozilla/geckodriver/releases/download/v0.29.1/geckodriver-v0.29.1-linux64.tar.gz" \
-    && tar xvf geckodriver* \
-    && chmod +x geckodriver \
-    && mv geckodriver /usr/local/bin
 
 RUN env PG_CONFIG=$(which pg_config) \
     && git clone https://github.com/theory/pg-semver.git \
