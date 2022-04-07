@@ -216,8 +216,9 @@ def format_uri_parts_for_proxy(uri_parts):
         formatted_parts.append('/'.join(proxy_tail))
     return formatted_parts
 
+# TODO create proper regex to find namespace status versus namespace resource status
 def is_namespace_status(uri_parts):
-    if len(uri_parts) < 4:
+    if len(uri_parts) != 5:
         return False
     return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'status'
 
@@ -228,14 +229,11 @@ def format_uri_parts_for_namespace_status(uri_parts):
     # so if you hit /api/v1/namespaces/something/cool/status
     # it shows in the spec as api.v1.namespaces.{name}.status
     uri_first_half = uri_parts[:3]
-    if 'default' in uri_parts:
-        uri_second_half =['{name}','status']
-    else:
-        uri_second_half= ['{namespace}','services','{name}','status']
+    uri_second_half =['{name}','status']
     return uri_first_half + uri_second_half
 
 def is_namespace_finalize(uri_parts):
-    if len(uri_parts) < 4:
+    if len(uri_parts) != 5:
         return False
     return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'finalize'
 
@@ -289,6 +287,7 @@ def find_operation_id(openapi_spec, event):
     elif idx == part_count-1:
       if part in IGNORED_ENDPOINTS:
         return None
+      # TODO UNIT TESTS AND BETTER TRAVERSAL STAT!
       variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
       # If at some point in the future we have more than one... this will let un know
       if len(variable_levels) > 1:
