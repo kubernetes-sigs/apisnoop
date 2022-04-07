@@ -78,6 +78,9 @@ def get_html(url):
     soup = BeautifulSoup(html, 'html.parser')
     return soup
 
+def is_spyglass_script(tag):
+    return tag.name == 'script' and not tag.has_attr('src') and ('allBuilds' in tag.contents[0])
+
 def get_latest_akc_success(url):
     """
     determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
