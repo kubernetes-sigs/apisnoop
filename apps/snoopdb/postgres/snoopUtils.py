@@ -87,7 +87,7 @@ def get_latest_akc_success(url):
     """
     html = urlopen(url).read()
     soup = BeautifulSoup(html,"html.parser")
-    scripts = soup.findAll(is_spyglass_script)
+    scripts = soup.find(is_spyglass_script)
     builds = json.loads(scripts.contents[0].split('allBuilds = ')[1][:-2])
     latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
     return latest_success['ID']
