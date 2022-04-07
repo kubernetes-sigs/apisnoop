@@ -8,9 +8,6 @@ from copy import deepcopy
 from functools import reduce
 from collections import defaultdict
 from urllib.parse import urlparse
-import selenium
-from selenium import webdriver
-from webdriver_manager.firefox import GeckoDriverManager
 from bs4 import BeautifulSoup
 import subprocess
 import warnings
@@ -81,19 +78,19 @@ def get_html(url):
     soup = BeautifulSoup(html, 'html.parser')
     return soup
 
+def is_spyglass_script(tag):
+    return tag.name == 'script' and not tag.has_attr('src') and ('allBuilds' in tag.contents[0])
+
 def get_latest_akc_success(url):
     """
     determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
     """
-    opts = webdriver.FirefoxOptions()
-    opts.headless = True
-    driver = webdriver.Firefox(executable_path=GeckoDriverManager().install(), options=opts)
-    driver.get(url)
-    source = driver.page_source
-    driver.close()
-    soup = BeautifulSoup(source,"html.parser")
-    latest_success = soup.find('tr', class_="run-success").find('a').get_text()
-    return latest_success
+    html = urlopen(url).read()
+    soup = BeautifulSoup(html,"html.parser")
+    scripts = soup.find(is_spyglass_script)
+    builds = json.loads(scripts.contents[0].split('allBuilds = ')[1][:-2])
+    latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
+    return latest_success['ID']
 
 def determine_bucket_job(custom_bucket=None, custom_job=None):
     """return tuple of bucket, job, using latest succesfful job of default bucket if no custom bucket or job is given"""
