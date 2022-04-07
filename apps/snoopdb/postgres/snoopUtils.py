@@ -83,7 +83,7 @@ def get_latest_akc_success(url):
     determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
     """
     html = urlopen(url).read()
-    soup = BeautifulSoup(source,"html.parser")
+    soup = BeautifulSoup(html,"html.parser")
     scripts = soup.findAll(is_spyglass_script)
     builds = json.loads(scripts.contents[0].split('allBuilds = ')[1][:-2])
     latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
