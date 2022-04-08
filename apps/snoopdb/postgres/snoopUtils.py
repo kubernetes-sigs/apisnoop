@@ -19,55 +19,44 @@ AUDIT_KIND_CONFORMANCE_RUNS="https://prow.k8s.io/job-history/kubernetes-jenkins/
 GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
 DEFAULT_BUCKET="ci-kubernetes-gci-gce"
 K8S_GITHUB_RAW= "https://raw.githubusercontent.com/kubernetes/kubernetes/"
-# Why do we have to had this?
-# The k8s VERB (aka action) mapping to http METHOD
-# Our audit logs do NOT contain any mention of METHOD, only the VERB
-VERB_TO_METHOD={
-    'get': 'get',
-    'list': 'get',
-    'proxy': 'proxy',
-    '': 'options',
-    'create': 'post',
-    'post':'post',
-    'put':'post',
-    'update':'put',
-    'patch':'patch',
-    'connect':'connect',
-    'delete':'delete',
-    'deletecollection':'delete',
-    'watch':'get'
-}
+
 IGNORED_ENDPOINTS=[
     'metrics',
     'readyz',
     'livez',
-    'healthz',
-    'finalize', # recently came up, am unsure what this or finalize-api mean or if we should be tracking it
-    'finalize-api',
-    'status' # hunch is this was a removed endpoint...but does not show in swagger.json
+    'healthz'
 ]
-# TODO: answer question: what are finalizers and the finalize-api?
+
 DUMMY_URL_PATHS =[
     'example.com',
     'kope.io',
     'snapshot.storage.k8s.io',
-    # 'discovery.k8s.io',  # this is part of spec now with endpoint slices
     'metrics.k8s.io',
     'wardle.k8s.io'
 ]
 
-def assign_verb_to_method (event):
+#TESTED
+def assign_verb_to_method (verb, uri):
     """Assigns audit event verb to apropriate method for generating opID later.
        Accounts for irregular behaviour with head and option verbs."""
-    verb = event.get('verb')
-    ruri = event.get('requestURI')
-    if verb == 'get' and ruri.endswith('HEAD'):
+    methods_and_verbs={
+        'get': ['get','list','watch'],
+        'proxy': ['proxy'],
+        'options': [''],
+        'post': ['create','post'],
+        'put': ['update','put'],
+        'patch': ['patch'],
+        'connect': ['connect'],
+        'delete': ['delete','delete_collection']
+    }
+
+    if verb == 'get' and uri.endswith('HEAD'):
         return 'head'
-    else:
-        if verb in VERB_TO_METHOD:
-            return VERB_TO_METHOD[verb]
-        else:
-            return None
+
+    for key, value in methods_and_verbs.items():
+        if verb in value:
+            return key
+    return None
 
 def get_json(url):
     """Given a json url path, return json as dict"""
@@ -81,18 +70,25 @@ def get_html(url):
     soup = BeautifulSoup(html, 'html.parser')
     return soup
 
+#TESTED
 def is_spyglass_script(tag):
     return tag.name == 'script' and not tag.has_attr('src') and ('allBuilds' in tag.contents[0])
 
-def get_latest_akc_success(url):
+def get_latest_akc_success(soup):
     """
     determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
     """
-    html = urlopen(url).read()
-    soup = BeautifulSoup(html,"html.parser")
     scripts = soup.find(is_spyglass_script)
-    builds = json.loads(scripts.contents[0].split('allBuilds = ')[1][:-2])
-    latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
+    if scripts is None :
+        raise ValueError("No spyglass script found in akc page")
+    try:
+        builds = json.loads(scripts.contents[0].split('allBuilds = ')[1][:-2])
+    except Exception as e:
+        raise ValueError("Could not load json from build data. is it valid json?", e)
+    try:
+        latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
+    except Exception as e:
+        raise ValueError("Cannot find success in builds", builds)
     return latest_success['ID']
 
 def determine_bucket_job(custom_bucket=None, custom_job=None):
@@ -101,7 +97,8 @@ def determine_bucket_job(custom_bucket=None, custom_job=None):
     baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
     bucket =  baseline_bucket if custom_bucket is None else custom_bucket
     if bucket == 'ci-audit-kind-conformance':
-        latest_success = get_latest_akc_success(AUDIT_KIND_CONFORMANCE_RUNS)
+        html = get_html(AUDIT_KIND_CONFORMANCE_RUNS)
+        latest_success = get_latest_akc_success(html)
         job = latest_success if custom_job is None else custom_job
     else:
         #grab the latest successful test run for our chosen bucket.
@@ -246,7 +243,7 @@ def format_uri_parts_for_namespace_finalize(uri_parts):
     return uri_first_half + uri_second_half
 
 def find_operation_id(openapi_spec, event):
-  method=assign_verb_to_method(event)
+  method=assign_verb_to_method(event.verb,event.requestURI)
   if method is None:
       # we won't ever find an operation ID, get out.
       return None
@@ -389,9 +386,3 @@ def download_and_process_auditlogs(bucket,job):
                 event['operationId']=find_operation_id(openapi_spec,event)
                 output.write(json.dumps(event)+'\n')
     return outfilepath
-
-def cool():
-    print("Caleb and Zach are Very Cool")
-
-def sums(a,b):
-    return a+b
