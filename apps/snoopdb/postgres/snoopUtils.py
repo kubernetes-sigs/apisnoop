@@ -52,19 +52,11 @@ def assign_verb_to_method (verb, uri):
 
     if verb == 'get' and uri.endswith('HEAD'):
         return 'head'
-<<<<<<< HEAD
 
     for key, value in methods_and_verbs.items():
         if verb in value:
             return key
     return None
-=======
-    else:
-        if verb in VERB_TO_METHOD:
-            return VERB_TO_METHOD[verb]
-        else:
-            return None
->>>>>>> a935bda0da60af7d51e5f3d25317bd38d06e5575
 
 def get_json(url):
     """Given a json url path, return json as dict"""
@@ -179,6 +171,8 @@ def load_openapi_spec(url):
     for path in swagger['paths']:
         path_parts = path.strip("/").split("/")
         path_len = len(path_parts)
+        last_part = None
+        last_level = None
         path_dict = {}
         current_level = path_dict
         for part in path_parts:
@@ -236,11 +230,7 @@ def format_uri_parts_for_namespace_finalize(uri_parts):
     return uri_first_half + uri_second_half
 
 def find_operation_id(openapi_spec, event):
-<<<<<<< HEAD
   method=assign_verb_to_method(event.verb,event.requestURI)
-=======
-  method=assign_verb_to_method(event)
->>>>>>> a935bda0da60af7d51e5f3d25317bd38d06e5575
   if method is None:
       # we won't ever find an operation ID, get out.
       return None
@@ -382,9 +372,3 @@ def download_and_process_auditlogs(bucket,job):
                 event['operationId']=find_operation_id(openapi_spec,event)
                 output.write(json.dumps(event)+'\n')
     return outfilepath
-
-def cool():
-    print("Caleb and Zach are Very Cool")
-
-def sums(a,b):
-    return a+b
