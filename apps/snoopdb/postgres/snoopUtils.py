@@ -74,6 +74,7 @@ def get_html(url):
 def is_spyglass_script(tag):
     return tag.name == 'script' and not tag.has_attr('src') and ('allBuilds' in tag.contents[0])
 
+#TESTED
 def get_latest_akc_success(soup):
     """
     determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
@@ -88,11 +89,12 @@ def get_latest_akc_success(soup):
     try:
         latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
     except Exception as e:
-        raise ValueError("Cannot find success in builds", builds)
+        raise ValueError("Cannot find success in builds")
     return latest_success['ID']
 
+# TESTING NOT NECESSARY
 def determine_bucket_job(custom_bucket=None, custom_job=None):
-    """return tuple of bucket, job, using latest succesfful job of default bucket if no custom bucket or job is given"""
+    """return tuple of bucket, job, using latest successful job of default bucket if no custom bucket or job is given"""
     #establish bucket we'll draw test results from.
     baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
     bucket =  baseline_bucket if custom_bucket is None else custom_bucket
@@ -104,12 +106,12 @@ def determine_bucket_job(custom_bucket=None, custom_job=None):
         #grab the latest successful test run for our chosen bucket.
         testgrid_history = get_json(GCS_LOGS + bucket + "/jobResultsCache.json")
         latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
-        print("LATEST JOB IS: ", latest_success)
         #establish job
         baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
         job = baseline_job if custom_job is None else custom_job
     return (bucket, job)
 
+# TESTED
 def merge_into(d1, d2):
     for key in d2:
         if key not in d1 or not isinstance(d1[key], dict):
@@ -118,13 +120,14 @@ def merge_into(d1, d2):
             d1[key] = merge_into(d1[key], d2[key])
     return d1
 
+# TESTED
 def deep_merge(*dicts, update=False):
     if update:
         return reduce(merge_into, dicts[1:], dicts[0])
     else:
         return reduce(merge_into, dicts, {})
 
-
+# NOT TESTING
 def download_url_to_path(url, local_path, dl_dict):
     """
     downloads contents to local path, creating path if needed,
@@ -137,6 +140,7 @@ def download_url_to_path(url, local_path, dl_dict):
         process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
         dl_dict[local_path] = process
 
+# NOT TESTING
 def get_all_auditlog_links(au):
     """
     given an artifacts url, au, return a list of all
@@ -148,6 +152,7 @@ def get_all_auditlog_links(au):
     master_soup = get_html("https://gcsweb.k8s.io" + master_link['href'])
     return master_soup.find_all(href=re.compile("audit.log"))
 
+# NOT TESTING
 def get_all_audit_kind_links(au):
     """
     grab all the audit logs from our ci-audit-kind-conformance bucket,
@@ -157,83 +162,63 @@ def get_all_audit_kind_links(au):
     print(soup.find_all(href=re.compile(".log")))
     return soup.find_all(href=re.compile(".log"))
 
+# TESTED
 def load_openapi_spec(url):
-    # Usually, a Python dictionary throws a KeyError if you try to get an item with a key that is not currently in the dictionary.
-    # The defaultdict in contrast will simply return an empty dict.
     cache=defaultdict(dict)
     openapi_spec = {}
     openapi_spec['hit_cache'] = {}
     swagger = requests.get(url).json()
-    # swagger contains other data, but paths is our primary target
     for path in swagger['paths']:
-        # parts of the url of the 'endpoint'
         path_parts = path.strip("/").split("/")
-        # how many parts?
         path_len = len(path_parts)
-        # current_level = path_dict  = {}
-        last_part = None
-        last_level = None
         path_dict = {}
         current_level = path_dict
-        # look at each part of the url/path
         for part in path_parts:
-            # if the current level doesn't have a key (folder) for this part, create an empty one
             if part not in current_level:
                 current_level[part] = {}
-                # last_part will be this part, unless there are more parts
-                last_part=part
-                # last_level will be this level, unless there are more levels
-                last_level = current_level
-                # current_level will be this this 'folder/dict', this might be empty
-                # /api will be the top level v. often, and we only set it once
                 current_level = current_level[part]
-        # current level is now pointing to the inmost url part hash
-        # now we iterate through the http methods for this path/endpoint
         for method, swagger_method in swagger['paths'][path].items():
-            # If the method is parameters, we don't look at it
-            # think this method is only called to explore with the dynamic client
             if method == 'parameters':
                 next
             else:
-                # for the nested current_level (end of the path/url) use the method as a lookup to the operationId
                 current_level[method]=swagger_method.get('operationId', '')
-                # cache = {}
-                # cache = {3 : {'/api','v1','endpoints'}
-                # cache = {3 : {'/api','v1','endpoints'} {2 : {'/api','v1'}
-                # cache uses the length of the path to only search against other paths that are the same length
                 cache = deep_merge(cache, {path_len:path_dict})
                 openapi_spec['cache'] = cache
     return openapi_spec
 
+#TESTED
 def format_uri_parts_for_proxy(uri_parts):
-    formatted_parts=uri_parts[0:uri_parts.index('proxy')]
-    formatted_parts.append('proxy')
+    formatted_parts=uri_parts[0:uri_parts.index('proxy')+1]
     proxy_tail = uri_parts[uri_parts.index('proxy')+1:]
     if len(proxy_tail):
         formatted_parts.append('/'.join(proxy_tail))
     return formatted_parts
 
 # TODO create proper regex to find namespace status versus namespace resource status
+# TESTED
 def is_namespace_status(uri_parts):
     if len(uri_parts) != 5:
         return False
     return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'status'
 
+# TESTED
 def format_uri_parts_for_namespace_status(uri_parts):
     # in the open api spec, the namespace endpoints
-    # are listed differently from other endpoitns.
-    # it abstracts the specific namespac to just {name}
+    # are listed differently from other endpoints.
+    # it abstracts the specific namespace to just {name}
     # so if you hit /api/v1/namespaces/something/cool/status
     # it shows in the spec as api.v1.namespaces.{name}.status
     uri_first_half = uri_parts[:3]
     uri_second_half =['{name}','status']
     return uri_first_half + uri_second_half
 
+# TESTED
 def is_namespace_finalize(uri_parts):
     if len(uri_parts) != 5:
         return False
     return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'finalize'
 
+# TESTED
 def format_uri_parts_for_namespace_finalize(uri_parts):
     # Using the same logic as status, but I am uncertain
     # all the various finalize endpoints, so this may not
@@ -249,15 +234,14 @@ def find_operation_id(openapi_spec, event):
       return None
   url = urlparse(event['requestURI'])
   # 1) Cached seen before results
-  # Is the URL in the hit_cache?
   if url.path in openapi_spec['hit_cache']:
     # Is the method for this url cached?
     if method in openapi_spec['hit_cache'][url.path].keys():
       # Useful when url + method is already hit multiple times in an audit log
       return openapi_spec['hit_cache'][url.path][method]
-    # part of the url of the http/api request
+   # part of the url of the http/api request
   uri_parts = url.path.strip('/').split('/')
-  # IF we git a proxy component, the rest of this is just parameters and we don't "count" them
+  # IF we get a proxy component, the rest of this is just parameters and we don't "count" them
   if 'proxy' in uri_parts:
     uri_parts = format_uri_parts_for_proxy(uri_parts)
   # namespace status and finalize endpoints are also a lil different
