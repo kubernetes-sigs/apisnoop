@@ -61,7 +61,6 @@ def test_openapi_spec():
     assert sample1 == 'getCoreAPIVersions'
     assert sample2 == 'listCoreV1PodForAllNamespaces'
 
-
 def test_format_uri_parts_for_proxy():
     uri_parts = ['zach','is','cool','proxy','fun','times']
     expected = ['zach','is','cool','proxy','fun/times']
@@ -95,3 +94,17 @@ def test_format_uri_parts_for_namespace_finalize():
     expected = ['api','v1','namespaces','{name}','finalize']
     actual = s.format_uri_parts_for_namespace_finalize(sample)
     assert expected == actual
+
+def test_operation_id():
+    with open('testdata/audit_event.json') as eventFile:
+        data = eventFile.read()
+        event = json.loads(data)
+        spec = s.load_openapi_spec(swagger_url)
+        operation_id = s.find_operation_id(spec,event)
+        assert operation_id == 'readCoreV1Node'
+    with open('testdata/bad_audit_event.json') as eventFile:
+        data = eventFile.read()
+        event = json.loads(data)
+        spec = s.load_openapi_spec(swagger_url)
+        operation_id = s.find_operation_id(spec,event)
+        assert operation_id == None
