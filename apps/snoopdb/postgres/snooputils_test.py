@@ -95,16 +95,32 @@ def test_format_uri_parts_for_namespace_finalize():
     actual = s.format_uri_parts_for_namespace_finalize(sample)
     assert expected == actual
 
-# def test_operation_id():
-#     with open('testdata/audit_event.json') as eventFile:
-#         data = eventFile.read()
-#         event = json.loads(data)
-#         spec = s.load_openapi_spec(swagger_url)
-#         operation_id = s.find_operation_id(spec,event)
-#         assert operation_id == 'readCoreV1Node'
-#     with open('testdata/bad_audit_event.json') as eventFile:
-#         data = eventFile.read()
-#         event = json.loads(data)
-#         spec = s.load_openapi_spec(swagger_url)
-#         operation_id = s.find_operation_id(spec,event)
-#         assert operation_id == None
+def test_operation_id():
+    with open('testdata/audit_event.json') as eventFile:
+        data = eventFile.read()
+        event = json.loads(data)
+        spec = s.load_openapi_spec(swagger_url)
+        operation_id, err = s.find_operation_id(spec,event)
+        assert operation_id == 'readCoreV1Node'
+        assert err == None
+    with open('testdata/audit_event_bad_verb.json') as eventFile:
+        data = eventFile.read()
+        event = json.loads(data)
+        spec = s.load_openapi_spec(swagger_url)
+        operation_id, err = s.find_operation_id(spec,event)
+        assert operation_id == None
+        assert err == "Could not assign a method from the event verb. Check the event.verb."
+    with open('testdata/audit_event_part_count_too_high.json') as eventFile:
+        data = eventFile.read()
+        event = json.loads(data)
+        spec = s.load_openapi_spec(swagger_url)
+        operation_id, err = s.find_operation_id(spec,event)
+        assert operation_id == None
+        assert err == "part count too high, and not found in open api spec. Check the event's request URI"
+    with open('testdata/audit_event_dummy_request.json') as eventFile:
+        data = eventFile.read()
+        event = json.loads(data)
+        spec = s.load_openapi_spec(swagger_url)
+        operation_id, err = s.find_operation_id(spec,event)
+        assert operation_id == None
+        assert err == "This is a known dummy endpoint and can be ignored. See the requestURI for more info."
