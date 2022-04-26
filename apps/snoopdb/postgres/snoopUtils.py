@@ -44,7 +44,7 @@ def assign_verb_to_method (verb, uri):
         'put': ['update','put'],
         'patch': ['patch'],
         'connect': ['connect'],
-        'delete': ['delete','delete_collection']
+        'delete': ['delete','delete_collection','deletecollection']
     }
 
     if verb == 'get' and uri.endswith('HEAD'):
