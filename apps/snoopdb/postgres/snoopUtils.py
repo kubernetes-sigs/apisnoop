@@ -20,14 +20,11 @@ GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
 DEFAULT_BUCKET="ci-kubernetes-gci-gce"
 K8S_GITHUB_RAW= "https://raw.githubusercontent.com/kubernetes/kubernetes/"
 
-IGNORED_ENDPOINTS=[
+IGNORED_PATHS=[
     'metrics',
     'readyz',
     'livez',
-    'healthz'
-]
-
-DUMMY_URL_PATHS =[
+    'healthz',
     'example.com',
     'kope.io',
     'snapshot.storage.k8s.io',
@@ -229,39 +226,45 @@ def format_uri_parts_for_namespace_finalize(uri_parts):
     uri_second_half =['{name}','finalize']
     return uri_first_half + uri_second_half
 
-def find_operation_id(openapi_spec, event):
-  method=assign_verb_to_method(event.verb,event.requestURI)
-  if method is None:
-      # we won't ever find an operation ID, get out.
-      return None
-  url = urlparse(event['requestURI'])
-  # 1) Cached seen before results
-  if url.path in openapi_spec['hit_cache']:
-    # Is the method for this url cached?
-    if method in openapi_spec['hit_cache'][url.path].keys():
-      # Useful when url + method is already hit multiple times in an audit log
-      return openapi_spec['hit_cache'][url.path][method]
-   # part of the url of the http/api request
-  uri_parts = url.path.strip('/').split('/')
-  # IF we get a proxy component, the rest of this is just parameters and we don't "count" them
+def format_uri_parts(path):
+  uri_parts = path.strip('/').split('/')
   if 'proxy' in uri_parts:
     uri_parts = format_uri_parts_for_proxy(uri_parts)
-  # namespace status and finalize endpoints are also a lil different
-  if is_namespace_status(uri_parts):
+  elif is_namespace_status(uri_parts):
       uri_parts = format_uri_parts_for_namespace_status(uri_parts)
-  if is_namespace_finalize(uri_parts):
+  elif is_namespace_finalize(uri_parts):
       uri_parts = format_uri_parts_for_namespace_finalize(uri_parts)
+  return uri_parts
+
+def is_ignored_endpoint(uri_parts):
+    if any(part in uri_parts for part in IGNORED_PATHS):
+        return True
+    if uri_parts == ['openapi','v2']:
+        return True
+    return False
+
+# given an open api spec and audit event, returns operation id and an error.
+# If the opID can be found in the spec,
+# then we return it with a nil error.
+# Otherwise, we return a nilID and a given error message.
+# we add both op id and error to our events,
+# so that we can parse events by error in snoopdb
+def find_operation_id(openapi_spec, event):
+  method=assign_verb_to_method(event['verb'], event['requestURI'])
+  if method is None:
+      return None, "Could not assign a method from the event verb. Check the event.verb."
+  url = urlparse(event['requestURI'])
+  if url.path in openapi_spec['hit_cache']:
+    if method in openapi_spec['hit_cache'][url.path].keys():
+      return openapi_spec['hit_cache'][url.path][method], None
+  uri_parts = format_uri_parts(url.path)
   part_count = len(uri_parts)
-  # INSTEAD of try: except: maybe look into if cache has part count and complain explicitely with a good error
-  try: # may have more parts... so no match
-    # If we hit a length / part_count that isn't in the APISpec... this an invalid api request
-    # our load_openapispec should populate all possible url length in our cache
+  if part_count in openapi_spec['cache']:
       cache = openapi_spec['cache'][part_count]
-  except Exception as e:
-    # If you hit here, you are debugging... hence the warnings
-    warnings.warn("part_count was:" + part_count)
-    warnings.warn("spec['cache'] keys was:" + openapi_spec['cache'])
-    raise e
+  else:
+      return None, "part count too high, and not found in open api spec. Check the event's request URI"
+  if is_ignored_endpoint(uri_parts):
+      return None, 'This is a known dummy endpoint and can be ignored. See the requestURI for more info.'
   last_part = None
   last_level = None
   current_level = cache
@@ -269,48 +272,32 @@ def find_operation_id(openapi_spec, event):
     part = uri_parts[idx]
     last_level = current_level
     if part in current_level:
-      current_level = current_level[part] # part in current_level
+      current_level = current_level[part]
     elif idx == part_count-1:
-      if part in IGNORED_ENDPOINTS:
-        return None
-      # TODO UNIT TESTS AND BETTER TRAVERSAL STAT!
-      variable_levels=[x for x in current_level.keys() if '{' in x] # vars at current(final) level?
-      # If at some point in the future we have more than one... this will let un know
-      if len(variable_levels) > 1:
-        raise "If we have more than one variable levels... this should never happen."
-      # inspect that variable_levels is not zero in length.  This indicates some new, spec-less uri
+      variable_levels=[x for x in current_level.keys() if '{' in x]
       if not variable_levels:
-        print("NOTICE: uri part found that is not in apis spec.")
-        print("URI: " + "/".join(uri_parts))
-        return None
-      variable_level=variable_levels[0] # the var is the next level
-      # TODO inspect that variable level is a key for current_level
-      current_level = current_level[variable_level] # variable part is final part
+        return None, "We have not seen this type of event before, and it is not in spec. Check its request uri"
+      variable_level=variable_levels[0]
+      if variable_level in current_level:
+          current_level = current_level[variable_level]
+      else:
+          return None, "Cannot find variable level in open api spec. Check the requestURI for more info"
     else:
       next_part = uri_parts[idx+1]
-      # TODO reduce this down to , find the single next level with a "{" in it
       variable_levels=[x for x in current_level.keys() if '{' in x]
-      if not variable_levels: # there is no match
-        if part in DUMMY_URL_PATHS or uri_parts == ['openapi', 'v2']: #not part of our spec
-          return None
-        else:
-          # TODO this is NOT valid, AND we didn't plan for it
-          # print(url.path)
-          return None
+      if not variable_levels:
+        return None, "We have not seen this type of event before, and it is not in spec. Check its request uri"
       next_level=variable_levels[0]
-      # except Exception as e: # TODO better to not use try/except (WE DON"T HAVE ANY CURRENT DATA")
-      current_level = current_level[next_level] #coo
-  try:
-    op_id=current_level[method]
-  except Exception as err:
-    warnings.warn("method was:" + method)
-    warnings.warn("current_level keys:" + current_level.keys())
-    raise err
+      current_level = current_level[next_level]
+  if method in current_level:
+      op_id = current_level[method]
+  else:
+      return None, "Could not find operation for given method. Check the requestURI and the method."
   if url.path not in openapi_spec['hit_cache']:
     openapi_spec['hit_cache'][url.path]={method:op_id}
   else:
     openapi_spec['hit_cache'][url.path][method]=op_id
-  return op_id
+  return op_id, None
 
 def download_and_process_auditlogs(bucket,job):
     """
@@ -369,6 +356,8 @@ def download_and_process_auditlogs(bucket,job):
         with open(outfilepath,'w') as output:
             for line in infile.readlines():
                 event = json.loads(line)
-                event['operationId']=find_operation_id(openapi_spec,event)
+                opId, err = find_operation_id(openapi_spec,event)
+                event['operationId'] = opId
+                event['snoopError'] = err
                 output.write(json.dumps(event)+'\n')
     return outfilepath
