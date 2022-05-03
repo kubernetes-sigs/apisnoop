@@ -45,6 +45,7 @@
 
           INSERT INTO audit_event(release, release_date,
                                   audit_id, endpoint,
+                                  error,
                                   useragent, test,
                                   test_hit, conf_test_hit,
                                   data, source)
