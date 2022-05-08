@@ -272,8 +272,8 @@ def find_operation_id(openapi_spec, event):
   if method is None:
       return None, "Could not assign a method from the event verb. Check the event.verb."
   url = urlparse(event['requestURI'])
-  if url.path in openapi_spec['hit_cache']:
-    if method in openapi_spec['hit_cache'][url.path].keys():
+  if(url.path in openapi_spec['hit_cache'] and
+     method in openapi_spec['hit_cache'][url.path].keys()):
       return openapi_spec['hit_cache'][url.path][method], None
   uri_parts = format_uri_parts(url.path)
   part_count = len(uri_parts)
