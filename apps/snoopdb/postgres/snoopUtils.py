@@ -161,26 +161,43 @@ def get_all_audit_kind_links(au):
 
 # TESTED
 def load_openapi_spec(url):
+    # Usually, a Python dictionary throws a KeyError if you try to get an item with a key that is not currently in the dictionary.
+    # The defaultdict in contrast will simply return an empty dict.
     cache=defaultdict(dict)
     openapi_spec = {}
     openapi_spec['hit_cache'] = {}
     swagger = requests.get(url).json()
+    # swagger contains other data, but paths is our primary target
     for path in swagger['paths']:
+        # parts of the url of the 'endpoint'
         path_parts = path.strip("/").split("/")
+        # how many parts?
         path_len = len(path_parts)
+        # current_level = path_dict  = {}
         last_part = None
         last_level = None
         path_dict = {}
         current_level = path_dict
+        # look at each part of the url/path
         for part in path_parts:
+            # if the current level doesn't have a key (folder) for this part, create an empty one
             if part not in current_level:
                 current_level[part] = {}
+                 # current_level will be this this 'folder/dict', this might be empty
+                # /api will be the top level v. often, and we only set it once
                 current_level = current_level[part]
         for method, swagger_method in swagger['paths'][path].items():
+            # If the method is parameters, we don't look at it
+            # think this method is only called to explore with the dynamic client
             if method == 'parameters':
                 next
             else:
+                # for the nested current_level (end of the path/url) use the method as a lookup to the operationId
                 current_level[method]=swagger_method.get('operationId', '')
+                # cache = {}
+                # cache = {3 : {'/api','v1','endpoints'}
+                # cache = {3 : {'/api','v1','endpoints'} {2 : {'/api','v1'}
+                # cache uses the length of the path to only search against other paths that are the same length
                 cache = deep_merge(cache, {path_len:path_dict})
                 openapi_spec['cache'] = cache
     return openapi_spec
