@@ -204,8 +204,9 @@ def load_openapi_spec(url):
 
 #TESTED
 def format_uri_parts_for_proxy(uri_parts):
-    formatted_parts=uri_parts[0:uri_parts.index('proxy')+1]
-    proxy_tail = uri_parts[uri_parts.index('proxy')+1:]
+    proxy = uri_parts.index('proxy')
+    formatted_parts=uri_parts[0:proxy+1]
+    proxy_tail = uri_parts[proxy+1:]
     if len(proxy_tail):
         formatted_parts.append('/'.join(proxy_tail))
     return formatted_parts
