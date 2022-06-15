@@ -1,0 +1,39 @@
+name: updater
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v2
+      - name: install things
+        run: |
+          sudo apt-get install -y postgresql-client
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: start SnoopDB
+        run: |
+          docker run -d -p 5432:5432 gcr.io/k8s-staging-apisnoop/snoopdb:v20220407-0.2.0-147-gcc8be61
+
+      - name: run 505_output_coverage_jsons
+        run: |
+          cd $(git rev-parse --show-toplevel)
+          psql -U apisnoop -d apisnoop -h localhost -f ./505_output_coverage_jsons.sql
+
+      - name: commit and push if there are changes
+        run: |
+          if !{ git ls-files --others --exclude-standard ; git diff-index --name-only --diff-filter=d HEAD ; } | grep --regexp='[.]json$'; then
+            exit 0
+          fi
+          TIMESTAMP="$(date +%Y-%m-%d-%H-%M)"
+          git branch "coverage-update-for-${TIMESTAMP}"
+          git commit -s -m "update coverage for ${TIMESTAMP}"
+          gh pr create --title "Update APISnoop coverage ${TIMESTAMP}" --body "updates to coverage for ${TIMESTAMP}"
