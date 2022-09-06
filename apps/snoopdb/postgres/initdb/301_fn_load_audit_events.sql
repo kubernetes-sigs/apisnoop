@@ -17,16 +17,19 @@
 
         bucket, job = determine_bucket_job(custom_bucket, custom_job)
         plpy.log("our bucket and job", detail=[bucket,job])
-        metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
+        metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/artifacts/metadata.json'])
+        finished_url = ''.join([GCS_logs, bucket, '/', job, '/finished.json'])
         metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-        plpy.log("our finished json", detail=urlopen(metadata_url).read().decode('utf-8'))
+        finished = json.loads(urlopen(finished_url).read().decode('utf-8'))
+        plpy.log("our metadata.json", detail=urlopen(metadata_url).read().decode('utf-8'))
+        plpy.log("our finished.json", detail=urlopen(finished_url).read().decode('utf-8'))
         auditlog_file = download_and_process_auditlogs(bucket, job)
 
-        release_date = int(metadata['timestamp'])
+        release_date = int(finished['timestamp'])
         if bucket == 'ci-audit-kind-conformance':
             release = latest_release
         else:
-            release = metadata["version"].split('-')[0].replace('v','')
+            release = metadata["job-version"].split('-')[0].replace('v','')
             num = release.replace('.','')
             if int(release.split('.')[1]) > int(latest_release.split('.')[1]):
                 release = latest_release
