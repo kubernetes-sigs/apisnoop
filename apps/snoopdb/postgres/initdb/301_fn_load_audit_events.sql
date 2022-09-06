@@ -15,14 +15,15 @@
         releases = yaml.safe_load(urlopen(RELEASES_URL))
         latest_release = releases[0]['version']
 
+        # testing testing testing testing
         bucket, job = determine_bucket_job(custom_bucket, custom_job)
         plpy.log("our bucket and job", detail=[bucket,job])
         metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/artifacts/metadata.json'])
         finished_url = ''.join([GCS_logs, bucket, '/', job, '/finished.json'])
         metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
         finished = json.loads(urlopen(finished_url).read().decode('utf-8'))
-        plpy.log("our metadata.json", detail=urlopen(metadata_url).read().decode('utf-8'))
-        plpy.log("our finished.json", detail=urlopen(finished_url).read().decode('utf-8'))
+        plpy.log("l_a_e: our metadata.json", detail=urlopen(metadata_url).read().decode('utf-8'))
+        plpy.log("load_audit_events: our finished.json", detail=urlopen(finished_url).read().decode('utf-8'))
         auditlog_file = download_and_process_auditlogs(bucket, job)
 
         release_date = int(finished['timestamp'])
