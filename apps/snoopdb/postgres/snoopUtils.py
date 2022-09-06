@@ -333,10 +333,10 @@ def download_and_process_auditlogs(bucket,job):
     if bucket == 'ci-audit-kind-conformance':
         commit_hash = 'master'
     else: 
-        metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
-        print('FINISHED.JSON: ', urlopen(metadata_url).read().decode('utf-8'))
+        metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/artifacts/metadata.json'])
+        print('METADATA.JSON: ', urlopen(metadata_url).read().decode('utf-8'))
         metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-        commit_hash = metadata["version"].split("+")[1]
+        commit_hash = metadata["job-version"].split("+")[1]
 
     # download all logs
     if bucket == 'ci-audit-kind-conformance':
