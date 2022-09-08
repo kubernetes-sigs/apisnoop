@@ -18,7 +18,7 @@
         meta = get_meta(bucket,custom_job)
         plpy.log("our bucket and job", detail=[bucket,meta.job])
 
-        auditlog_file = download_and_process_auditlogs(bucket, job)
+        auditlog_file = download_and_process_auditlogs(bucket, meta.job)
 
         release_date = int(meta.timestamp)
 
