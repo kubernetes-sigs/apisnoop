@@ -15,7 +15,7 @@
         releases = yaml.safe_load(urlopen(RELEASES_URL))
         latest_release = releases[0]['version']
 
-        meta = get_meta(bucket,job)
+        meta = get_meta(bucket,custom_job)
         plpy.log("our bucket and job", detail=[bucket,meta.job])
 
         auditlog_file = download_and_process_auditlogs(bucket, job)
