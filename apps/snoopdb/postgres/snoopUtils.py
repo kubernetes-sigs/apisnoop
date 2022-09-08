@@ -15,10 +15,13 @@ from tempfile import mkdtemp
 import time
 import glob
 
+AKC_BUCKET="ci-audit-kind-conformance"
+KGCL_BUCKET="ci-kubernetes-gce-conformance-latest"
+KEGG_BUCKET="ci-kubernetes-e2e-gci-gce"
+
 AUDIT_KIND_CONFORMANCE_RUNS="https://prow.k8s.io/job-history/kubernetes-jenkins/logs/ci-audit-kind-conformance"
+AUDIT_KIND_CONFORMANCE_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/ci-audit-kind-conformance"
 GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
-DEFAULT_BUCKET="ci-kubernetes-gci-gce"
-K8S_GITHUB_RAW= "https://raw.githubusercontent.com/kubernetes/kubernetes/"
 
 IGNORED_PATHS=[
     'metrics',
