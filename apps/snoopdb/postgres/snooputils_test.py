@@ -2,7 +2,9 @@
 import snoopUtils as s
 import json
 import pytest
+import random
 from bs4 import BeautifulSoup
+import re
 
 K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
 swagger_url = K8S_GITHUB_REPO + "v1.23.3" + '/api/openapi-spec/swagger.json'
@@ -33,11 +35,6 @@ def test_is_spyglass_script():
     badSoup2 = BeautifulSoup("<script src='somewebsite'>analytic spy key thing</script>",'html.parser')
     tag = badSoup2.script
     assert s.is_spyglass_script(tag) == False
-
-def test_get_latest_akc_success():
-    file = open('testdata/audit-kind-page.html').read()
-    html = BeautifulSoup(file,'html.parser')
-    assert s.get_latest_akc_success(html) == "1512178471646793728"
 
 def test_merge_into():
     d1 = {'a': "trash", 'b': "gone", 'c': {'one': "stay", 'two': "keep"}}
@@ -124,3 +121,76 @@ def test_operation_id():
         operation_id, err = s.find_operation_id(spec,event)
         assert operation_id == None
         assert err == "This is a known dummy endpoint and can be ignored. See the requestURI for more info."
+
+def test_akc_version():
+    job = s.akc_latest_success()
+    version = s.akc_version(job)
+    semver_match = re.match("[0-9]+.[0-9]+.[0-9]+",version)
+    assert semver_match is not None
+
+def test_akc_commit():
+    job = s.akc_latest_success()
+    commit = s.akc_commit(job)
+    commit_match = re.match("[0-9a-z]+$", commit)
+    assert commit_match is not None
+
+def test_akc_loglinks():
+    job = s.akc_latest_success()
+    loglinks = s.akc_loglinks(job)
+    assert len(loglinks) > 0
+
+def test_akc_timestamp():
+    job = s.akc_latest_success()
+    timestamp = s.akc_timestamp(job)
+    timestamp_match = re.match("^[0-9]+$",str(timestamp))
+    assert timestamp_match is not None
+
+def test_kgcl_version():
+    jv = "v1.26.0-alphastuff+23j5319385"
+    version = s.kgcl_version(jv)
+    assert version == "1.26.0"
+
+def test_kgcl_commit():
+    jv = "v1.26.0-alpha.0.275+41df8167dd82e7"
+    commit = s.kgcl_commit(jv)
+    assert commit == "41df8167dd82e7"
+
+def test_kgcl_loglinks():
+    testgrid_history = s.get_json(s.GCS_LOGS + s.KGCL_BUCKET + "/jobResultsCache.json")
+    successes = [x["buildnumber"] for x in testgrid_history if x['result'] == 'SUCCESS']
+    job = random.choice(successes)
+    loglinks = s.kgcl_loglinks(job)
+    assert len(loglinks) > 0
+
+def test_kgcl_timestamp():
+    testgrid_history = s.get_json(s.GCS_LOGS + s.KGCL_BUCKET + "/jobResultsCache.json")
+    successes = [x["buildnumber"] for x in testgrid_history if x['result'] == 'SUCCESS']
+    job = random.choice(successes)
+    timestamp = s.kgcl_timestamp(job)
+    timestamp_match = re.match("^[0-9]+$",str(timestamp))
+    assert timestamp_match is not None
+
+def test_kegg_version():
+    jv = "v1.26.0-alphastuff+23j5319385"
+    version = s.kegg_version(jv)
+    assert version == "1.26.0"
+
+def test_kegg_commit():
+    jv = "v1.26.0-alpha.0.275+41df8167dd82e7"
+    commit = s.kegg_commit(jv)
+    assert commit == "41df8167dd82e7"
+
+def test_kegg_loglinks():
+    testgrid_history = s.get_json(s.GCS_LOGS + s.KEGG_BUCKET + "/jobResultsCache.json")
+    successes = [x["buildnumber"] for x in testgrid_history if x['result'] == 'SUCCESS']
+    job = random.choice(successes)
+    loglinks = s.kegg_loglinks(job)
+    assert len(loglinks) > 0
+
+def test_kegg_timestamp():
+    testgrid_history = s.get_json(s.GCS_LOGS + s.KEGG_BUCKET + "/jobResultsCache.json")
+    successes = [x["buildnumber"] for x in testgrid_history if x['result'] == 'SUCCESS']
+    job = random.choice(successes)
+    timestamp = s.kegg_timestamp(job)
+    timestamp_match = re.match("^[0-9]+$",str(timestamp))
+    assert timestamp_match is not None
