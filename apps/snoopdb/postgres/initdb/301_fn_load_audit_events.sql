@@ -61,7 +61,7 @@
                       audit_logfile = auditlog_file,
                       release = release,
                       bucket = bucket,
-                      job = job,
+                      job = meta.job,
                       release_date = release_date
                   )
         try:
