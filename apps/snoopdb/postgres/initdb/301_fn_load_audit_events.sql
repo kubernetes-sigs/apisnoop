@@ -7,7 +7,8 @@
         from urllib.request import urlopen
         import json
         import yaml
-        from snoopUtils import determine_bucket_job, download_and_process_auditlogs
+        import semver
+        from snoopUtils import download_and_process_auditlogs, get_meta
 
         GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
         RELEASES_URL = "https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage/releases.yaml"
@@ -15,32 +16,18 @@
         releases = yaml.safe_load(urlopen(RELEASES_URL))
         latest_release = releases[0]['version']
 
-        # testing testing testing testing
-        bucket, job = determine_bucket_job(custom_bucket, custom_job)
-        plpy.log("our bucket and job", detail=[bucket,job])
-        metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/artifacts/metadata.json'])
-        finished_url = ''.join([GCS_LOGS, bucket, '/', job, '/finished.json'])
-        metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-        finished = json.loads(urlopen(finished_url).read().decode('utf-8'))
-        plpy.log("l_a_e: our metadata.json", detail=urlopen(metadata_url).read().decode('utf-8'))
-        plpy.log("load_audit_events: our finished.json", detail=urlopen(finished_url).read().decode('utf-8'))
+        meta = get_meta(bucket,job)
+        plpy.log("our bucket and job", detail=[bucket,meta.job])
+
         auditlog_file = download_and_process_auditlogs(bucket, job)
 
-        release_date = int(finished['timestamp'])
-        if bucket == 'ci-audit-kind-conformance':
-            release = latest_release
-        else:
-            release = metadata["job-version"].split('-')[0].replace('v','')
-            num = release.replace('.','')
-            if int(release.split('.')[1]) > int(latest_release.split('.')[1]):
-                release = latest_release
+        release_date = int(meta.timestamp)
         # if we are grabbing latest release, and it is on cusp of new release,
         # then test runs will show their version as the next release...which is confusing,
         # this period is a code freeze, where tests can still be added, and so the logs we are
         # seeing still shows coverage for the version just about to be released.
         # when this happens, we set our release to what is canonically the latest.
-        if custom_bucket is None and custom_job is None:
-          release = latest_release
+        release = meta.version if semver.compare(meta.version,latest_release) < 1 else latest_release
 
         sql = Template("""
           CREATE TEMPORARY TABLE audit_event_import${job}(data jsonb not null) ;
@@ -54,7 +41,7 @@
                                   test_hit, conf_test_hit,
                                   data, source)
 
-          SELECT trim(leading 'v' from '${release}') as release,
+          SELECT  '${release}' as release,
                   '${release_date}',
                   (raw.data ->> 'auditID'),
                   (raw.data ->> 'operationId') as endpoint,
