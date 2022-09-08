@@ -66,7 +66,7 @@
                   )
         try:
             plpy.execute(sql)
-            return "events for {} loaded, from {}/{}".format(release, bucket, job)
+            return "events for {} loaded, from {}/{}".format(release, bucket, meta.job)
         except plpy.SPIError as plpyError:
             print("something went wrong with plpy: ")
             return plpyError
