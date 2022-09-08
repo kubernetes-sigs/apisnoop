@@ -73,6 +73,7 @@ def get_html(url):
     return soup
 
 def is_spyglass_script(tag):
+    """does the soup tag contain a script that matches spyglass scripts?"""
     return tag.name == 'script' and not tag.has_attr('src') and ('allBuilds' in tag.contents[0])
 
 def merge_into(d1, d2):
@@ -102,6 +103,9 @@ def download_url_to_path(url, local_path, dl_dict):
         dl_dict[local_path] = process
 
 def load_openapi_spec(url):
+    """
+    Load given swagger url into a cache, so we can use it later to find operation id's
+    """
     # Usually, a Python dictionary throws a KeyError if you try to get an item with a key that is not currently in the dictionary.
     # The defaultdict in contrast will simply return an empty dict.
     cache=defaultdict(dict)
@@ -144,6 +148,9 @@ def load_openapi_spec(url):
     return openapi_spec
 
 def format_uri_parts_for_proxy(uri_parts):
+    """
+    take everything post proxy in a url and compose it into uri to compare against api spec
+    """
     proxy = uri_parts.index('proxy')
     formatted_parts=uri_parts[0:proxy+1]
     proxy_tail = uri_parts[proxy+1:]
@@ -157,6 +164,9 @@ def is_namespace_status(uri_parts):
     return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'status'
 
 def format_uri_parts_for_namespace_status(uri_parts):
+    """
+    Format uri for namespace endpoints for easier matchup with openapi spec
+    """
     # in the open api spec, the namespace endpoints
     # are listed differently from other endpoints.
     # it abstracts the specific namespace to just {name}
@@ -172,6 +182,9 @@ def is_namespace_finalize(uri_parts):
     return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'finalize'
 
 def format_uri_parts_for_namespace_finalize(uri_parts):
+    """
+    Format uri for namespace finalize endpoints for easier matchup with openapi spec
+    """
     # Using the same logic as status, but I am uncertain
     # all the various finalize endpoints, so this may not
     # pick them all up.  Revisit if so!
@@ -180,6 +193,9 @@ def format_uri_parts_for_namespace_finalize(uri_parts):
     return uri_first_half + uri_second_half
 
 def format_uri_parts(path):
+  """
+  format uri parts for easier matchup with openapi spec
+  """
   uri_parts = path.strip('/').split('/')
   if 'proxy' in uri_parts:
     uri_parts = format_uri_parts_for_proxy(uri_parts)
@@ -190,6 +206,7 @@ def format_uri_parts(path):
   return uri_parts
 
 def is_ignored_endpoint(uri_parts):
+    """is endpoint in our list of ignored paths?"""
     if any(part in uri_parts for part in IGNORED_PATHS):
         return True
     if uri_parts == ['openapi','v2']:
@@ -203,6 +220,9 @@ def is_ignored_endpoint(uri_parts):
 # we add both op id and error to our events,
 # so that we can parse events by error in snoopdb
 def find_operation_id(openapi_spec, event):
+  """
+  Take an openapi spec and an audit event and find the operation ID in the spec that matches the endpoint of the given eventk
+  """
   method=assign_verb_to_method(event['verb'], event['requestURI'])
   if method is None:
       return None, "Could not assign a method from the event verb. Check the event.verb."
@@ -303,6 +323,10 @@ def akc_timestamp(job):
     return started["timestamp"]
 
 def akc_meta(custom_job=None):
+    """
+    Compose a Meta object for job of given AKC bucket.
+    Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
+    """
     job = akc_latest_success() if custom_job is None else custom_job
     return Meta(job,
                 akc_version(job),
@@ -311,6 +335,9 @@ def akc_meta(custom_job=None):
                 akc_timestamp(job))
 
 def kgcl_version(job_version):
+    """
+    return k8s semver for version of k8s run in given job's test run
+    """
     match = re.match("^v([0-9.]+)-",job_version)
     if match is None:
         raise ValueError("Could not find version in given job_version.", job_version)
@@ -319,6 +346,9 @@ def kgcl_version(job_version):
         return version
 
 def kgcl_commit(job_version):
+    """
+    return k8s/k8s commit for k8s used in given job's test run
+    """
     # we want the end of the string, after the '+'. A commit should only be numbers and letters
     match = re.match(".+\+([0-9a-zA-Z]+)$",job_version)
     if match is None:
@@ -336,11 +366,18 @@ def kgcl_loglinks(job):
     return master_soup.find_all(href=re.compile("audit.log"))
 
 def kgcl_timestamp(job):
+    """
+    Return unix timestamp of when given job was run
+    """
     finished_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/finished.json'
     finished = get_json(finished_url)
     return finished["timestamp"]
 
 def kgcl_meta(custom_job=None):
+    """
+    Compose a Meta object for job of given KGCL bucket.
+    Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
+    """
     testgrid_history = get_json(GCS_LOGS + KGCL_BUCKET + "/jobResultsCache.json")
     if custom_job is not None:
         build = [x for x in testgrid_history if x['buildnumber'] == custom_job][0]
@@ -355,6 +392,9 @@ def kgcl_meta(custom_job=None):
                 kgcl_timestamp(job))
 
 def kegg_version(job_version):
+    """
+    return k8s semver for version of k8s run in given job's test run
+    """
     match = re.match("^v([0-9.]+)-",job_version)
     if match is None:
         raise ValueError("Could not find version in given job_version.", job_version)
@@ -363,6 +403,9 @@ def kegg_version(job_version):
         return version
 
 def kegg_commit(job_version):
+    """
+    return k8s/k8s commit for k8s used in given job's test run
+    """
     # we want the end of the string, after the '+'. A commit should only be numbers and letters
     match = re.match(".+\+([0-9a-zA-Z]+)$",job_version)
     if match is None:
@@ -380,11 +423,18 @@ def kegg_loglinks(job):
     return master_soup.find_all(href=re.compile("audit.log"))
 
 def kegg_timestamp(job):
+    """
+    Return unix timestamp of when given job was run
+    """
     finished_url = GCS_LOGS + KEGG_BUCKET + '/' + job + '/finished.json'
     finished = get_json(finished_url)
     return finished["timestamp"]
 
 def kegg_meta(custom_job=None):
+    """
+    Compose a Meta object for job of given KEGG bucket.
+    Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
+    """
     testgrid_history = get_json(GCS_LOGS + KEGG_BUCKET + "/jobResultsCache.json")
     if custom_job is not None:
         build = [x for x in testgrid_history if x['buildnumber'] == custom_job][0]
