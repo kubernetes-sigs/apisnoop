@@ -26,6 +26,8 @@ GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
 ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
 K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
 
+Meta = collections.namedtuple('Meta',['job','version','commit','log_links','timestamp'])
+
 IGNORED_PATHS=[
     'metrics',
     'readyz',
