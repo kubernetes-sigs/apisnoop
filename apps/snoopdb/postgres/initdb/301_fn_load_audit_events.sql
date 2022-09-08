@@ -10,7 +10,6 @@
         import semver
         from snoopUtils import download_and_process_auditlogs, get_meta
 
-        GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
         RELEASES_URL = "https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage/releases.yaml"
 
         releases = yaml.safe_load(urlopen(RELEASES_URL))
