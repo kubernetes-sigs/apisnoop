@@ -6,7 +6,7 @@ import requests
 import re
 from copy import deepcopy
 from functools import reduce
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import subprocess
@@ -26,7 +26,7 @@ GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
 ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
 K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
 
-Meta = collections.namedtuple('Meta',['job','version','commit','log_links','timestamp'])
+Meta = namedtuple('Meta',['job','version','commit','log_links','timestamp'])
 
 IGNORED_PATHS=[
     'metrics',
