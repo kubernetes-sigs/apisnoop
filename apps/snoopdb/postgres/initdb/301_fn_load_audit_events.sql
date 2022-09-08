@@ -1,5 +1,5 @@
       create or replace function load_audit_events(
-        custom_bucket text default null,
+        custom_bucket text,
         custom_job text default null)
 
         returns text AS $$
