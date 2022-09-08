@@ -1,5 +1,5 @@
       create or replace function load_audit_events(
-        custom_bucket text,
+        bucket text,
         custom_job text default null)
 
         returns text AS $$
@@ -21,6 +21,7 @@
         auditlog_file = download_and_process_auditlogs(bucket, job)
 
         release_date = int(meta.timestamp)
+
         # if we are grabbing latest release, and it is on cusp of new release,
         # then test runs will show their version as the next release...which is confusing,
         # this period is a code freeze, where tests can still be added, and so the logs we are
