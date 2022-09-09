@@ -1,0 +1,33 @@
+name: test
+
+on:
+  push:
+    paths:
+      - apps/snoopdb/postgres
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: build
+        run: |
+          docker build -t gcr.io/k8s-staging-apisnoop/snoopdb:latest apps/snoopdb/postgres
+      - name: run
+        run: |
+          docker run -e POSTGRES_USER=apisnoop -e POSTGRES_DB=apisnoop --name snoopdb -d -p 5432:5432 gcr.io/k8s-staging-apisnoop/snoopdb:latest
+          until psql -U apisnoop -d apisnoop -h localhost -c 'select 0;'; do
+            docker logs --tail=100 snoopdb
+            sleep 10s
+          done
+      - name: test
+        run: |
+          cd $(git rev-parse --show-toplevel)
+          psql -U apisnoop -d apisnoop -h localhost -f ./505_output_coverage_jsons.sql
+      - name: determine changes
+        run: |
+          if { git ls-files --others --exclude-standard ; git diff-index --name-only --diff-filter=d HEAD ; } | grep --regexp='[.]json$'; then
+              echo changes detected
+          else
+              echo no changes detected
+          fi
