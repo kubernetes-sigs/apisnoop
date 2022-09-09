@@ -6,7 +6,7 @@ import requests
 import re
 from copy import deepcopy
 from functools import reduce
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import subprocess
@@ -15,10 +15,18 @@ from tempfile import mkdtemp
 import time
 import glob
 
+AKC_BUCKET="ci-audit-kind-conformance"
+KGCL_BUCKET="ci-kubernetes-gce-conformance-latest"
+KEGG_BUCKET="ci-kubernetes-e2e-gci-gce"
+
 AUDIT_KIND_CONFORMANCE_RUNS="https://prow.k8s.io/job-history/kubernetes-jenkins/logs/ci-audit-kind-conformance"
+AUDIT_KIND_CONFORMANCE_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/ci-audit-kind-conformance"
 GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
-DEFAULT_BUCKET="ci-kubernetes-gci-gce"
-K8S_GITHUB_RAW= "https://raw.githubusercontent.com/kubernetes/kubernetes/"
+
+ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
+K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
+
+Meta = namedtuple('Meta',['job','version','commit','log_links','timestamp'])
 
 IGNORED_PATHS=[
     'metrics',
@@ -32,7 +40,6 @@ IGNORED_PATHS=[
     'wardle.k8s.io'
 ]
 
-#TESTED
 def assign_verb_to_method (verb, uri):
     """Assigns audit event verb to apropriate method for generating opID later.
        Accounts for irregular behaviour with head and option verbs."""
@@ -67,48 +74,10 @@ def get_html(url):
     soup = BeautifulSoup(html, 'html.parser')
     return soup
 
-#TESTED
 def is_spyglass_script(tag):
+    """does the soup tag contain a script that matches spyglass scripts?"""
     return tag.name == 'script' and not tag.has_attr('src') and ('allBuilds' in tag.contents[0])
 
-#TESTED
-def get_latest_akc_success(soup):
-    """
-    determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
-    """
-    scripts = soup.find(is_spyglass_script)
-    if scripts is None :
-        raise ValueError("No spyglass script found in akc page")
-    try:
-        builds = json.loads(scripts.contents[0].split('allBuilds = ')[1][:-2])
-    except Exception as e:
-        raise ValueError("Could not load json from build data. is it valid json?", e)
-    try:
-        latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
-    except Exception as e:
-        raise ValueError("Cannot find success in builds")
-    return latest_success['ID']
-
-# TESTING NOT NECESSARY
-def determine_bucket_job(custom_bucket=None, custom_job=None):
-    """return tuple of bucket, job, using latest successful job of default bucket if no custom bucket or job is given"""
-    #establish bucket we'll draw test results from.
-    baseline_bucket = os.environ['APISNOOP_BASELINE_BUCKET'] if 'APISNOOP_BASELINE_BUCKET' in os.environ.keys() else 'ci-kubernetes-e2e-gci-gce'
-    bucket =  baseline_bucket if custom_bucket is None else custom_bucket
-    if bucket == 'ci-audit-kind-conformance':
-        html = get_html(AUDIT_KIND_CONFORMANCE_RUNS)
-        latest_success = get_latest_akc_success(html)
-        job = latest_success if custom_job is None else custom_job
-    else:
-        #grab the latest successful test run for our chosen bucket.
-        testgrid_history = get_json(GCS_LOGS + bucket + "/jobResultsCache.json")
-        latest_success = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]['buildnumber']
-        #establish job
-        baseline_job = os.environ['APISNOOP_BASELINE_JOB'] if 'APISNOOP_BASELINE_JOB' in os.environ.keys() else latest_success
-        job = baseline_job if custom_job is None else custom_job
-    return (bucket, job)
-
-# TESTED
 def merge_into(d1, d2):
     for key in d2:
         if key not in d1 or not isinstance(d1[key], dict):
@@ -117,14 +86,12 @@ def merge_into(d1, d2):
             d1[key] = merge_into(d1[key], d2[key])
     return d1
 
-# TESTED
 def deep_merge(*dicts, update=False):
     if update:
         return reduce(merge_into, dicts[1:], dicts[0])
     else:
         return reduce(merge_into, dicts, {})
 
-# NOT TESTING
 def download_url_to_path(url, local_path, dl_dict):
     """
     downloads contents to local path, creating path if needed,
@@ -137,30 +104,10 @@ def download_url_to_path(url, local_path, dl_dict):
         process = subprocess.Popen(['wget', '-q', url, '-O', local_path])
         dl_dict[local_path] = process
 
-# NOT TESTING
-def get_all_auditlog_links(au):
-    """
-    given an artifacts url, au, return a list of all
-    audit.log.* within it.
-    (some audit.logs end in .gz)
-    """
-    soup = get_html(au)
-    master_link = soup.find(href=re.compile("master"))
-    master_soup = get_html("https://gcsweb.k8s.io" + master_link['href'])
-    return master_soup.find_all(href=re.compile("audit.log"))
-
-# NOT TESTING
-def get_all_audit_kind_links(au):
-    """
-    grab all the audit logs from our ci-audit-kind-conformance bucket,
-    since their names and locations are non-standard
-    """
-    soup = get_html(au)
-    print(soup.find_all(href=re.compile(".log")))
-    return soup.find_all(href=re.compile(".log"))
-
-# TESTED
 def load_openapi_spec(url):
+    """
+    Load given swagger url into a cache, so we can use it later to find operation id's
+    """
     # Usually, a Python dictionary throws a KeyError if you try to get an item with a key that is not currently in the dictionary.
     # The defaultdict in contrast will simply return an empty dict.
     cache=defaultdict(dict)
@@ -202,8 +149,10 @@ def load_openapi_spec(url):
                 openapi_spec['cache'] = cache
     return openapi_spec
 
-#TESTED
 def format_uri_parts_for_proxy(uri_parts):
+    """
+    take everything post proxy in a url and compose it into uri to compare against api spec
+    """
     proxy = uri_parts.index('proxy')
     formatted_parts=uri_parts[0:proxy+1]
     proxy_tail = uri_parts[proxy+1:]
@@ -211,15 +160,15 @@ def format_uri_parts_for_proxy(uri_parts):
         formatted_parts.append('/'.join(proxy_tail))
     return formatted_parts
 
-# TODO create proper regex to find namespace status versus namespace resource status
-# TESTED
 def is_namespace_status(uri_parts):
     if len(uri_parts) != 5:
         return False
     return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'status'
 
-# TESTED
 def format_uri_parts_for_namespace_status(uri_parts):
+    """
+    Format uri for namespace endpoints for easier matchup with openapi spec
+    """
     # in the open api spec, the namespace endpoints
     # are listed differently from other endpoints.
     # it abstracts the specific namespace to just {name}
@@ -229,14 +178,15 @@ def format_uri_parts_for_namespace_status(uri_parts):
     uri_second_half =['{name}','status']
     return uri_first_half + uri_second_half
 
-# TESTED
 def is_namespace_finalize(uri_parts):
     if len(uri_parts) != 5:
         return False
     return uri_parts[2] == 'namespaces' and uri_parts[-1] == 'finalize'
 
-# TESTED
 def format_uri_parts_for_namespace_finalize(uri_parts):
+    """
+    Format uri for namespace finalize endpoints for easier matchup with openapi spec
+    """
     # Using the same logic as status, but I am uncertain
     # all the various finalize endpoints, so this may not
     # pick them all up.  Revisit if so!
@@ -245,6 +195,9 @@ def format_uri_parts_for_namespace_finalize(uri_parts):
     return uri_first_half + uri_second_half
 
 def format_uri_parts(path):
+  """
+  format uri parts for easier matchup with openapi spec
+  """
   uri_parts = path.strip('/').split('/')
   if 'proxy' in uri_parts:
     uri_parts = format_uri_parts_for_proxy(uri_parts)
@@ -255,6 +208,7 @@ def format_uri_parts(path):
   return uri_parts
 
 def is_ignored_endpoint(uri_parts):
+    """is endpoint in our list of ignored paths?"""
     if any(part in uri_parts for part in IGNORED_PATHS):
         return True
     if uri_parts == ['openapi','v2']:
@@ -268,6 +222,9 @@ def is_ignored_endpoint(uri_parts):
 # we add both op id and error to our events,
 # so that we can parse events by error in snoopdb
 def find_operation_id(openapi_spec, event):
+  """
+  Take an openapi spec and an audit event and find the operation ID in the spec that matches the endpoint of the given eventk
+  """
   method=assign_verb_to_method(event['verb'], event['requestURI'])
   if method is None:
       return None, "Could not assign a method from the event verb. Check the event.verb."
@@ -317,38 +274,208 @@ def find_operation_id(openapi_spec, event):
     openapi_spec['hit_cache'][url.path][method]=op_id
   return op_id, None
 
+def akc_latest_success():
+    """
+    determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
+    """
+    soup = get_html(AUDIT_KIND_CONFORMANCE_RUNS)
+    scripts = soup.find(is_spyglass_script)
+    if scripts is None :
+        raise ValueError("No spyglass script found in akc page")
+    try:
+        builds = json.loads(scripts.contents[0].split('allBuilds = ')[1][:-2])
+    except Exception as e:
+        raise ValueError("Could not load json from build data. is it valid json?", e)
+    try:
+        latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
+    except Exception as e:
+        raise ValueError("Cannot find success in builds")
+    return latest_success['ID']
+
+def akc_version(job):
+    """return semver of kubernetes used for given akc job"""
+    versionfile_path = "/artifacts/logs/kind-control-plane/kubernetes-version.txt"
+    version_url =  AUDIT_KIND_CONFORMANCE_LOGS + "/" + job + versionfile_path
+    version_file = urlopen(version_url).read().decode()
+    # version_file will be something like v1.26.0-alpha.0.378+bcea98234f0fdc-dirty
+    # We only want the k8s semver(in this example, the 1.26.0)
+    # so, create a capture group of any number or '.' in between a starting 'v' and a '-'
+    version = re.match("^v([0-9.]+)-",version_file).group(1)
+    return version
+
+def akc_commit(job):
+    """return commit of kubernetes/kubernetes used for given akc job"""
+    started_url = AUDIT_KIND_CONFORMANCE_LOGS + "/" + job + "/started.json"
+    started = json.loads(urlopen(started_url).read().decode('utf-8'))
+    return started["repo-commit"]
+
+def akc_loglinks(job):
+    """
+    grab all the audit logs from our ci-audit-kind-conformance bucket,
+    since their names and locations are non-standard
+    """
+    artifacts_url = ARTIFACTS_PATH + AKC_BUCKET + '/' +  job + '/' + 'artifacts/audit'
+    soup = get_html(artifacts_url)
+    return soup.find_all(href=re.compile(".log"))
+
+def akc_timestamp(job):
+    """return timestamp of when given akc job was run"""
+    started_url = AUDIT_KIND_CONFORMANCE_LOGS + "/" + job + "/started.json"
+    started = json.loads(urlopen(started_url).read().decode('utf-8'))
+    return started["timestamp"]
+
+def akc_meta(custom_job=None):
+    """
+    Compose a Meta object for job of given AKC bucket.
+    Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
+    """
+    job = akc_latest_success() if custom_job is None else custom_job
+    return Meta(job,
+                akc_version(job),
+                akc_commit(job),
+                akc_loglinks(job),
+                akc_timestamp(job))
+
+def kgcl_version(job_version):
+    """
+    return k8s semver for version of k8s run in given job's test run
+    """
+    match = re.match("^v([0-9.]+)-",job_version)
+    if match is None:
+        raise ValueError("Could not find version in given job_version.", job_version)
+    else:
+        version = match.group(1)
+        return version
+
+def kgcl_commit(job_version):
+    """
+    return k8s/k8s commit for k8s used in given job's test run
+    """
+    # we want the end of the string, after the '+'. A commit should only be numbers and letters
+    match = re.match(".+\+([0-9a-zA-Z]+)$",job_version)
+    if match is None:
+        raise ValueError("Could not find commit in given job_version", job_version)
+    else:
+        commit = match.group(1)
+        return commit
+
+def kgcl_loglinks(job):
+    """Return all audit log links for KGCL bucket"""
+    artifacts_url = ARTIFACTS_PATH + KGCL_BUCKET + '/' +  job + '/' + 'artifacts'
+    soup = get_html(artifacts_url)
+    master_link = soup.find(href=re.compile("master"))
+    master_soup = get_html("https://gcsweb.k8s.io" + master_link['href'])
+    return master_soup.find_all(href=re.compile("audit.log"))
+
+def kgcl_timestamp(job):
+    """
+    Return unix timestamp of when given job was run
+    """
+    finished_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/finished.json'
+    finished = get_json(finished_url)
+    return finished["timestamp"]
+
+def kgcl_meta(custom_job=None):
+    """
+    Compose a Meta object for job of given KGCL bucket.
+    Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
+    """
+    testgrid_history = get_json(GCS_LOGS + KGCL_BUCKET + "/jobResultsCache.json")
+    if custom_job is not None:
+        build = [x for x in testgrid_history if x['buildnumber'] == custom_job][0]
+    else:
+        build = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]
+    job = build["buildnumber"]
+    job_version = build["job-version"]
+    return Meta(job,
+                kgcl_version(job_version),
+                kgcl_commit(job_version),
+                kgcl_loglinks(job),
+                kgcl_timestamp(job))
+
+def kegg_version(job_version):
+    """
+    return k8s semver for version of k8s run in given job's test run
+    """
+    match = re.match("^v([0-9.]+)-",job_version)
+    if match is None:
+        raise ValueError("Could not find version in given job_version.", job_version)
+    else:
+        version = match.group(1)
+        return version
+
+def kegg_commit(job_version):
+    """
+    return k8s/k8s commit for k8s used in given job's test run
+    """
+    # we want the end of the string, after the '+'. A commit should only be numbers and letters
+    match = re.match(".+\+([0-9a-zA-Z]+)$",job_version)
+    if match is None:
+        raise ValueError("Could not find commit in given job_version.", job_version)
+    else:
+        commit = match.group(1)
+        return commit
+
+def kegg_loglinks(job):
+    """Return all audit log links for KEGG bucket"""
+    artifacts_url = ARTIFACTS_PATH + KEGG_BUCKET + '/' +  job + '/' + 'artifacts'
+    soup = get_html(artifacts_url)
+    master_link = soup.find(href=re.compile("master"))
+    master_soup = get_html("https://gcsweb.k8s.io" + master_link['href'])
+    return master_soup.find_all(href=re.compile("audit.log"))
+
+def kegg_timestamp(job):
+    """
+    Return unix timestamp of when given job was run
+    """
+    finished_url = GCS_LOGS + KEGG_BUCKET + '/' + job + '/finished.json'
+    finished = get_json(finished_url)
+    return finished["timestamp"]
+
+def kegg_meta(custom_job=None):
+    """
+    Compose a Meta object for job of given KEGG bucket.
+    Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
+    """
+    testgrid_history = get_json(GCS_LOGS + KEGG_BUCKET + "/jobResultsCache.json")
+    if custom_job is not None:
+        build = [x for x in testgrid_history if x['buildnumber'] == custom_job][0]
+    else:
+        build = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]
+    job = build["buildnumber"]
+    job_version = build["job-version"]
+    return Meta(job,
+                kegg_version(job_version),
+                kegg_commit(job_version),
+                kegg_loglinks(job),
+                kegg_timestamp(job))
+
+def get_meta(bucket,job=None):
+    """Returns meta object for given bucket.
+    Meta includes job, k8s version, k8s commit, all auditlog links, and timestamp of the test run"""
+    if(bucket == AKC_BUCKET):
+        return akc_meta(job)
+    elif(bucket == KGCL_BUCKET):
+        return kgcl_meta(job)
+    elif(bucket == KEGG_BUCKET):
+        return kegg_meta(job)
+
 def download_and_process_auditlogs(bucket,job):
     """
     Grabs all audits logs available for a given bucket/job, combines them into a
     single audit log, then returns the path for where the raw combined audit logs are stored.
     The processed logs are in json, and include the operationId when found.
     """
-    # BUCKETS_PATH = 'https://storage.googleapis.com/kubernetes-jenkins/logs/'
-    ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
-    K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
     downloads = {}
     # bucket_url = BUCKETS_PATH + bucket + '/' + job + '/'
     download_path = mkdtemp( dir='/tmp', prefix='apisnoop-' + bucket + '-' + job ) + '/'
     combined_log_file = download_path + 'combined-audit.log'
-    if bucket == 'ci-audit-kind-conformance':
-        commit_hash = 'master'
-    else: 
-        metadata_url = ''.join([GCS_LOGS, bucket, '/', job, '/artifacts/metadata.json'])
-        print('METADATA.JSON: ', urlopen(metadata_url).read().decode('utf-8'))
-        metadata = json.loads(urlopen(metadata_url).read().decode('utf-8'))
-        commit_hash = metadata["job-version"].split("+")[1]
+    meta = get_meta(bucket,job)
 
-    # download all logs
-    if bucket == 'ci-audit-kind-conformance':
-        artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts/audit'
-        log_links = get_all_audit_kind_links(artifacts_url)
-    else:
-        artifacts_url = ARTIFACTS_PATH + bucket + '/' +  job + '/' + 'artifacts'
-        log_links = get_all_auditlog_links(artifacts_url)
-    for link in log_links:
+    for link in meta.log_links:
         log_url = link['href']
         log_file = download_path + os.path.basename(log_url)
-        download_url_to_path( log_url, log_file, downloads)
+        download_url_to_path(log_url, log_file, downloads)
 
     # Our Downloader uses subprocess of curl for speed
     for download in downloads.keys():
@@ -358,7 +485,7 @@ def download_and_process_auditlogs(bucket,job):
 
     # Loop through the files, (z)cat them into a combined audit.log
     with open(combined_log_file, 'ab') as log:
-        glob_pattern = 'audit*log' if bucket == 'ci-audit-kind-conformance' else '*kube-apiserver-audit*'
+        glob_pattern = 'audit*log' if bucket == AKC_BUCKET else '*kube-apiserver-audit*'
         for logfile in sorted(glob.glob(download_path + glob_pattern), reverse=True):
             if logfile.endswith('z'):
                 subprocess.run(['zcat', logfile], stdout=log, check=True)
@@ -366,7 +493,7 @@ def download_and_process_auditlogs(bucket,job):
                 subprocess.run(['cat', logfile], stdout=log, check=True)
 
     # Process the resulting combined raw audit.log by adding operationId
-    swagger_url = K8S_GITHUB_REPO + commit_hash + '/api/openapi-spec/swagger.json'
+    swagger_url = K8S_GITHUB_REPO + meta.commit + '/api/openapi-spec/swagger.json'
     openapi_spec = load_openapi_spec(swagger_url)
     infilepath=combined_log_file
     outfilepath=combined_log_file+'+opid'

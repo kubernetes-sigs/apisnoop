@@ -12,6 +12,7 @@ RUN apt-get update \
   python3-ipdb \
   python3-requests \
   python3-yaml \
+  python3-semver \
   libpq-dev \
   wget \
   make \
