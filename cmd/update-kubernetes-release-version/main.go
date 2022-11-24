@@ -114,8 +114,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to fetch current major version release tag info, %v", err)
 	}
-	lastModified := resp.Header.Get("Last-Modified")
-	fmt.Printf("%#v\n", resp.Body)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
