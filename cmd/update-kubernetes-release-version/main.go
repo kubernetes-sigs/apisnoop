@@ -16,7 +16,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -37,7 +37,7 @@ type GitHubRelease struct {
 }
 
 func ReadFile(path string) (string, error) {
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
@@ -45,12 +45,11 @@ func ReadFile(path string) (string, error) {
 }
 
 func WriteFile(path string, content string) error {
-	f, err := os.Create(path)
+	_, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	_, err = f.WriteString(content)
+	err = os.WriteFile(path, []byte(content), 0644)
 	if err != nil {
 		return err
 	}
@@ -63,7 +62,7 @@ func GetHTTPFile(uri string) (content string, resp *http.Response, err error) {
 		return "", nil, err
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", nil, err
 	}
@@ -120,7 +119,7 @@ func main() {
 	fmt.Println(lastModified)
 	fmt.Printf("%#v\n", resp.Body)
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatalf("Failed to parse response body, %v", err)
 	}
