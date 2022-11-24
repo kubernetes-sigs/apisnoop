@@ -1,8 +1,8 @@
     begin;
     -- move this to its own block if it works
- select (select release from audit_event order by release limit 1) as latest_release
+ select release as latest_release, 'resources/coverage/'||release||'.json' as output_file from audit_event order by release limit 1
  \gset
- \set output_file 'resources/coverage/1.26.0.json'
+ \echo 'running with latest_release as' :latest_release 'and output_file to' :output_file
  \t
  \a
  \o :output_file
