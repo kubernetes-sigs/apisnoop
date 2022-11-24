@@ -85,14 +85,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to parse releasesYAML, %v", err)
 	}
-	fmt.Println(releases)
 
 	// download kubernetes stable.txt
 	stableVersionTxt, _, err := getHTTPFile(stableVersionURL)
 	if err != nil {
 		log.Fatalf("failed to fetch stable.txt, %v", err)
 	}
-	fmt.Println(stableVersionTxt)
 
 	// parse the version string
 	// stableVersionTxt = "v1.26.0"
@@ -100,11 +98,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to parse stableVersion string, %v", err)
 	}
-	fmt.Println(stableVersion.Segments())
 
 	// contruct the major release version
 	lastMajorRelease := fmt.Sprintf("%v.%v.0", stableVersion.Segments()[0], stableVersion.Segments()[1])
-	fmt.Println(lastMajorRelease)
 
 	// get the release date for the current major version
 	req, err := http.NewRequest(http.MethodGet, kubernetesGitHubTagURL+"/v"+lastMajorRelease, nil)
@@ -119,27 +115,23 @@ func main() {
 		log.Fatalf("Failed to fetch current major version release tag info, %v", err)
 	}
 	lastModified := resp.Header.Get("Last-Modified")
-	fmt.Println(lastModified)
 	fmt.Printf("%#v\n", resp.Body)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatalf("Failed to parse response body, %v", err)
 	}
-	fmt.Println(string(body))
 	var githubRelease GitHubRelease
 	err = json.Unmarshal(body, &githubRelease)
 	if err != nil {
 		log.Fatalf("Failed to parse Github Release data, %v", err)
 	}
-	fmt.Println(githubRelease.CreatedAt)
 	// githubRelease := GitHubRelease{
 	// 	CreatedAt: "2022-11-24T16:08:01Z",
 	// }
 
 	// mark the current version's release date in resources/coverage/releases.yaml
 	for i, d := range releases {
-		fmt.Println(i, d.Version, d.ReleaseDate)
 		if d.Version != lastMajorRelease {
 			continue
 		}
@@ -150,7 +142,6 @@ func main() {
 		releases[i].ReleaseDate = currentReleaseDate.Format("2006-01-02")
 		break
 	}
-	fmt.Println(releases[1])
 
 	// mark the version +1minor with empty release_date string
 	unreleasedVersion, err := semver.NewSemver(releases[0].Version)
@@ -165,7 +156,6 @@ func main() {
 		log.Println("Nothing to do. Exiting!")
 		return
 	}
-	fmt.Println(releases[0])
 
 	// write new resources/coverage/releases.yaml
 	releasesModified, err := yaml.Marshal(releases)
@@ -176,4 +166,5 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to write resources/coverage/releases.yaml, %v", err)
 	}
+	log.Println("Process complete")
 }
