@@ -100,10 +100,13 @@ func main() {
 	}
 
 	// contruct the major release version
-	lastMajorRelease := fmt.Sprintf("%v.%v.0", stableVersion.Segments()[0], stableVersion.Segments()[1])
+	lastMajorRelease, err := semver.NewSemver(fmt.Sprintf("%v.%v.0", stableVersion.Segments()[0], stableVersion.Segments()[1]))
+	if err != nil {
+		log.Fatalf("failed to parse stableVersion string, %v", err)
+	}
 
 	// get the release date for the current major version
-	req, err := http.NewRequest(http.MethodGet, kubernetesGitHubTagURL+"/v"+lastMajorRelease, nil)
+	req, err := http.NewRequest(http.MethodGet, kubernetesGitHubTagURL+"/v"+lastMajorRelease.String(), nil)
 	if err != nil {
 		log.Fatalf("failed to get contruct a HTTP request")
 	}
@@ -128,32 +131,23 @@ func main() {
 	// 	CreatedAt: "2022-11-24T16:08:01Z",
 	// }
 
-	// mark the current version's release date in resources/coverage/releases.yaml
-	for i, d := range releases {
-		if d.Version != lastMajorRelease {
-			continue
-		}
-		currentReleaseDate, err := time.Parse("2006-01-02T15:04:05Z", githubRelease.CreatedAt)
-		if err != nil {
-			log.Fatalf("Failed to parse time, %v", err)
-		}
-		releases[i].ReleaseDate = currentReleaseDate.Format("2006-01-02")
-		break
-	}
-
 	// mark the version +1minor with empty release_date string
 	unreleasedVersion, err := semver.NewSemver(releases[0].Version)
 	if err != nil {
 		log.Fatalf("Failed to parse new version, %v", err)
 	}
-	segments := unreleasedVersion.Segments()
-	newVersion := fmt.Sprintf("%v.%v.0", segments[0], segments[1]+1)
-	if unreleasedVersion.Equal(stableVersion) {
-		releases = append([]Release{{Version: newVersion, ReleaseDate: ""}}, releases...)
-	} else {
-		log.Println("Nothing to do. Exiting!")
+	if !unreleasedVersion.Equal(lastMajorRelease) {
+		log.Println("No new release available yet. Exiting!")
 		return
 	}
+	currentReleaseDate, err := time.Parse("2006-01-02T15:04:05Z", githubRelease.CreatedAt)
+	if err != nil {
+		log.Fatalf("Failed to parse time, %v", err)
+	}
+	releases[0].ReleaseDate = currentReleaseDate.Format("2006-01-02")
+	segments := unreleasedVersion.Segments()
+	newVersion := fmt.Sprintf("%v.%v.0", segments[0], segments[1]+1)
+	releases = append([]Release{{Version: newVersion, ReleaseDate: ""}}, releases...)
 
 	// write new resources/coverage/releases.yaml
 	releasesModified, err := yaml.Marshal(releases)
