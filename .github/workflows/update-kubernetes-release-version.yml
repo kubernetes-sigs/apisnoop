@@ -1,0 +1,49 @@
+name: updater
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 12 * * 6"
+
+jobs:
+  update-kubernetes-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.18
+      - name: configure system
+        run: |
+          sudo apt-get update -y
+          sudo apt-get upgrade -y
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          gh auth login --with-token < <(echo ${{ secrets.GITHUB_TOKEN }})
+          gh auth status
+
+      - name: run cmd/update-kubernetes-release-version
+        run: |
+          cd $(git rev-parse --show-toplevel)
+          go run cmd/update-kubernetes-release-version/main.go
+
+      - name: commit and push if there are changes
+        run: |
+          if { git ls-files --others --exclude-standard ; git diff-index --name-only --diff-filter=d HEAD ; } | grep --regexp='[.]json$'; then
+              echo changes detected
+            else
+              exit 0
+          fi
+          TIMESTAMP="$(date +%Y-%m-%d-%H-%M)"
+          NEW_BRANCH="coverage-update-for-${TIMESTAMP}"
+          git add resources/coverage/*.json
+          git branch "${NEW_BRANCH}"
+          git checkout "${NEW_BRANCH}"
+          git commit -s -m "update Kubernetes version for ${TIMESTAMP}"
+          git push origin "${NEW_BRANCH}"
+          gh pr create --title "Update Kubernetes version ${TIMESTAMP}" --body "updates to Kubernetes version for ${TIMESTAMP}"
