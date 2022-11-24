@@ -34,7 +34,7 @@ type GitHubRelease struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func ReadFile(path string) (string, error) {
+func readFile(path string) (string, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -42,7 +42,7 @@ func ReadFile(path string) (string, error) {
 	return string(content), nil
 }
 
-func WriteFile(path string, content string) error {
+func writeFile(path string, content string) error {
 	_, err := os.Create(path)
 	if err != nil {
 		return err
@@ -54,7 +54,7 @@ func WriteFile(path string, content string) error {
 	return nil
 }
 
-func GetHTTPFile(uri string) (content string, resp *http.Response, err error) {
+func getHTTPFile(uri string) (content string, resp *http.Response, err error) {
 	resp, err = http.Get(uri)
 	if err != nil {
 		return "", nil, err
@@ -71,7 +71,7 @@ func main() {
 	log.Println("Running update-kubernetes-release-version")
 
 	// parse resources/coverage/releases.yaml
-	releasesYAML, err := ReadFile("resources/coverage/releases.yaml")
+	releasesYAML, err := readFile("resources/coverage/releases.yaml")
 	if err != nil {
 		log.Fatalf("unable to read resources/coverage/releases.yaml, %v", err)
 	}
@@ -83,7 +83,7 @@ func main() {
 	fmt.Println(releases)
 
 	// download kubernetes stable.txt
-	stableVersionTxt, _, err := GetHTTPFile("https://storage.googleapis.com/kubernetes-release/release/stable.txt")
+	stableVersionTxt, _, err := getHTTPFile("https://storage.googleapis.com/kubernetes-release/release/stable.txt")
 	if err != nil {
 		log.Fatalf("failed to fetch stable.txt, %v", err)
 	}
@@ -167,7 +167,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to marshal releases, %v", err)
 	}
-	err = WriteFile("resources/coverage/releases.yaml", string(releasesModified))
+	err = writeFile("resources/coverage/releases.yaml", string(releasesModified))
 	if err != nil {
 		log.Fatalf("Failed to write resources/coverage/releases.yaml, %v", err)
 	}
