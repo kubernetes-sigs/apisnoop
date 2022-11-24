@@ -1,3 +1,12 @@
+// update-kubernetes-release-version
+//
+// Purpose: to update the latest version of Kubernetes as it's known by this repo
+// Usage: go run cmd/update-kubernetes-release-version/main.go
+//
+// Behaviours
+// - if the latest version matches what's in the first entry of the resources/coverage/releases.yaml file, the date of it's release will be set and a new unreleased version will be pushed to the first entry
+// - if the latest version is less than the first entry of the resources/coverage/releases.yaml file, nothing will happen
+
 package main
 
 import (
@@ -81,7 +90,7 @@ func main() {
 	fmt.Println(stableVersionTxt)
 
 	// parse the version string
-	// stableVersionTxt := "v1.26.0"
+	// stableVersionTxt = "v1.26.0"
 	stableVersion, err := semver.NewSemver(stableVersionTxt)
 	if err != nil {
 		log.Fatalf("failed to parse stableVersion string, %v", err)
@@ -89,11 +98,11 @@ func main() {
 	fmt.Println(stableVersion.Segments())
 
 	// contruct the major release version
-	lastMajorRelease := fmt.Sprintf("v%v.%v.0", stableVersion.Segments()[0], stableVersion.Segments()[1])
+	lastMajorRelease := fmt.Sprintf("%v.%v.0", stableVersion.Segments()[0], stableVersion.Segments()[1])
 	fmt.Println(lastMajorRelease)
 
 	// get the release date for the current major version
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/kubernetes/kubernetes/releases/tags/"+lastMajorRelease, nil)
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/kubernetes/kubernetes/releases/tags/v"+lastMajorRelease, nil)
 	if err != nil {
 		log.Fatalf("failed to get contruct a HTTP request")
 	}
