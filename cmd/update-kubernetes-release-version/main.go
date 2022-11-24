@@ -25,6 +25,11 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+var (
+	stableVersionURL       string = "https://storage.googleapis.com/kubernetes-release/release/stable.txt"
+	kubernetesGitHubTagURL string = "https://api.github.com/repos/kubernetes/kubernetes/releases/tags"
+)
+
 type Release struct {
 	Version     string `json:"version"`
 	ReleaseDate string `json:"release_date"`
@@ -83,7 +88,7 @@ func main() {
 	fmt.Println(releases)
 
 	// download kubernetes stable.txt
-	stableVersionTxt, _, err := getHTTPFile("https://storage.googleapis.com/kubernetes-release/release/stable.txt")
+	stableVersionTxt, _, err := getHTTPFile(stableVersionURL)
 	if err != nil {
 		log.Fatalf("failed to fetch stable.txt, %v", err)
 	}
@@ -102,7 +107,7 @@ func main() {
 	fmt.Println(lastMajorRelease)
 
 	// get the release date for the current major version
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/kubernetes/kubernetes/releases/tags/v"+lastMajorRelease, nil)
+	req, err := http.NewRequest(http.MethodGet, kubernetesGitHubTagURL+"/v"+lastMajorRelease, nil)
 	if err != nil {
 		log.Fatalf("failed to get contruct a HTTP request")
 	}
