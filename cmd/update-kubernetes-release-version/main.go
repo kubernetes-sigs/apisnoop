@@ -13,14 +13,12 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"text/template"
 	"time"
 
 	semver "github.com/hashicorp/go-version"
@@ -164,21 +162,6 @@ func main() {
 	}
 	fmt.Println(releases[0])
 
-	// render template for 505_output_coverage_jsons.sql, using unreleased
-	coverageJSONsTxt, err := ReadFile("505_output_coverage_jsons.sql.tpl")
-	if err != nil {
-		log.Fatalf("unable to read 505_output_coverage_jsons.sql.tpl, %v", err)
-	}
-	tmpl, err := template.New("output_coverage_jsons").Parse(coverageJSONsTxt)
-	if err != nil {
-		log.Fatalf("Failed to parse 505_output_coverage_jsons.sql.tpl, %v", err)
-	}
-	templatedBuffer := new(bytes.Buffer)
-	err = tmpl.Execute(templatedBuffer, map[string]interface{}{
-		"UnreleasedVersion": newVersion,
-	})
-	fmt.Println(templatedBuffer.String())
-
 	// write new resources/coverage/releases.yaml
 	releasesModified, err := yaml.Marshal(releases)
 	if err != nil {
@@ -187,11 +170,5 @@ func main() {
 	err = WriteFile("resources/coverage/releases.yaml", string(releasesModified))
 	if err != nil {
 		log.Fatalf("Failed to write resources/coverage/releases.yaml, %v", err)
-	}
-
-	// write new 505_output_coverage_jsons.sql
-	err = WriteFile("505_output_coverage_jsons.sql", templatedBuffer.String())
-	if err != nil {
-		log.Fatalf("Failed to write 505_output_coverage_jsons.sql, %v", err)
 	}
 }
