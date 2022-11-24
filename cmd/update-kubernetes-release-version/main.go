@@ -6,6 +6,9 @@
 // Behaviours
 // - if the latest version matches what's in the first entry of the resources/coverage/releases.yaml file, the date of it's release will be set and a new unreleased version will be pushed to the first entry
 // - if the latest version is less than the first entry of the resources/coverage/releases.yaml file, nothing will happen
+//
+// TODO quick refactor into functions
+// TODO add tests
 
 package main
 
