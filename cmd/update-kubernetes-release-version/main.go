@@ -100,9 +100,10 @@ func main() {
 	}
 
 	// contruct the major release version
+	// TODO update patch release to 0 in a cleaner way
 	lastMajorRelease, err := semver.NewSemver(fmt.Sprintf("%v.%v.0", stableVersion.Segments()[0], stableVersion.Segments()[1]))
 	if err != nil {
-		log.Fatalf("failed to parse stableVersion string, %v", err)
+		log.Fatalf("failed to parse lastMajorRelease string, %v", err)
 	}
 
 	// get the release date for the current major version
