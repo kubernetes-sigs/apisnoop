@@ -85,15 +85,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to parse releasesYAML, %v", err)
 	}
+	log.Println("loaded release.yaml")
 
 	// download kubernetes stable.txt
 	stableVersionTxt, _, err := getHTTPFile(stableVersionURL)
 	if err != nil {
 		log.Fatalf("failed to fetch stable.txt, %v", err)
 	}
+	log.Println("latest stable version is", stableVersionTxt)
 
 	// parse the version string
-	// stableVersionTxt = "v1.26.0"
 	stableVersion, err := semver.NewSemver(stableVersionTxt)
 	if err != nil {
 		log.Fatalf("failed to parse stableVersion string, %v", err)
@@ -105,7 +106,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to parse lastMajorRelease string, %v", err)
 	}
+	log.Println("latest major release is", lastMajorRelease)
 
+	switch os.Getenv("GITHUB_TOKEN") {
+	case "":
+		log.Println("empty $GITHUB_TOKEN")
+	default:
+		log.Println("populated $GITHUB_TOKEN")
+	}
+
+	log.Println("requesting URL", kubernetesGitHubTagURL+"/v"+lastMajorRelease.String())
 	// get the release date for the current major version
 	req, err := http.NewRequest(http.MethodGet, kubernetesGitHubTagURL+"/v"+lastMajorRelease.String(), nil)
 	if err != nil {
@@ -123,14 +133,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to parse response body, %v", err)
 	}
+	log.Println("body response:", string(body))
 	var githubRelease GitHubRelease
 	err = json.Unmarshal(body, &githubRelease)
 	if err != nil {
 		log.Fatalf("Failed to parse Github Release data, %v", err)
 	}
-	// githubRelease := GitHubRelease{
-	// 	CreatedAt: "2022-11-24T16:08:01Z",
-	// }
+	log.Printf("parsed github release: %#v\n", githubRelease)
 
 	// mark the version +1minor with empty release_date string
 	unreleasedVersion, err := semver.NewSemver(releases[0].Version)
@@ -149,6 +158,8 @@ func main() {
 	segments := unreleasedVersion.Segments()
 	newVersion := fmt.Sprintf("%v.%v.0", segments[0], segments[1]+1)
 	releases = append([]Release{{Version: newVersion, ReleaseDate: ""}}, releases...)
+
+	log.Printf("updated (%v) and appended (%v) to releases.yaml", releases[1].Version, releases[0].Version)
 
 	// write new resources/coverage/releases.yaml
 	releasesModified, err := yaml.Marshal(releases)
