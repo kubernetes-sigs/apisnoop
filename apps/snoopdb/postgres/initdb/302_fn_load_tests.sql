@@ -19,7 +19,7 @@ sql = Template("""
                  case
                    when ((test_data->>'release') = '') then '1.9.0'
                    when ((test_data->>'release') like '%,%')
-                     then trim(leading 'v' from split_part((test_data->>'release'), ', ', 2))||'.0'
+                     then (regexp_match(test_data->>'release', '[0-9.]+$'))[1]||'.0'
                    else trim(leading 'v' from (test_data->>'release')) ||'.0'
                  end as release,
                  (test_data->>'description') as description,
