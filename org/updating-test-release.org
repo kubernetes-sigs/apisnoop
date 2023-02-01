@@ -1,0 +1,165 @@
+#+title: Updating Test Release
+
+
+* The problem
+for conformance tests that have been updated, their 'release date' will be a
+list of releases: the one in which the test appeared, along with each release in
+which it's been updated.
+
+
+We recently updated a test that had already been updated, and so it had three release
+dates in the testdata: 1.17,1.21,1.27.  In the final output, we show that the test came
+out in 1.21.
+
+
+We decided that the test's release, in apisnoop, should always be when it was last updated.
+This test, then, should show 1.27.  We need to figure out why that is not so.
+
+
+* Tracking where the release is set
+First I needed to find where this value was being set. Our graph pulls from a
+json we create and push to github. This is generated in a psql function that's
+run at the end of the database creation, which references some custom
+conformance progress views. These views ultimately pull from a conformance.test table.
+
+I started from the output and worked backwards. In hindsight, the opposite would've been better.
+The trimming of the release is done in our function for loading into the test table.
+
+I saw that it was using a function that split the releases on the comma and then took the
+second one.  This was simplistic and too easy to break...like having a test with three releases
+instead of two.  I would need to update this to pull the last release always.
+
+* Updating the table load function
+
+The code we need to update is in the initdb file ~302_fn_load_tests.sql~.
+
+First, I isolated the line I wanted to fix and tried a new regex function instead of
+the existing substring one.
+
+So:
+: trim(leading 'v' from split_part((test_data->>'release'), ', ', 2))||'.0'
+Becomes:
+: regexp_match(test_data->>'release', '[0-9.]+$'))[1]||'.0'
+
+It's still gangly code, but more accurate to what we want. The regexp match will
+find the last instance of numbers and dots, and so we can easily grab the last
+releaes, no longer how many there are, and we don't have to split the v. The
+extra bit of code is because this function returns an array, so I need to grab
+the first(and only) element from it and then append '.0' to it. I tried for a
+more elegant ~regexp_replace~ which returns text instead, but that did not work
+for reasons we'll get into.
+
+I could run this function in isolation, using sample data, and get the result I expected
+
+#+begin_src sql-mode
+select (regexp_match('1.17, 1.21, 1.27', '[0-9.]+$'))[1]||'.0' as release;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ release
+---------
+ 1.27.0
+(1 row)
+
+#+end_SRC
+
+But when I added it to my function, it threw an error. Why?
+
+* Investigating regex python errors
+
+In short: I continually threw an error when i had a regex that included the '$'.  This is because I am running this query inside
+a python template string (inside a sql function).  Python interprets that dollar sign as a variable sigil, and is expecting a
+variable name after, like $var or ${expression}.
+
+I tried various ways to escape this, as the dollar sign was what makes this regex work.  Ultimately, I resorted to using ~safe_substitute~
+instead of substitute, as safe substitute ignores these errors ([[https://docs.python.org/3/library/string.html#string.Template.safe_substitute][source]]).
+
+This is not ideal, but seemed the best with the code as it is at the current moment.
+
+I then tried to do a better regex replace, to make it a bit more readable, but this required using capture groups which python likes even less.
+
+** My iteration loop
+For those curious, my flow was this:
+
+I copied the function into a new block, so I could quickly iterate on it
+
+#+begin_src sql-mode :results silent
+create or replace function zload_tests()
+
+returns text AS $$
+
+from string import Template
+import json
+import yaml
+from urllib.request import urlopen, urlretrieve
+
+TESTS_URL = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/test/conformance/testdata/conformance.yaml"
+tests = json.dumps(yaml.safe_load(urlopen(TESTS_URL)))
+sql = Template("""
+              with jsonb_array AS (
+              select jsonb_array_elements('${tests}'::jsonb) as test_data)
+              insert into conformance.test(testname, codename, release, description, file)
+                 select
+                 (test_data->>'testname') as testname,
+                 (test_data->>'codename') as codename,
+                 case
+                   when ((test_data->>'release') = '') then '1.9.0'
+                   when ((test_data->>'release') like '%,%')
+                     then (regexp_match(test_data->>'release', '[0-9.]+$'))[1]||'.0'
+                   else trim(leading 'v' from (test_data->>'release')) ||'.0'
+                 end as release,
+                 (test_data->>'description') as description,
+                 (test_data->>'file') as file
+                 from jsonb_array;
+              """).safe_substitute(tests = tests.replace("'","''"))
+try:
+    plpy.execute(sql)
+    return 'conformance.yaml loaded into conformance.test!'
+except Exception as e:
+    return 'error occured: ', e
+$$ LANGUAGE plpython3u;
+
+comment on function load_tests is 'loads latest conformance.yaml into test table';
+
+select 'load_tests function defined and commented' as "build log";
+#+end_src
+
+And then set this loop cycle. If it works, I should throw no error and see the aggregator test as being released in 1.27
+
+#+begin_src sql-mode
+begin;
+delete from conformance.test;
+select * from zload_tests();
+select testname, release
+  from conformance.test
+ where file like '%aggregator%';
+rollback;
+#+end_src
+
+
+#+RESULTS:
+#+begin_SRC example
+BEGIN
+apisnoop=*# DELETE 369
+apisnoop=*#                   zload_tests
+------------------------------------------------
+ conformance.yaml loaded into conformance.test!
+(1 row)
+
+apisnoop=*# apisnoop-*# apisnoop-*#                  testname                 | release
+------------------------------------------+---------
+ aggregator-supports-the-sample-apiserver | 1.27.0
+(1 row)
+
+apisnoop=*# ROLLBACK
+#+end_SRC
+
+It now works, but when it didn't the results would give the newest error for me to look up and fix.
+* where to next
+I think, ultimately, we should try to move away from using pl/python in these functions.  The more that we can just use sql, the easier this will
+be to maintain.  It was a mental trip moving between three different languages in a single file and figuring out which language--regex,sql,python-- was unhappy.  I do not recommend it.
+
+We are only using pl/python in this function so that we can do a fetch.  Perhaps this fetch is something we do prior to the db starting, like in the docker init itself, so that our container has this file already and then we can just do psql comands to copy the file to json and then into the table.
+
+We will still need python for all the processing of the audit logs, but reducing its usage in the rest of the db could be good.
