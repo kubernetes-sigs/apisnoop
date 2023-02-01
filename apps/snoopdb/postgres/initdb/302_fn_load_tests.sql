@@ -25,7 +25,7 @@ sql = Template("""
                  (test_data->>'description') as description,
                  (test_data->>'file') as file
                  from jsonb_array;
-              """).substitute(tests = tests.replace("'","''"))
+              """).safe_substitute(tests = tests.replace("'","''"))
 try:
     plpy.execute(sql)
     return 'conformance.yaml loaded into conformance.test!'
