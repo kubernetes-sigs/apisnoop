@@ -14,6 +14,7 @@ export const confFilters = writable({
 
 export const confEndpointsRaw = writable([]);
 
+
 export const confEndpoints = derived(
   [confEndpointsRaw, confFilters],
   ([$raw, $filters], set) => {
@@ -137,20 +138,6 @@ export const confFilteredEndpoints = derived(
   }
 )
 
-export const ineligibleEndpointsRaw = writable([]);
+export const ineligibleEndpoints = writable([]);
 
-export const ineligibleEndpoints = derived(
-  ineligibleEndpointsRaw,
-  ($raw, set) => {
-    if ($raw.length === 0) {
-      set([]);
-    } else {
-      set($raw.map(e => ({
-        endpoint: e.endpoint,
-        reason: e.reason,
-        link: e.link,
-        sql: e['sql logic']
-      })));
-    }
-  }
-);
+export const pendingEndpoints = writable([]);
