@@ -27,7 +27,9 @@ import {
 import { EARLIEST_VERSION } from '../lib/constants.js';
 
 import {
-  confEndpointsRaw
+  confEndpointsRaw,
+  ineligibleEndpoints,
+  pendingEndpoints
 } from './conformance.js';
 
 export const releases = writable([])
@@ -36,9 +38,8 @@ export const versions = derived(releases, ($releases, set) => {
   // shorthand of the versions we have available, sorted by newest.
   if (!isEmpty($releases)) {
     const versions = sortBy($releases, 'release_date')
-          .map(r=>r.release)
-          .sort((a,b) => semver.gt(b,a) ? 1 : -1);
-    console.log({v: versions})
+      .map(r => r.release)
+      .sort((a, b) => semver.gt(b, a) ? 1 : -1);
     set(versions);
   } else {
     set([])
@@ -64,7 +65,9 @@ export const activeFilters = writable({
   category: '',
   endpoint: '',
   version: '',
-  conformanceOnly: false
+  conformanceOnly: false,
+  excludeIneligible: false,
+  excludePending: false
 });
 
 export const activeRelease = derived(
@@ -77,7 +80,7 @@ export const activeRelease = derived(
     }
     if (!$a.version || $a.version === '') {
       set($r[$v]);
-    } else if (semver.lt($a.version, EARLIEST_VERSION)){
+    } else if (semver.lt($a.version, EARLIEST_VERSION)) {
       set('older');
     } else {
       set($r[$a.version])
@@ -92,9 +95,8 @@ export const previousVersion = derived(
   ([$rels, $active], set) => {
     if ($active && $active.release) {
       const versions = sortBy($rels, 'release_date')
-            .map(r=>r.release)
-            .sort((a,b)=> semver.gt(b,a) ? 1 : -1);
-      console.log({versions})
+        .map(r => r.release)
+        .sort((a, b) => semver.gt(b, a) ? 1 : -1);
       const activeIdx = versions.indexOf($active.release);
       const prevVersion = versions[activeIdx + 1];
       if (prevVersion) {
@@ -129,20 +131,37 @@ export const breadcrumb = derived(
 );
 
 export const endpoints = derived(
-  [activeRelease, confEndpointsRaw, activeFilters],
-  ([$rel, $conformanceEndpoints, $filters], set) => {
-  if ($rel) {
-    if ($filters.conformanceOnly) {
-      const conformanceEndpoints = $conformanceEndpoints.map(c=>c.endpoint);
-      const eligibleEndpoints = $rel.endpoints.filter(e => conformanceEndpoints.includes(e.endpoint));
-      set(eligibleEndpoints);
+  [activeRelease,
+    confEndpointsRaw,
+    ineligibleEndpoints,
+    pendingEndpoints,
+    activeFilters],
+  ([$rel,
+    $conformanceEndpoints,
+    $ineligible,
+    $pending,
+    $filters], set) => {
+    let endpoints = [];
+    if (!$rel) {
+      set(endpoints);
     } else {
-      set($rel.endpoints);
+      endpoints = $rel.endpoints;
+      if ($filters.excludeIneligible) {
+        const ineligibles = $ineligible.map(e => e.endpoint);
+        endpoints = endpoints
+          .filter(e => e.level === 'stable')
+          .filter(({ endpoint }) => !ineligibles.includes(endpoint))
+      }
+      if ($filters.excludePending) {
+        endpoints = endpoints.filter(({ endpoint }) => !$pending.includes(endpoint))
+      }
+      if ($filters.conformanceOnly) {
+        const conformanceEndpoints = $conformanceEndpoints.map(c => c.endpoint);
+        endpoints = $rel.endpoints.filter(e => conformanceEndpoints.includes(e.endpoint));
+      }
+      set(endpoints);
     }
-  } else {
-    set([]);
-  }
-});
+  });
 
 export const newEndpoints = derived(
   // endpoints that are in active release, but not previous release, filtered to current level and or category.
@@ -249,7 +268,7 @@ export const sunburst = derived(groupedEndpoints, ($gep, set) => {
               level: level,
               category: category,
               endpoint: '',
-              color: categoryColours[category] ||  'rgba(183, 28, 28, 1)', // basic color so things compile right.
+              color: categoryColours[category] || 'rgba(183, 28, 28, 1)', // basic color so things compile right.
               children: sortBy(endpointsByEndpoint, [
                 (endpoint) => endpoint.tested,
                 (endpoint) => endpoint.conf_tested
@@ -383,11 +402,11 @@ export const stableCoverageAtRelease = derived(
         };
       });
       const order = {
-        'Previously Tested (past regular development)': {filter: 'tested', order: 'a'},
-        'Old Endpoints Covered By New Tests (paying off technical debt)': {filter: 'old-covered-by-new', order: 'b'},
-        'New Endpoints Promoted With Tests (regular new development)': {filter: 'promoted-with-tests', order: 'c'},
-        'Still Untested (technical debt)': {filter: 'untested', order: 'd'},
-        'New Endpoints Promoted Without Tests (this should not happen)': {filter: 'promoted-without-tests', order: 'e'}
+        'Previously Tested (past regular development)': { filter: 'tested', order: 'a' },
+        'Old Endpoints Covered By New Tests (paying off technical debt)': { filter: 'old-covered-by-new', order: 'b' },
+        'New Endpoints Promoted With Tests (regular new development)': { filter: 'promoted-with-tests', order: 'c' },
+        'Still Untested (technical debt)': { filter: 'untested', order: 'd' },
+        'New Endpoints Promoted Without Tests (this should not happen)': { filter: 'promoted-without-tests', order: 'e' }
       };
       const formattedStableCoverage = stableCoverage
         .filter(rel => rel.release !== '1.8.0')
@@ -415,16 +434,16 @@ export const coverageByRelease = derived(
     if ($cpr.length === 0) {
       set([]);
     } else {
-      let ratioSet = $cpr.map(({release, tested, untested}) => ({
-            release: release === "1.5.0" ? "1.5.0 and Earlier" : release,
-            total: {
-              Tested: tested,
-              Untested: (untested * -1) // this is to make it show as split ratio graph
-            }
-          }));
+      let ratioSet = $cpr.map(({ release, tested, untested }) => ({
+        release: release === "1.5.0" ? "1.5.0 and Earlier" : release,
+        total: {
+          Tested: tested,
+          Untested: (untested * -1) // this is to make it show as split ratio graph
+        }
+      }));
 
-      let formattedRatio = ratioSet.map(({release, total}) => {
-        return values(mapValues(total, (v,k) => ({
+      let formattedRatio = ratioSet.map(({ release, total }) => {
+        return values(mapValues(total, (v, k) => ({
           release: release,
           type: k,
           total: v

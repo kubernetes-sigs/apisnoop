@@ -1,15 +1,17 @@
 <script>
+ import yaml from 'js-yaml';
  import {
-   ineligibleEndpointsRaw,
    ineligibleEndpoints
  } from '../../store/conformance.js';
  import { onMount } from 'svelte';
- import { RELEASES_URL } from '../../lib/constants.js';
+ import { RELEASES_URL, INELIGIBLE_ENDPOINTS_URL } from '../../lib/constants.js';
 
  const endpointsURL = `${RELEASES_URL}/ineligible_endpoints.json`;
  onMount(async() => {
-   const endpoints = await fetch(endpointsURL).then(res => res.json())
-   ineligibleEndpointsRaw.set(endpoints);
+   const endpoints = await fetch(INELIGIBLE_ENDPOINTS_URL)
+     .then(res=>res.text())
+     .then(text => yaml.load(text));
+   ineligibleEndpoints.set(endpoints);
  })
 </script>
 <h2>Ineligible Endpoints</h2>
