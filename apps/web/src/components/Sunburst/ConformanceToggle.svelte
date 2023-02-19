@@ -56,7 +56,6 @@
            on:click={toggleFilter} />
     <label for='exclude-pending'>
       exclude endpoints whose eligibility is pending
-      <!-- (<em><a href='/conformance-progress/ineligible-endpoints'>which ones are removed?</a></em>) -->
     </label>
   </div>
   <div class='form-group'>
