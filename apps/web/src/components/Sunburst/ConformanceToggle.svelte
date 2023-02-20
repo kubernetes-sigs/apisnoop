@@ -58,20 +58,10 @@
       exclude endpoints whose eligibility is pending
     </label>
   </div>
-  <div class='form-group'>
-    <input type='checkbox'
-           id='conformance-only-toggle'
-           name='conformance-only'
-           checked={isFilterInQuery('conformance-only')}
-           on:click={toggleFilter} />
-    <label for='conformance-only'>Only show
-      <a href={conformanceLink}
+  (<a href={conformanceLink}
               target="_blank"
          rel='nofollower noreferrer'>
-        conformance eligible endpoints
-      </a>
-    </label>
-  </div>
+  learn more about conformance eligible endpoints</a>)
 </form>
 
 <style>
