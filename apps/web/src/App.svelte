@@ -1,4 +1,5 @@
 <script>
+ import { gte,lte,lt, gt } from './lib/semver.js';
  import router from "page";
  import Home from './pages/Home.svelte';
  import About from './pages/About.svelte';
@@ -38,9 +39,9 @@
  }
 
  router("/about", (ctx, next)=> {
-     params = ctx.params;
-     query = {...queryObj(ctx.querystring)};
-     next()}, () => page = About);
+   params = ctx.params;
+   query = {...queryObj(ctx.querystring)};
+   next()}, () => page = About);
  router("/conformance-progress", (ctx, next) => {
    params = ctx.params;
    query = {...queryObj(ctx.querystring)};
@@ -64,7 +65,7 @@
 </svelte:head>
 <Nav {segment}/>
 <main>
-  <svelte:component this={page} {params} {query}/>
+    <svelte:component this={page} {params} {query}/>
 </main>
 
 <style>

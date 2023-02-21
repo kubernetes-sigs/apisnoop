@@ -1,7 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import { flatten } from 'lodash-es';
 import { conformanceColours} from '../lib/colours.js';
-import semver from 'semver';
+import { lte, lt, gt } from '../lib/semver.js';
 
 export const confFilters = writable({
   release: '',
@@ -22,7 +22,7 @@ export const confEndpoints = derived(
       set([]);
     } else {
       if ($filters.release !== '') {
-        set($raw.filter(ep => semver.lte(ep.promotion_release, $filters.release)));
+        set($raw.filter(ep => lte(ep.promotion_release, $filters.release)));
       } else {
         set($raw);
       }
@@ -51,7 +51,7 @@ export const promotedWithoutTests = derived(
       set([]);
     } else {
       const group = $endpoints.filter(ep => (ep.promotion_release === $filters.release && ep.tested_release == null) ||
-                                      (ep.promotion_release == $filters.release && semver.gt(ep.tested_release, $filters.release)));
+                                      (ep.promotion_release == $filters.release && gt(ep.tested_release, $filters.release)));
       const colour = conformanceColours.promotedWithoutTests;
       set(group.map(ep => ({...ep, colour})));
     }
@@ -65,7 +65,7 @@ export const oldCoveredByNew = derived(
       set([]);
     } else {
       const group = $endpoints.filter(ep => {
-        return semver.lt(ep.promotion_release, $filters.release) &&
+        return lt(ep.promotion_release, $filters.release) &&
           ep.tested_release !== null &&
           ep.tested_release === $filters.release;
       });
@@ -82,7 +82,7 @@ export const untested = derived(
       set([]);
     } else {
       const group = $endpoints.filter(ep => {
-        return semver.lt(ep.promotion_release, $filters.release) &&
+        return lt(ep.promotion_release, $filters.release) &&
                ep.tested_release == null;
       });
       const colour = conformanceColours.untested;
@@ -98,9 +98,9 @@ export const tested = derived(
       set([]);
     } else {
       const group = $endpoints.filter(ep => {
-        return semver.lt(ep.promotion_release, $filters.release) &&
+        return lt(ep.promotion_release, $filters.release) &&
                ep.tested_release !== null &&
-               semver.lt(ep.tested_release, $filters.release);
+               lt(ep.tested_release, $filters.release);
       });
       const colour = conformanceColours.oldCoveredByNew;
       set(group.map(ep => ({...ep, colour})));

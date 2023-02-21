@@ -1,5 +1,6 @@
 import { readable, writable, derived } from 'svelte/store';
-import semver from 'semver';
+import { lt,gt } from '../lib/semver.js'
+
 import {
   compact,
   differenceBy,
@@ -39,7 +40,13 @@ export const versions = derived(releases, ($releases, set) => {
   if (!isEmpty($releases)) {
     const versions = sortBy($releases, 'release_date')
       .map(r => r.release)
-      .sort((a, b) => semver.gt(b, a) ? 1 : -1);
+      .map(r =>{
+        return r
+      })
+      .sort((a, b) => {
+        // debugger;
+        return gt(b, a) ? 1 : -1
+      });
     set(versions);
   } else {
     set([])
@@ -80,7 +87,7 @@ export const activeRelease = derived(
     }
     if (!$a.version || $a.version === '') {
       set($r[$v]);
-    } else if (semver.lt($a.version, EARLIEST_VERSION)) {
+    } else if (lt($a.version, EARLIEST_VERSION)) {
       set('older');
     } else {
       set($r[$a.version])
@@ -96,7 +103,7 @@ export const previousVersion = derived(
     if ($active && $active.release) {
       const versions = sortBy($rels, 'release_date')
         .map(r => r.release)
-        .sort((a, b) => semver.gt(b, a) ? 1 : -1);
+        .sort((a, b) => gt(b, a) ? 1 : -1);
       const activeIdx = versions.indexOf($active.release);
       const prevVersion = versions[activeIdx + 1];
       if (prevVersion) {
