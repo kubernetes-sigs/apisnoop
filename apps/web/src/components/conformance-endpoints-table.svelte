@@ -1,5 +1,5 @@
 <script>
- import semver from 'semver';
+ import { gte } from '../lib/semver.js';
  import { orderBy, partition } from 'lodash-es';
 
  export let endpoints;
@@ -10,8 +10,8 @@
 
  const sortByTested = () => {
    let testedUntested = partition(sortedEndpoints, (e) => e.tested_release !== null);
-   let tested = testedUntested[0].sort((a,b) => semver.compare(b.tested_release, a.tested_release));
-   let untested = testedUntested[1].sort((a,b) => semver.compare(b.promotion_release, a.promotion_release));
+   let tested = testedUntested[0].sort((a,b) => gte(b.tested_release, a.tested_release));
+   let untested = testedUntested[1].sort((a,b) => gte(b.promotion_release, a.promotion_release));
    if (sorting === 'asc') {
      sorting = 'desc'
      tested = tested.reverse();

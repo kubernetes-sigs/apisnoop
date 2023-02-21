@@ -4,7 +4,7 @@
  import { isEmpty, mapValues, groupBy } from 'lodash-es';
  import dayjs from 'dayjs';
  import yaml from 'js-yaml';
- import {gte} from 'semver';
+ import { gte } from '../lib/semver.js'
  import {
    activeFilters,
    activeRelease,

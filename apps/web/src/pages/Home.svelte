@@ -1,7 +1,7 @@
 <script>
  import { onMount, afterUpdate } from 'svelte';
  import yaml from 'js-yaml';
- import { gte } from 'semver';
+ import { gte } from '../lib/semver.js';
  import {
      groupBy,
      isEmpty,
