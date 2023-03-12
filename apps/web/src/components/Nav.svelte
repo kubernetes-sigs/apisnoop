@@ -6,7 +6,7 @@
 <nav>
   <ul>
     <li> <img src='/logo.png' alt="apisnoop logo, a magnifying glass with a 3 color pie chart inside."/></li>
-    <li><a aria-current="{home ? 'page' : undefined}" href=".">home</a></li>
+    <li><a aria-current="{home ? 'page' : undefined}" href="/">home</a></li>
     <li><a aria-current="{segment === 'about' ? 'page' : undefined}" href="/about">about</a></li>
     <!-- src is at conformance-progress/Index.svelte, so segment is 'Index' -->
     <li><a rel=prefetch aria-current="{segment === 'conformance-progress' ? 'page' : undefined}" href="/conformance-progress">conformance progress</a></li>
