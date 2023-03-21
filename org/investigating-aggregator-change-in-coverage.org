@@ -1,0 +1,420 @@
+#+title: Investigating Aggregator Change In Coverage
+#+PROPERTY: header-args:sql-mode+ :eval never-export :exports both
+
+* Summary
+Investigate the latest change in coverage, where 12 endpoints that were tested are no longer tested.
+
+* Current coverage
+
+When we start up , we load up the most recent successful runs.
+
+#+begin_src sql-mode
+select distinct release,
+                to_timestamp(release_date::bigint) as run_date,
+                source
+  from audit_event;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ release |        run_date        |                                                    source
+---------+------------------------+---------------------------------------------------------------------------------------------------------------
+ 1.27.0  | 2023-03-13 18:56:16+00 | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest/1635320420674572288
+ 1.27.0  | 2023-03-13 17:12:25+00 | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-audit-kind-conformance/1635327466912354304
+ 1.27.0  | 2023-03-13 20:11:55+00 | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1635363958028242944
+(3 rows)
+
+#+end_SRC
+
+From our current runs, we can see 12 endpoints are no longer covered. We do this
+by aggregating and tallying the conformance test hits from the latest runs.
+
+#+begin_src sql-mode
+with eligible as (
+  select endpoint from conformance.eligible_endpoint_coverage e
+   where not exists(
+     select endpoint
+       from conformance.pending_endpoint p
+      where p.endpoint = e.endpoint
+   )
+), current_event as (
+  select endpoint,
+         test,
+         release,
+         to_timestamp(release_date::bigint) as release_date
+    from audit_event
+   where to_timestamp(release_date::bigint) >= current_date
+)
+
+select eligible.endpoint,
+       count (distinct ce.test) filter(
+         where ce.test like '%[Conformance]%'
+       ) as current_conf_test_count
+  from eligible eligible
+       join current_event ce on (ce.endpoint = eligible.endpoint)
+ group by eligible.endpoint
+ order by current_conf_test_count asc
+ limit 20;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                     endpoint                     | current_conf_test_count
+--------------------------------------------------+-------------------------
+ getSchedulingV1APIResources                      |                       0
+ getAppsV1APIResources                            |                       0
+ getBatchV1APIResources                           |                       0
+ getPolicyV1APIResources                          |                       0
+ getAuthorizationV1APIResources                   |                       0
+ getApiregistrationV1APIResources                 |                       0
+ getAuthenticationV1APIResources                  |                       0
+ getAutoscalingV2APIResources                     |                       0
+ getCoreV1APIResources                            |                       0
+ getEventsV1APIResources                          |                       0
+ getCoordinationV1APIResources                    |                       0
+ getAutoscalingV1APIResources                     |                       0
+ connectCoreV1OptionsNamespacedPodProxyWithPath   |                       1
+ connectCoreV1OptionsNamespacedPodProxy           |                       1
+ connectCoreV1DeleteNamespacedPodProxy            |                       1
+ connectCoreV1HeadNamespacedServiceProxyWithPath  |                       1
+ connectCoreV1HeadNamespacedServiceProxy          |                       1
+ connectCoreV1DeleteNamespacedServiceProxy        |                       1
+ connectCoreV1PatchNamespacedServiceProxyWithPath |                       1
+ connectCoreV1HeadNamespacedPodProxyWithPath      |                       1
+(20 rows)
+
+#+end_SRC
+
+* add older coverage
+Now, we will add the test runs currently on apisnoop:
+    - ci-kubernetes-gce-conformance-latest/1631916050549313536
+    - ci-audit-kind-conformance/1631923600443314176
+
+      #+begin_src sql-mode
+    select * from load_audit_events('ci-kubernetes-gce-conformance-latest','1631916050549313536');
+      #+end_src
+
+      #+RESULTS:
+      #+begin_SRC example
+                                          load_audit_events
+      -----------------------------------------------------------------------------------------
+       events for 1.27.0 loaded, from ci-kubernetes-gce-conformance-latest/1631916050549313536
+      (1 row)
+
+      #+end_SRC
+     #+begin_src sql-mode
+     select * from load_audit_events('ci-audit-kind-conformance','1631923600443314176');
+     #+end_src
+
+     #+RESULTS:
+     #+begin_SRC example
+                                   load_audit_events
+     ------------------------------------------------------------------------------
+      events for 1.27.0 loaded, from ci-audit-kind-conformance/1631923600443314176
+     (1 row)
+
+     #+end_SRC
+
+* Separate old coverage from current coverage
+We can make a distinction in our events based on the ~release_date~ of the conformance run.
+#+begin_src sql-mode
+select to_timestamp(release_date::bigint) as release_date,
+       case
+       when to_timestamp(release_date::bigint) >= current_date
+         then 'current'
+       else 'previous'
+       end as coverage_group,
+       source
+  from audit_event
+ group by release_date,source;
+
+
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+      release_date      | coverage_group |                                                    source
+------------------------+----------------+---------------------------------------------------------------------------------------------------------------
+ 2023-03-04 07:46:33+00 | previous       | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-audit-kind-conformance/1631923600443314176
+ 2023-03-04 09:20:45+00 | previous       | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest/1631916050549313536
+ 2023-03-13 17:12:25+00 | current        | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-audit-kind-conformance/1635327466912354304
+ 2023-03-13 18:56:16+00 | current        | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest/1635320420674572288
+ 2023-03-13 20:11:55+00 | current        | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1635363958028242944
+(5 rows)
+
+#+end_SRC
+
+so we can group our previous query to see if there's been a change in test count.
+* Compare coverage
+Putting it all together, we have this comparison query.
+
+#+begin_src sql-mode
+with eligible as (
+  select endpoint from conformance.eligible_endpoint_coverage e
+   where not exists(
+     select endpoint
+       from conformance.pending_endpoint p
+      where p.endpoint = e.endpoint
+   )
+), event as (
+  select endpoint,
+         test,
+         release,
+         to_timestamp(release_date::bigint) as release_date,
+         case
+         when to_timestamp(release_date::bigint) >= current_date
+           then 'current'
+         else 'previous'
+         end as time_period
+    from audit_event
+)
+
+select eligible.endpoint,
+       count (distinct test) filter(
+         where test like '%[Conformance]%' and time_period = 'current'
+       ) as current_conf_test_count,
+       count (distinct test) filter(
+         where test like '%[Conformance]%' and time_period = 'previous'
+       ) as previous_conf_test_count
+  from eligible eligible
+       join event event on (event.endpoint = eligible.endpoint)
+ group by eligible.endpoint
+ order by current_conf_test_count asc
+ limit 20;
+#+end_src
+
+
+#+RESULTS:
+#+begin_SRC example
+                     endpoint                     | current_conf_test_count | previous_conf_test_count
+--------------------------------------------------+-------------------------+--------------------------
+ getSchedulingV1APIResources                      |                       0 |                        1
+ getAppsV1APIResources                            |                       0 |                        1
+ getBatchV1APIResources                           |                       0 |                        1
+ getPolicyV1APIResources                          |                       0 |                        1
+ getAuthorizationV1APIResources                   |                       0 |                        1
+ getApiregistrationV1APIResources                 |                       0 |                        1
+ getAuthenticationV1APIResources                  |                       0 |                        1
+ getAutoscalingV2APIResources                     |                       0 |                        1
+ getCoreV1APIResources                            |                       0 |                        1
+ getEventsV1APIResources                          |                       0 |                        1
+ getCoordinationV1APIResources                    |                       0 |                        1
+ getAutoscalingV1APIResources                     |                       0 |                        1
+ connectCoreV1OptionsNamespacedPodProxyWithPath   |                       1 |                        1
+ connectCoreV1OptionsNamespacedPodProxy           |                       1 |                        1
+ connectCoreV1DeleteNamespacedPodProxy            |                       1 |                        1
+ connectCoreV1HeadNamespacedServiceProxyWithPath  |                       1 |                        1
+ connectCoreV1HeadNamespacedServiceProxy          |                       1 |                        1
+ connectCoreV1DeleteNamespacedServiceProxy        |                       1 |                        1
+ connectCoreV1PatchNamespacedServiceProxyWithPath |                       1 |                        1
+ connectCoreV1HeadNamespacedPodProxyWithPath      |                       1 |                        1
+(20 rows)
+
+#+end_SRC
+
+* Which test changed?
+From the above query, we can limit to only those tests who do not have ~current_test_coverage~, and see what tests hit them previously.
+
+#+begin_src sql-mode
+with eligible as (
+  select endpoint from conformance.eligible_endpoint_coverage e
+   where not exists(
+     select endpoint
+       from conformance.pending_endpoint p
+      where p.endpoint = e.endpoint
+   )
+), event as (
+  select endpoint,
+         test,
+         release,
+         to_timestamp(release_date::bigint) as release_date,
+         case
+         when to_timestamp(release_date::bigint) >= current_date
+           then 'current'
+         else 'previous'
+         end as time_period
+    from audit_event
+), diff as (
+  select eligible.endpoint,
+         count (distinct test) filter(
+           where test like '%[Conformance]%' and time_period = 'current'
+         ) as current_conf_test_count,
+         count (distinct test) filter(
+           where test like '%[Conformance]%' and time_period = 'previous'
+         ) as previous_conf_test_count
+    from eligible
+         join event on (event.endpoint = eligible.endpoint)
+   group by eligible.endpoint
+   order by current_conf_test_count asc
+)
+select test
+  from event
+       join diff using(endpoint)
+ where diff.current_conf_test_count = 0
+   and event.time_period = 'previous'
+   and test like '%[Conformance]%'
+ group by test;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                                                              test
+--------------------------------------------------------------------------------------------------------------------------------
+ [sig-api-machinery] Aggregator Should be able to support the 1.17 Sample API Server using the current Aggregator [Conformance]
+(1 row)
+
+#+end_SRC
+
+* Conclusion
+There were 12 points previously hit by a single test that, when this test changed sometime between 04/03 and 13/3 are no longer covered.
+
+* appendix
+** About the test
+*** Where is it?
+#+begin_src sql-mode
+select  file
+  from conformance.test
+ where codename = '[sig-api-machinery] Aggregator Should be able to support the 1.17 Sample API Server using the current Aggregator [Conformance]';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                file
+-------------------------------------
+ test/e2e/apimachinery/aggregator.go
+(1 row)
+
+#+end_SRC
+
+*** What does this test hit now?
+
+#+begin_src sql-mode
+select endpoint
+  from audit_event
+ where test = '[sig-api-machinery] Aggregator Should be able to support the 1.17 Sample API Server using the current Aggregator [Conformance]'
+       and to_timestamp(release_date::bigint) >= current_date
+ group by endpoint;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                    endpoint
+------------------------------------------------
+ createApiregistrationV1APIService
+ createAppsV1NamespacedDeployment
+ createCoreV1Namespace
+ createCoreV1NamespacedSecret
+ createCoreV1NamespacedService
+ createCoreV1NamespacedServiceAccount
+ createRbacAuthorizationV1ClusterRole
+ createRbacAuthorizationV1ClusterRoleBinding
+ createRbacAuthorizationV1NamespacedRoleBinding
+ deleteApiregistrationV1APIService
+ deleteApiregistrationV1CollectionAPIService
+ deleteAppsV1NamespacedDeployment
+ deleteCoreV1Namespace
+ deleteCoreV1NamespacedSecret
+ deleteCoreV1NamespacedService
+ deleteCoreV1NamespacedServiceAccount
+ deleteRbacAuthorizationV1ClusterRole
+ deleteRbacAuthorizationV1ClusterRoleBinding
+ deleteRbacAuthorizationV1NamespacedRoleBinding
+ getAPIVersions
+ getCoreAPIVersions
+ listApiregistrationV1APIService
+ listAppsV1NamespacedReplicaSet
+ listCoreV1NamespacedConfigMap
+ listCoreV1NamespacedPod
+ listCoreV1NamespacedServiceAccount
+ listCoreV1Node
+ listRbacAuthorizationV1ClusterRole
+ patchApiregistrationV1APIService
+ patchApiregistrationV1APIServiceStatus
+ readApiregistrationV1APIService
+ readApiregistrationV1APIServiceStatus
+ readAppsV1NamespacedDeployment
+ replaceApiregistrationV1APIService
+ replaceApiregistrationV1APIServiceStatus
+
+(36 rows)
+
+#+end_SRC
+
+** Add pending endpoints
+This view was not yet in the db, but we needed it to make sure we were limiting to the right set of endpoints.
+I took the list from apisnoop's pending endpoints list: https://apisnoop.cncf.io/conformance-progress/pending-endpoints
+
+#+begin_src sql-mode
+begin;
+create table conformance.pending_endpoint(endpoint text);
+insert into conformance.pending_endpoint(endpoint)
+            values
+                  ('createCoreV1NamespacedPersistentVolumeClaim'),
+    ('createCoreV1NamespacedServiceAccountToken'),
+    ('createCoreV1Node'),
+    ('createCoreV1PersistentVolume'),
+    ('createStorageV1CSINode'),
+    ('createStorageV1StorageClass'),
+    ('createStorageV1VolumeAttachment'),
+    ('deleteCoreV1CollectionNamespacedPersistentVolumeClaim'),
+    ('deleteCoreV1CollectionPersistentVolume'),
+    ('deleteCoreV1NamespacedPersistentVolumeClaim'),
+    ('deleteCoreV1Node'),
+    ('deleteCoreV1PersistentVolume'),
+    ('deleteStorageV1CollectionCSIDriver'),
+    ('deleteStorageV1CollectionCSINode'),
+    ('deleteStorageV1CollectionStorageClass'),
+    ('deleteStorageV1CollectionVolumeAttachment'),
+    ('deleteStorageV1CSINode'),
+    ('deleteStorageV1StorageClass'),
+    ('deleteStorageV1VolumeAttachment'),
+    ('getFlowcontrolApiserverAPIGroup'),
+    ('getInternalApiserverAPIGroup'),
+    ('getResourceAPIGroup'),
+    ('getStorageAPIGroup'),
+    ('getStorageV1APIResources'),
+    ('listCoreV1NamespacedPersistentVolumeClaim'),
+    ('listCoreV1PersistentVolume'),
+    ('listCoreV1PersistentVolumeClaimForAllNamespaces'),
+    ('listStorageV1CSINode'),
+    ('listStorageV1StorageClass'),
+    ('listStorageV1VolumeAttachment'),
+    ('patchCoreV1NamespacedPersistentVolumeClaim'),
+    ('patchCoreV1NamespacedPersistentVolumeClaimStatus'),
+    ('patchCoreV1NamespacedPodEphemeralcontainers'),
+    ('patchCoreV1PersistentVolume'),
+    ('patchCoreV1PersistentVolumeStatus'),
+    ('patchNetworkingV1NamespacedNetworkPolicyStatus'),
+    ('patchStorageV1CSIDriver'),
+    ('patchStorageV1CSINode'),
+    ('patchStorageV1StorageClass'),
+    ('patchStorageV1VolumeAttachment'),
+    ('patchStorageV1VolumeAttachmentStatus'),
+    ('readCoreV1NamespacedPersistentVolumeClaim'),
+    ('readCoreV1NamespacedPersistentVolumeClaimStatus'),
+    ('readCoreV1NamespacedPodEphemeralcontainers'),
+    ('readCoreV1NodeStatus'),
+    ('readCoreV1PersistentVolume'),
+    ('readCoreV1PersistentVolumeStatus'),
+    ('readNetworkingV1NamespacedNetworkPolicyStatus'),
+    ('readStorageV1CSINode'),
+    ('readStorageV1StorageClass'),
+    ('readStorageV1VolumeAttachment'),
+    ('readStorageV1VolumeAttachmentStatus'),
+    ('replaceCoreV1NamespacedPersistentVolumeClaim'),
+    ('replaceCoreV1NamespacedPersistentVolumeClaimStatus'),
+    ('replaceCoreV1NamespacedPodEphemeralcontainers'),
+    ('replaceCoreV1NodeStatus'),
+    ('replaceCoreV1PersistentVolume'),
+    ('replaceCoreV1PersistentVolumeStatus'),
+    ('replaceNetworkingV1NamespacedNetworkPolicyStatus'),
+    ('replaceStorageV1CSIDriver'),
+    ('replaceStorageV1CSINode'),
+    ('replaceStorageV1StorageClass'),
+    ('replaceStorageV1VolumeAttachment'),
+    ('replaceStorageV1VolumeAttachmentStatus')
+                  ;
+select count(*) from conformance.pending_endpoint;
+commit;
+#+end_src
+
