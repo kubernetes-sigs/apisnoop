@@ -1,0 +1,164 @@
+#+title: 525_v2_endpoints
+
+* intro
+Do v2 endpoitns show up as tested in snoop?
+
+* check endpoints presence
+We will use the endpoint from the ticket: ~getAutoscalingV2APIResources~.
+
+Is it in our open api?
+
+#+begin_src sql-mode
+select endpoint
+  from public.open_api
+ where endpoint = 'getAutoscalingV2APIResources'
+   and release = '1.27.0';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+           endpoint
+------------------------------
+ getAutoscalingV2APIResources
+(1 row)
+
+#+end_SRC
+ 
+
+Does it show up in audit events?
+
+#+begin_src sql-mode
+select distinct endpoint
+  from public.audit_event
+ where endpoint = 'getAutoscalingV2APIResources'
+   and release = '1.27.0';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+           endpoint
+------------------------------
+ getAutoscalingV2APIResources
+(1 row)
+
+#+end_SRC
+
+it does!
+
+does it show as tested?
+
+
+#+begin_src sql-mode
+select distinct endpoint,test_hit,conf_test_hit
+  from public.audit_event
+ where endpoint = 'getAutoscalingV2APIResources' ;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+           endpoint           | test_hit | conf_test_hit
+------------------------------+----------+---------------
+ getAutoscalingV2APIResources | f        | f
+(1 row)
+
+#+end_SRC
+
+It does not show as tested.
+
+* How is test_hit calculated?
+We load up our audit events with the function described in our function   [[https://github.com/cncf/apisnoop/blob/main/apps/snoopdb/postgres/initdb/301_fn_load_audit_events.sql#L51-L56][laod_audit_events]], namely lines 51-56. It only looks at the user agent and see if it has the markings of a test.
+
+There's no filtering out of v2 endpoints in this table.  We only care if the endpoint is hit by a useragent that has e2e.test in its string.
+
+This tells me that we are picking up the endpoints correctly, but they aren't being hit by tests in the events we are loading.
+
+What useragent IS hitting this endpoint?
+
+#+begin_src sql-mode
+select distinct endpoint,useragent,source
+  from public.audit_event
+ where endpoint = 'getAutoscalingV2APIResources' ;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+           endpoint           |                     useragent                     |                                                    source
+------------------------------+---------------------------------------------------+---------------------------------------------------------------------------------------------------------------
+ getAutoscalingV2APIResources | kubectl/v1.20.2 (linux/amd64) kubernetes/faecb19  | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-e2e-gci-gce/1643437474397032448
+ getAutoscalingV2APIResources | kubectl/v1.20.2 (linux/amd64) kubernetes/faecb19  | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest/1643397460355190784
+ getAutoscalingV2APIResources | kubectl/v1.24.12 (linux/amd64) kubernetes/16927eb | https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-audit-kind-conformance/1643404506496503808
+(3 rows)
+
+#+end_SRC
+
+This shows that, in all three of our data sources, it is only being hit by kubectl.
+
+* Does the testgrid test exist in our events?
+The test is here: https://github.com/kubernetes/kubernetes/pull/106595
+
+It won't show in our testgrid as it was not merged.
+* What about other v2 endpoints?
+
+There are 103 other v2 endpoints.  ARe any hit by a test currently?
+#+begin_src sql-mode
+select count(distinct endpoint)
+  from open_api
+         where endpoint ilike '%v2%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ count
+-------
+   103
+(1 row)
+
+#+end_SRC
+
+#+begin_src sql-mode
+select distinct endpoint, test_hit
+  from audit_event
+         where endpoint ilike '%v2%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                            endpoint                            | test_hit
+----------------------------------------------------------------+----------
+ deleteAutoscalingV2CollectionNamespacedHorizontalPodAutoscaler | f
+ getAutoscalingV2APIResources                                   | f
+ listAutoscalingV2HorizontalPodAutoscalerForAllNamespaces       | f
+ listAutoscalingV2NamespacedHorizontalPodAutoscaler             | f
+(4 rows)
+
+#+end_SRC
+
+only 4 show in our test events, and none are hit.
+
+
+#+begin_src sql-mode
+select distinct endpoint, useragent
+  from audit_event
+         where endpoint ilike '%v2%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                            endpoint                            |                                                        useragent
+----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------
+ deleteAutoscalingV2CollectionNamespacedHorizontalPodAutoscaler | kube-controller-manager/v1.28.0 (linux/amd64) kubernetes/330b5a2/system:serviceaccount:kube-system:namespace-controller
+ deleteAutoscalingV2CollectionNamespacedHorizontalPodAutoscaler | kube-controller-manager/v1.28.0 (linux/amd64) kubernetes/e7e7532/system:serviceaccount:kube-system:namespace-controller
+ getAutoscalingV2APIResources                                   | kubectl/v1.20.2 (linux/amd64) kubernetes/faecb19
+ getAutoscalingV2APIResources                                   | kubectl/v1.24.12 (linux/amd64) kubernetes/16927eb
+ listAutoscalingV2HorizontalPodAutoscalerForAllNamespaces       | kube-controller-manager/v1.28.0 (linux/amd64) kubernetes/330b5a2/shared-informers
+ listAutoscalingV2HorizontalPodAutoscalerForAllNamespaces       | kube-controller-manager/v1.28.0 (linux/amd64) kubernetes/e7e7532/shared-informers
+ listAutoscalingV2NamespacedHorizontalPodAutoscaler             | kube-controller-manager/v1.28.0 (linux/amd64) kubernetes/330b5a2/system:serviceaccount:kube-system:namespace-controller
+ listAutoscalingV2NamespacedHorizontalPodAutoscaler             | kube-controller-manager/v1.28.0 (linux/amd64) kubernetes/e7e7532/system:serviceaccount:kube-system:namespace-controller
+(8 rows)
+
+#+end_SRC
+
+These all seem like incidental hits.
+
+* Conclusion
+The v2 endpoints are not being hit by any conformance tests, and it does not look like APISnoop is filtering any correct test hits.  Looking at our logic for loading the audit event table, there is nothing there that filters out v2 endpoints.  We can look at the raw useragents in each of our events to really check if a test came through.  For all v2 endpoints, they are only hit by kubectl and similar useragents and not intentionally by tests.
