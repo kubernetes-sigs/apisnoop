@@ -1,5 +1,6 @@
 <script>
  import { onMount, afterUpdate } from 'svelte';
+ import urlExist from 'url-exist';
  import yaml from 'js-yaml';
  import { gte } from '../lib/semver.js';
  import {
@@ -14,6 +15,10 @@
    INELIGIBLE_ENDPOINTS_URL,
    PENDING_ENDPOINTS_URL
  } from '../lib/constants.js';
+
+ import {
+  releaseJsonExists
+ } from '../lib/utils.js';
  import {
    activeFilters,
    activeRelease,
@@ -41,25 +46,27 @@
      endpoint
  } = params);
 
+
  afterUpdate(async() => {
      if ($releases && isEmpty($releases)) {
-         let releasesData = await
-         fetch(`${RELEASES_URL}/releases.yaml`)
-             .then(res => res.blob())
-             .then(blob => blob.text())
-             .then(yamlString => yaml.load(yamlString))
-             .then(releases => releases.filter(({version}) => gte(version, EARLIEST_VERSION)))
-             .then(releases => {
-                 return mapValues(groupBy(releases, 'version'),
-                                  ([{version, release_date}]) => ({
-                                      release: version,
-                                      release_date: release_date == '' ? new Date() : release_date,
-                                      spec: '',
-                                      source: '',
-                                      endpoints: [],
-                                      tests: []
-                 }))
-             });
+       let releasesFromYaml = await fetch(`${RELEASES_URL}/releases.yaml`)
+         .then(res => res.blob())
+         .then(blob => blob.text())
+         .then(yamlString => yaml.load(yamlString))
+         .then(releases => releases.filter(({version}) => gte(version, EARLIEST_VERSION)))
+
+       let releasesData = await releaseJsonExists(releasesFromYaml)
+         .then(releases => {
+           return mapValues(groupBy(releases, 'version'),
+                            ([{version, release_date}]) => ({
+                              release: version,
+                              release_date: release_date == '' ? new Date() : release_date,
+                              spec: '',
+                              source: '',
+                              endpoints: [],
+                              tests: []
+           }))
+         });
          releases.update(rel => releasesData);
      }
      if (version === 'latest' || version == null) {
