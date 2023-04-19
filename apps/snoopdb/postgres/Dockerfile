@@ -34,6 +34,10 @@ RUN env PG_CONFIG=$(which pg_config) \
     && cd pg-semver \
     && make && make install
 
+# Install yq
+RUN wget https://github.com/mikefarah/yq/releases/download/v4.2.0/yq_linux_amd64.tar.gz -O - \
+    | tar xz && mv yq_linux_amd64 /usr/bin/yq
+
 RUN mkdir /tmp/coverage && chmod 777 /tmp/coverage
 COPY initdb /docker-entrypoint-initdb.d
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
