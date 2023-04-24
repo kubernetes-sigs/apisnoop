@@ -1,0 +1,715 @@
+#+title: 692 Endpoint To Sig
+#+property: header-args:sql-mode+ :product postgres
+#+PROPERTY: header-args :eval never-export :exports both
+
+* Ticket
+Enhancement: Provide a way to map endpoints to sigs #692
+A possible option is a having a table that includes k8s_kinds, the sig for that “kind” and a short description/url to more details
+* Current status
+I've added the sigs.yaml file into the db through a set of tables (one for each top level in the file).  However, I cannot find an easy
+way to map an endpiont to a sig, using only the info available in our files.
+
+I used apimachinery as an example sig.  It's mission statement says it covers discovery endpoints.
+
+#+begin_src sql-mode
+select mission_statement
+  from sig.sig
+ where name like '%API Machinery%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                                                                                                                         mission_statement
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Covers all aspects of API server, API registration and discovery, generic API CRUD semantics, admission control, encoding/decoding, conversion, defaulting, persistence layer (etcd), OpenAPI, CustomResourceDefinition, garbage collection, and client libraries.+
+
+(1 row)
+
+#+end_SRC
+
+However, there isn't a discovery 'kind' in the open api spec.
+
+#+begin_src sql-mode
+select k8s_kind from open_api where k8s_kind ilike '%discovery%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ k8s_kind
+----------
+(0 rows)
+
+#+end_SRC
+
+I talked to Stephen, and he helped me understand the discovery endpoint a bit better.  One suggestion is that the tests are cleanly organized by their sigs, and so we can see the endpoints hit by a sig's test.
+For example, if we look for a discovery test, we can see it is under `apimachinery/discovery.go`
+
+#+begin_src sql-mode
+select file
+  from conformance.test
+ where file ilike '%discovery%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                file
+------------------------------------
+ test/e2e/apimachinery/discovery.go
+(1 row)
+
+#+end_SRC
+
+But if were to look at all endpoints hit by this test, it doesn't show us an accurate picture of 'discovery endpoints owned by the apimachinery sig'.  For one, it's going to include other sig endpoints that were hit indiscriminately.  Second, it won't include any endpoints that are under the sig's watch, but not yet hit by a test.
+
+#+begin_src sql-mode
+select endpoint
+  from audit_event
+       join open_api using(endpoint)
+       join conformance.test on (conformance.test.codename = audit_event.test)
+ where conformance.test.file like '%discovery%'
+   and endpoint is not null
+ group by endpoint
+ limit 30;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+              endpoint
+------------------------------------
+ createCoreV1Namespace
+ deleteCoreV1Namespace
+ getAdmissionregistrationAPIGroup
+ getApiextensionsAPIGroup
+ getApiregistrationAPIGroup
+ getAPIVersions
+ getAppsAPIGroup
+ getAuthenticationAPIGroup
+ getAuthorizationAPIGroup
+ getAutoscalingAPIGroup
+ getBatchAPIGroup
+ getCertificatesAPIGroup
+ getCodeVersion
+ getCoordinationAPIGroup
+ getDiscoveryAPIGroup
+ getEventsAPIGroup
+ getFlowcontrolApiserverAPIGroup
+ getNetworkingAPIGroup
+ getNodeAPIGroup
+ getPolicyAPIGroup
+ getRbacAuthorizationAPIGroup
+ getSchedulingAPIGroup
+ getStorageAPIGroup
+ listCoreV1NamespacedConfigMap
+ listCoreV1NamespacedServiceAccount
+ listCoreV1Node
+(26 rows)
+
+#+end_SRC
+
+This ist includes more than the discovery endpoints.  listCoreV1Node, for example, is not owned by apimachinery.  And if we were to try to guess which sig owned it by which tests hit it, that would also give us nothing:
+
+
+#+begin_src sql-mode
+select split_part(file,'/',3) as possible_sig
+  from
+    audit_event
+    join conformance.test test on (test.codename = audit_event.test)
+ where endpoint  = 'listCoreV1Node'
+ group by possible_sig
+ limit 30;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+  possible_sig
+-----------------
+ apimachinery
+ apps
+ architecture
+ auth
+ common
+ instrumentation
+ kubectl
+ network
+ node
+ scheduling
+ storage
+(11 rows)
+
+#+end_SRC
+
+
+What we could try to do is look at the k8s_kind of the endpoint to map it to the sig...except the discovery endpoint doesn't have any kind!
+
+#+begin_src sql-mode
+select endpoint, k8s_kind
+from open_api
+where endpoint ilike '%discovery%api%'
+and release = '1.27.0';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+          endpoint          | k8s_kind
+----------------------------+----------
+ getDiscoveryAPIGroup       |
+ getDiscoveryV1APIResources |
+(2 rows)
+
+#+end_SRC
+
+*At the moment, I am stuck on how to find, in code, the mapping between endpoint and sig. I think there are additioinal files/details we need.*
+
+* Work
+** Add in sigs to apisnoop
+** check the audit_event metadata
+
+#+begin_src sql-mode
+\dt
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+            List of relations
+ Schema |    Name     | Type  |  Owner
+--------+-------------+-------+----------
+ public | audit_event | table | postgres
+ public | open_api    | table | postgres
+(2 rows)
+
+#+end_SRC
+** Create sigs tables
+#+begin_src sql-mode
+create schema sig;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+CREATE SCHEMA
+#+end_SRC
+
+*** comittee
+#+begin_src sql-mode
+begin;
+create table sig.committee (
+  charter_link text,
+  contact jsonb,
+  dir text,
+  label text,
+  leadership jsonb,
+  meetings jsonb,
+  mission_statement text,
+  name text,
+  subprojects jsonb
+  );
+commit;
+
+select 'Created committee table' as "Build Log";
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+BEGIN
+postgres=*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# CREATE TABLE
+postgres=*# COMMIT
+#+end_SRC
+*** user_group
+#+begin_src sql-mode
+begin;
+create table sig.user_group (
+  charter_link text,
+  contact jsonb,
+  dir text,
+  label text,
+  leadership jsonb,
+  meetings jsonb,
+  mission_statement text,
+  name text,
+  subprojects jsonb
+  );
+commit;
+select 'Created user_group table' as "Build Log";
+
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+BEGIN
+postgres=*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# CREATE TABLE
+postgres=*# COMMIT
+#+end_SRC
+
+*** sig
+#+begin_src sql-mode
+begin;
+create table sig.sig (
+  charter_link text,
+  contact jsonb,
+  dir text,
+  label text,
+  leadership jsonb,
+  meetings jsonb,
+  mission_statement text,
+  name text,
+  subprojects jsonb
+  );
+commit;
+select 'Created sig table' as "Build Log";
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+BEGIN
+postgres=*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# ERROR:  relation "sig" already exists
+postgres=!# ROLLBACK
+#+end_SRC
+
+*** working group
+#+begin_src sql-mode
+begin;
+create table sig.working_group (
+  charter_link text,
+  contact jsonb,
+  dir text,
+  label text,
+  leadership jsonb,
+  meetings jsonb,
+  mission_statement text,
+  name text,
+  stakeholder_sigs jsonb
+  );
+commit;
+select 'Created working_group table' as "Build Log";
+
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+BEGIN
+postgres=*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# CREATE TABLE
+postgres=*# COMMIT
+#+end_SRC
+
+*** load sigs
+#+begin_src sql-mode
+
+#+end_src
+
+#+begin_src sql-mode
+begin;
+create temporary table sig_import(data jsonb);
+
+copy sig_import from program 'curl https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml | yq -j -I 0 e' csv quote e'\x01' delimiter e'\x02';
+
+
+insert into sig.sig(charter_link,contact,dir,label,leadership,meetings,mission_statement,name,subprojects)
+            (select s->>'charter_link',
+                    s->'contact',
+                    s->>'dir',
+                    s->>'label',
+                    s->'leadership',
+                    s->'meetings',
+                    s->>'mission_statement',
+                    s->>'name',
+                    s->'subprojects'
+               from sig_import raw,
+                    jsonb_array_elements(raw.data->'sigs') s);
+
+
+select count(*) from sig.sig;
+drop table sig_import;
+
+commit;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+BEGIN
+postgres=*# CREATE TABLE
+postgres=*# postgres=*# COPY 1
+postgres=*# postgres=*# postgres=*# postgres-*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# INSERT 0 24
+postgres=*# postgres=*# postgres=*#  count
+-------
+    24
+(1 row)
+
+postgres=*# DROP TABLE
+postgres=*# postgres=*# COMMIT
+#+end_SRC
+
+#+end_src
+*** load committees
+#+begin_src sql-mode
+
+#+end_src
+
+#+begin_src sql-mode
+begin;
+create temporary table sig_import(data jsonb);
+
+copy sig_import from program 'curl https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml | yq -j -I 0 e' csv quote e'\x01' delimiter e'\x02';
+
+insert into sig.committee(charter_link,contact,dir,label,leadership,meetings,mission_statement,name,subprojects)
+            (select c->>'charter_link',
+                    c->'contact',
+                    c->>'dir',
+                    c->>'label',
+                    c->'leadership',
+                    c->'meetings',
+                    c->>'mission_statement',
+                    c->>'name',
+                    c->'subprojects'
+               from sig_import raw,
+                    jsonb_array_elements(raw.data->'committees') c);
+drop table sig_import;
+commit;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+BEGIN
+postgres=*# CREATE TABLE
+postgres=*# postgres=*# COPY 1
+postgres=*# postgres=*# postgres-*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# INSERT 0 3
+postgres=*# DROP TABLE
+postgres=*# COMMIT
+#+end_SRC
+
+#+end_src
+*** load user_groups
+#+begin_src sql-mode
+
+#+end_src
+
+#+begin_src sql-mode
+begin;
+create temporary table sig_import(data jsonb);
+
+copy sig_import from program 'curl https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml | yq -j -I 0 e' csv quote e'\x01' delimiter e'\x02';
+
+insert into sig.user_group(charter_link,contact,dir,label,leadership,meetings,mission_statement,name,subprojects)
+(select u->>'charter_link',
+        u->'contact',
+        u->>'dir',
+        u->>'label',
+        u->'leadership',
+        u->'meetings',
+        u->>'mission_statement',
+        u->>'name',
+        u->'subprojects'
+  from sig_import raw,
+       jsonb_array_elements(raw.data->'usergroups') u);
+
+drop table sig_import;
+
+commit;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+BEGIN
+postgres=*# CREATE TABLE
+postgres=*# postgres=*# COPY 1
+postgres=*# postgres=*# postgres-*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# INSERT 0 1
+postgres=*# postgres=*# DROP TABLE
+postgres=*# postgres=*# COMMIT
+#+end_SRC
+
+#+end_src
+*** load working_groups
+#+begin_src sql-mode
+begin;
+create temporary table sig_import(data jsonb);
+
+copy sig_import from program 'curl https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml | yq -j -I 0 e' csv quote e'\x01' delimiter e'\x02';
+
+insert into sig.working_group(charter_link,contact,dir,label,leadership,meetings,mission_statement,name,stakeholder_sigs)
+            (select w->>'charter_link',
+                    w->'contact',
+                    w->>'dir',
+                    w->>'label',
+                    w->'leadership',
+                    w->'meetings',
+                    w->>'mission_statement',
+                    w->>'name',
+                    w->'stakeholder_sigs'
+               from sig_import raw,
+                    jsonb_array_elements(raw.data->'workinggroups') w);
+
+drop table sig_import;
+
+rollback;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+BEGIN
+postgres=*# CREATE TABLE
+postgres=*# postgres=*# COPY 1
+postgres=*# postgres=*# postgres-*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# postgres(*# INSERT 0 8
+postgres=*# postgres=*# DROP TABLE
+postgres=*# postgres=*# ROLLBACK
+#+end_SRC
+
+#+end_src
+* scratch
+
+#+RESULTS:
+#+begin_SRC example
+                                          Table "sig.sig"
+      Column       | Type  | Collation | Nullable | Default | Storage  | Stats target | Description
+-------------------+-------+-----------+----------+---------+----------+--------------+-------------
+ charter_link      | text  |           |          |         | extended |              |
+ contact           | jsonb |           |          |         | extended |              |
+ dir               | text  |           |          |         | extended |              |
+ label             | text  |           |          |         | extended |              |
+ leadership        | jsonb |           |          |         | extended |              |
+ meetings          | jsonb |           |          |         | extended |              |
+ mission_statement | text  |           |          |         | extended |              |
+ name              | text  |           |          |         | extended |              |
+ subprojects       | jsonb |           |          |         | extended |              |
+Access method: heap
+
+#+end_SRC
+
+#+begin_src sql-mode
+select name,label,dir from sig.sig;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+          name          |         label          |            dir
+------------------------+------------------------+----------------------------
+ API Machinery          | api-machinery          | sig-api-machinery
+ Apps                   | apps                   | sig-apps
+ Architecture           | architecture           | sig-architecture
+ Auth                   | auth                   | sig-auth
+ Autoscaling            | autoscaling            | sig-autoscaling
+ CLI                    | cli                    | sig-cli
+ Cloud Provider         | cloud-provider         | sig-cloud-provider
+ Cluster Lifecycle      | cluster-lifecycle      | sig-cluster-lifecycle
+ Contributor Experience | contributor-experience | sig-contributor-experience
+ Docs                   | docs                   | sig-docs
+ Instrumentation        | instrumentation        | sig-instrumentation
+ K8s Infra              | k8s-infra              | sig-k8s-infra
+ Multicluster           | multicluster           | sig-multicluster
+ Network                | network                | sig-network
+ Node                   | node                   | sig-node
+ Release                | release                | sig-release
+ Scalability            | scalability            | sig-scalability
+ Scheduling             | scheduling             | sig-scheduling
+ Security               | security               | sig-security
+ Storage                | storage                | sig-storage
+ Testing                | testing                | sig-testing
+ UI                     | ui                     | sig-ui
+ Usability              | usability              | sig-usability
+ Windows                | windows                | sig-windows
+(24 rows)
+
+#+end_SRC
+
+#+begin_src sql-mode
+\d+ audit_event;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                                                                                    Unlogged table "public.audit_event"
+    Column     |            Type             | Collation | Nullable |             Default              | Storage  | Stats target |                               Description
+---------------+-----------------------------+-----------+----------+----------------------------------+----------+--------------+-------------------------------------------------------------------------
+ release       | text                        |           |          |                                  | extended |              | release this test suite was run for
+ release_date  | text                        |           |          |                                  | extended |              | canonical release date (or test run date if version not released yet
+ audit_id      | text                        |           | not null |                                  | extended |              | audit event id as given in log.  Note these are not necessarily unique.
+ endpoint      | text                        |           |          |                                  | extended |              | endpoint hit by this audit event
+ useragent     | text                        |           |          |                                  | extended |              | useragent of the event, taken from events request header
+ test          | text                        |           |          |                                  | extended |              | the test codename if it can be extracted from useragent, else null
+ test_hit      | boolean                     |           |          |                                  | plain    |              | is the useragent of the event a test?
+ error         | text                        |           |          |                                  | extended |              | error message if there was issue finding endpoint for event
+ conf_test_hit | boolean                     |           |          |                                  | plain    |              | is the useragent of the event a conformance test?
+ data          | jsonb                       |           | not null |                                  | extended |              | the full json of the audit event
+ source        | text                        |           |          |                                  | extended |              | url of the bucket where the test run logs are stored
+ id            | integer                     |           | not null | generated by default as identity | plain    |              | generated id, this will be unique
+ ingested_at   | timestamp without time zone |           |          | CURRENT_TIMESTAMP                | plain    |              | the time at which the audit_event was added to this table
+Indexes:
+    "audit_event_pkey" PRIMARY KEY, btree (id)
+Access method: heap
+
+#+end_SRC
+
+#+begin_src sql-mode
+\d endpoint_coverage
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+            View "public.endpoint_coverage"
+   Column    |  Type   | Collation | Nullable | Default
+-------------+---------+-----------+----------+---------
+ release     | text    |           |          |
+ endpoint    | text    |           |          |
+ level       | text    |           |          |
+ category    | text    |           |          |
+ path        | text    |           |          |
+ description | text    |           |          |
+ kind        | text    |           |          |
+ version     | text    |           |          |
+ group       | text    |           |          |
+ action      | text    |           |          |
+ tested      | boolean |           |          |
+ conf_tested | boolean |           |          |
+ tests       | text[]  |           |          |
+
+#+end_SRC
+
+#+begin_src sql-mode
+select kind, version,ec.group from endpoint_coverage ec limit 10;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+      kind       | version | group
+-----------------+---------+-------
+                 |         |
+ PodProxyOptions | v1      |
+ Pod             | v1      |
+ PodProxyOptions | v1      |
+ PodProxyOptions | v1      |
+ PodProxyOptions | v1      |
+ PodProxyOptions | v1      |
+ PodProxyOptions | v1      |
+ PodProxyOptions | v1      |
+ Pod             | v1      |
+(10 rows)
+
+#+end_SRC
+
+#+begin_src sql-mode
+select jsonb_pretty(contact) from sig.sig limit 1;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                                        jsonb_pretty
+--------------------------------------------------------------------------------------------
+ {                                                                                         +
+     "slack": "sig-api-machinery",                                                         +
+     "teams": [                                                                            +
+         {                                                                                 +
+             "name": "sig-api-machinery-api-reviews",                                      +
+             "description": "API Changes and Reviews (API Machinery APIs, NOT all APIs)"   +
+         },                                                                                +
+         {                                                                                 +
+             "name": "sig-api-machinery-bugs",                                             +
+             "description": "Bug Triage and Troubleshooting"                               +
+         },                                                                                +
+         {                                                                                 +
+             "name": "sig-api-machinery-feature-requests",                                 +
+             "description": "Feature Requests"                                             +
+         },                                                                                +
+         {                                                                                 +
+             "name": "sig-api-machinery-misc",                                             +
+             "description": "General Discussion"                                           +
+         },                                                                                +
+         {                                                                                 +
+             "name": "sig-api-machinery-pr-reviews",                                       +
+             "description": "PR Reviews"                                                   +
+         },                                                                                +
+         {                                                                                 +
+             "name": "sig-api-machinery-proposals",                                        +
+             "description": "Design Proposals"                                             +
+         },                                                                                +
+         {                                                                                 +
+             "name": "sig-api-machinery-test-failures",                                    +
+             "description": "Test Failures and Triage"                                     +
+         }                                                                                 +
+     ],                                                                                    +
+     "liaison": {                                                                          +
+         "name": "Nabarun Pal",                                                            +
+         "github": "palnabarun"                                                            +
+     },                                                                                    +
+     "mailing_list": "https://groups.google.com/forum/#!forum/kubernetes-sig-api-machinery"+
+ }
+(1 row)
+
+#+end_SRC
+
+
+#+begin_src sql-mode
+select endpoint, test
+  from audit_event
+ where test
+       ilike '%machinery%'
+ limit 5;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+              endpoint              |                                                                                        test
+------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ listCoreV1NamespacedServiceAccount | [sig-api-machinery] CustomResourceValidationRules [Privileged:ClusterAdmin] MUST fail update of a custom resource that does not satisfy a x-kubernetes-validations transition rule
+ listCoreV1NamespacedServiceAccount | [sig-api-machinery] CustomResourceValidationRules [Privileged:ClusterAdmin] MUST fail update of a custom resource that does not satisfy a x-kubernetes-validations transition rule
+ createCoreV1Namespace              | [sig-api-machinery] ResourceQuota should verify ResourceQuota with cross namespace pod affinity scope using scope-selectors.
+ listCoreV1NamespacedServiceAccount | [sig-api-machinery] CustomResourceValidationRules [Privileged:ClusterAdmin] MUST fail update of a custom resource that does not satisfy a x-kubernetes-validations transition rule
+ listCoreV1NamespacedServiceAccount | [sig-api-machinery] CustomResourceValidationRules [Privileged:ClusterAdmin] MUST fail update of a custom resource that does not satisfy a x-kubernetes-validations transition rule
+(5 rows)
+
+#+end_SRC
+
+#+begin_src sql-mode
+select k8s_kind, k8s_version, k8s_group
+         from open_api
+                where endpoint = 'listCoreV1NamespacedServiceAccount'
+                      and release = '1.27.0';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+    k8s_kind    | k8s_version | k8s_group 
+----------------+-------------+-----------
+ ServiceAccount | v1          |
+(1 row)
+
+#+end_SRC
+
+#+begin_src sql-mode
+select mission_statement from sig.sig where name like '%Machinery%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                                                                                                                         mission_statement
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Covers all aspects of API server, API registration and discovery, generic API CRUD semantics, admission control, encoding/decoding, conversion, defaulting, persistence layer (etcd), OpenAPI, CustomResourceDefinition, garbage collection, and client libraries.+
+
+(1 row)
+
+#+end_SRC
+
+#+begin_src sql-mode
+select testname from conformance.test where file ilike '%discovery%';
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+                          testname                          
+------------------------------------------------------------
+ Discovery, confirm the PreferredVersion for each api group
+(1 row)
+
+#+end_SRC
+
+#+begin_src sql-mode
+select endpoint,path,k8s_kind,k8s_group,k8s_version,description
+  from open_api
+ where endpoint = 'getDiscoveryAPIGroup'
+   limit 1;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+       endpoint       |          path           | k8s_kind | k8s_group | k8s_version |        description
+----------------------+-------------------------+----------+-----------+-------------+----------------------------
+ getDiscoveryAPIGroup | /apis/discovery.k8s.io/ |          |           |             | get information of a group
+(1 row)
+
+#+end_SRC
