@@ -8,7 +8,7 @@ create or replace function determine_endpoint() RETURNS TRIGGER as $$
    open_api_url = "cluster" if incluster else MASTER_SWAGGER_URL
 
    if "spec" not in GD:
-       GD["spec"] = load_openapi_spec(url)
+       GD["spec"] = load_openapi_spec(open_api_url)
    spec = GD["spec"]
    event = json.loads(TD["new"]["data"])
    if TD["new"]["endpoint"] is None:
