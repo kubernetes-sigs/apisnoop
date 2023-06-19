@@ -12,6 +12,6 @@ create or replace function determine_endpoint() RETURNS TRIGGER as $$
    spec = GD["spec"]
    event = json.loads(TD["new"]["data"])
    if TD["new"]["endpoint"] is None:
-       TD["new"]["endpoint"] = find_operation_id(spec, event);
+       TD["new"]["endpoint"] = find_operation_id(spec, event)[0];
    return "modify";
 $$ language plpython3u;
