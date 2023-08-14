@@ -110,9 +110,9 @@ def cluster_swagger():
     url = "https://kubernetes/openapi/v2"
     in_cluster_tokenfile = "/run/secrets/kubernetes.io/serviceaccount/token"
     tokenfile = "/token.txt"
-    if os.path.isfile(in_cluster_tokenfile) and os.path.access(in_cluster_tokenfile):
+    if os.path.isfile(in_cluster_tokenfile) and os.access(in_cluster_tokenfile, os.R_OK):
         token = Path(in_cluster_tokenfile).read_text()
-    elif os.path.isfile(tokenfile) and os.path.access(tokenfile):
+    elif os.path.isfile(tokenfile) and os.access(tokenfile, os.R_OK):
         token = Path(tokenfile).read_text()
     else:
         raise "/token.txt or serviceaccount/token required"
