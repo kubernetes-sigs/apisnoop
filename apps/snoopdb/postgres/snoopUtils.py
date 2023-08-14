@@ -120,7 +120,6 @@ def cluster_swagger():
     auth = {"Authorization": "Bearer " + token}
     return requests.get(url, headers=auth, verify=False).json()
 
-
 def load_openapi_spec(url):
     """
     Load given swagger url into a cache, so we can use it later to find operation id's
