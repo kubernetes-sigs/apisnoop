@@ -41,5 +41,5 @@ RUN wget https://github.com/mikefarah/yq/releases/download/v4.2.0/yq_linux_amd64
 RUN mkdir /tmp/coverage && chmod 777 /tmp/coverage
 COPY initdb /docker-entrypoint-initdb.d
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-COPY ./snoopUtils.py /usr/local/lib/python3.7/dist-packages/snoopUtils.py
+COPY ./snoopUtils.py /usr/local/lib/python3.9/dist-packages/snoopUtils.py
 # ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh", "--user postgres"]
