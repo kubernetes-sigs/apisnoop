@@ -1,11 +1,11 @@
-FROM postgres:12-buster
+FROM postgres:15-bullseye
 LABEL MAINTAINER="Zach Mandeville <zz@ii.coop>"
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
   firefox-esr \
-  postgresql-plpython3-12 \
-  postgresql-12-plsh \
-  postgresql-server-dev-12 \
+  postgresql-plpython3-15 \
+  postgresql-15-plsh \
+  postgresql-server-dev-15 \
   python3-pip \
   python3-bs4 \
   python3-psycopg2 \
