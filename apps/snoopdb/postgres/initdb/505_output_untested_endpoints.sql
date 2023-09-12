@@ -1,6 +1,10 @@
+\set load_k8s_data null
+\getenv load_k8s_data LOAD_K8S_DATA
+select :load_k8s_data is not null as proceed;
+\gset
+
+\if :proceed
 begin;
-
-
 \t
 \a
 \o '/tmp/untested-endpoints.txt'
@@ -24,3 +28,6 @@ select 'untested endpoints for '||release||' written to /tmp/untested-endpoints.
  order by release::semver desc
  limit 1;
 commit;
+\else
+ select 'skipping as envvar LOAD_K8S_DATA is not set' as "build log";
+\endif
