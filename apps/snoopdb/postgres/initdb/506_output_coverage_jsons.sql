@@ -1,3 +1,9 @@
+\set load_k8s_data null
+\getenv load_k8s_data LOAD_K8S_DATA
+select :load_k8s_data is not null as proceed;
+\gset
+
+\if :proceed
 begin;
     -- move this to its own block if it works
     CREATE FUNCTION array_distinct(anyarray) RETURNS anyarray AS $f$
@@ -68,3 +74,6 @@ $f$ LANGUAGE SQL IMMUTABLE;
 \a
 \t
 commit;
+\else
+ select 'skipping as envvar LOAD_K8S_DATA is not set' as "build log";
+\endif
