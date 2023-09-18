@@ -116,9 +116,14 @@ def cluster_swagger():
     elif os.path.isfile(tokenfile) and os.access(tokenfile, os.R_OK):
         token = Path(tokenfile).read_text()
     else:
-        raise "/token.txt or serviceaccount/token required"
-    auth = {"Authorization": "Bearer " + token}
-    return requests.get(url, headers=auth, verify=False).json()
+        token = None
+
+    if token is None:
+        swagger_url = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/api/openapi-spec/swagger.json"
+        return requests.get(swagger_url).json()
+    else:
+        auth = {"Authorization": "Bearer " + token}
+        return requests.get(url, headers=auth, verify=False).json()
 
 def load_openapi_spec(url):
     """
