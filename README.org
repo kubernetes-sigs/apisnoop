@@ -11,6 +11,29 @@ These programs include:
 
 We use snoopdb to generate the data for the site [[https://apisnoop.cncf.io]].
 
+* APISnoop Conformance Gate
+We use APISnoop currently in a prow job to check if a kubernetes release includes any new, conformance endpoints that do not have conformance tests.  the intention is to help reduce technical debt, by ensuring all conformant endpoints have conformant coverage.
+
+The testgrid for the job can be found here: https://testgrid.k8s.io/sig-arch-conformance#apisnoop-conformance-gate
+
+** How the job works
+The job uses our snoopdb image.  This image, on startup, runs through a set of sql initialization scripts including one that gathers any new, untested conformant endpoints.  If the image detects it's being run as part of prow, it will then do a simple check if its list of untested endpoints is greater than 0.  If so, the job fails and we output the latest endpoints.  Otherwise, it passes and the db shuts down, completing the job.
+
+Snoopdb uses the following sources for determining tested conformant endpoints:
+- The [[https://github.com/kubernetes/kubernetes/tree/master/api/openapi-spec][Kubernetes OpenAPI spec]], to determine all endpoints
+- The list of conformance tests at [[https://github.com/kubernetes/kubernetes/blob/master/test/conformance/testdata/conformance.yaml][kubernetes/kubernetes/test/conformance/testdata/conformance.yaml]]
+- The list of [[https://github.com/kubernetes/kubernetes/blob/master/test/conformance/testdata/ineligible_endpoints.yaml][endpoints ineligible for conformance]] in the same directory as above
+- The latest conformance suite test runs available via prow/testgrid ([[https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest/1705668219261423616][example]]).
+
+We define "new conformance endpoints" as the endpoints in the most recent openAPI spec that are stable, not deprecated, and are not included in the ineligible-endpoints.yaml.
+
+We define "tested" to mean the endpoint shows up in the audit logs of the conformance test suite as a target of a conformance test(e.g. a test that is included in the above conformance.yaml)
+
+The logic for this work is present among the sql files in snoopdb's [[https://github.com/cncf/apisnoop/tree/main/apps/snoopdb/postgres/initdb][initdb]].  Mainly:
+- [[https://github.com/cncf/apisnoop/blob/main/apps/snoopdb/postgres/initdb/505_output_untested_endpoints.sql][505: script to output untested endpoints]]
+- [[https://github.com/cncf/apisnoop/blob/main/apps/snoopdb/postgres/initdb/207_view_conformance_new_endpoints.sql][207: new conformance endpoint view]]
+- [[https://github.com/cncf/apisnoop/blob/main/apps/snoopdb/postgres/initdb/204_view_conformance_eligible_endpoint_coverage.sql][204: eligible endpoint coverage view]]
+
 * Learning more
 To learn more about the database, you can check out its README: [[./apps/snoopdb/README.md]]
 Or, for auditlogger:[[./apps/auditlogger/README.org]]
