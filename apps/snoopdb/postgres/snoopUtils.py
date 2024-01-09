@@ -468,13 +468,6 @@ def kegg_meta(bucket, custom_job=None):
     Compose a Meta object for job of given KEGG bucket.
     Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
     """
-    # testgrid_history = get_json(GCS_LOGS + KEGG_BUCKET + "/jobResultsCache.json")
-    # if custom_job is not None:
-    #     build = [x for x in testgrid_history if x['buildnumber'] == custom_job][0]
-    # else:
-    #     build = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]
-    # job = build["buildnumber"]
-    # job_version = build["job-version"]
     job = bucket_latest_success(bucket) if custom_job is None else custom_job
     return Meta(job,
                 kegg_version(job),
