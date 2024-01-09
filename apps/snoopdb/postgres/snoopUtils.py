@@ -455,7 +455,7 @@ def kegg_commit(job):
     # we want the end of the string, after the '+'. A commit should only be numbers and letters
     finished_url = GCS_LOGS + KEGG_BUCKET + '/' + job + '/finished.json'
     finished = get_json(finished_url)
-    job_version = finished["job_version"]
+    job_version = finished["metadata"]["job-version"]
     match = re.match(".+\+([0-9a-zA-Z]+)$",job_version)
     if match is None:
         raise ValueError("Could not find commit in given job_version.", job_version)
