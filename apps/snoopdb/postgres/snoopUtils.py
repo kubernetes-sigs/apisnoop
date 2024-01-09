@@ -479,7 +479,7 @@ def kegg_timestamp(job):
     finished = get_json(finished_url)
     return finished["timestamp"]
 
-def kegg_meta(custom_job=None):
+def kegg_meta(bucket, custom_job=None):
     """
     Compose a Meta object for job of given KEGG bucket.
     Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
@@ -504,7 +504,7 @@ def get_meta(bucket,job=None):
     if(bucket == AKC_BUCKET):
         return akc_meta(bucket,job)
     elif(bucket == KGCL_BUCKET):
-        return kgcl_meta(job)
+        return kgcl_meta(bucket,job)
     elif(bucket == KEGG_BUCKET):
         return kegg_meta(job)
 
