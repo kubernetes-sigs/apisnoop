@@ -380,7 +380,7 @@ def kgcl_version(job):
     """
     return k8s semver for version of k8s run in given job's test run
     """
-    finished_url = GCS_LOGS + KEGG_BUCKET + '/' + job + '/finished.json'
+    finished_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/finished.json'
     finished = get_json(finished_url)
     job_version = finished["metadata"]["job-version"]
 
@@ -396,7 +396,7 @@ def kgcl_commit(job):
     return k8s/k8s commit for k8s used in given job's test run
     """
     # we want the end of the string, after the '+'. A commit should only be numbers and letters
-    finished_url = GCS_LOGS + KEGG_BUCKET + '/' + job + '/finished.json'
+    finished_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/finished.json'
     finished = get_json(finished_url)
     job_version = finished["metadata"]["job-version"]
 
