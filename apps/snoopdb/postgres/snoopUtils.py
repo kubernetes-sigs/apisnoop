@@ -295,24 +295,6 @@ def find_operation_id(openapi_spec, event):
     openapi_spec['hit_cache'][url.path][method]=op_id
   return op_id, None
 
-def akc_latest_success():
-    """
-    determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
-    """
-    soup = get_html(AUDIT_KIND_CONFORMANCE_RUNS)
-    scripts = soup.find(is_spyglass_script)
-    if scripts is None :
-        raise ValueError("No spyglass script found in akc page")
-    try:
-        builds = json.loads(scripts.contents[0].split('allBuilds = ')[1][:-2])
-    except Exception as e:
-        raise ValueError("Could not load json from build data. is it valid json?", e)
-    try:
-        latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
-    except Exception as e:
-        raise ValueError("Cannot find success in builds")
-    return latest_success['ID']
-
 def bucket_latest_success(bucket):
     """
     determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
