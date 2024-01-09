@@ -506,7 +506,7 @@ def get_meta(bucket,job=None):
     elif(bucket == KGCL_BUCKET):
         return kgcl_meta(bucket,job)
     elif(bucket == KEGG_BUCKET):
-        return kegg_meta(job)
+        return kegg_meta(bucket, job)
 
 def download_and_process_auditlogs(bucket,job):
     """
