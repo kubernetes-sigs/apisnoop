@@ -20,8 +20,8 @@ from pathlib import Path
 AKC_BUCKET="ci-audit-kind-conformance"
 KGCL_BUCKET="ci-kubernetes-gce-conformance-latest"
 KEGG_BUCKET="ci-kubernetes-e2e-gci-gce"
+CONFORMANCE_RUNS="https://prow.k8s.io/job-history/kubernetes-jenkins/logs/"
 
-AUDIT_KIND_CONFORMANCE_RUNS="https://prow.k8s.io/job-history/kubernetes-jenkins/logs/ci-audit-kind-conformance"
 AUDIT_KIND_CONFORMANCE_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/ci-audit-kind-conformance"
 GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
 
@@ -299,7 +299,7 @@ def bucket_latest_success(bucket):
     """
     determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
     """
-    test_runs = "https://prow.k8s.io/job-history/kubernetes-jenkins/logs/" + bucket
+    test_runs = CONFORMANCE_RUNS + bucket
     soup = get_html(test_runs)
     scripts = soup.find(is_spyglass_script)
     if scripts is None :
