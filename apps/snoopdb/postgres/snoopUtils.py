@@ -430,8 +430,8 @@ def kgcl_meta(bucket, custom_job=None):
     """
     job = bucket_latest_success(bucket) if custom_job is None else custom_job
     return Meta(job,
-                kgcl_version(job_version),
-                kgcl_commit(job_version),
+                kgcl_version(job),
+                kgcl_commit(job),
                 kgcl_loglinks(job),
                 kgcl_timestamp(job))
 
