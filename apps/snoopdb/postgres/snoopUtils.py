@@ -313,6 +313,25 @@ def akc_latest_success():
         raise ValueError("Cannot find success in builds")
     return latest_success['ID']
 
+def bucket_latest_success(bucket):
+    """
+    determines latest successful run for ci-audit-kind-conformance and returns its ID as a string.
+    """
+    test_runs = "https://prow.k8s.io/job-history/kubernetes-jenkins/logs/" + bucket
+    soup = get_html(test_runs)
+    scripts = soup.find(is_spyglass_script)
+    if scripts is None :
+        raise ValueError("No spyglass script found in akc page")
+    try:
+        builds = json.loads(scripts.contents[0].split('allBuilds = ')[1][:-2])
+    except Exception as e:
+        raise ValueError("Could not load json from build data. is it valid json?", e)
+    try:
+        latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
+    except Exception as e:
+        raise ValueError("Cannot find success in builds")
+    return latest_success['ID']
+
 def akc_version(job):
     """return semver of kubernetes used for given akc job"""
     versionfile_path = "/artifacts/logs/kind-control-plane/kubernetes-version.txt"
@@ -345,12 +364,12 @@ def akc_timestamp(job):
     started = json.loads(urlopen(started_url).read().decode('utf-8'))
     return started["timestamp"]
 
-def akc_meta(custom_job=None):
+def akc_meta(bucket, custom_job=None):
     """
     Compose a Meta object for job of given AKC bucket.
     Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
     """
-    job = akc_latest_success() if custom_job is None else custom_job
+    job = bucket_latest_success(bucket) if custom_job is None else custom_job
     return Meta(job,
                 akc_version(job),
                 akc_commit(job),
@@ -475,7 +494,7 @@ def get_meta(bucket,job=None):
     """Returns meta object for given bucket.
     Meta includes job, k8s version, k8s commit, all auditlog links, and timestamp of the test run"""
     if(bucket == AKC_BUCKET):
-        return akc_meta(job)
+        return akc_meta(bucket,job)
     elif(bucket == KGCL_BUCKET):
         return kgcl_meta(job)
     elif(bucket == KEGG_BUCKET):
