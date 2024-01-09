@@ -376,10 +376,14 @@ def akc_meta(bucket, custom_job=None):
                 akc_loglinks(job),
                 akc_timestamp(job))
 
-def kgcl_version(job_version):
+def kgcl_version(job):
     """
     return k8s semver for version of k8s run in given job's test run
     """
+    finished_url = GCS_LOGS + KEGG_BUCKET + '/' + job + '/finished.json'
+    finished = get_json(finished_url)
+    job_version = finished["metadata"]["job-version"]
+
     match = re.match("^v([0-9.]+)-",job_version)
     if match is None:
         raise ValueError("Could not find version in given job_version.", job_version)
@@ -387,11 +391,15 @@ def kgcl_version(job_version):
         version = match.group(1)
         return version
 
-def kgcl_commit(job_version):
+def kgcl_commit(job):
     """
     return k8s/k8s commit for k8s used in given job's test run
     """
     # we want the end of the string, after the '+'. A commit should only be numbers and letters
+    finished_url = GCS_LOGS + KEGG_BUCKET + '/' + job + '/finished.json'
+    finished = get_json(finished_url)
+    job_version = finished["metadata"]["job-version"]
+
     match = re.match(".+\+([0-9a-zA-Z]+)$",job_version)
     if match is None:
         raise ValueError("Could not find commit in given job_version", job_version)
@@ -415,18 +423,12 @@ def kgcl_timestamp(job):
     finished = get_json(finished_url)
     return finished["timestamp"]
 
-def kgcl_meta(custom_job=None):
+def kgcl_meta(bucket, custom_job=None):
     """
     Compose a Meta object for job of given KGCL bucket.
     Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
     """
-    testgrid_history = get_json(GCS_LOGS + KGCL_BUCKET + "/jobResultsCache.json")
-    if custom_job is not None:
-        build = [x for x in testgrid_history if x['buildnumber'] == custom_job][0]
-    else:
-        build = [x for x in testgrid_history if x['result'] == 'SUCCESS'][-1]
-    job = build["buildnumber"]
-    job_version = build["job-version"]
+    job = bucket_latest_success(bucket) if custom_job is None else custom_job
     return Meta(job,
                 kgcl_version(job_version),
                 kgcl_commit(job_version),
