@@ -439,7 +439,7 @@ def kegg_version(job):
     """
     finished_url = GCS_LOGS + KEGG_BUCKET + '/' + job + '/finished.json'
     finished = get_json(finished_url)
-    job_version = finished["job_version"]
+    job_version = finished["metadata"]["job-version"]
 
     match = re.match("^v([0-9.]+)-",job_version)
     if match is None:
