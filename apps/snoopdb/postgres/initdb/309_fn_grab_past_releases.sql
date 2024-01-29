@@ -10,7 +10,7 @@ def has_open_api (version):
     major = version.split('.')[1]
     return int(major) >= 5 # open api wasn't established until 1.5.0
 
-RELEASES_URL = 'https://raw.githubusercontent.com/cncf/apisnoop/main/resources/coverage/releases.yaml'
+RELEASES_URL = 'https://raw.githubusercontent.com/kubernetes-sigs/apisnoop/main/resources/coverage/releases.yaml'
 past_releases = yaml.safe_load(urlopen(RELEASES_URL))[1:]
 versions_with_openapi = [release["version"] for release in past_releases if has_open_api(release["version"])]
 return versions_with_openapi

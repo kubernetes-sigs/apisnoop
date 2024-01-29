@@ -12,7 +12,7 @@ import yaml
 
 K8S_REPO_URL = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
 OPEN_API_PATH = '/api/openapi-spec/swagger.json'
-RELEASES_URL = 'https://raw.githubusercontent.com/cncf/apisnoop/main/resources/coverage/releases.yaml'
+RELEASES_URL = 'https://raw.githubusercontent.com/kubernetes-sigs/apisnoop/main/resources/coverage/releases.yaml'
 
 # Get info about latest release from our releases.yaml
 releases = yaml.safe_load(urlopen(RELEASES_URL))
