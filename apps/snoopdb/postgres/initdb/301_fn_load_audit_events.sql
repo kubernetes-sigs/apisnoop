@@ -10,7 +10,7 @@
         import semver
         from snoopUtils import download_and_process_auditlogs, get_meta
 
-        RELEASES_URL = "https://raw.githubusercontent.com/cncf/apisnoop/master/resources/coverage/releases.yaml"
+        RELEASES_URL = "https://raw.githubusercontent.com/kubernetes-sigs/apisnoop/master/resources/coverage/releases.yaml"
 
         releases = yaml.safe_load(urlopen(RELEASES_URL))
         latest_release = releases[0]['version']

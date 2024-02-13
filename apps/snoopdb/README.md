@@ -32,7 +32,7 @@ This method requires:
 If you haven't yet, clone this repo and move to the kind repository
 
 ``` shell
-git clone https://github.com/cncf/apisnoop.git && cd apisnoop/kind
+git clone https://github.com/kubernetes-sigs/apisnoop.git && cd apisnoop/kind
 ```
 
 Then create a kind cluster
@@ -117,7 +117,7 @@ This method requires:
 For this, you will want to clone and move into this repository.
 ```shell
 
-git clone https://github.com/cncf/apisnoop.git && cd apps/snoopDB
+git clone https://github.com/kubernetes-sigs/apisnoop.git && cd apps/snoopDB
 ```
 
 You can then build the database with docker.

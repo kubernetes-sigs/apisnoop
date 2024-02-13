@@ -1,7 +1,7 @@
 create procedure update_pod_binding_events()
   /*
     This is an edge case for an endpoint where it is hit consistently as part of the given test,
-    but is not hit by the test useragent.  See https://github.com/cncf/apisnoop/issues/660
+    but is not hit by the test useragent.  See https://github.com/kubernetes-sigs/apisnoop/issues/660
    */
   language plpgsql as $$
 begin
