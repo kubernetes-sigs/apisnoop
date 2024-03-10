@@ -187,7 +187,7 @@ else
 	echo
     UNTESTED=$(wc -l /tmp/untested-endpoints.txt | cut -d" " -f1)
     echo '=================='
-    echo "You have ${UNTESTED} untested endpoints"
+    echo "ERROR: You have ${UNTESTED} untested endpoints"
     echo '=================='
 	if [ $UNTESTED -eq 0 ]; then
 		exit 0
