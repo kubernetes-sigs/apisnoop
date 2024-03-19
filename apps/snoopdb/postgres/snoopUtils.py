@@ -18,7 +18,7 @@ import glob
 from pathlib import Path
 
 AKC_BUCKET="ci-audit-kind-conformance"
-KGCL_BUCKET="ci-kubernetes-gce-conformance-latest"
+KGCL_BUCKET="ci-kubernetes-ec2-conformance-latest"
 KEGG_BUCKET="ci-kubernetes-e2e-gci-gce"
 
 AUDIT_KIND_CONFORMANCE_RUNS="https://prow.k8s.io/job-history/kubernetes-jenkins/logs/ci-audit-kind-conformance"
