@@ -362,13 +362,11 @@ def kgcl_version(job):
     """
     return k8s semver for version of k8s run in given job's test run
     """
-    finished_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/finished.json'
-    finished = get_json(finished_url)
-    job_version = finished["metadata"]["job-version"]
-
-    match = re.match("^v([0-9.]+)-",job_version)
+    buildlog_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/buildlog.txt'
+    buildlog = urlopen(buildlog_url).read().decode()
+    match = re.match("^Kubernetes release: v([0-9.]+)-", buildlog)
     if match is None:
-        raise ValueError("Could not find version in given job_version.", job_version)
+        raise ValueError("Could not find version.", job_version)
     else:
         version = match.group(1)
         return version
@@ -378,13 +376,11 @@ def kgcl_commit(job):
     return k8s/k8s commit for k8s used in given job's test run
     """
     # we want the end of the string, after the '+'. A commit should only be numbers and letters
-    finished_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/finished.json'
-    finished = get_json(finished_url)
-    job_version = finished["metadata"]["job-version"]
-
-    match = re.match(".+\+([0-9a-zA-Z]+)$",job_version)
+    buildlog_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/buildlog.txt'
+    buildlog = urlopen(buildlog_url).read().decode()
+    match = re.match("^Kubernetes release:.*([a-zA-Z0-9]+)", buildlog)
     if match is None:
-        raise ValueError("Could not find commit in given job_version", job_version)
+        raise ValueError("Could not find commit in given buildlog", buildlog)
     else:
         commit = match.group(1)
         return commit
