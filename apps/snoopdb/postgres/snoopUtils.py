@@ -363,7 +363,7 @@ def kgcl_version(job):
     return k8s semver for version of k8s run in given job's test run
     """
     clone_records_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/clone-records.json'
-    clone_records = get_json(finished_url)
+    clone_records = get_json(clone_records_url)
     k8s_sha = clone_records[0]["final_sha"]
     version_url = "https://raw.githubusercontent.com/kubernetes/kubernetes/" + k8s_sha + "/build/build-image/cross/VERSION"
     job_version = urlopen(version_url).read().decode()
@@ -380,7 +380,7 @@ def kgcl_commit(job):
     return k8s/k8s commit for k8s used in given job's test run
     """
     clone_records_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/clone-records.json'
-    clone_records = get_json(finished_url)
+    clone_records = get_json(clone_records_url)
     k8s_sha = clone_records[0]["final_sha"]
     return k8s_sha
 
