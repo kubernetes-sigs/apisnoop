@@ -181,17 +181,27 @@ if [ -z "$JOB_NAME" ]; then
     echo
    exec "$@"
 else
+    curl -sL https://raw.githubusercontent.com/kubernetes/kubernetes/master/test/conformance/testdata/pending_eligible_endpoints.yaml \
+         -o /tmp/pending_eligible_endpoints.yaml
+    sed 's/^-\ //' /tmp/pending_eligible_endpoints.yaml > /tmp/pending_eligible_endpoints.txt
+    awk '
+        NR == FNR {f1[$0] = 1; next}
+        !($0 in f1)
+    ' /tmp/pending_eligible_endpoints.txt /tmp/untested-endpoints.txt > /tmp/filtered-endpoints.txt
+
     echo '=================='
     echo 'UNTESTED ENDPOINTS'
-	cat /tmp/untested-endpoints.txt
-	echo
-    UNTESTED=$(wc -l /tmp/untested-endpoints.txt | cut -d" " -f1)
+    cat /tmp/filtered-endpoints.txt
+    echo
+    UNTESTED=$(wc -l /tmp/filtered-endpoints.txt | cut -d" " -f1)
     echo '=================='
-    echo "ERROR: You have ${UNTESTED} untested endpoints"
-    echo '=================='
-	if [ $UNTESTED -eq 0 ]; then
-		exit 0
-	else
-	    exit 1
-	fi
+    if [ $UNTESTED -eq 0 ]; then
+      echo "You have ${UNTESTED} untested endpoints"
+      echo '=================='
+      exit 0
+    else
+      echo "ERROR: You have ${UNTESTED} untested endpoints"
+      echo '=================='
+      exit 1
+    fi
 fi
