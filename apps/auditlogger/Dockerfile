@@ -1,9 +1,6 @@
-FROM node:12.14.1-alpine3.11
-RUN adduser -D -H -h /app user
+FROM cgr.dev/chainguard/deno@sha256:cf138c122aae989daedb6fd7c8b5317ea5799ae42509a12a3d70557e7806ebd0
 WORKDIR /app
-COPY auditlogger.js .
-COPY package.json .
-RUN npm i
+COPY ./auditlogger.js /app/auditlogger.js
 EXPOSE 9900
-USER user
-CMD ["node", "auditlogger.js"]
+RUN ["deno", "cache", "/app/auditlogger.js"]
+ENTRYPOINT ["deno", "run", "--allow-net", "--allow-read", "--allow-env", "/app/auditlogger.js"]
