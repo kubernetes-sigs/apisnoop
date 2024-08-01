@@ -183,15 +183,17 @@ if [ -z "$JOB_NAME" ]; then
 else
     echo '=================='
     echo 'UNTESTED ENDPOINTS'
-	cat /tmp/untested-endpoints.txt
-	echo
+    cat /tmp/untested-endpoints.txt
+    echo
+    echo '=================='
     UNTESTED=$(wc -l /tmp/untested-endpoints.txt | cut -d" " -f1)
-    echo '=================='
-    echo "ERROR: You have ${UNTESTED} untested endpoints"
-    echo '=================='
-	if [ $UNTESTED -eq 0 ]; then
-		exit 0
-	else
-	    exit 1
-	fi
+    if [ $UNTESTED -eq 0 ]; then
+        echo "You have ${UNTESTED} untested endpoints"
+        echo '=================='
+        exit 0
+    else
+        echo "ERROR: You have ${UNTESTED} untested endpoints"
+        echo '=================='
+        exit 1
+    fi
 fi
