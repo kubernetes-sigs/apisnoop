@@ -1,19 +1,20 @@
-const connectionString = typeof process.env.APP_DB_CONNECTION_STRING !== 'undefined' ? process.env.APP_DB_CONNECTION_STRING : 'postgres://apisnoop:apisnoop@snoopdb/apisnoop?sslmode=disable'
-const auditTableName = typeof process.env.APP_DB_AUDIT_EVENT_TABLE !== 'undefined' ? process.env.APP_DB_AUDIT_EVENT_TABLE : 'testing.audit_event'
-const appPort = typeof process.env.APP_PORT !== 'undefined' ? process.env.APP_PORT : '9900'
-const appDisableLogs = typeof process.env.APP_DISABLE_LOGS !== 'undefined' ? process.env.APP_DISABLE_LOGS : 'false'
-const express = require('express')
+import express from 'npm:express@4.18.2'
+import morgan from 'npm:morgan@1.10.0'
+import knexjs from 'npm:knex@3.1.0'
+import bodyParser from 'npm:body-parser@1.20.2'
+import pg from 'npm:pg@8.12.0'
+
+const connectionString = typeof Deno.env.APP_DB_CONNECTION_STRING !== 'undefined' ? Deno.env.APP_DB_CONNECTION_STRING : 'postgres://apisnoop:apisnoop@snoopdb/apisnoop?sslmode=disable'
+const auditTableName = typeof Deno.env.APP_DB_AUDIT_EVENT_TABLE !== 'undefined' ? Deno.env.APP_DB_AUDIT_EVENT_TABLE : 'testing.audit_event'
+const appPort = typeof Deno.env.APP_PORT !== 'undefined' ? Deno.env.APP_PORT : '9900'
+const appDisableLogs = typeof Deno.env.APP_DISABLE_LOGS !== 'undefined' ? Deno.env.APP_DISABLE_LOGS : 'false'
 const app = express()
-const bodyParser = require('body-parser')
-const morgan = require('morgan')
-const knex = require('knex')({
+const knex = knexjs({
     client: 'pg',
     connection: connectionString
 })
 
 var postgresIsReady = false
-
-console.log(`[status] using connection string: ${connectionString}`)
 
 function logs(...messages) {
     if (appDisableLogs == 'true') {
@@ -117,25 +118,30 @@ function logEventsToDB (req, res, next) {
     return res.end()
 }
 
-console.log('[status] starting apisnoop-auditlog-event-handler')
+function main() {
+    console.log(`[status] using connection string: ${connectionString}`)
+    console.log('[status] starting apisnoop-auditlog-event-handler')
 
-app.use(bodyParser.json({
-  extended: true,
-  limit: '100mb'
-}))
-app.use(express.json())
-app.use(morgan('combined'))
+    app.use(bodyParser.json({
+        extended: true,
+        limit: '100mb'
+    }))
+    app.use(express.json())
+    app.use(morgan('combined'))
 
-app.get('/', hello)
-app.post('/events', [checkForBodyContent, postgresReadyCheck], logEventsToDB)
+    app.get('/', hello)
+    app.post('/events', [checkForBodyContent, postgresReadyCheck], logEventsToDB)
 
-knex.raw('select 0;').then(() => {
-    console.log('[status] connected to database')
-    app.listen(appPort, () => {
-        console.log(`[status] started; listening on port ${appPort}`)
+    knex.raw('select 0;').then(() => {
+        console.log('[status] connected to database')
+        app.listen(appPort, () => {
+            console.log(`[status] started; listening on port ${appPort}`)
+        })
+    }).catch(err => {
+        console.log('[error] No database connection found.')
+        console.log(err)
+        Deno.exit(1)
     })
-}).catch(err => {
-    console.log('[error] No database connection found.')
-    console.log(err)
-    process.exit(1)
-})
+}
+
+main()
