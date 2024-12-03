@@ -4,7 +4,7 @@
  import SectionHeader from '../SectionHeader.svelte';
  import { activeRelease, releases, versions } from '../../store';
 
- const SPYGLASS_URL = 'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs'
+ const SPYGLASS_URL = 'https://prow.k8s.io/view/gcs/kubernetes-ci-logs/logs'
  let releaseSwitch = false;
 
  $: ({

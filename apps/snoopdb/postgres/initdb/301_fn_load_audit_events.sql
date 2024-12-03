@@ -55,7 +55,7 @@
                   ((raw.data ->> 'userAgent') like 'e2e.test%') as test_hit,
                   ((raw.data ->> 'userAgent') like '%[Conformance]%') as conf_test_hit,
                   raw.data,
-                  'https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/${bucket}/${job}' as source
+                  'https://prow.k8s.io/view/gcs/kubernetes-ci-logs/logs/${bucket}/${job}' as source
             FROM audit_event_import${job} raw;
                   """).substitute(
                       audit_logfile = auditlog_file,
