@@ -1,4 +1,4 @@
-FROM postgres:15-bullseye
+FROM docker.io/postgres:15-bullseye
 LABEL MAINTAINER="Zach Mandeville <zz@ii.coop>"
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \

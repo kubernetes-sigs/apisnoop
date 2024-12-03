@@ -20,12 +20,12 @@ from pathlib import Path
 AKC_BUCKET="ci-audit-kind-conformance"
 KGCL_BUCKET="ci-kubernetes-gce-conformance-latest"
 KEGG_BUCKET="ci-kubernetes-e2e-gci-gce"
-CONFORMANCE_RUNS="https://prow.k8s.io/job-history/kubernetes-jenkins/logs/"
+CONFORMANCE_RUNS="https://prow.k8s.io/job-history/gs/kubernetes-ci-logs/logs/"
 
-AUDIT_KIND_CONFORMANCE_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/ci-audit-kind-conformance"
-GCS_LOGS="https://storage.googleapis.com/kubernetes-jenkins/logs/"
+AUDIT_KIND_CONFORMANCE_LOGS="https://storage.googleapis.com/kubernetes-ci-logs/logs/ci-audit-kind-conformance"
+GCS_LOGS="https://storage.googleapis.com/kubernetes-ci-logs/logs/"
 
-ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-jenkins/logs/'
+ARTIFACTS_PATH ='https://gcsweb.k8s.io/gcs/kubernetes-ci-logs/logs/'
 K8S_GITHUB_REPO = 'https://raw.githubusercontent.com/kubernetes/kubernetes/'
 
 Meta = namedtuple('Meta',['job','version','commit','log_links','timestamp'])
