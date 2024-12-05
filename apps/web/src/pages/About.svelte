@@ -85,7 +85,7 @@
   <li>
     <a href="https://github.com/kubernetes/kubernetes/tree/master/api/openapi-spec">The open api spec for Kubernetes</a>
   </li>
-  <li>Audit logs from an e2e test run that was run for this release(<a href="https://prow.k8s.io/view/gcs/kubernetes-jenkins/logs/ci-kubernetes-gce-conformance-latest/1278470809987321859">example test)</a></li>
+  <li>Audit logs from an e2e test run that was run for this release(<a href="https://prow.k8s.io/view/gcs/kubernetes-ci-logs/logs/ci-kubernetes-gce-conformance-latest/1278470809987321859">example test)</a></li>
 </ul>
 
 <p>
