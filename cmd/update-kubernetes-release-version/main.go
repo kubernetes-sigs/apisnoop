@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	stableVersionURL       string = "https://storage.googleapis.com/kubernetes-release/release/stable.txt"
+	stableVersionURL       string = "https://dl.k8s.io/release/stable.txt"
 	kubernetesGitHubTagURL string = "https://api.github.com/repos/kubernetes/kubernetes/releases/tags"
 )
 
