@@ -20,7 +20,6 @@ from pathlib import Path
 AKC_BUCKET="ci-kubernetes-audit-kind-conformance"
 KGCL_BUCKET="ci-kubernetes-gce-conformance-latest"
 KEGG_BUCKET="ci-kubernetes-e2e-gci-gce"
-CONFORMANCE_RUNS="https://prow.k8s.io/job-history/gs/kubernetes-ci-logs/logs/"
 
 AUDIT_KIND_CONFORMANCE_LOGS="https://storage.googleapis.com/kubernetes-ci-logs/logs/ci-kubernetes-audit-kind-conformance"
 GCS_LOGS="https://storage.googleapis.com/kubernetes-ci-logs/logs/"
@@ -295,24 +294,44 @@ def find_operation_id(openapi_spec, event):
     openapi_spec['hit_cache'][url.path][method]=op_id
   return op_id, None
 
-def bucket_latest_success(bucket):
+def bucket_latest_success(bucket_name):
     """
     determines latest successful run for ci-kubernetes-audit-kind-conformance and returns its ID as a string.
     """
-    test_runs = CONFORMANCE_RUNS + bucket
-    soup = get_html(test_runs)
-    scripts = soup.find(is_spyglass_script)
-    if scripts is None :
-        raise ValueError("No spyglass script found in akc page")
-    try:
-        builds = json.loads(scripts.contents[0].split('allBuilds = ')[1][:-2])
-    except Exception as e:
-        raise ValueError("Could not load json from build data. is it valid json?", e)
-    try:
-        latest_success = [b for b in builds if b['Result'] == 'SUCCESS'][0]
-    except Exception as e:
-        raise ValueError("Cannot find success in builds")
-    return latest_success['ID']
+    # Get latest build ID
+    latest_url = f"{GCS_LOGS}{bucket_name}/latest-build.txt"
+    with urlopen(latest_url) as response:
+        latest_build = int(response.read().decode().strip())
+
+    # Start from 24 hours before latest build
+    start_time = latest_build - (24 * 60 * 60 * 1000000000)
+    marker_url = f"{ARTIFACTS_PATH}{bucket_name}/?marker=logs%2f{bucket_name}%2f{start_time}%2f"
+
+    # Parse directory listing
+    with urlopen(marker_url) as response:
+        soup = BeautifulSoup(response.read(), 'html.parser')
+
+    # Extract build IDs and sort descending
+    build_ids = []
+    for link in soup.find_all('a', href=True):
+        href = link['href']
+        if href.endswith('/') and '/' in href:
+            last_part = href.rstrip('/').split('/')[-1]
+            if last_part.isdigit() and len(last_part) >= 13:
+                build_ids.append(int(last_part))
+    build_ids.sort(reverse=True)
+
+    # Check each build for success
+    for build_id in build_ids:
+        try:
+            finished_url = f"{ARTIFACTS_PATH}{bucket_name}/{build_id}/finished.json"
+            with urlopen(finished_url) as response:
+                data = json.loads(response.read())
+                if data.get('result') == 'SUCCESS':
+                    return str(build_id)
+        except:
+            continue
+    return None
 
 def akc_version(job):
     """return semver of kubernetes used for given akc job"""
