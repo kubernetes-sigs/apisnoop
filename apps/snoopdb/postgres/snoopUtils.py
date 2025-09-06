@@ -410,7 +410,7 @@ def kgcl_commit(job):
 
 def kgcl_loglinks(job):
     """Return all audit log links for KGCL bucket"""
-    artifacts_url = ARTIFACTS_PATH + KGCL_BUCKET + '/' +  job + '/' + 'artifacts'
+    artifacts_url = ARTIFACTS_PATH + KGCL_BUCKET + '/' +  job + '/' + 'artifacts' + '/' + 'cluster-logs'
     soup = get_html(artifacts_url)
     master_link = soup.find(href=re.compile("master"))
     master_soup = get_html("https://gcsweb.k8s.io" + master_link['href'])
