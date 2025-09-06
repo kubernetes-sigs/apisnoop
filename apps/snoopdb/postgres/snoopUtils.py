@@ -383,7 +383,9 @@ def kgcl_version(job):
     """
     finished_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/finished.json'
     finished = get_json(finished_url)
-    job_version = finished["metadata"].get("job-version") or finished.get("revision")
+    job_version = finished["metadata"].get("job-version")
+    if not job_version:
+        raise ValueError("Could not find job_version", finished_url)
 
     match = re.match("^v([0-9.]+)-",job_version)
     if match is None:
@@ -399,7 +401,9 @@ def kgcl_commit(job):
     # we want the end of the string, after the '+'. A commit should only be numbers and letters
     finished_url = GCS_LOGS + KGCL_BUCKET + '/' + job + '/finished.json'
     finished = get_json(finished_url)
-    job_version = finished["metadata"].get("job-version") or finished.get("revision")
+    job_version = finished["metadata"].get("job-version")
+    if not job_version:
+        raise ValueError("Could not find job_version", finished_url)
 
     match = re.match(".+\+([0-9a-zA-Z]+)$",job_version)
     if match is None:
@@ -442,7 +446,9 @@ def kegg_version(job):
     """
     finished_url = GCS_LOGS + KEGG_BUCKET + '/' + job + '/finished.json'
     finished = get_json(finished_url)
-    job_version = finished["metadata"].get("job-version") or finished.get("revision")
+    job_version = finished["metadata"].get("job-version")
+    if not job_version:
+        raise ValueError("Could not find job_version", finished_url)
 
     match = re.match("^v([0-9.]+)-",job_version)
     if match is None:
@@ -458,7 +464,9 @@ def kegg_commit(job):
     # we want the end of the string, after the '+'. A commit should only be numbers and letters
     finished_url = GCS_LOGS + KEGG_BUCKET + '/' + job + '/finished.json'
     finished = get_json(finished_url)
-    job_version = finished["metadata"].get("job-version") or finished.get("revision")
+    job_version = finished["metadata"].get("job-version")
+    if not job_version:
+        raise ValueError("Could not find job_version", finished_url)
     match = re.match(".+\+([0-9a-zA-Z]+)$",job_version)
     if match is None:
         raise ValueError("Could not find commit in given job_version.", job_version)
