@@ -371,6 +371,11 @@ def akc_meta(bucket, custom_job=None):
     Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
     """
     job = bucket_latest_success(bucket) if custom_job is None else custom_job
+    if job is None:
+        raise ValueError(
+            f"No successful job found for bucket '{bucket}' in the last 24 hours. "
+            f"The upstream CI job may be failing. Check: https://prow.k8s.io/job-history/gs/kubernetes-ci-logs/logs/{bucket}"
+        )
     return Meta(job,
                 akc_version(job),
                 akc_commit(job),
@@ -434,6 +439,11 @@ def kgcl_meta(bucket, custom_job=None):
     Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
     """
     job = bucket_latest_success(bucket) if custom_job is None else custom_job
+    if job is None:
+        raise ValueError(
+            f"No successful job found for bucket '{bucket}' in the last 24 hours. "
+            f"The upstream CI job may be failing. Check: https://prow.k8s.io/job-history/gs/kubernetes-ci-logs/logs/{bucket}"
+        )
     return Meta(job,
                 kgcl_version(job),
                 kgcl_commit(job),
@@ -496,6 +506,11 @@ def kegg_meta(bucket, custom_job=None):
     Meta object contains the job, the k8s version, the k8s commit, the audit log links for the test run, and thed timestamp of the testrun
     """
     job = bucket_latest_success(bucket) if custom_job is None else custom_job
+    if job is None:
+        raise ValueError(
+            f"No successful job found for bucket '{bucket}' in the last 24 hours. "
+            f"The upstream CI job may be failing. Check: https://prow.k8s.io/job-history/gs/kubernetes-ci-logs/logs/{bucket}"
+        )
     return Meta(job,
                 kegg_version(job),
                 kegg_commit(job),
