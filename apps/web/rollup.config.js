@@ -2,7 +2,8 @@ const svelte = require('rollup-plugin-svelte');
 const commonjs = require('@rollup/plugin-commonjs');
 const resolve = require('@rollup/plugin-node-resolve').nodeResolve;
 const livereload = require('rollup-plugin-livereload');
-const { terser } = require('@rollup/plugin-terser');
+const terserModule = require('@rollup/plugin-terser');
+const terser = terserModule && terserModule.terser ? terserModule.terser : terserModule;
 const css = require('rollup-plugin-css-only');
 const json = require('@rollup/plugin-json');
 const replace = require('@rollup/plugin-replace');
@@ -65,7 +66,6 @@ module.exports = {
 		commonjs(),
 		json(),
 		replace({
-			preventAssignment: true,
 			'process.env.BRANCH': JSON.stringify(branch),
 			'process.env.COMMIT': JSON.stringify(commit),
 			'process.env.HEAD': JSON.stringify(head)
