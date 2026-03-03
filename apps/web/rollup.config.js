@@ -1,14 +1,12 @@
-import svelte from 'rollup-plugin-svelte';
-import commonjs from '@rollup/plugin-commonjs';
-import resolve from '@rollup/plugin-node-resolve';
-import livereload from 'rollup-plugin-livereload';
-import terser from '@rollup/plugin-terser';
-import css from 'rollup-plugin-css-only';
-import json from '@rollup/plugin-json';
-import replace from '@rollup/plugin-replace';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
+const svelte = require('rollup-plugin-svelte');
+const commonjs = require('@rollup/plugin-commonjs');
+const resolve = require('@rollup/plugin-node-resolve').nodeResolve;
+const livereload = require('rollup-plugin-livereload');
+const { terser } = require('@rollup/plugin-terser');
+const css = require('rollup-plugin-css-only');
+const json = require('@rollup/plugin-json');
+const replace = require('@rollup/plugin-replace');
+const { spawn } = require('child_process');
 
 const production = !process.env.ROLLUP_WATCH;
 const branch = process.env.BRANCH;
@@ -36,7 +34,7 @@ function serve() {
 	};
 }
 
-export default {
+module.exports = {
 	input: 'src/main.js',
 	output: {
 		sourcemap: true,
