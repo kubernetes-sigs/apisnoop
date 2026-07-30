@@ -19,7 +19,8 @@ begin;
   select endpoint
     from conformance.new_endpoint ne
            join latest_release on ne.release::semver = latest_release.release
-where tested is false;
+where tested is false
+  and endpoint not in (select endpoint from conformance.pending_eligible_endpoint);
 \o
 \a
 \t
