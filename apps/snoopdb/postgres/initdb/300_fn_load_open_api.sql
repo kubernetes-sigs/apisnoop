@@ -37,6 +37,51 @@ else:
 sql = Template("""
    WITH open AS (
      SELECT '${open_api}'::jsonb as api_data
+     ),
+   ops AS (
+   SELECT
+     (d.value ->> 'operationId'::text) as endpoint,
+     CASE
+       WHEN paths.key ~~ '%alpha%' THEN 'alpha'
+       WHEN paths.key ~~ '%beta%' THEN 'beta'
+       -- these endpoints are beta, but are not marked as such, yet, in the swagger.json
+       WHEN (d.value ->> 'operationId'::text) = any('{"getServiceAccountIssuerOpenIDConfiguration", "getServiceAccountIssuerOpenIDKeyset"}') THEN 'beta'
+       ELSE 'stable'
+     END AS level,
+     split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
+     paths.key AS path,
+     ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
+     ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
+     ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
+     (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
+     CASE
+       WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
+       ELSE false
+     END AS deprecated,
+                 (d.value ->> 'description'::text) AS description
+     FROM
+         open
+          , jsonb_each((open.api_data -> 'paths'::text)) paths(key, value)
+          , jsonb_each(paths.value) d(key, value)
+          , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
+     ),
+   -- a group discovery path, /apis/<group>/, has no version in it for the
+   -- level above to read, so it would come out 'stable'.  a group is only
+   -- as stable as the most stable version it actually serves.
+   -- this needs the group's version paths in the same load.  a per
+   -- group-version source, such as the openapi/v3 documents, would find
+   -- none here and quietly fall back to the path-derived level.
+   group_level AS (
+   SELECT split_part(path, '/', 3) AS api_group,
+     CASE
+       WHEN bool_or(level = 'stable') THEN 'stable'
+       WHEN bool_or(level = 'beta') THEN 'beta'
+       ELSE 'alpha'
+     END AS level
+     FROM ops
+    WHERE path LIKE '/apis/%/%/'
+      AND path NOT LIKE '/apis/%/%/%/'
+    GROUP BY 1
      )
        INSERT INTO open_api(
          release,
@@ -56,32 +101,23 @@ sql = Template("""
    SELECT
      '${release}' as release,
      to_timestamp(${release_date}) as release_date,
-     (d.value ->> 'operationId'::text) as endpoint,
-     CASE
-       WHEN paths.key ~~ '%alpha%' THEN 'alpha'
-       WHEN paths.key ~~ '%beta%' THEN 'beta'
-       -- these endpoints are beta, but are not marked as such, yet, in the swagger.json
-       WHEN (d.value ->> 'operationId'::text) = any('{"getServiceAccountIssuerOpenIDConfiguration", "getServiceAccountIssuerOpenIDKeyset"}') THEN 'beta'
-       ELSE 'stable'
-     END AS level,
-     split_part((cat_tag.value ->> 0), '_'::text, 1) AS category,
-     paths.key AS path,
-     ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'group'::text) AS k8s_group,
-     ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'version'::text) AS k8s_version,
-     ((d.value -> 'x-kubernetes-group-version-kind'::text) ->> 'kind'::text) AS k8s_kind,
-     (d.value ->> 'x-kubernetes-action'::text) AS k8s_action,
-     CASE
-       WHEN (lower((d.value ->> 'description'::text)) ~~ '%deprecated%'::text) THEN true
-       ELSE false
-     END AS deprecated,
-                 (d.value ->> 'description'::text) AS description,
-                 '${open_api_url}' as spec
-     FROM
-         open
-          , jsonb_each((open.api_data -> 'paths'::text)) paths(key, value)
-          , jsonb_each(paths.value) d(key, value)
-          , jsonb_array_elements((d.value -> 'tags'::text)) cat_tag(value)
-    ORDER BY paths.key;
+     ops.endpoint,
+     -- the group level wins, including over the operationId overrides
+     -- above.  those endpoints are not under /apis/, so it does not bite.
+     coalesce(group_level.level, ops.level) as level,
+     ops.category,
+     ops.path,
+     ops.k8s_group,
+     ops.k8s_version,
+     ops.k8s_kind,
+     ops.k8s_action,
+     ops.deprecated,
+     ops.description,
+     '${open_api_url}' as spec
+     FROM ops
+     LEFT JOIN group_level
+            ON ops.path = '/apis/' || group_level.api_group || '/'
+    ORDER BY ops.path;
               """).substitute(release = release,
                               release_date = str(release_date),
                               open_api = json.dumps(open_api).replace("'","''"),
