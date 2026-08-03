@@ -12,6 +12,8 @@
       MAIN_BRANCH = "master"
       INELIGIBLE_ENDPOINTS = "/test/conformance/testdata/ineligible_endpoints.yaml"
       INELIGIBLE_URL = K8S_REPO_URL + MAIN_BRANCH + INELIGIBLE_ENDPOINTS
+      PENDING_ELIGIBLE_ENDPOINTS = "/test/conformance/testdata/pending_eligible_endpoints.yaml"
+      PENDING_ELIGIBLE_URL = K8S_REPO_URL + MAIN_BRANCH + PENDING_ELIGIBLE_ENDPOINTS
 
       ineligible_endpoints = json.dumps(yaml.safe_load(urlopen(INELIGIBLE_URL)))
       sql = Template("""
@@ -24,13 +26,22 @@
                       (endpoint_data->>'link') as link
                       from jsonb_array;
                    """).substitute(ineligible_endpoints = ineligible_endpoints.replace("'","''"))
+
+      # a plain list of operation ids; the file may hold no list at all
+      # (only a "No pending eligible endpoints" comment), which loads as None
+      pending_eligible_endpoints = json.dumps(yaml.safe_load(urlopen(PENDING_ELIGIBLE_URL)) or [])
+      pending_sql = Template("""
+                   insert into conformance.pending_eligible_endpoint(endpoint)
+                      select jsonb_array_elements_text('${pending_eligible_endpoints}'::jsonb);
+                   """).substitute(pending_eligible_endpoints = pending_eligible_endpoints.replace("'","''"))
       try:
           plpy.execute(sql)
-          return 'ineligible endpoints loaded!'
+          plpy.execute(pending_sql)
+          return 'ineligible and pending eligible endpoints loaded!'
       except Exception as e:
           return 'error occured: ', e
      $$ LANGUAGE plpython3u;
 
-     comment on function load_ineligible_endpoints is 'loads ineligible endpoints from k8s/k8s/test/conformance/testdata';
+     comment on function load_ineligible_endpoints is 'loads ineligible and pending eligible endpoints from k8s/k8s/test/conformance/testdata';
 
      select 'load_ineligible_endpoints function defined and commented' as "build log";
