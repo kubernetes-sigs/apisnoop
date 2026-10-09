@@ -1,8 +1,7 @@
-FROM docker.io/postgres:15-bullseye
+FROM docker.io/postgres:15-trixie
 LABEL MAINTAINER="Zach Mandeville <zz@ii.coop>"
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-  firefox-esr \
   postgresql-plpython3-15 \
   postgresql-15-plsh \
   postgresql-server-dev-15 \
@@ -21,13 +20,10 @@ RUN apt-get update \
   curl \
   jq \
   git \
-  software-properties-common \
   apt-transport-https
 
 
 RUN python3 --version
-RUN pip3 install --upgrade pip
-RUN pip3 install --upgrade requests
 
 RUN env PG_CONFIG=$(which pg_config) \
     && git clone https://github.com/theory/pg-semver.git \
@@ -41,5 +37,5 @@ RUN wget https://github.com/mikefarah/yq/releases/download/v4.2.0/yq_linux_amd64
 RUN mkdir /tmp/coverage && chmod 777 /tmp/coverage
 COPY initdb /docker-entrypoint-initdb.d
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-COPY ./snoopUtils.py /usr/local/lib/python3.9/dist-packages/snoopUtils.py
+COPY ./snoopUtils.py /usr/lib/python3/dist-packages/snoopUtils.py
 # ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh", "--user postgres"]
