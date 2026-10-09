@@ -2,7 +2,6 @@ FROM docker.io/postgres:15-trixie
 LABEL MAINTAINER="Zach Mandeville <zz@ii.coop>"
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-  firefox-esr \
   postgresql-plpython3-15 \
   postgresql-15-plsh \
   postgresql-server-dev-15 \
